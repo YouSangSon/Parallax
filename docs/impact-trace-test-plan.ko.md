@@ -4,79 +4,106 @@
 
 영어 버전: [impact-trace-test-plan.en.md](impact-trace-test-plan.en.md)
 
-## 범위
+## 목표
 
-이 테스트 계획은 Impact Trace의 첫 구현을 다룬다: local-first repo indexer,
-diff impact analyzer, Markdown report exporter, CLI, read-only MCP server.
-Obsidian write sync는 MVP 이후 단계로 둔다.
+테스트의 목적은 Impact Trace가 "그럴듯한 report"가 아니라 증거 기반 영향도 분석을
+안전하게 제공하는지 검증하는 것이다. 특히 한 repo 안에 여러 언어, shell script,
+YAML, CI, infra, policy가 섞인 상황을 기본 fixture로 다룬다.
 
-## 테스트 다이어그램
+## 테스트 피라미드
 
 ```text
-git diff
-  -> changed files
-  -> changed symbols
-  -> reverse dependency walk
-  -> risk classifier
-  -> affected tests/docs/routes
-  -> evidence packet
-  -> CLI / read-only MCP / Markdown export
+unit
+  -> path/security/redaction/schema/adapter parser
+integration
+  -> fixture repo indexing and analysis
+contract
+  -> CLI JSON, MCP tool/resource, report schema
+accuracy
+  -> golden diff recall/precision
+security
+  -> secret leak, path escape, read-only mutation, resource limit
 ```
 
 ## Unit Tests
 
 | 영역 | 필수 테스트 |
 |---|---|
-| Path safety | repo root 밖 path 거절, symlink normalize, absolute path escape 차단. |
-| Git diff parser | untracked file, rename, delete, binary file, merge-base diff 처리. |
-| Symbol extractor | exported/imported TypeScript symbol, local function, class, call hint 추출. |
-| Dependency index | file/symbol/import edge insert/update/delete가 idempotent해야 한다. |
-| Impact walk | reverse import traversal, depth limit, deterministic ordering. |
-| Risk classifier | model guess가 아니라 evidence 기반 deterministic severity 생성. |
-| Report renderer | source file link와 confidence label을 포함한 stable Markdown rendering. |
-| Markdown exporter | secret이나 machine-local metadata를 유출하지 않고 report를 쓴다. |
-| MCP server | input validation, JSON-RPC error, resource consistency. |
-| Secret redaction | SQLite write, MCP response, Markdown report, Obsidian export 전에 planted secret이 redacted되는지 확인. |
-| SQLite concurrency | journal policy, one-writer lock, busy timeout, pinned `index_run_id` read, crash recovery. |
-| Package/workspace graph | npm/pnpm/yarn/bun workspace, `tsconfig` paths/references, `exports`, import map 감지. |
-| CLI/MCP contracts | JSON schema, exit code, typed error envelope, pagination, schema version 검증. |
-| Doc lint | local absolute home path, hidden tool state, machine-local metadata가 committed docs에 들어오면 실패. |
+| Path safety | repo root 밖 path, absolute path, symlink escape, internal symlink 허용 정책 |
+| TOCTOU | 확인 후 파일/디렉터리 swap 시 읽기와 쓰기가 안전하게 실패해야 한다. |
+| Redaction | OpenAI/GitHub/Slack/AWS/JWT/Bearer/PEM/env/Kubernetes Secret/Terraform vars |
+| Resource limits | oversized file, binary file, deep tree, high file count, timeout |
+| Migration runner | schema version, failed migration, compatibility check |
+| Entity IDs | 같은 입력에서 deterministic ID 생성 |
+| Relation model | source/target entity, kind, confidence, adapter run, evidence 연결 |
+| Adapter coverage | unsupported language/system, skipped reason, parse error |
+| Git diff parser | rename, delete, untracked, binary, changed ranges, merge-base |
+| Action rendering | command와 args는 구조화되고 display는 non-authoritative여야 한다. |
 
-## Integration Tests
+## Integration Fixture Matrix
 
-| Fixture Repo | Scenario | Expected Result |
+| Fixture | 포함할 파일 | 검증할 것 |
 |---|---|---|
-| TypeScript library | exported function signature 변경. | direct importer, test, README example, call site가 보고된다. |
-| Next.js app | shared component prop 변경. | 해당 component를 쓰는 page/route와 visual state가 보고된다. |
-| Node CLI | command option parser 변경. | CLI help test, docs example, command handler가 보고된다. |
-| Python package | imported function 변경. | import graph fallback이 낮은 confidence로 affected module을 찾는다. |
-| Monorepo | shared package 변경. | workspace dependent와 package-level test command가 보고된다. |
-| Secret fixture | planted token/cert가 들어 있는 파일 변경. | report에는 redacted snippet만 있고 raw reveal은 explicit opt-in이 필요하다. |
-| Concurrent fixture | indexing 중 MCP가 report를 읽음. | MCP는 partial state가 아니라 완성된 `index_run_id`만 본다. |
+| TS semantic | TS/JS, `tsconfig`, path alias, re-export | symbol/import/reference/call relation |
+| Mixed language | TS, Python, shell, YAML, Markdown | 여러 adapter의 coverage와 relation merge |
+| CI workflow | GitHub Actions, package scripts, shell step | workflow/job/step/test action relation |
+| Infra | Dockerfile, Compose, Kubernetes YAML, Terraform | configures/deploys/resource relation |
+| API contract | OpenAPI, GraphQL, route handler | endpoint와 구현체 연결 |
+| Policy | CODEOWNERS, OPA/Rego, permission config | owns/governs/requires-review relation |
+| Monorepo | npm/pnpm/yarn/bun workspace | package boundary와 package-level action |
+| Secret fixture | `.env`, K8s Secret, token-like text, PEM | SQLite/MCP/Markdown raw leak 0건 |
+| Snapshot fixture | indexing 중 analyze/MCP read | completed index만 읽음 |
+| Delete/rename fixture | deleted, renamed, generated, binary file | stale edge와 deleted target 처리 |
+
+## Contract Tests
+
+| 표면 | 검증 |
+|---|---|
+| CLI human output | 짧은 summary, affected count, report path |
+| CLI JSON | `reportVersion`, `schemaVersion`, `repo`, `diff`, `changed`, `affected`, `actions`, `evidence`, `coverage` |
+| Exit codes | `0` clean, `1` findings/risk, `2` user/config error, `3` internal error |
+| MCP tools | read-only annotation, compact response, deterministic errors |
+| MCP resources | `impact://report/{id}`, `impact://evidence/{id}`, pagination, not found error |
+| Report compatibility | deprecated field와 새 field가 migration 기간에 함께 유지됨 |
+
+## Security Tests
+
+| 위험 | 테스트 |
+|---|---|
+| path traversal | `../`, absolute path, encoded path, symlink path |
+| TOCTOU | validation 후 symlink swap, `.impact-trace` swap, report dir swap |
+| secret leakage | SQLite table, Markdown report, MCP response 모두 검사 |
+| resource exhaustion | file size/count/depth/time limit 초과 시 skip coverage |
+| read-only MCP | uninitialized repo에서 workspace 생성 금지, initialized repo에서 reports/sidecar 생성 금지 |
+| command execution | action은 실행되지 않고 allowlisted runner 없이 executable state가 되지 않음 |
+| prompt injection | repo content는 evidence로만 표시되고 지시문으로 해석하지 않음 |
 
 ## 정확도 게이트
 
 | Metric | v1 Gate |
 |---|---:|
-| golden diff 기준 affected-file recall | >= 90% |
-| critical false-negative count | 0 |
-| test recommendation precision | >= 70% |
-| stale-index detection | fixture case 100% |
-| secret redaction failures | planted leak 0건 |
+| affected-entity recall | >= 90% |
+| critical false negative | 0 |
+| test action precision | >= 70% |
+| stale-index detection | fixture 100% |
+| secret leak | 0 |
+| unsupported coverage reporting | fixture 100% |
+| MCP read-only mutation | 0 |
 
-## E2E Tests
+## E2E 시나리오
 
-1. fixture repo에서 `impact-trace init`이 local config와 database를 생성한다.
-2. `impact-trace index`가 deterministic index를 만든다.
-3. `impact-trace analyze --base main --head feature`가 Markdown report를 생성한다.
-4. MCP client가 read-only `impact_trace_analyze_diff`를 호출하고 같은 evidence ID를 받는다.
-5. Obsidian sync test는 write-capability phase까지 보류한다.
+1. mixed-language fixture에서 `impact-trace init`을 실행한다.
+2. `impact-trace index`가 entity, relation, evidence, coverage를 저장한다.
+3. `impact-trace analyze --base main --head feature --json`이 changed/affected entity를 반환한다.
+4. MCP client가 같은 report를 compact response와 resource URI로 읽는다.
+5. report에 missing adapter, skipped file, confidence가 포함된다.
+6. security fixture에서 raw secret이 SQLite, Markdown, MCP 어디에도 나오지 않는다.
 
-## Regression Rule
+## 회귀 규칙
 
-impact traversal에서 발견되는 모든 버그는 수정 전에 fixture repo 또는 fixture
-diff를 추가해야 한다. snapshot test는 underlying evidence ID가 포함될 때만
-허용한다.
+impact traversal 버그는 수정 전에 fixture diff를 추가한다. security boundary 버그는
+수정 전에 failing security test를 추가한다. adapter 정확도 버그는 golden fixture에
+relation expected output을 추가한다.
 
 ## Verification Commands
 
@@ -89,5 +116,6 @@ npm run test:security
 npm run test:mcp
 npm run test:benchmark
 npm run test:install-smoke
+npm audit --audit-level=high
 npm run docs:lint
 ```

@@ -4,461 +4,404 @@
 
 영어 버전: [impact-trace-plan.en.md](impact-trace-plan.en.md)
 
-## 제품 요약
+## 한눈에 보기
 
-Impact Trace는 Claude Code, Codex, 그리고 비슷한 에이전트 코딩 도구를 위한
-로컬 우선 프로젝트 분석 레이어다. 저장소를 인덱싱하고, 코드 심볼을 import,
-테스트, 문서, 커밋, 노트와 연결한 뒤, 특정 변경이 어떤 사이드 이펙트를 만들
-수 있는지 증거와 함께 설명한다.
+Impact Trace는 Claude Code, Codex 같은 에이전트 코딩 도구가 코드를 바꾸기 전에
+프로젝트 영향 범위를 읽을 수 있게 만드는 local-first 인덱싱 레이어다.
 
-사용자는 graph DB가 꼭 필요하지 않다고 명확히 했다. 따라서 핵심 구조는 graph
-DB가 아니라 플러그 가능한 로컬 인덱스다. 기본 저장소는 SQLite로 두고, 필요할
-때 DuckDB, 벡터 검색, graph DB projection을 붙인다.
+핵심은 graph DB가 아니다. 핵심은 한 저장소 안의 함수, 변수, 클래스, 모듈, shell
+script, YAML, CI workflow, Terraform, Kubernetes, OpenAPI, 정책 파일, 문서, 테스트를
+같은 `Entity`와 `Relation` 모델로 연결하는 것이다. SQLite가 canonical store가 되고,
+graph DB는 필요할 때 파생하는 projection이다.
 
-## 확인한 자료
+## 목차
 
-| 자료 | 관련 내용 |
+- 제품 원칙
+- 현재 기준선
+- 해결할 문제
+- 범위와 비범위
+- 목표 아키텍처
+- Canonical 데이터 모델
+- Adapter 전략
+- 분석 흐름
+- MCP와 CLI 계약
+- 보안과 신뢰 경계
+- 테스트와 품질 게이트
+- 단계별 로드맵
+- 부족한 점
+- 의사결정 기록
+
+## 제품 원칙
+
+| 원칙 | 설명 |
 |---|---|
-| [TypeScript Compiler API](https://github.com/microsoft/TypeScript/wiki/Using-the-Compiler-API) | TypeScript는 AST 순회, 증분 watcher, type checker 접근을 지원한다. |
-| [Language Server Protocol 3.17](https://github.com/microsoft/language-server-protocol/blob/gh-pages/_specifications/lsp/3.17/specification.md) | LSP는 definition, references, call hierarchy, type hierarchy, document symbols, diagnostics, workspace file events를 제공한다. |
-| [CodeQL overview](https://codeql.github.com/docs/codeql-overview/about-codeql/) | CodeQL database는 언어별 AST, data flow graph, control flow graph를 질의 가능한 형태로 제공한다. |
-| [MCP resources spec](https://modelcontextprotocol.io/specification/2025-06-18/server/resources) | MCP resources는 URI 기반으로 컨텍스트를 노출하고, URI 검증과 권한 확인이 필요하다. |
-| [Obsidian URI docs](https://obsidian.md/help/uri) | Obsidian은 인코딩된 `obsidian://` URI로 노트를 열거나 만들 수 있다. |
-| [FalkorDBLite docs](https://docs.falkordb.com/operations/falkordblite/) | Python/TypeScript용 embedded graph runtime이 있지만, production은 hosted/self-hosted FalkorDB가 권장된다. |
-| [Kuzu GitHub](https://github.com/kuzudb/kuzu) | Kuzu는 2025-10-10에 archived 상태가 되었으므로 기본 핵심 의존성으로 두면 유지보수 리스크가 있다. |
+| Evidence first | 모든 영향도 판단은 evidence, provenance, confidence를 함께 가져야 한다. |
+| Storage-neutral core | SQLite가 source of truth이고 graph/vector/CodeQL은 선택 adapter다. |
+| Multi-language by default | 한 repo 안에 여러 언어와 설정 시스템이 섞이는 것을 기본 전제로 둔다. |
+| No silent certainty | 모르는 것은 `unknown`, coverage gap, missing adapter로 드러낸다. |
+| Read-only agent surface first | MCP는 먼저 안전한 read-only 분석 표면으로 안정화한다. |
+| Actions are recommendations | 테스트나 리뷰 command는 실행하지 않고 `command + args` 구조로 추천만 한다. |
 
-## 전제
+## 현재 기준선
 
-| 전제 | 상태 | 이유 |
-|---|---|---|
-| 에이전트는 코드 변경 전에 증거 기반 컨텍스트가 필요하다. | 채택 | 매번 저장소를 새로 읽으면 느리고, 테스트/문서/설정 같은 사이드 이펙트를 놓친다. |
-| 사이드 이펙트는 dependency, runtime, ownership 관계에서 주로 나온다. | 채택 | 직접 import만으로는 충분하지 않다. 테스트, 문서, 설정, 생성 파일, 패키지 경계, 과거 버그 이력도 중요하다. |
-| graph DB는 선택 사항이다. | 채택 | 사용자가 명확히 말했고, 코어는 storage-neutral하게 유지하는 편이 낫다. |
-| Obsidian은 좋은 사람용 지식 표면이다. | 조건부 채택 | 먼저 Markdown export로 충분하다. Obsidian plugin을 v1 필수 조건으로 만들면 속도가 느려진다. |
-| 완벽한 분석이 가능하다. | 거절 | 제품은 모르는 것을 숨기지 말고 confidence와 missing-data flag로 드러내야 한다. |
+현재 MVP는 제품 방향을 검증하기 위한 좁은 구현이다.
 
-## 현재 있는 것
-
-현재 저장소에는 첫 MVP가 들어가 있다. `init`, `index`, `analyze`, 공식 MCP SDK
-기반 stdio server, SQLite 저장소, 보안 회귀 테스트, install smoke test, README와
-한글/영문 계획 문서가 있다. 내장 extractor는 TS/JS/Markdown부터 시작하지만,
-report model은 `EntityRef`, `ImpactTarget`, `ImpactAction` 중심의 언어 중립 구조로
-확장할 수 있게 둔다.
-
-## 범위 밖
-
-| 항목 | 이유 |
+| 영역 | 현재 상태 |
 |---|---|
-| v1에서 모든 언어의 완전한 semantic analysis 지원 | 범위가 너무 넓다. TypeScript/JavaScript를 먼저 고신뢰 경로로 잡고, 나머지는 Tree-sitter 기반 fallback으로 둔다. |
-| 필수 graph DB | graph DB는 필수가 아니다. 필요하면 projection adapter로 추가한다. |
-| 필수 Obsidian plugin | Markdown export와 Obsidian URI만으로 MVP 가치가 나온다. |
-| 자율 코드 수정 | v1의 Impact Trace는 에이전트에게 조언만 한다. 직접 프로젝트 코드를 수정하지 않는다. |
-| cloud sync | 초기에는 소스 코드와 secret 보호를 위해 local-first를 유지한다. |
+| CLI | `init`, `index`, `analyze`, `mcp serve` 제공 |
+| MCP | 공식 MCP SDK 기반 stdio server, read-only `impact_trace_analyze_diff` 제공 |
+| Storage | repo-local `.impact-trace/impact.db` SQLite 사용 |
+| Indexing | TS/JS/Markdown 파일, export symbol, import edge, test/doc edge 일부 추출 |
+| Report | `changed`, `affected`, `actions`, `evidence` 중심의 언어 중립 report model |
+| Security | path containment, symlink escape 방어, MCP report persistence 차단, redaction 기본 테스트 |
+| Tests | unit/integration/security/MCP/install smoke 테스트 |
 
-## 목표 상태
+현재 구현의 핵심 한계도 명확하다.
 
-```text
-현재
-  빈 저장소. 에이전트는 매번 코드를 ad hoc으로 읽고 사이드 이펙트를 추측한다.
+| 한계 | 영향 |
+|---|---|
+| DB가 `files`, `symbols`, `edges` 중심 | 정책, CI, infra, endpoint 같은 entity를 자연스럽게 표현하기 어렵다. |
+| analyzer 입력이 `changedFiles` 중심 | symbol, package, workflow, resource 단위 분석으로 확장하기 어렵다. |
+| regex 기반 TS/JS 추출 | re-export, path alias, type-only import, call/reference를 놓친다. |
+| 1-hop reverse edge 분석 | 실제 enterprise side effect를 과소 보고한다. |
+| snapshot isolation 미완성 | indexing 중 completed index가 오염될 수 있다. |
+| source span과 provenance 부족 | report가 왜 그런 결론을 냈는지 감사하기 어렵다. |
+| resource limit 부족 | 큰 repo나 악의적 repo에서 indexing이 느려지거나 실패할 수 있다. |
 
-이번 계획
-  로컬 CLI/MCP 도구가 저장소를 인덱싱하고,
-  "이 변경이 무엇에 영향을 주는가?"를 답하며,
-  evidence-backed report와 Obsidian 노트를 생성한다.
+## 해결할 문제
 
-12개월 후 이상적 상태
-  모든 에이전트 변경은 cached project map으로 시작한다.
-  모든 PR에는 impact packet이 붙는다.
-  위험한 변경은 테스트/문서/owner를 자동으로 드러낸다.
-  Obsidian은 architecture decision과 hotspot의 사람용 memory가 된다.
-```
+에이전트는 코드를 읽을 수 있지만, 매번 repo를 새로 탐색한다. 그래서 다음 정보를 자주
+놓친다.
 
-## 핵심 사용자 흐름
+1. 변경된 함수나 설정이 어떤 테스트와 배포 경로에 연결되는지
+2. shell script, YAML workflow, Terraform, Kubernetes 리소스가 코드와 어떻게 연결되는지
+3. 문서, policy, owner, CI job 같은 non-code 구성요소가 변경 영향에 포함되는지
+4. 분석이 정확한지, 추론인지, 모르는 영역인지
+5. 어떤 테스트와 리뷰를 실행해야 하는지
 
-1. 개발자가 저장소에서 `impact-trace init`을 실행한다.
-2. 도구가 파일, 패키지, 심볼, import, 테스트, 문서, 최근 git history를 인덱싱한다.
-3. 에이전트가 코드를 바꾸기 전에 `impact-trace analyze --diff`를 실행한다.
-4. Impact Trace는 영향받는 module, 실행할 테스트, 위험한 가정, source evidence를 반환한다.
-5. MCP server가 같은 분석을 Claude Code나 Codex에 노출한다.
-6. 사용자는 project map과 change report를 Obsidian vault로 export한다.
+Impact Trace는 이 문제를 cached project map으로 푼다. 프로젝트를 먼저 인덱싱하고,
+변경이 들어오면 entity graph를 따라가며 영향 범위와 검증 action을 만든다.
 
-## 권장 아키텍처
+## 범위와 비범위
 
-| 레이어 | 권장안 | 이유 |
-|---|---|---|
-| Runtime | Node.js/TypeScript | Claude/Codex tool ecosystem, MCP SDK, Obsidian plugin ecosystem, TypeScript analysis API와 잘 맞는다. |
-| Canonical store | SQLite | 로컬 persistence가 쉽고, 설치가 가볍고, report/edge table에 충분하다. |
-| Analytical snapshots | DuckDB 선택 | 대형 repo metric과 history query가 필요해질 때 붙인다. |
-| Text search | SQLite FTS5 우선 | 초기 report 검색에는 충분하다. 필요해질 때 Tantivy/Meilisearch로 교체한다. |
-| Semantic search | LanceDB/sqlite-vec adapter 선택 | "비슷한 코드" 탐색에는 유용하지만 deterministic impact analysis의 필수 조건은 아니다. |
-| Graph projection | FalkorDBLite/Neo4j/Memgraph adapter 선택 | recursive graph query와 시각화가 핵심 가치가 될 때만 켠다. |
-| Parsing | TS/JS는 TypeScript Compiler API, 범용 syntax는 Tree-sitter fallback | 가능한 곳에서는 semantic accuracy를 얻고, 그 외에는 language coverage를 확보한다. |
-| Deep semantic analysis | CodeQL adapter 선택 | data/control-flow에 강하지만 setup이 무겁기 때문에 optional로 둔다. |
-| Agent API | CLI + MCP server | CLI는 디버깅이 쉽고, MCP는 Claude Code/Codex에 structured tool/resource를 제공한다. |
-| Human notes | Obsidian vault로 Markdown export | 투명하고 diff 가능하며 plugin 승인 없이 바로 동작한다. |
+### v1 범위
 
-## 시스템 다이어그램
+| 포함 | 이유 |
+|---|---|
+| Canonical entity/relation schema | 다중 언어와 설정 시스템을 같은 모델에 올리기 위한 기반이다. |
+| Snapshot-safe indexing | 에이전트가 분석 중인 index가 중간 상태로 깨지면 안 된다. |
+| Git diff 기반 분석 | 사용자가 changed file을 수동으로 넣는 MVP 표면을 넘어야 한다. |
+| TypeScript semantic adapter | 첫 high-confidence lane으로 정확도를 확보한다. |
+| Config/system adapters | shell, YAML, package, CI, Docker, Kubernetes, Terraform은 enterprise repo의 실제 영향 경로다. |
+| MCP read-only resources | 큰 report와 evidence를 tool 응답 하나에 몰아넣지 않기 위해 필요하다. |
+| Security/resource limits | 로컬 소스 코드는 untrusted input으로 취급해야 한다. |
+
+### v1 비범위
+
+| 제외 | 이유 |
+|---|---|
+| 필수 graph DB | source of truth를 둘로 만들면 migration과 consistency 비용이 커진다. |
+| 필수 Obsidian plugin | Markdown export와 MCP 분석이 안정화된 뒤 붙이는 편이 안전하다. |
+| 에이전트의 자동 코드 수정 | Impact Trace는 추천과 evidence를 제공하고 실행은 하지 않는다. |
+| 모든 언어의 full semantic analysis | 언어마다 완전한 의미 분석을 한 번에 구현하면 정확도와 일정이 무너진다. |
+| cloud sync | 초기에는 source code와 secret 보호를 위해 local-first를 유지한다. |
+
+## 목표 아키텍처
 
 ```text
                          +----------------------+
                          | Claude Code / Codex  |
                          +----------+-----------+
                                     |
-                             MCP tools/resources
+                          MCP tools / resources
                                     |
-+-----------+      +----------------v----------------+
-| Git diff  +----->| Impact Trace Analyzer           |
-+-----------+      | - changed file/symbol resolver   |
-                   | - reverse dependency walk        |
-+-----------+      | - risk classifier                |
-| Repo scan +----->| - evidence packet builder        |
-+-----------+      +----------------+----------------+
++-------------+      +--------------v--------------+
+| Git diff    +----->| Impact Analyzer             |
+| base/head   |      | - changed entity resolver   |
++-------------+      | - bounded graph traversal   |
+                     | - confidence aggregation    |
++-------------+      | - action recommendation     |
+| CLI         +----->| - evidence packet builder   |
++-------------+      +--------------+--------------+
                                     |
-              +---------------------+---------------------+
-              |                                           |
-     +--------v---------+                       +---------v--------+
-     | Local Index      |                       | Report Exporter   |
-     | SQLite core      |                       | Markdown/JSON     |
-     | optional DuckDB  |                       | Obsidian notes    |
-     | optional vectors |                       +------------------+
-     +--------+---------+
-              |
-      optional graph projection
-              |
-     +--------v---------+
-     | FalkorDB/Neo4j   |
-     | or other adapter |
-     +------------------+
+                     +--------------v--------------+
+                     | Canonical SQLite Store       |
+                     | repos, index_runs            |
+                     | adapter_runs, entities       |
+                     | relations, evidence_spans    |
+                     | reports, coverage            |
+                     +--------------+--------------+
+                                    |
+              +---------------------+----------------------+
+              |                     |                      |
+ +------------v-----------+ +-------v---------+ +----------v----------+
+ | Language adapters      | | System adapters | | Optional projections |
+ | TS, Python, Go, Rust   | | CI, YAML, K8s   | | graph, vector, OLAP  |
+ | Tree-sitter, LSP       | | Terraform, API  | | CodeQL, Obsidian     |
+ +------------------------+ +-----------------+ +---------------------+
 ```
 
-## 데이터 모델
+## Canonical 데이터 모델
 
-SQLite canonical table:
+v1의 핵심 작업은 file-edge store를 entity graph store로 바꾸는 것이다.
+
+### 필수 테이블
 
 | Table | 목적 |
 |---|---|
-| `repos` | repo root, VCS metadata, default branch, config hash. |
-| `schema_versions` | 적용된 migration version과 compatibility metadata. |
-| `index_runs` | 각 indexing pass의 commit, dirty state, 시작/종료 시간, extractor version, 실패 요약. |
-| `files` | path, language, hash, package, last indexed commit. |
-| `symbols` | name, kind, file, range, export status, deterministic semantic ID, extractor version. |
-| `edges` | `IMPORTS`, `CALLS`, `TESTS`, `DOCUMENTS`, `OWNS`, `GENERATES`, `CONFIGURES`, provenance, confidence reason. |
-| `git_changes` | hotspot과 churn 분석을 위한 commit/file/symbol history. |
-| `reports` | 안정적인 change analysis output과 evidence ID. |
-| `evidence` | redacted source span, command, query result, confidence label, source hash, snippet length, raw-evidence availability flag. |
-| `notes` | Obsidian note path와 file/symbol/report backlink. |
+| `repos` | repo root, remote, default branch, config hash를 저장한다. |
+| `schema_versions` | migration version, 적용 시간, 실패 상태를 기록한다. |
+| `index_runs` | git commit, dirty state, branch, status, 시작/종료 시간, config hash를 저장한다. |
+| `adapter_runs` | adapter ID, version, language/system ID, parser/tool version, config hash, error summary를 저장한다. |
+| `entities` | file, symbol, package, test, doc, config, policy, workflow, resource, endpoint를 통합 저장한다. |
+| `entity_versions` | entity의 content hash, location, display name, source range, index run별 상태를 저장한다. |
+| `relations` | `source_entity_id`, `target_entity_id`, relation kind, confidence, adapter run을 저장한다. |
+| `relation_evidence` | relation을 뒷받침하는 source span, query result, command output, confidence rationale을 저장한다. |
+| `index_coverage` | indexed/skipped path, unsupported language/system, parse error, size limit skip을 저장한다. |
+| `reports` | versioned impact report JSON과 관련 evidence ID를 저장한다. |
+| `graph_projection_runs` | 선택 graph DB projection의 source index run, schema version, invalidation 상태를 저장한다. |
 
-graph projection은 이 테이블에서 파생되어야 한다. graph DB가 source of truth가
-되면 migration과 consistency 문제가 커진다.
+### Entity 종류
 
-## CLI 표면
+| Kind | 예시 |
+|---|---|
+| `file` | `src/auth/session.ts`, `.github/workflows/ci.yml` |
+| `symbol` | function, class, variable, method, type, interface |
+| `module` | package module, Python module, Go package, Rust crate module |
+| `package` | npm workspace, Python package, Maven module |
+| `test` | test file, test case, CI test job |
+| `doc` | README, ADR, runbook, API docs |
+| `config` | JSON, YAML, TOML, env, tsconfig, package scripts |
+| `policy` | CODEOWNERS, OPA/Rego rule, permission manifest |
+| `workflow` | GitHub Actions job, GitLab CI job, Make target |
+| `resource` | Docker image, Kubernetes deployment, Terraform resource |
+| `endpoint` | REST route, GraphQL field, gRPC/protobuf service |
+
+### Relation 종류
+
+| Kind | 의미 |
+|---|---|
+| `DEPENDS_ON` | 한 entity가 다른 entity를 필요로 한다. |
+| `CALLS` | 함수나 command가 다른 symbol/command를 호출한다. |
+| `REFERENCES` | symbol, config key, resource name을 참조한다. |
+| `VERIFIES` | test나 CI job이 entity를 검증한다. |
+| `DOCUMENTS` | 문서가 entity를 설명한다. |
+| `CONFIGURES` | config가 runtime, workflow, resource를 설정한다. |
+| `GENERATES` | script나 build step이 artifact를 만든다. |
+| `DEPLOYS` | workflow가 artifact나 resource를 배포한다. |
+| `OWNS` | CODEOWNERS나 policy가 owner/review path를 지정한다. |
+| `GOVERNS` | policy가 변경 허용 여부나 review requirement를 결정한다. |
+
+## Adapter 전략
+
+한 repo 안에는 여러 언어와 시스템이 공존한다. 따라서 adapter는 언어별 parser뿐 아니라
+config/system/policy adapter로 나뉜다.
+
+| Adapter | P단계 | Entity | Relation |
+|---|---:|---|---|
+| File classifier | P0 | file, config 후보 | languageId/systemId, skipped reason |
+| Git diff adapter | P0 | changed file/entity | base/head, rename/delete/binary/untracked |
+| TypeScript Compiler API | P1 | symbol, module, package | imports, re-exports, references, calls |
+| Package/workspace adapter | P1 | package, script, workspace | depends-on, verifies, generates |
+| Shell/Make adapter | P1 | script, command, target | calls, generates, configures |
+| YAML/JSON/TOML adapter | P1 | config, workflow, resource | configures, references |
+| GitHub Actions/GitLab CI adapter | P1 | workflow, job, step | verifies, deploys, calls |
+| Docker/Kubernetes adapter | P1 | image, service, deployment, secret ref | configures, deploys, routes-to |
+| Terraform adapter | P1 | module, variable, resource | depends-on, configures |
+| OpenAPI/GraphQL/protobuf adapter | P1 | endpoint, schema field, service | implements, consumes, documents |
+| Markdown/ADR adapter | P1 | doc, decision | documents, references |
+| CODEOWNERS/policy adapter | P1 | owner rule, policy rule | owns, governs, requires-review |
+| Tree-sitter fallback | P2 | broad symbol/module | declares, imports, references |
+| LSP adapter | P2 | symbol/reference/call hierarchy | definition, references, calls |
+| CodeQL adapter | P2 | data-flow/control-flow node | taints, controls, calls |
+
+## 분석 흐름
+
+```text
+git diff or changed input
+  -> changed paths, deleted paths, renamed paths, changed ranges
+  -> EntityRef 후보로 정규화
+  -> 최신 completed index_run_id와 freshness 확인
+  -> changed entity를 relation graph에 매핑
+  -> bounded reverse traversal
+  -> package/workflow/resource boundary 반영
+  -> affected targets와 confidence 계산
+  -> evidence span과 coverage gap 수집
+  -> test/review/docs/deploy action 추천
+  -> CLI summary, JSON report, MCP resource 반환
+```
+
+### Traversal 규칙
+
+| 규칙 | 이유 |
+|---|---|
+| 기본은 bounded traversal | 큰 repo에서 fan-out 폭발을 막는다. |
+| cycle detection 필수 | package와 workflow graph는 쉽게 순환한다. |
+| fan-out warning 제공 | 너무 넓은 영향 범위는 요약과 group-by가 필요하다. |
+| confidence aggregation | proven relation과 heuristic relation을 같은 무게로 보지 않는다. |
+| coverage gap 포함 | adapter가 없어서 못 본 영역을 report가 말해야 한다. |
+
+## MCP와 CLI 계약
+
+### CLI
 
 ```bash
 impact-trace init
 impact-trace index
 impact-trace analyze --base origin/main --head HEAD
-impact-trace analyze --diff-file patch.diff
-impact-trace explain src/foo.ts:handler
+impact-trace analyze --changed src/file.ts --json
+impact-trace explain impact://entity/{id}
 impact-trace mcp serve
 ```
 
-`impact-trace obsidian sync`는 read-only MCP loop가 안정화된 뒤 구현한다.
+### MCP tools
 
-## MCP 표면
-
-도구:
-
-| Tool | Output |
-|---|---|
-| `impact_trace_analyze_diff` | 영향받는 파일, 심볼, 테스트, 문서, owner, risk evidence. |
-
-Resources:
-
-| URI | 의미 |
-|---|---|
-| `impact://report/{id}` | future full impact report resource. URI encoding과 pagination이 정해질 때까지 보류. |
-
-보안 규칙: 모든 MCP path/URI는 normalize하고, 설정된 repo/vault root 안에 있는지
-검증해야 한다. root 밖으로 resolve되면 거절한다.
-
-MCP capability model:
-
-| Capability | 기본값 | 켜는 방법 |
+| Tool | 상태 | 설명 |
 |---|---|---|
-| analysis report 읽기 | Enabled | `impact-trace mcp serve` |
-| repo snippet 읽기 | redacted only | 항상 redaction과 size cap을 통과한다. |
-| Obsidian note 쓰기 | Disabled | `impact-trace mcp serve --allow-write --vault <root>` 필요. |
-| project command 실행 | Disabled | v1 범위 밖. |
+| `impact_trace_analyze_diff` | MVP | changed files를 분석한다. |
+| `impact_trace_analyze_git_diff` | P0 | base/head 기준으로 변경 entity를 계산한다. |
+| `impact_trace_explain_entity` | P1 | 특정 entity의 relation과 evidence를 설명한다. |
 
-모든 MCP tool argument는 JSON Schema validation, symlink resolution 이후 realpath
-root containment, size limit, time limit, deterministic JSON-RPC error를 가져야
-한다. v1에서는 write tool이 `tools/list`에 나오지 않는다. future write mode는
-명시적 capability flag와 별도 review가 필요하다.
+### MCP resources
 
-## Obsidian Export
-
-Markdown note:
-
-| Note | 내용 |
-|---|---|
-| `Impact Trace/Project Map.md` | package, entry point, dependency boundary, test strategy. |
-| `Impact Trace/Hotspots.md` | high-churn file, high fan-in symbol, 반복 failure area. |
-| `Impact Trace/Reports/<date>-<branch>.md` | change별 impact packet. |
-| `Impact Trace/Symbols/<semantic-id>.md` | symbol facts, caller, test, related note. |
-| `Impact Trace/ADRs/*.md` | 채택된 recommendation에서 생성된 human decision. |
-
-Obsidian sync는 기본적으로 dry-run이다. 실제 쓰기는 temp-file-and-rename을
-사용하고, 모든 managed note는 stable ID와 previous content hash를 가진다. 사용자
-수정이 감지되면 conflict file을 만들고, symlink된 vault path는 거절한다.
-`obsidian://open`으로 노트를 여는 것은 optional이고, vault/file 이름은 반드시
-URI-encode해야 한다.
-
-## MVP 정의
-
-MVP는 전체 제품보다 좁게 잡는다.
-
-| MVP 포함 | 보류 |
-|---|---|
-| `init`, `index`, `analyze` | Obsidian auto-sync default behavior |
-| JSON/Markdown report | graph DB projection |
-| 최소 read-only MCP `impact_trace_analyze_diff` | CodeQL adapter |
-| TS/JS/Markdown MVP extraction과 언어 중립 report model | 모든 언어 full semantic analysis |
-| secret redaction과 path safety | remote sync |
-| report마다 하나의 completed `index_run_id` 사용 | file/symbol MCP resources |
-
-## 구현 단계
-
-| 단계 | 산출물 | 완료 조건 |
+| URI | 상태 | 설명 |
 |---|---|---|
-| 1. Project skeleton | TypeScript CLI, config, test harness, SQLite migrations. | `init`, `index --dry-run`, unit test 통과. |
-| 2. TS/JS indexer | file, symbol, import, package, test edge extraction. | fixture repo가 deterministic하게 index된다. |
-| 3. Diff impact analyzer | reverse dependency walk와 evidence packet renderer. | exported symbol 변경 시 importer와 test를 찾는다. |
-| 4. Read-only MCP server | 최소 `impact_trace_analyze_diff`와 report resources. | write capability 없이 MCP client가 analyze/report read를 할 수 있다. |
-| 5. Obsidian export | dry-run-first Markdown report와 project map writer. | tmp vault에 note를 쓰되 unrelated file은 덮어쓰지 않는다. |
-| 6. Optional adapters | DuckDB snapshots, vector search, CodeQL, graph projection. | core schema contract 변경 없이 adapter를 켤 수 있다. |
+| `impact://report/{id}` | P1 | 전체 report를 pagination 가능한 resource로 노출한다. |
+| `impact://evidence/{id}` | P1 | redacted evidence span과 provenance를 노출한다. |
+| `impact://entity/{id}` | P1 | entity metadata와 direct relations를 노출한다. |
+| `impact://coverage/{indexRunId}` | P1 | missing adapter와 skipped file을 노출한다. |
 
-## CEO 리뷰
+MCP tool 응답은 작고 agent-friendly해야 한다. 큰 report는 resource로 분리한다.
 
-### 전제 검토
+## 보안과 신뢰 경계
 
-가장 강한 전제는 에이전트에게 durable project map이 필요하다는 점이다. 맞다.
-매번 repo를 다시 읽는 방식은 context를 낭비하고, 테스트/문서 같은 non-code
-side effect를 놓친다.
+Impact Trace는 로컬 repo를 읽지만 repo content를 신뢰하지 않는다.
 
-가장 약한 전제는 "완벽한 프로젝트 분석"이다. 이 전제는 버려야 한다. 제품은
-증명 가능한 것, 추론한 것, 모르는 것을 분리해서 보여줘야 한다. confidence
-label은 부가 기능이 아니라 제품의 핵심이다.
-
-graph DB는 optional이다. 따라서 Impact Trace는 graph database project가 아니라
-code change evidence product다.
-
-### 기존 코드 활용
-
-repo 내부에는 MVP 코드가 있으므로, 다음 단계는 기존 CLI/MCP/report 경계를 보존하면서
-외부의 성숙한 분석 표면을 adapter로 붙이는 것이다.
-
-| 문제 | 활용할 것 |
+| 위험 | 대응 |
 |---|---|
-| TypeScript symbol extraction | TypeScript compiler API와 type checker. |
-| editor-grade references | LSP definition/references/call hierarchy. |
-| broad language parsing | Tree-sitter parser. |
-| deep control/data flow | optional CodeQL database와 query output. |
-| agent integration | MCP tools/resources. |
-| human knowledge surface | Obsidian Markdown vault와 URI scheme. |
+| path traversal | 모든 file input은 root containment를 통과해야 한다. |
+| symlink escape | realpath 검증과 symlink 정책 테스트를 유지한다. |
+| TOCTOU(확인과 실행 사이의 틈) | 검증 후 다시 여는 read/write 경로를 줄이고 atomic open 전략을 설계한다. |
+| partial index read | completed snapshot과 running snapshot을 분리한다. |
+| secret leakage | 저장 전 redaction, denylisted path, binary detection, sensitivity classification을 둔다. |
+| oversized repo DoS | file count, file size, depth, binary, timeout limit을 둔다. |
+| command execution | MCP는 command를 실행하지 않는다. action은 구조화된 추천으로만 반환한다. |
+| future write tools | capability object로 repo read, vault write, command execute를 분리한다. |
 
-### 구현 대안
+## 테스트와 품질 게이트
 
-| 접근 | 노력 | 리스크 | 장점 | 단점 | 결정 |
-|---|---:|---|---|---|---|
-| SQLite-first local index | 중간 | 낮음 | 빠른 TTHW, 쉬운 설치, offline 동작, storage-neutral. | recursive graph query는 SQL/projection이 필요하다. | 채택 |
-| graph DB core | 중상 | 중간 | dependency traversal과 Cypher query가 자연스럽다. | setup/maintenance 리스크, Kuzu archived, 사용자가 필수 아니라고 함. | 기본값으로는 거절 |
-| CodeQL-first semantic engine | 높음 | 중간 | data/control-flow가 강하다. | 설치가 무겁고 language coverage 제약이 있다. | optional adapter |
-| Obsidian plugin first | 중간 | 중간 | 사람용 workflow가 좋다. | core analysis 가치가 plugin UX에 묶인다. | 보류 |
-
-## Engineering 리뷰
-
-### Scope Challenge
-
-TypeScript/JavaScript를 첫 high-confidence lane으로 잡고, 다른 언어는 fallback으로
-두면 현실적인 범위다. v1에서 모든 언어를 semantic하게 지원하려 하면 일정과
-신뢰도가 무너진다.
-
-### Architecture Diagram
-
-```text
-+---------------------+
-| CLI commands         |
-+----------+----------+
-           |
-+----------v----------+        +---------------------+
-| App services         +------->| MCP server          |
-| config, repo, diff   |        | tools/resources     |
-+----------+----------+        +----------+----------+
-           |                              |
-+----------v----------+                   |
-| Extractor adapters   |                   |
-| ts, tree-sitter, lsp |                   |
-+----------+----------+                   |
-           |                              |
-+----------v------------------------------v----------+
-| Core index store                                 |
-| SQLite: files, symbols, edges, evidence, reports |
-+----------+----------------------------------------+
-           |
-+----------v----------+        +---------------------+
-| Analyzer             +------->| Renderers           |
-| impact, risk, tests  |        | Markdown, JSON      |
-+----------+----------+        +----------+----------+
-           |                              |
-           |                     +--------v----------+
-           |                     | Obsidian vault    |
-           |                     +-------------------+
-           |
-    optional projections
-           |
-+----------v----------+
-| DuckDB / graph / vec |
-+---------------------+
-```
-
-### Code Quality 결정
-
-| Finding | Decision |
-|---|---|
-| core behavior가 검증되기 전에 adapter가 너무 많아질 수 있다. | 같은 interface가 실제로 두 구현에서 필요해질 때까지 adapter는 internal로 둔다. |
-| confidence label이 모호해질 수 있다. | `proven`, `inferred`, `heuristic`, `unknown`으로 고정한다. |
-| CLI와 MCP 결과가 갈라질 수 있다. | 둘 다 같은 service method를 호출하고 shared report ID를 반환한다. |
-
-### Failure Modes Registry
-
-| Failure Mode | Severity | Detection | Recovery |
-|---|---|---|---|
-| 영향을 받는 파일을 놓침 | High | fixture regression 또는 user report. | extractor edge나 heuristic을 evidence와 함께 추가한다. |
-| false positive가 너무 커짐 | Medium | report에 fan-out warning 표시. | package-level summary로 접는다. |
-| stale index 사용 | High | index commit/hash와 working tree 비교. | 경고 후 reindex 제안. |
-| vault overwrite | High | managed directory와 frontmatter marker 확인. | marker 없으면 중단. |
-| MCP가 root 밖 파일을 읽음 | Critical | path validation test. | 요청 거절. |
-| secret이 evidence/report/vault로 유출 | Critical | planted secret fixture와 redaction test. | storage/export 전에 redaction pipeline을 적용하고 raw evidence는 opt-in으로 제한. |
-| indexing 중 partial SQLite state를 읽음 | High | concurrent CLI/MCP fixture. | journal policy, one-writer lock, `index_run_id` pinned read transaction. |
-| optional adapter unavailable | Low | startup capability check. | 낮은 confidence로 계속 진행. |
-
-### 정확도 게이트
-
-| Metric | v1 Gate |
+| Gate | v1 기준 |
 |---|---:|
-| golden diff 기준 affected-file recall | >= 90% |
-| critical false-negative count | 0 |
-| test recommendation precision | >= 70% |
-| stale-index detection | fixture case 100% |
-| secret redaction failures | planted secret leak 0건 |
+| golden fixture affected-entity recall | >= 90% |
+| critical false negative | 0 |
+| test action precision | >= 70% |
+| stale-index detection | fixture 100% |
+| secret leak | planted secret 0건 |
+| MCP read-only mutation | 0건 |
+| unsupported coverage reporting | fixture 100% |
 
-### CLI/MCP 계약
+필수 fixture repo:
 
-| Contract | Requirement |
+| Fixture | 포함할 내용 |
 |---|---|
-| CLI output | 기본은 사람이 읽기 쉬운 출력, automation은 stable `--json` envelope. |
-| Exit codes | `0` clean, `1` findings/risk, `2` user/config error, `3` internal error. |
-| MCP schemas | tool별 versioned input/output JSON Schema. |
-| Resources | large evidence pagination을 지원하는 schema-versioned report resources. |
-| Errors | problem, cause, fix, evidence ID를 담는 typed error envelope. |
+| TS package | re-export, default export, type-only import, path alias |
+| mixed-language repo | TS, Python, shell, YAML, Dockerfile, Markdown |
+| CI/infra repo | GitHub Actions, Docker, Kubernetes, Terraform |
+| monorepo | workspaces, package boundary, package-level tests |
+| security repo | `.env`, Kubernetes Secret, Terraform vars, PEM, token-like content |
+| stale-index repo | running index와 completed index 충돌 시나리오 |
+| delete/rename repo | deleted file, renamed file, binary file, generated file |
 
-### Packaging 제약
+## 단계별 로드맵
 
-| Constraint | Requirement |
+### P0: Entity Graph Core
+
+목표: 다중 언어와 설정 시스템을 올릴 수 있는 저장소 기반을 만든다.
+
+| 작업 | 완료 기준 |
 |---|---|
-| Core install | pure JS/WASM 또는 prebuilt package를 우선한다. |
-| Optional adapters | DuckDB, CodeQL, graph DB, vector package는 default install 밖에 둔다. |
-| CI smoke tests | macOS, Linux, Windows, active Node LTS에서 install smoke test. |
-| Doc lint | local absolute home path, hidden tool state, machine-local metadata를 committed docs에서 차단한다. |
+| migration runner 도입 | schema version, failed migration, compatibility check가 있다. |
+| `entities`/`relations`/`relation_evidence` 추가 | file/symbol/import edge가 새 모델에도 저장된다. |
+| `adapter_runs`/`index_coverage` 저장 | adapter metadata와 skipped reason이 DB와 report에 남는다. |
+| snapshot isolation 수정 | running index가 latest completed index를 오염시키지 않는다. |
+| 성능 index 추가 | reverse traversal hot query가 index를 사용한다. |
+| report versioning | `reportVersion`, `schemaVersion`, repo/index/diff metadata가 포함된다. |
+| resource limits | oversized/binary/deep tree가 skip으로 기록된다. |
+| git diff input | `--base`, `--head`, rename/delete/untracked를 처리한다. |
 
-## DX 리뷰
+### P1: Mixed Repo Adapter Pack
 
-### Product Type
+목표: 실제 enterprise repo의 code, config, workflow, infra 경계를 연결한다.
 
-로컬 코드 분석과 AI coding workflow를 위한 developer tool.
-
-### Developer Persona
-
-| Field | Value |
+| 작업 | 완료 기준 |
 |---|---|
-| Primary user | 낯선 또는 큰 repo에서 Claude Code/Codex를 쓰는 solo developer 또는 staff engineer. |
-| Pain | 에이전트가 side effect를 이해하지 못한 채 코드를 바꾼다. |
-| Desired outcome | 수정 전 "무엇이 깨질 수 있고 무엇을 테스트해야 하는지"를 짧고 증거 기반으로 받고 싶다. |
-| Tolerance | setup friction은 낮아야 한다. 한계가 투명하면 받아들일 수 있다. |
+| TypeScript semantic adapter | compiler API로 export/import/re-export/path alias/source span을 추출한다. |
+| package/workspace adapter | npm/pnpm/yarn/bun workspace와 scripts/test runner를 추출한다. |
+| shell/Make adapter | command와 generated artifact relation을 추출한다. |
+| YAML/JSON/TOML adapter | config key와 referenced path/resource를 추출한다. |
+| CI adapter | workflow, job, step, test/deploy action을 추출한다. |
+| Docker/Kubernetes/Terraform adapter | deployment/resource/config relation을 추출한다. |
+| Markdown/CODEOWNERS/policy adapter | docs/owner/policy relation을 추출한다. |
+| recursive traversal | multi-hop impact와 fan-out warning을 제공한다. |
 
-### Developer Journey Map
+### P2: Agent-Ready MCP
 
-| Stage | User Action | Friction | Product Requirement |
-|---|---|---|---|
-| 1. Discover | README를 읽는다. | graph DB가 필요한지 헷갈린다. | database server가 필요 없다고 명확히 말한다. |
-| 2. Install | `npm install -g impact-trace`. | native dependency 리스크. | core install은 가볍게 유지한다. |
-| 3. Init | `impact-trace init`. | config가 헷갈린다. | repo default를 자동 감지한다. |
-| 4. Index | `impact-trace index`. | 첫 실행이 느릴 수 있다. | 진행률과 skipped file을 보여준다. |
-| 5. Analyze | `impact-trace analyze --base ...`. | 빠르게 유용한 결과가 필요하다. | concise summary와 report path를 출력한다. |
-| 6. Inspect | Markdown report를 연다. | 정보가 너무 많을 수 있다. | severity와 evidence 기준으로 그룹화한다. |
-| 7. Agent use | MCP server를 시작한다. | tool naming/config가 헷갈린다. | copy-paste config snippet을 제공한다. |
-| 8. Obsidian | vault notes를 sync한다. | 기존 노트 덮어쓰기 우려. | managed folder와 marker만 쓴다. |
-| 9. Repeat | 다음 branch에서 반복한다. | stale index. | incremental update와 freshness 표시. |
+목표: Claude Code와 Codex가 큰 report를 안전하게 읽고 action을 선택할 수 있게 한다.
 
-### TTHW 목표
-
-| Metric | Target |
+| 작업 | 완료 기준 |
 |---|---|
-| Install | 일반 Node 환경에서 1분 이하. |
-| 작은 repo 첫 index | 2분 이하. |
-| 첫 유용한 report | zero state에서 5분 이하. |
-| MCP setup | copy-paste config 기준 5분 이하. |
+| MCP report/evidence/entity resources | 큰 payload를 pagination으로 읽을 수 있다. |
+| compact tool response | tool은 summary와 resource URI를 반환한다. |
+| explain command | entity 하나의 relation과 evidence를 설명한다. |
+| action provider | npm 외 CI/job/docs/owner review action을 추천한다. |
+| typed error envelope | problem, cause, fix, evidence ID를 포함한다. |
+| stale-index warning | agent가 낡은 index를 보고 있다는 사실을 즉시 알 수 있다. |
 
-### DX Scorecard
+### P3: Optional Projections and Human Memory
 
-| Dimension | 현재 계획 | v1 전 목표 |
-|---|---:|---:|
-| Getting started | 7 | 9 |
-| CLI/API naming | 8 | 9 |
-| Error messages | 7 | 9 |
-| Documentation | 6 | 9 |
-| Upgrade/migration | 5 | 8 |
-| Dev environment | 7 | 9 |
-| Community/examples | 4 | 7 |
-| Measurement/feedback | 6 | 8 |
+목표: core가 안정화된 뒤 선택 기능을 붙인다.
 
-## Cross-Phase Themes
+| 작업 | 완료 기준 |
+|---|---|
+| graph DB projection | SQLite source index run에서 파생되고 invalidation policy가 있다. |
+| CodeQL adapter | supported language에서 data/control-flow evidence를 추가한다. |
+| vector/search adapter | 유사 코드와 문서 검색을 보조한다. |
+| Obsidian dry-run export | managed note, conflict handling, symlink guard가 있다. |
+| hotspot/history analytics | churn, co-change, owner, failure history를 report에 반영한다. |
 
-| Theme | Phases | Action |
-|---|---|---|
-| evidence over summaries | CEO, Eng, DX | report/evidence schema를 일찍 만든다. |
-| optional graph layer | CEO, Eng | graph DB를 core MVP 밖에 둔다. |
-| local-first safety | CEO, Eng, DX | v1에는 cloud sync와 script execution을 넣지 않는다. |
-| reproducibility로 trust 확보 | Eng, DX | commit, index freshness, source span을 포함한다. |
+## 부족한 점
 
-## Decision Audit Trail
-
-| # | Phase | Decision | Classification | Principle | Rationale | Rejected |
-|---|---|---|---|---|---|---|
-| 1 | CEO | graph DB를 core가 아니라 optional로 둔다. | Mechanical | Explicit over clever | 사용자가 필수 아니라고 했고 storage-neutral core가 단순하다. | mandatory graph DB architecture |
-| 2 | CEO | SQLite를 v1 canonical store로 쓴다. | Mechanical | Pragmatic | 설치가 쉽고 file/symbol/edge/report table에 충분하다. | Neo4j/Kuzu/Falkor 필수 store |
-| 3 | CEO | MCP server를 MVP에 포함한다. | Mechanical | Completeness | Claude Code/Codex가 target surface이므로 CLI-only는 부족하다. | CLI-only MVP |
-| 4 | CEO | Obsidian plugin보다 Markdown export를 먼저 한다. | Mechanical | Bias toward action | 즉시 동작하고 plugin distribution 리스크가 없다. | v1 필수 Obsidian plugin |
-| 5 | Eng | TypeScript/JavaScript를 먼저 지원한다. | Mechanical | Pragmatic | 초기 사용자에게 accuracy/effort 비율이 좋다. | 모든 언어 semantic 지원 |
-| 6 | Eng | CodeQL은 optional adapter로 둔다. | Mechanical | Explicit over clever | 강력하지만 first-run setup이 무겁다. | CodeQL-first architecture |
-| 7 | Eng | graph projection은 canonical store에서 파생한다. | Mechanical | DRY | source-of-truth가 둘이 되는 버그를 막는다. | graph DB primary state |
-| 8 | DX | TTHW를 5분 이하로 잡는다. | Mechanical | Bias toward action | developer tool은 setup patience가 끝나기 전에 가치를 보여줘야 한다. | heavy bootstrap workflow |
-| 9 | Eng | MCP는 기본 read-only로 둔다. | Mechanical | Security first | write tool은 repo/vault 접근 리스크가 크므로 명시적 capability flag가 필요하다. | always-on MCP export/write tools |
-| 10 | Eng | storage/export 전에 redaction을 적용한다. | Mechanical | Completeness | evidence는 report나 Obsidian에 도달하기 전에 secret을 포함할 수 있다. | final renderer에서만 redaction |
-| 11 | Eng | Obsidian export보다 read-only MCP를 먼저 만든다. | Mechanical | Bias toward action | target user는 agent workflow이고 Obsidian은 core value 이후에 붙여도 된다. | Obsidian before MCP |
-| 12 | Eng | 측정 가능한 정확도 게이트를 추가한다. | Mechanical | Explicit over clever | 제품 약속은 정성적 confidence 문구가 아니라 release threshold가 필요하다. | qualitative-only review |
-
-## Review Scores
-
-| Review | Score | Notes |
+| 부족한 점 | 심각도 | 해결 단계 |
 |---|---:|---|
-| CEO | 8/10 | graph DB를 내려놓은 뒤 문제 정의가 명확해졌다. 실제 competitor benchmark는 나중에 필요하다. |
-| Design | Skipped | MVP 계획에 UI scope가 없다. |
-| Engineering | 8/10 | adapter를 secondary로 유지하면 구현 가능한 아키텍처다. |
-| DX | 7/10 | CLI/MCP 형태는 좋다. v1 전 문서와 예제가 더 필요하다. |
+| file-centric schema | High | P0 |
+| running index가 completed snapshot을 오염시킬 수 있음 | High | P0 |
+| TOCTOU read/write gap | High | P0 |
+| source span/provenance 부족 | High | P0 |
+| git diff/stale-index 부재 | High | P0 |
+| regex TS/JS extraction | High | P1 |
+| shell/YAML/infra/policy adapter 부재 | High | P1 |
+| MCP resource 부재 | Medium | P2 |
+| action provider가 npm에 고정됨 | Medium | P2 |
+| open-source release automation 부재 | Medium | P2 |
 
-## 승인 권장
+## 의사결정 기록
 
-이 계획을 초기 프로젝트 방향으로 승인한다. 가장 중요한 수정은 이미 반영됐다:
-Impact Trace는 graph database project가 아니라 evidence-backed impact analysis
-tool이다.
+| 결정 | 이유 | 거절한 대안 |
+|---|---|---|
+| graph DB를 core로 두지 않는다. | 초기 설치와 migration을 단순하게 유지한다. | Neo4j/FalkorDB/Kuzu를 필수 runtime으로 둔다. |
+| SQLite에 entity graph를 저장한다. | local-first, 가벼운 설치, 테스트 가능성이 좋다. | graph DB를 source of truth로 둔다. |
+| 다중 언어보다 다중 system model을 먼저 잡는다. | 실제 repo는 언어와 YAML/shell/infra/policy가 섞인다. | TypeScript semantic adapter부터 깊게 구현한다. |
+| MCP는 read-only부터 안정화한다. | agent integration에서 파일 쓰기와 command 실행은 위험하다. | Obsidian/write tool을 먼저 추가한다. |
+| adapter는 metadata와 coverage를 반드시 남긴다. | 누락된 분석을 숨기면 에이전트가 잘못된 확신을 가진다. | adapter 실패를 조용히 무시한다. |
+| command는 실행하지 않고 action으로 추천한다. | repo-controlled 문자열이 실행 경로가 되면 위험하다. | shell command string을 그대로 반환한다. |
+
+## 승인 기준
+
+이 계획은 다음 상태가 되면 v1 방향으로 승인한다.
+
+1. P0 schema와 migration이 구현되어 기존 MVP report가 계속 동작한다.
+2. 최소 mixed-language fixture가 `file`, `symbol`, `config`, `workflow`, `resource`, `policy` entity를 만든다.
+3. `analyze --base --head`가 changed entity와 affected entity를 반환한다.
+4. MCP read-only tool이 report resource URI와 compact summary를 반환한다.
+5. security fixture에서 raw secret leak이 0건이다.
+6. missing adapter와 skipped file이 report에 명확히 표시된다.

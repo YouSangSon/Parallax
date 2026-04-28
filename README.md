@@ -313,14 +313,14 @@ npm audit --audit-level=high
 
 ## Roadmap
 
-1. 언어 중립 extractor adapter 계약과 report schema 안정화
-2. `--changed` 입력 대신 실제 git diff parsing 추가
-3. TypeScript Compiler API 기반 함수, 변수, 클래스, call/reference edge 인덱싱
-4. Tree-sitter/LSP 기반 Python, Go, Rust, Java 등 추가 언어 adapter
-5. npm, pnpm, yarn, bun workspace graph 추출
-6. recall/precision gate가 있는 benchmark fixture 추가
-7. Obsidian dry-run sync 추가 후 guarded write sync 추가
-8. graph, vector, CodeQL adapter 선택 지원
+1. `entities`, `relations`, `relation_evidence`, `adapter_runs`, `index_coverage` 기반 canonical schema 추가
+2. running index와 completed index를 분리해 snapshot-safe analysis 보장
+3. `--base`, `--head` 기반 git diff 분석과 stale-index detection 추가
+4. TypeScript Compiler API 기반 semantic adapter 추가
+5. shell, YAML/JSON/TOML, CI, Docker, Kubernetes, Terraform, OpenAPI, CODEOWNERS/policy adapter 추가
+6. recursive entity traversal, fan-out warning, source-span evidence 추가
+7. MCP report/evidence/entity/coverage resources 추가
+8. graph, vector, CodeQL, Obsidian export는 optional projection으로 추가
 
 ## License
 

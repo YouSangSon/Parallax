@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { ensureRepo, openDatabase } from './store.js';
-import { redactSecrets, toRelativePath } from './security.js';
+import { normalizeRepoRoot, redactSecrets, toRelativePath } from './security.js';
 import type { IndexOptions, IndexResult } from './types.js';
 
 const ignoredDirs = new Set(['.git', '.impact-trace', 'node_modules', 'dist', 'coverage']);
@@ -18,7 +18,7 @@ type ScannedFile = {
 };
 
 export async function indexProject(options: IndexOptions): Promise<IndexResult> {
-  const repoRoot = path.resolve(options.repoRoot);
+  const repoRoot = normalizeRepoRoot(options.repoRoot);
   const db = openDatabase(repoRoot);
   const repoId = ensureRepo(db, repoRoot);
   const run = db

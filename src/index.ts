@@ -1,7 +1,7 @@
 export { analyzeDiff } from './analyzer.js';
 export { indexProject } from './indexer.js';
 export { initProject } from './init.js';
-export { handleMcpRequest } from './mcp.js';
+export { createMcpServer, serveMcp } from './mcp.js';
 export { redactSecrets, resolveInsideRoot } from './security.js';
 export type {
   AffectedFile,
@@ -11,8 +11,6 @@ export type {
   IndexOptions,
   IndexResult,
   InitOptions,
-  InitResult,
-  JsonRpcRequest,
-  JsonRpcResponse
+  InitResult
 } from './types.js';
-
+export type { McpContext } from './mcp.js';

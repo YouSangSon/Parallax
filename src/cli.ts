@@ -40,7 +40,8 @@ async function main(): Promise<void> {
   }
 
   if (command === 'mcp' && args[0] === 'serve') {
-    await serveMcp(repoRoot);
+    const { serveMcp } = await import('./mcp.js');
+    await serveMcp({ repoRoot });
     return;
   }
 
@@ -55,25 +56,6 @@ function parseChangedFiles(args: string[]): string[] {
   const positional = args.filter((arg) => !arg.startsWith('--'));
   if (positional.length > 0) return positional;
   throw new Error('analyze requires --changed <file[,file]> for this MVP');
-}
-
-async function serveMcp(repoRoot: string): Promise<void> {
-  const { handleMcpRequest } = await import('./mcp.js');
-  process.stdin.setEncoding('utf8');
-  let buffer = '';
-  for await (const chunk of process.stdin) {
-    buffer += chunk;
-    let newline = buffer.indexOf('\n');
-    while (newline >= 0) {
-      const line = buffer.slice(0, newline).trim();
-      buffer = buffer.slice(newline + 1);
-      if (line) {
-        const response = await handleMcpRequest(JSON.parse(line), { repoRoot });
-        process.stdout.write(`${JSON.stringify(response)}\n`);
-      }
-      newline = buffer.indexOf('\n');
-    }
-  }
 }
 
 function printHelp(): void {

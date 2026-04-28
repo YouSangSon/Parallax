@@ -1,67 +1,52 @@
-import type { AnalyzeOptions, JsonRpcRequest, JsonRpcResponse } from './types.js';
-import { analyzeDiff } from './analyzer.js';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { z } from 'zod';
 
-type McpContext = {
+export type McpContext = {
   repoRoot: string;
 };
 
-export async function handleMcpRequest(request: JsonRpcRequest, context: McpContext): Promise<JsonRpcResponse> {
-  const id = request.id ?? null;
-  try {
-    if (request.method === 'tools/list') {
-      return ok(id, {
-        tools: [
-          {
-            name: 'impact_trace_analyze_diff',
-            description: 'Analyze changed files against the latest completed Impact Trace index.',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                changedFiles: {
-                  type: 'array',
-                  items: { type: 'string' },
-                  minItems: 1
-                }
-              },
-              required: ['changedFiles'],
-              additionalProperties: false
-            }
-          }
-        ]
-      });
-    }
+export function createMcpServer(context: McpContext): McpServer {
+  const server = new McpServer({
+    name: 'impact-trace',
+    version: '0.1.0'
+  });
 
-    if (request.method === 'tools/call') {
-      const params = request.params as { name?: unknown; arguments?: unknown } | undefined;
-      if (!params || params.name !== 'impact_trace_analyze_diff') {
-        return fail(id, -32601, 'unknown tool');
+  server.registerTool(
+    'impact_trace_analyze_diff',
+    {
+      title: 'Analyze Impact Trace diff',
+      description: 'Analyze changed files against the latest completed Impact Trace index.',
+      inputSchema: {
+        changedFiles: z.array(z.string()).min(1)
+      },
+      annotations: {
+        title: 'Analyze Impact Trace diff',
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
       }
-      const args = params.arguments as Partial<AnalyzeOptions> | undefined;
-      if (!args || !Array.isArray(args.changedFiles) || args.changedFiles.some((value) => typeof value !== 'string')) {
-        return fail(id, -32602, 'invalid changedFiles argument');
-      }
-      const report = await analyzeDiff({ repoRoot: context.repoRoot, changedFiles: args.changedFiles });
-      return ok(id, {
+    },
+    async ({ changedFiles }) => {
+      const { analyzeDiff } = await import('./analyzer.js');
+      const report = await analyzeDiff({ repoRoot: context.repoRoot, changedFiles });
+      return {
         content: [
           {
             type: 'text',
             text: JSON.stringify(report)
           }
         ]
-      });
+      };
     }
+  );
 
-    return fail(id, -32601, `unknown method: ${request.method}`);
-  } catch (error) {
-    return fail(id, -32602, error instanceof Error ? error.message : String(error));
-  }
+  return server;
 }
 
-function ok(id: JsonRpcResponse['id'], result: unknown): JsonRpcResponse {
-  return { jsonrpc: '2.0', id, result };
+export async function serveMcp(context: McpContext): Promise<void> {
+  const server = createMcpServer(context);
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
 }
-
-function fail(id: JsonRpcResponse['id'], code: number, message: string): JsonRpcResponse {
-  return { jsonrpc: '2.0', id, error: { code, message } };
-}
-

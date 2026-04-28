@@ -50,22 +50,3 @@ export type ImpactReport = {
   evidence: Evidence[];
   reportPath?: string;
 };
-
-export type JsonRpcRequest = {
-  jsonrpc: '2.0';
-  id?: string | number | null;
-  method: string;
-  params?: unknown;
-};
-
-export type JsonRpcResponse = {
-  jsonrpc: '2.0';
-  id: string | number | null;
-  result?: any;
-  error?: {
-    code: number;
-    message: string;
-    data?: unknown;
-  };
-};
-

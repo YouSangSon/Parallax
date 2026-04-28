@@ -1,12 +1,16 @@
 import { realpathSync } from 'node:fs';
 import path from 'node:path';
 
+export function normalizeRepoRoot(repoRoot: string): string {
+  return realpathSync(path.resolve(repoRoot));
+}
+
 export function resolveInsideRoot(root: string, inputPath: string): string {
   if (!inputPath || inputPath.includes('\0')) {
     throw new Error('invalid path');
   }
 
-  const rootReal = realpathSync(root);
+  const rootReal = normalizeRepoRoot(root);
   const candidate = path.isAbsolute(inputPath)
     ? path.resolve(inputPath)
     : path.resolve(rootReal, inputPath);
@@ -41,5 +45,5 @@ export function redactSecrets(input: string, maxLength = 500): string {
 }
 
 export function toRelativePath(repoRoot: string, absolutePath: string): string {
-  return path.relative(realpathSync(repoRoot), realpathSync(absolutePath)).split(path.sep).join('/');
+  return path.relative(normalizeRepoRoot(repoRoot), realpathSync(absolutePath)).split(path.sep).join('/');
 }

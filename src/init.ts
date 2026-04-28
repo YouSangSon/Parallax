@@ -1,11 +1,12 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
+import { normalizeRepoRoot } from './security.js';
 import { databasePath, impactDir, openDatabase } from './store.js';
 import type { InitOptions, InitResult } from './types.js';
 
 export async function initProject(options: InitOptions): Promise<InitResult> {
-  const repoRoot = path.resolve(options.repoRoot);
+  const repoRoot = normalizeRepoRoot(options.repoRoot);
   const dir = impactDir(repoRoot);
   mkdirSync(dir, { recursive: true });
   const configPath = path.join(dir, 'config.json');
@@ -30,4 +31,3 @@ export async function initProject(options: InitOptions): Promise<InitResult> {
   db.close();
   return { created, configPath, databasePath: databasePath(repoRoot) };
 }
-

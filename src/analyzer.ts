@@ -3,11 +3,11 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { ensureRepo, latestCompletedIndexRun, openDatabase } from './store.js';
-import { redactSecrets, resolveInsideRoot, toRelativePath } from './security.js';
+import { normalizeRepoRoot, redactSecrets, resolveInsideRoot, toRelativePath } from './security.js';
 import type { AnalyzeOptions, Confidence, Evidence, ImpactReport } from './types.js';
 
 export async function analyzeDiff(options: AnalyzeOptions): Promise<ImpactReport> {
-  const repoRoot = path.resolve(options.repoRoot);
+  const repoRoot = normalizeRepoRoot(options.repoRoot);
   const db = openDatabase(repoRoot);
   const repoId = ensureRepo(db, repoRoot);
   const indexRunId = latestCompletedIndexRun(db, repoId);

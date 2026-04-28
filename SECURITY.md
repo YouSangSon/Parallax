@@ -29,9 +29,8 @@ Security-sensitive 예시:
 
 ## 보안 원칙
 
-- MCP는 MVP에서 read-only입니다.
+- MCP는 MVP에서 read-only이며 report persistence도 하지 않습니다.
 - project command execution은 MVP 범위 밖입니다.
 - 모든 file input은 realpath containment check를 거쳐야 합니다.
 - evidence는 저장 또는 출력 전에 redaction되어야 합니다.
 - docs lint는 local machine path와 secret-like content를 차단해야 합니다.
-

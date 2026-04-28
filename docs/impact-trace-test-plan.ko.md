@@ -37,7 +37,7 @@ git diff
 | Markdown exporter | secret이나 machine-local metadata를 유출하지 않고 report를 쓴다. |
 | MCP server | input validation, JSON-RPC error, resource consistency. |
 | Secret redaction | SQLite write, MCP response, Markdown report, Obsidian export 전에 planted secret이 redacted되는지 확인. |
-| SQLite concurrency | WAL mode, one-writer lock, busy timeout, pinned `index_run_id` read, crash recovery. |
+| SQLite concurrency | journal policy, one-writer lock, busy timeout, pinned `index_run_id` read, crash recovery. |
 | Package/workspace graph | npm/pnpm/yarn/bun workspace, `tsconfig` paths/references, `exports`, import map 감지. |
 | CLI/MCP contracts | JSON schema, exit code, typed error envelope, pagination, schema version 검증. |
 | Doc lint | local absolute home path, hidden tool state, machine-local metadata가 committed docs에 들어오면 실패. |
@@ -83,7 +83,7 @@ diff를 추가해야 한다. snapshot test는 underlying evidence ID가 포함�
 ```bash
 npm test
 npm run lint
-npm run typecheck
+npm run check
 npm run test:fixtures
 npm run test:security
 npm run test:mcp

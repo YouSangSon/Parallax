@@ -14,8 +14,11 @@ export function resolveInsideRoot(root: string, inputPath: string): string {
   const candidate = path.isAbsolute(inputPath)
     ? path.resolve(inputPath)
     : path.resolve(rootReal, inputPath);
-  const parentReal = realpathSync(path.dirname(candidate));
-  const resolved = path.join(parentReal, path.basename(candidate));
+  const lexicalRelative = path.relative(rootReal, candidate);
+  if (lexicalRelative !== '' && (lexicalRelative.startsWith('..') || path.isAbsolute(lexicalRelative))) {
+    throw new Error(`path resolves outside repo root: ${inputPath}`);
+  }
+  const resolved = realpathSync(candidate);
   const relative = path.relative(rootReal, resolved);
 
   if (relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))) {
@@ -27,9 +30,12 @@ export function resolveInsideRoot(root: string, inputPath: string): string {
 
 const secretPatterns: Array<[RegExp, string]> = [
   [/sk-[A-Za-z0-9_-]{20,}/g, '[REDACTED_OPENAI_KEY]'],
-  [/gho_[A-Za-z0-9_]{20,}/g, '[REDACTED_GITHUB_TOKEN]'],
+  [/gh[opsru]_[A-Za-z0-9_]{20,}/g, '[REDACTED_GITHUB_TOKEN]'],
   [/github_pat_[A-Za-z0-9_]{20,}/g, '[REDACTED_GITHUB_TOKEN]'],
+  [/xox[baprs]-[A-Za-z0-9-]{20,}/g, '[REDACTED_SLACK_TOKEN]'],
   [/AKIA[0-9A-Z]{16}/g, '[REDACTED_AWS_ACCESS_KEY]'],
+  [/AWS_SECRET_ACCESS_KEY\s*=\s*[A-Za-z0-9/+=]{32,}/g, 'AWS_SECRET_ACCESS_KEY=[REDACTED_AWS_SECRET_ACCESS_KEY]'],
+  [/Bearer\s+[A-Za-z0-9._~+/=-]{24,}/g, 'Bearer [REDACTED_BEARER_TOKEN]'],
   [/-----BEGIN (?:RSA |OPENSSH |EC |DSA |)?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |OPENSSH |EC |DSA |)?PRIVATE KEY-----/g, '[REDACTED_PRIVATE_KEY]']
 ];
 
@@ -39,7 +45,15 @@ export function redactSecrets(input: string, maxLength = 500): string {
     output = output.replace(pattern, replacement);
   }
   if (output.length > maxLength) {
-    return `${output.slice(0, maxLength)}...[TRUNCATED]`;
+    let snippet = output.slice(0, maxLength);
+    const redactionStart = snippet.lastIndexOf('[REDACTED_');
+    if (redactionStart >= 0 && !snippet.slice(redactionStart).includes(']')) {
+      const redactionEnd = output.indexOf(']', redactionStart);
+      if (redactionEnd >= 0) {
+        snippet = output.slice(0, redactionEnd + 1);
+      }
+    }
+    return `${snippet}...[TRUNCATED]`;
   }
   return output;
 }

@@ -39,9 +39,11 @@ DB가 아니라 플러그 가능한 로컬 인덱스다. 기본 저장소는 SQL
 
 ## 현재 있는 것
 
-이 저장소는 Git metadata 외에는 비어 있다. 기존 코드, README, package manifest,
-design doc, 테스트, 구현체가 없으므로 첫 제품 형태, 아키텍처, 검증 전략을
-문서로 먼저 고정해야 한다.
+현재 저장소에는 첫 MVP가 들어가 있다. `init`, `index`, `analyze`, 공식 MCP SDK
+기반 stdio server, SQLite 저장소, 보안 회귀 테스트, install smoke test, README와
+한글/영문 계획 문서가 있다. 내장 extractor는 TS/JS/Markdown부터 시작하지만,
+report model은 `EntityRef`, `ImpactTarget`, `ImpactAction` 중심의 언어 중립 구조로
+확장할 수 있게 둔다.
 
 ## 범위 밖
 
@@ -220,7 +222,7 @@ MVP는 전체 제품보다 좁게 잡는다.
 | `init`, `index`, `analyze` | Obsidian auto-sync default behavior |
 | JSON/Markdown report | graph DB projection |
 | 최소 read-only MCP `impact_trace_analyze_diff` | CodeQL adapter |
-| TypeScript/JavaScript extraction | 모든 언어 full semantic analysis |
+| TS/JS/Markdown MVP extraction과 언어 중립 report model | 모든 언어 full semantic analysis |
 | secret redaction과 path safety | remote sync |
 | report마다 하나의 completed `index_run_id` 사용 | file/symbol MCP resources |
 
@@ -252,7 +254,8 @@ code change evidence product다.
 
 ### 기존 코드 활용
 
-repo 내부에 활용할 코드는 없다. 대신 외부의 성숙한 분석 표면을 활용한다.
+repo 내부에는 MVP 코드가 있으므로, 다음 단계는 기존 CLI/MCP/report 경계를 보존하면서
+외부의 성숙한 분석 표면을 adapter로 붙이는 것이다.
 
 | 문제 | 활용할 것 |
 |---|---|
@@ -336,7 +339,7 @@ TypeScript/JavaScript를 첫 high-confidence lane으로 잡고, 다른 언어는
 | vault overwrite | High | managed directory와 frontmatter marker 확인. | marker 없으면 중단. |
 | MCP가 root 밖 파일을 읽음 | Critical | path validation test. | 요청 거절. |
 | secret이 evidence/report/vault로 유출 | Critical | planted secret fixture와 redaction test. | storage/export 전에 redaction pipeline을 적용하고 raw evidence는 opt-in으로 제한. |
-| indexing 중 partial SQLite state를 읽음 | High | concurrent CLI/MCP fixture. | WAL mode, one-writer lock, `index_run_id` pinned read transaction. |
+| indexing 중 partial SQLite state를 읽음 | High | concurrent CLI/MCP fixture. | journal policy, one-writer lock, `index_run_id` pinned read transaction. |
 | optional adapter unavailable | Low | startup capability check. | 낮은 confidence로 계속 진행. |
 
 ### 정확도 게이트

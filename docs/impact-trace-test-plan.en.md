@@ -35,7 +35,7 @@ git diff
 | Markdown exporter | Write reports without leaking secrets or machine-local metadata. |
 | MCP server | Validate inputs, return JSON-RPC errors, expose resources consistently. |
 | Secret redaction | Redact planted secrets before SQLite writes, MCP responses, Markdown reports, and Obsidian export. |
-| SQLite concurrency | WAL mode, one-writer lock, busy timeout, pinned `index_run_id` reads, crash recovery. |
+| SQLite concurrency | Journal policy, one-writer lock, busy timeout, pinned `index_run_id` reads, crash recovery. |
 | Package/workspace graph | Detect npm/pnpm/yarn/bun workspaces, `tsconfig` paths/references, `exports`, and import maps. |
 | CLI/MCP contracts | Validate JSON schemas, exit codes, typed error envelopes, pagination, and schema versions. |
 | Doc lint | Reject committed docs containing local absolute home paths, hidden tool state, or machine-local metadata. |
@@ -81,7 +81,7 @@ underlying evidence IDs.
 ```bash
 npm test
 npm run lint
-npm run typecheck
+npm run check
 npm run test:fixtures
 npm run test:security
 npm run test:mcp

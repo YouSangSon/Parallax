@@ -1,14 +1,13 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { normalizeRepoRoot } from './security.js';
-import { databasePath, impactDir, openDatabase } from './store.js';
+import { databasePath, ensureImpactDir, openDatabase } from './store.js';
 import type { InitOptions, InitResult } from './types.js';
 
 export async function initProject(options: InitOptions): Promise<InitResult> {
   const repoRoot = normalizeRepoRoot(options.repoRoot);
-  const dir = impactDir(repoRoot);
-  mkdirSync(dir, { recursive: true });
+  const dir = ensureImpactDir(repoRoot);
   const configPath = path.join(dir, 'config.json');
   const created = !existsSync(configPath);
   if (created) {

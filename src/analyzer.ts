@@ -2,14 +2,14 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { ensureRepo, latestCompletedIndexRun, openDatabase } from './store.js';
+import { ensureRepo, getRepoId, latestCompletedIndexRun, openDatabase } from './store.js';
 import { normalizeRepoRoot, redactSecrets, resolveInsideRoot, toRelativePath } from './security.js';
-import type { AnalyzeOptions, Confidence, Evidence, ImpactReport } from './types.js';
+import type { AnalyzeOptions, Confidence, EntityRef, Evidence, ImpactAction, ImpactReport, ImpactTarget } from './types.js';
 
 export async function analyzeDiff(options: AnalyzeOptions): Promise<ImpactReport> {
   const repoRoot = normalizeRepoRoot(options.repoRoot);
-  const db = openDatabase(repoRoot);
-  const repoId = ensureRepo(db, repoRoot);
+  const db = openDatabase(repoRoot, options.readOnly ? { readOnly: true } : {});
+  const repoId = options.readOnly ? getRepoId(db, repoRoot) : ensureRepo(db, repoRoot);
   const indexRunId = latestCompletedIndexRun(db, repoId);
   const changedFiles = options.changedFiles.map((file) => {
     const resolved = resolveInsideRoot(repoRoot, file);
@@ -61,16 +61,36 @@ export async function analyzeDiff(options: AnalyzeOptions): Promise<ImpactReport
   }
 
   const affectedFiles = [...affected.values()].sort((a, b) => a.path.localeCompare(b.path));
-  const testCommands = affectedFiles
+  const changed = changedFiles.map((file) => entityForPath(file));
+  const affectedTargets: ImpactTarget[] = affectedFiles.map((file) => ({
+    target: entityForPath(file.path),
+    relations: [file.reason],
+    confidence: file.confidence
+  }));
+  const actions = affectedFiles
     .filter((file) => /(^|\/)(tests?|__tests__)\/|(\.|-)(test|spec)\.[cm]?[tj]sx?$/.test(file.path))
-    .map((file) => `npm test -- ${file.path}`);
+    .map((file): ImpactAction => {
+      const target = entityForPath(file.path);
+      return {
+        kind: 'verify',
+        runnerId: 'npm',
+        target,
+        command: 'npm',
+        args: ['test', '--', file.path],
+        display: ['npm', 'test', '--', shellQuote(file.path)].join(' '),
+        confidence: file.confidence
+      };
+    });
   const id = createHash('sha1').update(`${indexRunId}:${changedFiles.join(',')}`).digest('hex').slice(0, 12);
   const report: ImpactReport = {
     id,
     indexRunId,
     changedFiles,
     affectedFiles,
-    testCommands,
+    changed,
+    affected: affectedTargets,
+    actions,
+    testCommands: actions,
     evidence: dedupeEvidence(evidence)
   };
 
@@ -82,22 +102,44 @@ export async function analyzeDiff(options: AnalyzeOptions): Promise<ImpactReport
     report.reportPath = reportPath.split(path.sep).join('/');
   }
 
-  db.prepare('INSERT OR REPLACE INTO reports (id, repo_id, index_run_id, json, created_at) VALUES (?, ?, ?, ?, datetime(\'now\'))')
-    .run(report.id, repoId, indexRunId, JSON.stringify(report));
+  if (options.persistReport !== false && !options.readOnly) {
+    db.prepare('INSERT OR REPLACE INTO reports (id, repo_id, index_run_id, json, created_at) VALUES (?, ?, ?, ?, datetime(\'now\'))')
+      .run(report.id, repoId, indexRunId, JSON.stringify(report));
+  }
   db.close();
 
   return report;
 }
 
 function makeEvidence(repoRoot: string, relativePath: string, kind: string, confidence: Evidence['confidence']): Evidence {
-  const absolutePath = resolveInsideRoot(repoRoot, relativePath);
-  const content = readFileSync(absolutePath, 'utf8');
+  const id = createHash('sha1').update(`${kind}:${relativePath}`).digest('hex').slice(0, 16);
+  const subject = entityForPath(relativePath);
+  let content: string;
+  try {
+    const absolutePath = resolveInsideRoot(repoRoot, relativePath);
+    content = readFileSync(absolutePath, 'utf8');
+  } catch (error) {
+    return {
+      id,
+      file: relativePath,
+      kind: 'evidence-unavailable',
+      snippet: redactSecrets(error instanceof Error ? error.message : String(error)),
+      confidence: 'unknown',
+      subject,
+      relationKind: kind,
+      extractorId: 'mvp-file-edge'
+    };
+  }
+
   return {
-    id: createHash('sha1').update(`${kind}:${relativePath}`).digest('hex').slice(0, 16),
+    id,
     file: relativePath,
     kind,
-    snippet: redactSecrets(content.slice(0, 500)),
-    confidence
+    snippet: redactSecrets(content),
+    confidence,
+    subject,
+    relationKind: kind,
+    extractorId: 'mvp-file-edge'
   };
 }
 
@@ -107,7 +149,10 @@ function dedupeEvidence(evidence: Evidence[]): Evidence[] {
 
 function renderMarkdown(report: ImpactReport): string {
   const affected = report.affectedFiles.map((file) => `- ${file.path} - ${file.reason} (${file.confidence})`).join('\n') || '- None';
-  const tests = report.testCommands.map((command) => `- \`${command}\``).join('\n') || '- None';
+  const tests = report.actions
+    .filter((action) => action.kind === 'verify')
+    .map((action) => `- \`${action.display}\``)
+    .join('\n') || '- None';
   const evidence = report.evidence
     .map((item) => `### ${item.id}\n\nFile: \`${item.file}\`\n\nKind: ${item.kind}\n\nConfidence: ${item.confidence}\n\n\`\`\`text\n${item.snippet}\n\`\`\``)
     .join('\n\n');
@@ -134,4 +179,36 @@ ${tests}
 
 ${evidence}
 `;
+}
+
+function entityForPath(relativePath: string): EntityRef {
+  const languageId = languageIdForPath(relativePath);
+  return {
+    id: `file:${relativePath}`,
+    kind: isTestPath(relativePath) ? 'test' : relativePath.toLowerCase().endsWith('.md') ? 'doc' : 'file',
+    path: relativePath,
+    displayName: relativePath,
+    ...(languageId ? { languageId } : {})
+  };
+}
+
+function languageIdForPath(relativePath: string): string | undefined {
+  const ext = path.posix.extname(relativePath).toLowerCase();
+  if (ext === '.ts' || ext === '.tsx') return 'typescript';
+  if (ext === '.js' || ext === '.jsx' || ext === '.mjs' || ext === '.cjs') return 'javascript';
+  if (ext === '.md') return 'markdown';
+  return undefined;
+}
+
+function isTestPath(relativePath: string): boolean {
+  return /(^|\/)(tests?|__tests__)\/|(\.|-)(test|spec)\.[cm]?[tj]sx?$/.test(relativePath);
+}
+
+function shellQuote(value: string): string {
+  const displayValue = value
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\t/g, '\\t');
+  if (/^[A-Za-z0-9_./:-]+$/.test(displayValue) && !displayValue.startsWith('-')) return displayValue;
+  return `'${displayValue.replace(/'/g, `'\\''`)}'`;
 }

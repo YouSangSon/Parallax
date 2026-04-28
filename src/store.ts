@@ -1,8 +1,12 @@
-import { mkdirSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, realpathSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
 
 export type Db = DatabaseSync;
+
+type OpenDatabaseOptions = {
+  readOnly?: boolean;
+};
 
 export function impactDir(repoRoot: string): string {
   return path.join(repoRoot, '.impact-trace');
@@ -12,12 +16,63 @@ export function databasePath(repoRoot: string): string {
   return path.join(impactDir(repoRoot), 'impact.db');
 }
 
-export function openDatabase(repoRoot: string): Db {
-  mkdirSync(impactDir(repoRoot), { recursive: true });
-  const db = new DatabaseSync(databasePath(repoRoot));
-  db.exec('PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON;');
-  migrate(db);
+export function ensureImpactDir(repoRoot: string): string {
+  const rootReal = realpathSync(path.resolve(repoRoot));
+  const dir = impactDir(rootReal);
+  mkdirSync(dir, { recursive: true });
+  assertPathInside(rootReal, realpathSync(dir), '.impact-trace directory');
+  return dir;
+}
+
+export function openDatabase(repoRoot: string, options: OpenDatabaseOptions = {}): Db {
+  const rootReal = realpathSync(path.resolve(repoRoot));
+  const dbPath = databasePath(rootReal);
+  if (options.readOnly) {
+    if (!existsSync(dbPath)) {
+      throw new Error('impact trace database not found; run impact-trace init and impact-trace index first');
+    }
+    assertExistingPathInside(rootReal, dbPath, 'impact trace database');
+  } else {
+    ensureImpactDir(rootReal);
+    if (pathExists(dbPath)) {
+      assertExistingPathInside(rootReal, dbPath, 'impact trace database');
+    }
+  }
+
+  const db = new DatabaseSync(dbPath, { readOnly: options.readOnly ?? false, timeout: 5000 });
+  db.exec('PRAGMA foreign_keys = ON;');
+  if (!options.readOnly) {
+    db.exec('PRAGMA journal_mode = DELETE; PRAGMA busy_timeout = 5000;');
+    migrate(db);
+  }
   return db;
+}
+
+function pathExists(targetPath: string): boolean {
+  try {
+    lstatSync(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function assertExistingPathInside(rootReal: string, targetPath: string, label: string): void {
+  let resolved: string;
+  try {
+    resolved = realpathSync(targetPath);
+  } catch {
+    throw new Error(`${label} is not accessible inside repo root`);
+  }
+  assertPathInside(rootReal, resolved, label);
+}
+
+function assertPathInside(rootReal: string, resolvedPath: string, label: string): void {
+  const relative = path.relative(rootReal, resolvedPath);
+  if (relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))) {
+    return;
+  }
+  throw new Error(`${label} resolves outside repo root`);
 }
 
 function migrate(db: Db): void {
@@ -113,7 +168,14 @@ function migrate(db: Db): void {
 
 export function ensureRepo(db: Db, repoRoot: string): number {
   db.prepare('INSERT OR IGNORE INTO repos (root, config_hash) VALUES (?, ?)').run(repoRoot, 'v1');
-  const row = db.prepare('SELECT id FROM repos WHERE root = ?').get(repoRoot) as { id: number };
+  return getRepoId(db, repoRoot);
+}
+
+export function getRepoId(db: Db, repoRoot: string): number {
+  const row = db.prepare('SELECT id FROM repos WHERE root = ?').get(repoRoot) as { id: number } | undefined;
+  if (!row) {
+    throw new Error('repo is not indexed; run impact-trace init and impact-trace index first');
+  }
   return row.id;
 }
 
@@ -126,4 +188,3 @@ export function latestCompletedIndexRun(db: Db, repoId: number): number {
   }
   return row.id;
 }
-

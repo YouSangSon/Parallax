@@ -78,7 +78,7 @@ test('indexProject and analyzeDiff report direct importers, tests, docs, runnabl
   assert.ok(report.affectedFiles.some((file) => file.path === 'src/routes/private.ts'));
   assert.ok(report.affectedFiles.some((file) => file.path === 'tests/session.test.ts'));
   assert.ok(report.affectedFiles.some((file) => file.path === 'README.md'));
-  assert.ok(report.testCommands.includes('npm test -- tests/session.test.ts'));
+  assert.ok(report.testCommands.some((command) => command.command === 'npm' && command.args?.includes('tests/session.test.ts')));
   assert.ok(report.evidence.length > 0);
   assert.equal(report.evidence.some((item) => item.snippet.includes('sk-test-secret')), false);
   assert.ok(report.reportPath);
@@ -87,3 +87,19 @@ test('indexProject and analyzeDiff report direct importers, tests, docs, runnabl
   assert.doesNotMatch(markdown, /sk-test-secret/);
 });
 
+test('analyzeDiff returns structured test commands for repo-controlled filenames', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-command-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await mkdir(path.join(repoRoot, 'tests'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/a.ts'), 'export const a = 1;\n');
+  await writeFile(path.join(repoRoot, 'tests/pwn$(touch_HACKED).test.ts'), 'import { a } from "../src/a"; test("a", () => a);\n');
+  await initProject({ repoRoot });
+  await indexProject({ repoRoot });
+
+  const report = await analyzeDiff({ repoRoot, changedFiles: ['src/a.ts'], writeReport: true });
+
+  const command = report.testCommands.find((item) => item.args?.includes('tests/pwn$(touch_HACKED).test.ts'));
+  assert.ok(command);
+  assert.deepEqual(command.args, ['test', '--', 'tests/pwn$(touch_HACKED).test.ts']);
+  assert.ok(command.display.includes("'tests/pwn$(touch_HACKED).test.ts'"));
+});

@@ -41,10 +41,12 @@ queries become worth the operational cost.
 
 ## What Already Exists
 
-This repository is currently empty except for Git metadata. There is no existing
-code, README, package manifest, design doc, test suite, or implementation to
-reuse. The plan must therefore define the first product shape, architecture, and
-verification strategy.
+The repository now contains the first MVP: `init`, `index`, `analyze`, an official
+MCP SDK stdio server, SQLite storage, security regression tests, install smoke
+tests, README, and Korean/English planning docs. The built-in extractor starts
+with TS/JS/Markdown, but the report model is intentionally language-neutral
+around `EntityRef`, `ImpactTarget`, and `ImpactAction` so additional language
+adapters can be added without turning the product into a TS/JS-only tool.
 
 ## NOT In Scope
 
@@ -222,7 +224,7 @@ MVP is intentionally narrower than the full product:
 | `init`, `index`, `analyze` | Obsidian auto-sync as a default behavior |
 | JSON and Markdown reports | Graph DB projection |
 | Minimal read-only MCP `impact_trace_analyze_diff` | CodeQL adapter |
-| TypeScript/JavaScript extraction | Full multi-language semantic analysis |
+| TS/JS/Markdown MVP extraction and language-neutral report model | Full multi-language semantic analysis |
 | Secret redaction and path safety | Remote sync |
 | One completed `index_run_id` per report | File/symbol MCP resources |
 
@@ -254,8 +256,9 @@ Trace is not a graph database project. It is an evidence product for code change
 
 ### 0B. Existing Code Leverage
 
-There is no repo code to leverage. External leverage should come from mature local
-analysis surfaces:
+The repo now has MVP code to preserve. The next step is to keep the existing
+CLI/MCP/report boundaries stable while adding mature local analysis surfaces as
+adapters:
 
 | Sub-problem | Existing Leverage |
 |---|---|
@@ -367,7 +370,7 @@ Required controls:
 | Secret leakage to SQLite/MCP/Markdown/Obsidian | Redaction pipeline before every write or response; denylisted paths; secret-pattern scanning; binary detection; snippet-length caps; opt-in raw evidence reveal. |
 | Malicious symlink | Resolve realpath before read/write. |
 | Oversized repo denial of service | File count, file size, and traversal depth limits. |
-| Partial SQLite reads during indexing | WAL mode, one-writer lock, busy timeout, and read transactions pinned to `index_run_id`. |
+| Partial SQLite reads during indexing | Journal policy, one-writer lock, busy timeout, and reads pinned to `index_run_id`. |
 
 ### Section 4: Data Flow & Interaction Edge Cases
 
@@ -550,7 +553,7 @@ v1 would break schedule and trust.
 | Vault overwrite | High | Export writes only managed directory and checks existing frontmatter. | Abort unless managed marker exists. |
 | MCP reads outside root | Critical | Path validation test. | Deny request. |
 | Secret leaks into evidence/report/vault | Critical | Planted-secret fixtures and redaction tests. | Redact before storage/export and make raw evidence opt-in only. |
-| Partial SQLite state read during indexing | High | Concurrent CLI/MCP fixture. | WAL mode, one-writer lock, `index_run_id` pinned read transaction. |
+| Partial SQLite state read during indexing | High | Concurrent CLI/MCP fixture. | Journal policy, one-writer lock, `index_run_id` pinned read transaction. |
 | Optional adapter unavailable | Low | Startup capability check. | Continue with lower confidence. |
 
 ### Worktree Parallelization Strategy

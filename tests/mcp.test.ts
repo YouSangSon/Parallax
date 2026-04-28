@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
 
 import { indexProject, initProject } from '../src/index.js';
+import { databasePath } from '../src/store.js';
 
 const require = createRequire(import.meta.url);
 const tsxLoaderPath = require.resolve('tsx');
@@ -138,6 +141,21 @@ async function makeRepo(): Promise<string> {
   return repoRoot;
 }
 
+function countReports(repoRoot: string): number {
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const row = db.prepare('SELECT count(*) AS count FROM reports').get() as { count: number };
+    return row.count;
+  } finally {
+    db.close();
+  }
+}
+
+function dbArtifacts(repoRoot: string): string[] {
+  return ['impact.db', 'impact.db-wal', 'impact.db-shm']
+    .filter((file) => existsSync(path.join(repoRoot, '.impact-trace', file)));
+}
+
 test('MCP stdio server initializes and exposes only read-only tools by default', async () => {
   const repoRoot = await makeRepo();
   const client = new McpProcessClient(repoRoot);
@@ -180,6 +198,48 @@ test('MCP analyze_diff validates paths and returns affected files', async () => 
     assert.equal(bad.error, undefined);
     assert.equal(bad.result.isError, true);
     assert.match(bad.result.content[0].text, /outside repo root/);
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP analyze_diff does not persist reports', async () => {
+  const repoRoot = await makeRepo();
+  const artifactsBefore = dbArtifacts(repoRoot);
+  assert.equal(countReports(repoRoot), 0);
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+    const response = await client.request('tools/call', {
+      name: 'impact_trace_analyze_diff',
+      arguments: { changedFiles: ['src/a.ts'] }
+    });
+
+    assert.equal(response.error, undefined);
+    assert.equal(countReports(repoRoot), 0);
+    assert.deepEqual(dbArtifacts(repoRoot), artifactsBefore);
+    assert.equal(existsSync(path.join(repoRoot, '.impact-trace/reports')), false);
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP analyze_diff on uninitialized repo does not create workspace files', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-mcp-uninit-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/a.ts'), 'export const a = 1;\n');
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+    const response = await client.request('tools/call', {
+      name: 'impact_trace_analyze_diff',
+      arguments: { changedFiles: ['src/a.ts'] }
+    });
+
+    assert.equal(response.error, undefined);
+    assert.equal(response.result.isError, true);
+    assert.match(response.result.content[0].text, /database not found|init and impact-trace index/);
+    assert.equal(existsSync(path.join(repoRoot, '.impact-trace')), false);
   } finally {
     await client.close();
   }

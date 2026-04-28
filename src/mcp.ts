@@ -30,7 +30,12 @@ export function createMcpServer(context: McpContext): McpServer {
     },
     async ({ changedFiles }) => {
       const { analyzeDiff } = await import('./analyzer.js');
-      const report = await analyzeDiff({ repoRoot: context.repoRoot, changedFiles });
+      const report = await analyzeDiff({
+        repoRoot: context.repoRoot,
+        changedFiles,
+        persistReport: false,
+        readOnly: true
+      });
       return {
         content: [
           {

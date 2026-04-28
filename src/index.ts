@@ -5,9 +5,15 @@ export { createMcpServer, serveMcp } from './mcp.js';
 export { redactSecrets, resolveInsideRoot } from './security.js';
 export type {
   AffectedFile,
+  AdapterUsage,
   AnalyzeOptions,
+  EntityKind,
+  EntityRef,
   Evidence,
+  ImpactAction,
+  ImpactTarget,
   ImpactReport,
+  IndexCoverage,
   IndexOptions,
   IndexResult,
   InitOptions,

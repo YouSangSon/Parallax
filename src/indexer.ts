@@ -110,7 +110,7 @@ export async function indexProject(options: IndexOptions): Promise<IndexResult> 
         repoId,
         file.relativePath,
         'scan',
-        redactSecrets(file.content.slice(0, 500)),
+        redactSecrets(file.content),
         'proven',
         indexRunId
       );
@@ -118,7 +118,24 @@ export async function indexProject(options: IndexOptions): Promise<IndexResult> 
 
     db.prepare('UPDATE index_runs SET status = ?, finished_at = datetime(\'now\') WHERE id = ?').run('completed', indexRunId);
     db.close();
-    return { indexRunId, filesIndexed: files.length, symbolsIndexed, edgesIndexed };
+    return {
+      indexRunId,
+      filesIndexed: files.length,
+      symbolsIndexed,
+      edgesIndexed,
+      adaptersUsed: [
+        {
+          id: 'typescript-javascript-markdown-regex-mvp',
+          version: '1',
+          languageIds: ['typescript', 'javascript', 'markdown']
+        }
+      ],
+      coverage: {
+        indexedPaths: files.length,
+        skippedPaths: 0,
+        unsupportedLanguageIds: []
+      }
+    };
   } catch (error) {
     db.prepare('UPDATE index_runs SET status = ?, finished_at = datetime(\'now\') WHERE id = ?').run('failed', indexRunId);
     db.close();

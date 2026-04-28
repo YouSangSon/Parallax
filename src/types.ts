@@ -17,12 +17,16 @@ export type IndexResult = {
   filesIndexed: number;
   symbolsIndexed: number;
   edgesIndexed: number;
+  adaptersUsed?: AdapterUsage[];
+  coverage?: IndexCoverage;
 };
 
 export type AnalyzeOptions = {
   repoRoot: string;
   changedFiles: string[];
   writeReport?: boolean;
+  persistReport?: boolean;
+  readOnly?: boolean;
 };
 
 export type Confidence = 'proven' | 'inferred' | 'heuristic' | 'unknown';
@@ -33,6 +37,9 @@ export type Evidence = {
   kind: string;
   snippet: string;
   confidence: Confidence;
+  subject?: EntityRef;
+  relationKind?: string;
+  extractorId?: string;
 };
 
 export type AffectedFile = {
@@ -41,12 +48,57 @@ export type AffectedFile = {
   confidence: Confidence;
 };
 
+export type EntityKind = 'file' | 'symbol' | 'module' | 'test' | 'doc' | 'config';
+
+export type EntityRef = {
+  id: string;
+  kind: EntityKind;
+  path?: string;
+  symbol?: string;
+  languageId?: string;
+  displayName?: string;
+};
+
+export type ImpactTarget = {
+  target: EntityRef;
+  relations: string[];
+  confidence: Confidence;
+};
+
+export type ImpactAction = {
+  kind: 'verify' | 'review';
+  runnerId?: string;
+  target: EntityRef;
+  command?: string;
+  args?: string[];
+  display: string;
+  confidence: Confidence;
+};
+
+export type AdapterUsage = {
+  id: string;
+  version: string;
+  languageIds: string[];
+};
+
+export type IndexCoverage = {
+  indexedPaths: number;
+  skippedPaths: number;
+  unsupportedLanguageIds: string[];
+};
+
 export type ImpactReport = {
   id: string;
   indexRunId: number;
   changedFiles: string[];
   affectedFiles: AffectedFile[];
-  testCommands: string[];
+  changed: EntityRef[];
+  affected: ImpactTarget[];
+  actions: ImpactAction[];
+  /**
+   * @deprecated Use actions. Kept during the MVP transition for older callers.
+   */
+  testCommands: ImpactAction[];
   evidence: Evidence[];
   reportPath?: string;
 };

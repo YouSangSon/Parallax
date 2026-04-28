@@ -2,9 +2,11 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
 
 import { analyzeDiff, indexProject, initProject } from '../src/index.js';
+import { databasePath } from '../src/store.js';
 
 async function makeFixtureRepo(): Promise<string> {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-'));
@@ -85,6 +87,51 @@ test('indexProject and analyzeDiff report direct importers, tests, docs, runnabl
   const markdown = await readFile(path.join(repoRoot, report.reportPath), 'utf8');
   assert.match(markdown, /Impact Trace Report/);
   assert.doesNotMatch(markdown, /sk-test-secret/);
+});
+
+test('indexProject writes canonical entity graph and broad language file entities', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-entity-'));
+  await mkdir(path.join(repoRoot, 'src/native'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/util.py'), 'def helper():\n    return 1\n');
+  await writeFile(path.join(repoRoot, 'src/app.py'), 'from util import helper\n\ndef run():\n    return helper()\n');
+  await writeFile(path.join(repoRoot, 'src/main.go'), 'package main\n\nfunc Run() {}\n');
+  await writeFile(path.join(repoRoot, 'src/lib.rs'), 'pub fn run() {}\npub struct User;\n');
+  await writeFile(path.join(repoRoot, 'src/Main.java'), 'package app;\npublic class Main { public void run() {} }\n');
+  await writeFile(path.join(repoRoot, 'src/App.kt'), 'package app\nclass App { fun run() {} }\n');
+  await writeFile(path.join(repoRoot, 'src/Program.cs'), 'using System;\npublic class Program { public void Run() {} }\n');
+  await writeFile(path.join(repoRoot, 'src/native/main.hpp'), 'int add(int a, int b);\n');
+  await writeFile(path.join(repoRoot, 'src/native/main.cpp'), '#include "main.hpp"\nint add(int a, int b) { return a + b; }\n');
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  assert.ok(index.entitiesIndexed && index.entitiesIndexed >= index.filesIndexed);
+  assert.ok(index.relationsIndexed && index.relationsIndexed > 0);
+  assert.ok(index.adaptersUsed?.[0]?.languageIds.includes('java'));
+  assert.ok(index.adaptersUsed?.[0]?.languageIds.includes('kotlin'));
+  assert.ok(index.adaptersUsed?.[0]?.languageIds.includes('csharp'));
+  assert.ok(index.adaptersUsed?.[0]?.languageIds.includes('cpp'));
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const entityCount = db.prepare('SELECT count(*) AS count FROM entities').get() as { count: number };
+    const relationKinds = db.prepare('SELECT group_concat(DISTINCT kind) AS kinds FROM relations').get() as { kinds: string };
+    const indexedLanguages = db
+      .prepare('SELECT group_concat(DISTINCT language_id) AS languages FROM index_coverage WHERE status = ?')
+      .get('indexed') as { languages: string };
+    const adapterRuns = db.prepare('SELECT count(*) AS count FROM adapter_runs WHERE status = ?').get('completed') as { count: number };
+
+    assert.ok(entityCount.count >= index.filesIndexed);
+    assert.match(relationKinds.kinds, /DECLARES/);
+    assert.match(relationKinds.kinds, /DEPENDS_ON/);
+    assert.match(indexedLanguages.languages, /java/);
+    assert.match(indexedLanguages.languages, /kotlin/);
+    assert.match(indexedLanguages.languages, /csharp/);
+    assert.match(indexedLanguages.languages, /cpp/);
+    assert.equal(adapterRuns.count, 1);
+  } finally {
+    db.close();
+  }
 });
 
 test('analyzeDiff returns structured test commands for repo-controlled filenames', async () => {

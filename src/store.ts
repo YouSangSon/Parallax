@@ -83,6 +83,8 @@ function migrate(db: Db): void {
     );
     INSERT OR IGNORE INTO schema_versions (version, applied_at)
     VALUES (1, datetime('now'));
+    INSERT OR IGNORE INTO schema_versions (version, applied_at)
+    VALUES (2, datetime('now'));
 
     CREATE TABLE IF NOT EXISTS repos (
       id INTEGER PRIMARY KEY,
@@ -98,6 +100,89 @@ function migrate(db: Db): void {
       finished_at TEXT,
       extractor_version TEXT NOT NULL,
       FOREIGN KEY(repo_id) REFERENCES repos(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS adapter_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      index_run_id INTEGER NOT NULL,
+      adapter_id TEXT NOT NULL,
+      adapter_version TEXT NOT NULL,
+      language_ids TEXT NOT NULL DEFAULT '[]',
+      status TEXT NOT NULL,
+      started_at TEXT NOT NULL,
+      finished_at TEXT,
+      error_summary TEXT,
+      UNIQUE(index_run_id, adapter_id),
+      FOREIGN KEY(index_run_id) REFERENCES index_runs(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS entities (
+      id TEXT PRIMARY KEY,
+      repo_id INTEGER NOT NULL,
+      kind TEXT NOT NULL,
+      path TEXT,
+      symbol TEXT,
+      language_id TEXT,
+      display_name TEXT NOT NULL,
+      created_index_run_id INTEGER NOT NULL,
+      updated_index_run_id INTEGER NOT NULL,
+      FOREIGN KEY(repo_id) REFERENCES repos(id),
+      FOREIGN KEY(created_index_run_id) REFERENCES index_runs(id),
+      FOREIGN KEY(updated_index_run_id) REFERENCES index_runs(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS entity_versions (
+      entity_id TEXT NOT NULL,
+      index_run_id INTEGER NOT NULL,
+      content_hash TEXT NOT NULL,
+      location_json TEXT NOT NULL DEFAULT '{}',
+      state TEXT NOT NULL,
+      PRIMARY KEY(entity_id, index_run_id),
+      FOREIGN KEY(entity_id) REFERENCES entities(id),
+      FOREIGN KEY(index_run_id) REFERENCES index_runs(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS relations (
+      id TEXT PRIMARY KEY,
+      repo_id INTEGER NOT NULL,
+      source_entity_id TEXT NOT NULL,
+      target_entity_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      confidence TEXT NOT NULL,
+      adapter_run_id INTEGER,
+      index_run_id INTEGER NOT NULL,
+      provenance TEXT NOT NULL,
+      FOREIGN KEY(repo_id) REFERENCES repos(id),
+      FOREIGN KEY(source_entity_id) REFERENCES entities(id),
+      FOREIGN KEY(target_entity_id) REFERENCES entities(id),
+      FOREIGN KEY(adapter_run_id) REFERENCES adapter_runs(id),
+      FOREIGN KEY(index_run_id) REFERENCES index_runs(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS relation_evidence (
+      id TEXT PRIMARY KEY,
+      relation_id TEXT NOT NULL,
+      repo_id INTEGER NOT NULL,
+      file_path TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      snippet TEXT NOT NULL,
+      confidence TEXT NOT NULL,
+      index_run_id INTEGER NOT NULL,
+      FOREIGN KEY(relation_id) REFERENCES relations(id),
+      FOREIGN KEY(repo_id) REFERENCES repos(id),
+      FOREIGN KEY(index_run_id) REFERENCES index_runs(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS index_coverage (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      index_run_id INTEGER NOT NULL,
+      adapter_id TEXT NOT NULL,
+      path TEXT NOT NULL,
+      language_id TEXT,
+      status TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      UNIQUE(index_run_id, adapter_id, path),
+      FOREIGN KEY(index_run_id) REFERENCES index_runs(id)
     );
 
     CREATE TABLE IF NOT EXISTS files (
@@ -163,6 +248,12 @@ function migrate(db: Db): void {
       FOREIGN KEY(repo_id) REFERENCES repos(id),
       FOREIGN KEY(index_run_id) REFERENCES index_runs(id)
     );
+
+    CREATE INDEX IF NOT EXISTS idx_entities_repo_kind ON entities(repo_id, kind);
+    CREATE INDEX IF NOT EXISTS idx_entities_repo_path ON entities(repo_id, path);
+    CREATE INDEX IF NOT EXISTS idx_relations_target ON relations(repo_id, target_entity_id, index_run_id);
+    CREATE INDEX IF NOT EXISTS idx_relations_source ON relations(repo_id, source_entity_id, index_run_id);
+    CREATE INDEX IF NOT EXISTS idx_index_coverage_run ON index_coverage(index_run_id, status);
   `);
 }
 

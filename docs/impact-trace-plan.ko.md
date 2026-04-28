@@ -54,8 +54,8 @@ graph DB는 필요할 때 파생하는 projection이다.
 |---|---|
 | CLI | `init`, `index`, `analyze`, `mcp serve` 제공 |
 | MCP | 공식 MCP SDK 기반 stdio server, read-only `impact_trace_analyze_diff` 제공 |
-| Storage | repo-local `.impact-trace/impact.db` SQLite 사용 |
-| Indexing | TS/JS/Markdown 파일, export symbol, import edge, test/doc edge 일부 추출 |
+| Storage | repo-local SQLite, legacy `files/symbols/edges`, canonical `entities/relations/relation_evidence` 병행 저장 |
+| Indexing | TS/JS/Markdown + Python/Go/Rust/Java/Kotlin/C#/C/C++ 파일과 기본 symbol/dependency 휴리스틱 추출 |
 | Report | `changed`, `affected`, `actions`, `evidence` 중심의 언어 중립 report model |
 | Security | path containment, symlink escape 방어, MCP report persistence 차단, redaction 기본 테스트 |
 | Tests | unit/integration/security/MCP/install smoke 테스트 |
@@ -207,6 +207,7 @@ v1의 핵심 작업은 file-edge store를 entity graph store로 바꾸는 것이
 | Kind | 의미 |
 |---|---|
 | `DEPENDS_ON` | 한 entity가 다른 entity를 필요로 한다. |
+| `DECLARES` | file/module entity가 symbol을 선언한다. |
 | `CALLS` | 함수나 command가 다른 symbol/command를 호출한다. |
 | `REFERENCES` | symbol, config key, resource name을 참조한다. |
 | `VERIFIES` | test나 CI job이 entity를 검증한다. |

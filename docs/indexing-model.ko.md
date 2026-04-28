@@ -45,6 +45,7 @@ Java, Kotlin, C#, C, C++까지 같은 모델로 확장한다.
 | Relation | 설명 |
 |---|---|
 | `DEPENDS_ON` | source entity가 target entity를 필요로 한다. |
+| `DECLARES` | file/module entity가 symbol을 선언한다. |
 | `CALLS` | source symbol 또는 command가 target을 호출한다. |
 | `REFERENCES` | config key, path, resource name, symbol을 참조한다. |
 | `VERIFIES` | test나 CI job이 target entity를 검증한다. |

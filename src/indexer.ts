@@ -2,12 +2,38 @@ import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { ensureRepo, openDatabase } from './store.js';
+import { ensureRepo, openDatabase, type Db } from './store.js';
 import { normalizeRepoRoot, redactSecrets, toRelativePath } from './security.js';
-import type { IndexOptions, IndexResult } from './types.js';
+import type { EntityKind, IndexOptions, IndexResult } from './types.js';
 
 const ignoredDirs = new Set(['.git', '.impact-trace', 'node_modules', 'dist', 'coverage']);
-const sourceExtensions = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.md']);
+const languageByExtension = new Map<string, string>([
+  ['.ts', 'typescript'],
+  ['.tsx', 'typescript'],
+  ['.js', 'javascript'],
+  ['.jsx', 'javascript'],
+  ['.mjs', 'javascript'],
+  ['.cjs', 'javascript'],
+  ['.md', 'markdown'],
+  ['.py', 'python'],
+  ['.go', 'go'],
+  ['.rs', 'rust'],
+  ['.java', 'java'],
+  ['.kt', 'kotlin'],
+  ['.kts', 'kotlin'],
+  ['.cs', 'csharp'],
+  ['.c', 'c'],
+  ['.h', 'c'],
+  ['.cpp', 'cpp'],
+  ['.cc', 'cpp'],
+  ['.cxx', 'cpp'],
+  ['.hpp', 'cpp'],
+  ['.hh', 'cpp'],
+  ['.hxx', 'cpp']
+]);
+const sourceExtensions = new Set(languageByExtension.keys());
+const adapterId = 'multi-language-regex-mvp';
+const adapterVersion = '2';
 
 type ScannedFile = {
   absolutePath: string;
@@ -16,6 +42,14 @@ type ScannedFile = {
   hash: string;
   language: string;
 };
+
+type ExtractedSymbol = {
+  name: string;
+  kind: string;
+  exported: boolean;
+};
+
+type Statement = ReturnType<Db['prepare']>;
 
 export async function indexProject(options: IndexOptions): Promise<IndexResult> {
   const repoRoot = normalizeRepoRoot(options.repoRoot);
@@ -28,6 +62,14 @@ export async function indexProject(options: IndexOptions): Promise<IndexResult> 
 
   try {
     const files = scanFiles(repoRoot);
+    const languageIds = [...new Set(files.map((file) => file.language))].sort();
+    const adapterRun = db
+      .prepare(`
+        INSERT INTO adapter_runs (index_run_id, adapter_id, adapter_version, language_ids, status, started_at)
+        VALUES (?, ?, ?, ?, ?, datetime('now'))
+      `)
+      .run(indexRunId, adapterId, adapterVersion, JSON.stringify(languageIds), 'running');
+    const adapterRunId = Number(adapterRun.lastInsertRowid);
     const fileIdByPath = new Map<string, number>();
     const upsertFile = db.prepare(`
       INSERT INTO files (repo_id, path, language, content_hash, index_run_id)
@@ -38,11 +80,62 @@ export async function indexProject(options: IndexOptions): Promise<IndexResult> 
         index_run_id = excluded.index_run_id
     `);
     const selectFile = db.prepare('SELECT id FROM files WHERE repo_id = ? AND path = ?');
+    const upsertEntity = db.prepare(`
+      INSERT INTO entities (
+        id, repo_id, kind, path, symbol, language_id, display_name, created_index_run_id, updated_index_run_id
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        kind = excluded.kind,
+        path = excluded.path,
+        symbol = excluded.symbol,
+        language_id = excluded.language_id,
+        display_name = excluded.display_name,
+        updated_index_run_id = excluded.updated_index_run_id
+    `);
+    const insertEntityVersion = db.prepare(`
+      INSERT OR REPLACE INTO entity_versions (entity_id, index_run_id, content_hash, location_json, state)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+    const insertCoverage = db.prepare(`
+      INSERT OR REPLACE INTO index_coverage (index_run_id, adapter_id, path, language_id, status, reason)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    const insertRelation = db.prepare(`
+      INSERT OR REPLACE INTO relations (
+        id, repo_id, source_entity_id, target_entity_id, kind, confidence, adapter_run_id, index_run_id, provenance
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const insertRelationEvidence = db.prepare(`
+      INSERT OR REPLACE INTO relation_evidence (
+        id, relation_id, repo_id, file_path, kind, snippet, confidence, index_run_id
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const canonicalEntityIds = new Set<string>();
+    const canonicalRelationIds = new Set<string>();
 
     for (const file of files) {
       upsertFile.run(repoId, file.relativePath, file.language, file.hash, indexRunId);
       const row = selectFile.get(repoId, file.relativePath) as { id: number };
       fileIdByPath.set(file.relativePath, row.id);
+      const entity = fileEntity(file.relativePath, file.language);
+      upsertEntity.run(
+        entity.id,
+        repoId,
+        entity.kind,
+        file.relativePath,
+        null,
+        file.language,
+        file.relativePath,
+        indexRunId,
+        indexRunId
+      );
+      insertEntityVersion.run(entity.id, indexRunId, file.hash, JSON.stringify({ path: file.relativePath }), 'active');
+      insertCoverage.run(indexRunId, adapterId, file.relativePath, file.language, 'indexed', 'matched source extension');
+      canonicalEntityIds.add(entity.id);
     }
 
     let symbolsIndexed = 0;
@@ -65,6 +158,7 @@ export async function indexProject(options: IndexOptions): Promise<IndexResult> 
       if (!fileId) continue;
 
       for (const symbol of extractSymbols(file)) {
+        const symbolId = symbolEntityId(file.relativePath, file.language, symbol);
         insertSymbol.run(
           fileId,
           symbol.name,
@@ -73,11 +167,62 @@ export async function indexProject(options: IndexOptions): Promise<IndexResult> 
           `${file.relativePath}#${symbol.kind}:${symbol.name}`,
           indexRunId
         );
+        upsertEntity.run(
+          symbolId,
+          repoId,
+          'symbol',
+          file.relativePath,
+          symbol.name,
+          file.language,
+          `${symbol.name} (${file.relativePath})`,
+          indexRunId,
+          indexRunId
+        );
+        insertEntityVersion.run(
+          symbolId,
+          indexRunId,
+          createHash('sha256').update(`${file.hash}:${symbol.kind}:${symbol.name}`).digest('hex'),
+          JSON.stringify({ path: file.relativePath, symbol: symbol.name, kind: symbol.kind }),
+          'active'
+        );
+        insertCanonicalRelation({
+          repoId,
+          sourceEntityId: fileEntityId(file.relativePath),
+          targetEntityId: symbolId,
+          kind: 'DECLARES',
+          confidence: 'proven',
+          provenance: `${symbol.kind}:${symbol.name}`,
+          adapterRunId,
+          indexRunId,
+          sourcePath: file.relativePath,
+          snippet: file.content,
+          insertRelation,
+          insertRelationEvidence,
+          canonicalEntityIds,
+          canonicalRelationIds
+        });
+        canonicalEntityIds.add(symbolId);
         symbolsIndexed++;
       }
 
       for (const imported of extractImports(file)) {
         const target = resolveImportPath(file.relativePath, imported, fileIdByPath);
+        const targetEntityId = target ? fileEntityId(target) : externalEntityId(file.language, imported);
+        if (!target) {
+          upsertEntity.run(
+            targetEntityId,
+            repoId,
+            'external_entity',
+            null,
+            null,
+            file.language,
+            imported,
+            indexRunId,
+            indexRunId
+          );
+          insertEntityVersion.run(targetEntityId, indexRunId, imported, JSON.stringify({ specifier: imported }), 'active');
+          canonicalEntityIds.add(targetEntityId);
+        }
         insertEdge.run(
           repoId,
           fileId,
@@ -88,12 +233,44 @@ export async function indexProject(options: IndexOptions): Promise<IndexResult> 
           imported,
           indexRunId
         );
+        insertCanonicalRelation({
+          repoId,
+          sourceEntityId: fileEntityId(file.relativePath),
+          targetEntityId,
+          kind: 'DEPENDS_ON',
+          confidence: target ? 'proven' : 'heuristic',
+          provenance: imported,
+          adapterRunId,
+          indexRunId,
+          sourcePath: file.relativePath,
+          snippet: file.content,
+          insertRelation,
+          insertRelationEvidence,
+          canonicalEntityIds,
+          canonicalRelationIds
+        });
         edgesIndexed++;
       }
 
       if (isTestFile(file.relativePath)) {
         for (const sourcePath of inferTestTargets(file.relativePath, file.content, fileIdByPath)) {
           insertEdge.run(repoId, fileId, fileIdByPath.get(sourcePath)!, 'TESTS', sourcePath, 'inferred', 'test import/name', indexRunId);
+          insertCanonicalRelation({
+            repoId,
+            sourceEntityId: fileEntityId(file.relativePath),
+            targetEntityId: fileEntityId(sourcePath),
+            kind: 'VERIFIES',
+            confidence: 'inferred',
+            provenance: 'test import/name',
+            adapterRunId,
+            indexRunId,
+            sourcePath: file.relativePath,
+            snippet: file.content,
+            insertRelation,
+            insertRelationEvidence,
+            canonicalEntityIds,
+            canonicalRelationIds
+          });
           edgesIndexed++;
         }
       }
@@ -101,6 +278,22 @@ export async function indexProject(options: IndexOptions): Promise<IndexResult> 
       if (file.relativePath.toLowerCase().endsWith('.md')) {
         for (const sourcePath of inferDocTargets(file.content, fileIdByPath)) {
           insertEdge.run(repoId, fileId, fileIdByPath.get(sourcePath)!, 'DOCUMENTS', sourcePath, 'heuristic', 'doc mention', indexRunId);
+          insertCanonicalRelation({
+            repoId,
+            sourceEntityId: fileEntityId(file.relativePath),
+            targetEntityId: fileEntityId(sourcePath),
+            kind: 'DOCUMENTS',
+            confidence: 'heuristic',
+            provenance: 'doc mention',
+            adapterRunId,
+            indexRunId,
+            sourcePath: file.relativePath,
+            snippet: file.content,
+            insertRelation,
+            insertRelationEvidence,
+            canonicalEntityIds,
+            canonicalRelationIds
+          });
           edgesIndexed++;
         }
       }
@@ -116,6 +309,7 @@ export async function indexProject(options: IndexOptions): Promise<IndexResult> 
       );
     }
 
+    db.prepare('UPDATE adapter_runs SET status = ?, finished_at = datetime(\'now\') WHERE id = ?').run('completed', adapterRunId);
     db.prepare('UPDATE index_runs SET status = ?, finished_at = datetime(\'now\') WHERE id = ?').run('completed', indexRunId);
     db.close();
     return {
@@ -123,11 +317,13 @@ export async function indexProject(options: IndexOptions): Promise<IndexResult> 
       filesIndexed: files.length,
       symbolsIndexed,
       edgesIndexed,
+      entitiesIndexed: canonicalEntityIds.size,
+      relationsIndexed: canonicalRelationIds.size,
       adaptersUsed: [
         {
-          id: 'typescript-javascript-markdown-regex-mvp',
-          version: '1',
-          languageIds: ['typescript', 'javascript', 'markdown']
+          id: adapterId,
+          version: adapterVersion,
+          languageIds
         }
       ],
       coverage: {
@@ -137,6 +333,8 @@ export async function indexProject(options: IndexOptions): Promise<IndexResult> 
       }
     };
   } catch (error) {
+    db.prepare('UPDATE adapter_runs SET status = ?, finished_at = datetime(\'now\'), error_summary = ? WHERE index_run_id = ?')
+      .run('failed', error instanceof Error ? error.message : String(error), indexRunId);
     db.prepare('UPDATE index_runs SET status = ?, finished_at = datetime(\'now\') WHERE id = ?').run('failed', indexRunId);
     db.close();
     throw error;
@@ -155,7 +353,7 @@ function scanFiles(repoRoot: string): ScannedFile[] {
       }
       if (!entry.isFile()) continue;
       const absolutePath = path.join(dir, entry.name);
-      const ext = path.extname(entry.name);
+      const ext = path.extname(entry.name).toLowerCase();
       if (!sourceExtensions.has(ext)) continue;
       const content = readFileSync(absolutePath, 'utf8');
       const relativePath = toRelativePath(repoRoot, absolutePath);
@@ -164,7 +362,7 @@ function scanFiles(repoRoot: string): ScannedFile[] {
         relativePath,
         content,
         hash: createHash('sha256').update(content).digest('hex'),
-        language: ext.slice(1) || 'text'
+        language: languageByExtension.get(ext) ?? ext.slice(1) ?? 'text'
       });
     }
   };
@@ -172,25 +370,76 @@ function scanFiles(repoRoot: string): ScannedFile[] {
   return out.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
 }
 
-function extractSymbols(file: ScannedFile): Array<{ name: string; kind: string; exported: boolean }> {
+function extractSymbols(file: ScannedFile): ExtractedSymbol[] {
   if (file.relativePath.endsWith('.md')) return [];
-  const symbols: Array<{ name: string; kind: string; exported: boolean }> = [];
-  const pattern = /(export\s+)?(?:async\s+)?(function|class|const|let|var)\s+([A-Za-z_$][\w$]*)/g;
-  let match: RegExpExecArray | null;
-  while ((match = pattern.exec(file.content))) {
-    symbols.push({ name: match[3]!, kind: match[2]!, exported: Boolean(match[1]) });
+  const symbols: ExtractedSymbol[] = [];
+  const addMatches = (pattern: RegExp, kindIndex: number, nameIndex: number, exportedIndex?: number) => {
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(file.content))) {
+      symbols.push({
+        name: match[nameIndex]!,
+        kind: match[kindIndex]!,
+        exported: exportedIndex === undefined ? false : Boolean(match[exportedIndex])
+      });
+    }
+  };
+  const addFixedKindMatches = (pattern: RegExp, kind: string, nameIndex: number, exportedIndex?: number) => {
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(file.content))) {
+      symbols.push({
+        name: match[nameIndex]!,
+        kind,
+        exported: exportedIndex === undefined ? false : Boolean(match[exportedIndex])
+      });
+    }
+  };
+
+  if (file.language === 'typescript' || file.language === 'javascript') {
+    addMatches(/(export\s+)?(?:async\s+)?(function|class|const|let|var)\s+([A-Za-z_$][\w$]*)/g, 2, 3, 1);
+  } else if (file.language === 'python') {
+    addMatches(/^\s*(?:async\s+)?(def)\s+([A-Za-z_]\w*)\s*\(/gm, 1, 2);
+    addMatches(/^\s*(class)\s+([A-Za-z_]\w*)\b/gm, 1, 2);
+  } else if (file.language === 'go') {
+    addMatches(/\b(func)\s+(?:\([^)]*\)\s*)?([A-Za-z_]\w*)\s*\(/g, 1, 2);
+    addMatches(/\b(type)\s+([A-Za-z_]\w*)\s+(?:struct|interface)\b/g, 1, 2);
+  } else if (file.language === 'rust') {
+    addMatches(/\b(pub\s+)?(fn)\s+([A-Za-z_]\w*)\s*[<(]/g, 2, 3, 1);
+    addMatches(/\b(pub\s+)?(struct|enum|trait)\s+([A-Za-z_]\w*)\b/g, 2, 3, 1);
+  } else if (file.language === 'java' || file.language === 'kotlin' || file.language === 'csharp') {
+    addMatches(/\b(public|private|protected|internal|export)?\s*(class|interface|enum|record|object)\s+([A-Za-z_]\w*)\b/g, 2, 3, 1);
+    addFixedKindMatches(/\bfun\s+([A-Za-z_]\w*)\s*\(/g, 'function', 1);
+    addFixedKindMatches(/\b(?:public|private|protected|internal|static|final|override|async|\s)+[A-Za-z_<>,.[\]?]+\s+([A-Za-z_]\w*)\s*\(/g, 'method', 1);
+  } else if (file.language === 'c' || file.language === 'cpp') {
+    addMatches(/\b(class|struct|enum)\s+([A-Za-z_]\w*)\b/g, 1, 2);
+    addFixedKindMatches(/^\s*(?:[A-Za-z_][\w:*<>,\s]*\s+)+([A-Za-z_]\w*)\s*\([^;{}]*\)\s*\{/gm, 'function', 1);
   }
-  return symbols;
+
+  return dedupeSymbols(symbols);
 }
 
 function extractImports(file: ScannedFile): string[] {
   if (file.relativePath.endsWith('.md')) return [];
   const imports = new Set<string>();
-  const patterns = [
-    /import\s+[^'"]*from\s+['"]([^'"]+)['"]/g,
-    /import\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
-    /require\s*\(\s*['"]([^'"]+)['"]\s*\)/g
-  ];
+  const patterns: RegExp[] = [];
+  if (file.language === 'typescript' || file.language === 'javascript') {
+    patterns.push(
+      /import\s+[^'"]*from\s+['"]([^'"]+)['"]/g,
+      /import\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
+      /require\s*\(\s*['"]([^'"]+)['"]\s*\)/g
+    );
+  } else if (file.language === 'python') {
+    patterns.push(/^\s*from\s+([A-Za-z_][\w.]*)\s+import\b/gm, /^\s*import\s+([A-Za-z_][\w.]*)/gm);
+  } else if (file.language === 'go') {
+    patterns.push(/\bimport\s+"([^"]+)"/g, /^\s*"([^"]+)"\s*$/gm);
+  } else if (file.language === 'rust') {
+    patterns.push(/\buse\s+([^;]+);/g, /\bextern\s+crate\s+([A-Za-z_]\w*)\s*;/g);
+  } else if (file.language === 'java' || file.language === 'kotlin') {
+    patterns.push(/^\s*import\s+([A-Za-z_][\w.*]*)\s*;?/gm);
+  } else if (file.language === 'csharp') {
+    patterns.push(/^\s*using\s+([A-Za-z_][\w.]*)\s*;/gm);
+  } else if (file.language === 'c' || file.language === 'cpp') {
+    patterns.push(/^\s*#include\s+[<"]([^>"]+)[>"]/gm);
+  }
   for (const pattern of patterns) {
     let match: RegExpExecArray | null;
     while ((match = pattern.exec(file.content))) {
@@ -201,18 +450,32 @@ function extractImports(file: ScannedFile): string[] {
 }
 
 function resolveImportPath(sourcePath: string, specifier: string, fileIdByPath: Map<string, number>): string | undefined {
-  if (!specifier.startsWith('.')) return undefined;
-  const base = path.posix.normalize(path.posix.join(path.posix.dirname(sourcePath), specifier));
-  const candidates = [
+  const dirname = path.posix.dirname(sourcePath);
+  const bases = specifier.startsWith('.')
+    ? [path.posix.normalize(path.posix.join(dirname, specifier))]
+    : [path.posix.normalize(path.posix.join(dirname, specifier)), specifier];
+  const candidates = bases.flatMap((base) => [
     base,
     `${base}.ts`,
     `${base}.tsx`,
     `${base}.js`,
     `${base}.jsx`,
+    `${base}.py`,
+    `${base}.go`,
+    `${base}.rs`,
+    `${base}.java`,
+    `${base}.kt`,
+    `${base}.cs`,
+    `${base}.c`,
+    `${base}.h`,
+    `${base}.cpp`,
+    `${base}.hpp`,
+    path.posix.join(base, '__init__.py'),
+    path.posix.join(base, 'mod.rs'),
     path.posix.join(base, 'index.ts'),
     path.posix.join(base, 'index.tsx'),
     path.posix.join(base, 'index.js')
-  ];
+  ]);
   return candidates.find((candidate) => fileIdByPath.has(candidate));
 }
 
@@ -242,4 +505,85 @@ function inferDocTargets(content: string, fileIdByPath: Map<string, number>): st
 
 function evidenceId(filePath: string, kind: string): string {
   return createHash('sha1').update(`${kind}:${filePath}`).digest('hex').slice(0, 16);
+}
+
+function fileEntity(relativePath: string, languageId: string): { id: string; kind: EntityKind } {
+  return { id: fileEntityId(relativePath), kind: fileKind(relativePath, languageId) };
+}
+
+function fileEntityId(relativePath: string): string {
+  return `file:${relativePath}`;
+}
+
+function fileKind(relativePath: string, languageId: string): EntityKind {
+  if (isTestFile(relativePath)) return 'test';
+  if (languageId === 'markdown') return 'doc';
+  return 'file';
+}
+
+function symbolEntityId(relativePath: string, languageId: string, symbol: ExtractedSymbol): string {
+  return `symbol:${languageId}:${relativePath}#${symbol.kind}:${symbol.name}`;
+}
+
+function externalEntityId(languageId: string, specifier: string): string {
+  return `external:${languageId}:${specifier}`;
+}
+
+function relationId(kind: string, sourceEntityId: string, targetEntityId: string, provenance: string): string {
+  return createHash('sha1')
+    .update(`${kind}:${sourceEntityId}:${targetEntityId}:${provenance}`)
+    .digest('hex')
+    .slice(0, 20);
+}
+
+function relationEvidenceId(relationIdValue: string, sourcePath: string): string {
+  return createHash('sha1').update(`${relationIdValue}:${sourcePath}`).digest('hex').slice(0, 20);
+}
+
+function insertCanonicalRelation(input: {
+  repoId: number;
+  sourceEntityId: string;
+  targetEntityId: string;
+  kind: string;
+  confidence: string;
+  provenance: string;
+  adapterRunId: number;
+  indexRunId: number;
+  sourcePath: string;
+  snippet: string;
+  insertRelation: Statement;
+  insertRelationEvidence: Statement;
+  canonicalEntityIds: Set<string>;
+  canonicalRelationIds: Set<string>;
+}): void {
+  const id = relationId(input.kind, input.sourceEntityId, input.targetEntityId, input.provenance);
+  input.insertRelation.run(
+    id,
+    input.repoId,
+    input.sourceEntityId,
+    input.targetEntityId,
+    input.kind,
+    input.confidence,
+    input.adapterRunId,
+    input.indexRunId,
+    input.provenance
+  );
+  input.insertRelationEvidence.run(
+    relationEvidenceId(id, input.sourcePath),
+    id,
+    input.repoId,
+    input.sourcePath,
+    input.kind,
+    redactSecrets(input.snippet),
+    input.confidence,
+    input.indexRunId
+  );
+  input.canonicalRelationIds.add(id);
+}
+
+function dedupeSymbols(symbols: ExtractedSymbol[]): ExtractedSymbol[] {
+  return [...new Map(symbols.map((symbol) => [`${symbol.kind}:${symbol.name}`, symbol])).values()].sort((a, b) => {
+    const byName = a.name.localeCompare(b.name);
+    return byName === 0 ? a.kind.localeCompare(b.kind) : byName;
+  });
 }

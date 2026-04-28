@@ -24,7 +24,10 @@ MVP 구현이 들어가 있습니다.
 
 - repo-local `.impact-trace/` 작업 공간 생성
 - 언어 중립 report model: `changed`, `affected`, `actions`, `evidence`
+- legacy `files/symbols/edges`와 canonical `entities/relations/relation_evidence` 동시 저장
+- adapter run과 index coverage metadata 저장
 - 현재 내장 adapter로 TypeScript, JavaScript, Markdown 파일 인덱싱
+- Python, Go, Rust, Java, Kotlin, C#, C, C++ 파일과 기본 symbol/dependency 휴리스틱 인덱싱
 - TS/JS export symbol 추출
 - TS/JS import edge 추출
 - import 기반 관련 테스트 추론

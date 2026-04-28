@@ -45,6 +45,7 @@ but expands through Python, Go, Rust, Java, Kotlin, C#, C, and C++ under the sam
 | Relation | Description |
 |---|---|
 | `DEPENDS_ON` | The source entity needs the target entity. |
+| `DECLARES` | A file/module entity declares a symbol. |
 | `CALLS` | A source symbol or command invokes the target. |
 | `REFERENCES` | A config key, path, resource name, or symbol is referenced. |
 | `VERIFIES` | A test or CI job verifies the target entity. |

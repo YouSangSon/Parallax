@@ -17,6 +17,8 @@ export type IndexResult = {
   filesIndexed: number;
   symbolsIndexed: number;
   edgesIndexed: number;
+  entitiesIndexed?: number;
+  relationsIndexed?: number;
   adaptersUsed?: AdapterUsage[];
   coverage?: IndexCoverage;
 };
@@ -48,7 +50,21 @@ export type AffectedFile = {
   confidence: Confidence;
 };
 
-export type EntityKind = 'file' | 'symbol' | 'module' | 'test' | 'doc' | 'config';
+export type EntityKind =
+  | 'file'
+  | 'symbol'
+  | 'module'
+  | 'package'
+  | 'test'
+  | 'doc'
+  | 'config'
+  | 'policy'
+  | 'workflow'
+  | 'resource'
+  | 'endpoint'
+  | 'contract'
+  | 'event'
+  | 'external_entity';
 
 export type EntityRef = {
   id: string;

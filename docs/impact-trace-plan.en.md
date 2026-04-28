@@ -56,8 +56,8 @@ The MVP is intentionally narrow.
 |---|---|
 | CLI | `init`, `index`, `analyze`, `mcp serve` |
 | MCP | Official MCP SDK stdio server with read-only `impact_trace_analyze_diff` |
-| Storage | Repo-local SQLite at `.impact-trace/impact.db` |
-| Indexing | TS/JS/Markdown files, export symbols, import edges, some test/doc edges |
+| Storage | Repo-local SQLite with legacy `files/symbols/edges` and canonical `entities/relations/relation_evidence` in parallel |
+| Indexing | TS/JS/Markdown plus Python/Go/Rust/Java/Kotlin/C#/C/C++ files and basic symbol/dependency heuristics |
 | Report | Language-neutral `changed`, `affected`, `actions`, `evidence` report model |
 | Security | Path containment, symlink escape defense, MCP no-persistence, redaction tests |
 | Tests | Unit, integration, security, MCP, install smoke |
@@ -208,6 +208,7 @@ The main v1 shift is from a file-edge store to an entity graph store.
 | Kind | Meaning |
 |---|---|
 | `DEPENDS_ON` | One entity needs another. |
+| `DECLARES` | A file/module entity declares a symbol. |
 | `CALLS` | A function or command invokes another symbol or command. |
 | `REFERENCES` | A symbol, config key, resource name, or path is referenced. |
 | `VERIFIES` | A test or CI job verifies an entity. |

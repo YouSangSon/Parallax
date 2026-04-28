@@ -120,8 +120,14 @@ export async function indexProject(options: IndexOptions): Promise<IndexResult> 
     const upsertAttributeDef = db.prepare(
       "INSERT OR IGNORE INTO attribute_defs (name, value_type, is_code_relation, description) VALUES (?, 'entity_ref', 0, '')"
     );
+    const upsertTextAttribute = db.prepare(
+      "INSERT OR IGNORE INTO attribute_defs (name, value_type, is_code_relation, description) VALUES (?, 'text', 0, '')"
+    );
     const insertFact = db.prepare(
       'INSERT OR IGNORE INTO facts (id, entity_id, attribute, value_blob, op, tx_id, redacted) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    );
+    const insertFactProvenance = db.prepare(
+      'INSERT OR IGNORE INTO fact_provenance (id, fact_id, source_fact_id) VALUES (?, ?, ?)'
     );
 
     const fileIdByPath = new Map<string, number>();
@@ -260,7 +266,9 @@ export async function indexProject(options: IndexOptions): Promise<IndexResult> 
           canonicalRelationIds,
           upsertAttributeDef,
           insertFact,
-          memoryTxId
+          memoryTxId,
+          upsertTextAttribute,
+          insertFactProvenance
         });
         canonicalEntityIds.add(symbolId);
         symbolsIndexed++;
@@ -311,7 +319,9 @@ export async function indexProject(options: IndexOptions): Promise<IndexResult> 
           canonicalRelationIds,
           upsertAttributeDef,
           insertFact,
-          memoryTxId
+          memoryTxId,
+          upsertTextAttribute,
+          insertFactProvenance
         });
         edgesIndexed++;
       }
@@ -336,7 +346,9 @@ export async function indexProject(options: IndexOptions): Promise<IndexResult> 
             canonicalRelationIds,
             upsertAttributeDef,
             insertFact,
-            memoryTxId
+            memoryTxId,
+            upsertTextAttribute,
+            insertFactProvenance
           });
           edgesIndexed++;
         }
@@ -362,7 +374,9 @@ export async function indexProject(options: IndexOptions): Promise<IndexResult> 
             canonicalRelationIds,
             upsertAttributeDef,
             insertFact,
-            memoryTxId
+            memoryTxId,
+            upsertTextAttribute,
+            insertFactProvenance
           });
           edgesIndexed++;
         }
@@ -389,7 +403,9 @@ export async function indexProject(options: IndexOptions): Promise<IndexResult> 
             canonicalRelationIds,
             upsertAttributeDef,
             insertFact,
-            memoryTxId
+            memoryTxId,
+            upsertTextAttribute,
+            insertFactProvenance
           });
           edgesIndexed++;
         }
@@ -734,8 +750,13 @@ function insertCanonicalRelation(input: {
   upsertAttributeDef: Statement;
   insertFact: Statement;
   memoryTxId: string;
+  upsertTextAttribute: Statement;
+  insertFactProvenance: Statement;
 }): void {
   const id = relationId(input.kind, input.sourceEntityId, input.targetEntityId, input.provenance);
+  const redactedSnippet = redactSecrets(input.snippet);
+  const isSnippetRedacted = redactedSnippet !== input.snippet;
+
   input.insertRelation.run(
     id,
     input.repoId,
@@ -753,7 +774,7 @@ function insertCanonicalRelation(input: {
     input.repoId,
     input.sourcePath,
     input.kind,
-    redactSecrets(input.snippet),
+    redactedSnippet,
     input.confidence,
     input.indexRunId
   );
@@ -764,6 +785,23 @@ function insertCanonicalRelation(input: {
   const valueBlob = JSON.stringify(input.targetEntityId);
   const factId = contentHash(input.sourceEntityId, attribute, valueBlob, 'assert');
   input.insertFact.run(factId, input.sourceEntityId, attribute, valueBlob, 'assert', input.memoryTxId, 0);
+
+  // Evidence chain: link the relation fact to a redacted-snippet fact via fact_provenance.
+  input.upsertTextAttribute.run('evidence_snippet');
+  const evidenceEntity = `file:${input.sourcePath}`;
+  const evidenceValueBlob = JSON.stringify(redactedSnippet);
+  const evidenceFactId = contentHash(evidenceEntity, 'evidence_snippet', evidenceValueBlob, 'assert');
+  input.insertFact.run(
+    evidenceFactId,
+    evidenceEntity,
+    'evidence_snippet',
+    evidenceValueBlob,
+    'assert',
+    input.memoryTxId,
+    isSnippetRedacted ? 1 : 0
+  );
+  const provenanceId = contentHash(factId, evidenceFactId);
+  input.insertFactProvenance.run(provenanceId, factId, evidenceFactId);
 }
 
 function relationKindToAttribute(kind: string): string {

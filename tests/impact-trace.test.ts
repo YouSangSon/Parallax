@@ -420,6 +420,24 @@ test('indexProject dual-writes relations to facts/transactions and advances main
     const declaresAttr = db.prepare("SELECT name, value_type FROM attribute_defs WHERE name = 'declares'").get() as { name: string; value_type: string } | undefined;
     assert.ok(declaresAttr, 'expected declares attribute to be auto-registered');
     assert.equal(declaresAttr?.value_type, 'entity_ref');
+
+    const evidenceAttr = db.prepare("SELECT name, value_type FROM attribute_defs WHERE name = 'evidence_snippet'").get() as { name: string; value_type: string } | undefined;
+    assert.ok(evidenceAttr, 'expected evidence_snippet attribute to be auto-registered');
+    assert.equal(evidenceAttr?.value_type, 'text');
+
+    const evidenceChain = db
+      .prepare(
+        `SELECT fp.fact_id, fp.source_fact_id, src.attribute AS source_attribute
+         FROM fact_provenance fp
+         INNER JOIN facts target ON fp.fact_id = target.id
+         INNER JOIN facts src ON fp.source_fact_id = src.id
+         WHERE target.attribute = 'imports' AND src.attribute = 'evidence_snippet'`
+      )
+      .all() as Array<{ fact_id: string; source_fact_id: string; source_attribute: string }>;
+    assert.ok(
+      evidenceChain.length > 0,
+      'expected at least one fact_provenance edge from imports fact to evidence_snippet fact'
+    );
   } finally {
     db.close();
   }

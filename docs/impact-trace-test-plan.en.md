@@ -5,8 +5,8 @@ Generated: 2026-04-28
 ## Scope
 
 This test plan covers the first implementation of Impact Trace: a local-first
-repo indexer, diff impact analyzer, Markdown/Obsidian exporter, CLI, and MCP
-server.
+repo indexer, diff impact analyzer, Markdown report exporter, CLI, and read-only
+MCP server. Obsidian write sync is planned after the MVP.
 
 ## Test Diagram
 
@@ -18,7 +18,7 @@ git diff
   -> risk classifier
   -> affected tests/docs/routes
   -> evidence packet
-  -> CLI / MCP / Markdown export
+  -> CLI / read-only MCP / Markdown export
 ```
 
 ## Unit Tests
@@ -32,7 +32,7 @@ git diff
 | Impact walk | Traverse reverse imports with depth limits and deterministic ordering. |
 | Risk classifier | Produce deterministic severity from evidence, not model guesses. |
 | Report renderer | Render stable Markdown with source file links and confidence labels. |
-| Obsidian exporter | Write notes without clobbering unrelated vault files. |
+| Markdown exporter | Write reports without leaking secrets or machine-local metadata. |
 | MCP server | Validate inputs, return JSON-RPC errors, expose resources consistently. |
 | Secret redaction | Redact planted secrets before SQLite writes, MCP responses, Markdown reports, and Obsidian export. |
 | SQLite concurrency | WAL mode, one-writer lock, busy timeout, pinned `index_run_id` reads, crash recovery. |
@@ -68,8 +68,7 @@ git diff
 2. `impact-trace index` builds a deterministic index.
 3. `impact-trace analyze --base main --head feature` produces a Markdown report.
 4. MCP client calls read-only `impact_trace_analyze_diff` and receives the same evidence IDs.
-5. `impact-trace obsidian sync --vault <tmp-vault>` defaults to dry-run.
-6. `impact-trace obsidian sync --vault <tmp-vault> --write` writes notes with backlinks and conflict protection.
+5. Obsidian sync tests are deferred until the write-capability phase.
 
 ## Regression Rule
 

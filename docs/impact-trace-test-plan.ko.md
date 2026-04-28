@@ -7,7 +7,8 @@
 ## 범위
 
 이 테스트 계획은 Impact Trace의 첫 구현을 다룬다: local-first repo indexer,
-diff impact analyzer, Markdown/Obsidian exporter, CLI, MCP server.
+diff impact analyzer, Markdown report exporter, CLI, read-only MCP server.
+Obsidian write sync는 MVP 이후 단계로 둔다.
 
 ## 테스트 다이어그램
 
@@ -19,7 +20,7 @@ git diff
   -> risk classifier
   -> affected tests/docs/routes
   -> evidence packet
-  -> CLI / MCP / Markdown export
+  -> CLI / read-only MCP / Markdown export
 ```
 
 ## Unit Tests
@@ -33,7 +34,7 @@ git diff
 | Impact walk | reverse import traversal, depth limit, deterministic ordering. |
 | Risk classifier | model guess가 아니라 evidence 기반 deterministic severity 생성. |
 | Report renderer | source file link와 confidence label을 포함한 stable Markdown rendering. |
-| Obsidian exporter | unrelated vault file을 clobber하지 않음. |
+| Markdown exporter | secret이나 machine-local metadata를 유출하지 않고 report를 쓴다. |
 | MCP server | input validation, JSON-RPC error, resource consistency. |
 | Secret redaction | SQLite write, MCP response, Markdown report, Obsidian export 전에 planted secret이 redacted되는지 확인. |
 | SQLite concurrency | WAL mode, one-writer lock, busy timeout, pinned `index_run_id` read, crash recovery. |
@@ -69,8 +70,7 @@ git diff
 2. `impact-trace index`가 deterministic index를 만든다.
 3. `impact-trace analyze --base main --head feature`가 Markdown report를 생성한다.
 4. MCP client가 read-only `impact_trace_analyze_diff`를 호출하고 같은 evidence ID를 받는다.
-5. `impact-trace obsidian sync --vault <tmp-vault>`는 기본 dry-run이다.
-6. `impact-trace obsidian sync --vault <tmp-vault> --write`가 conflict protection과 함께 backlink 포함 note를 쓴다.
+5. Obsidian sync test는 write-capability phase까지 보류한다.
 
 ## Regression Rule
 

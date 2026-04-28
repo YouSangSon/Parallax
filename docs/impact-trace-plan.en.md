@@ -160,9 +160,10 @@ impact-trace index
 impact-trace analyze --base origin/main --head HEAD
 impact-trace analyze --diff-file patch.diff
 impact-trace explain src/foo.ts:handler
-impact-trace obsidian sync --vault ~/Obsidian/Engineering
 impact-trace mcp serve
 ```
+
+`impact-trace obsidian sync` is planned after the read-only MCP loop is stable.
 
 ## MCP Surface
 
@@ -171,19 +172,12 @@ Tools:
 | Tool | Output |
 |---|---|
 | `impact_trace_analyze_diff` | Affected files, symbols, tests, docs, owners, and risk evidence. |
-| `impact_trace_symbol_context` | Symbol definition, callers/importers, related tests, notes, and recent changes. |
-| `impact_trace_test_plan` | Commands and fixtures most relevant to a change. |
-| `impact_trace_hotspots` | Churn, failure, complexity, and dependency risk. |
-| `impact_trace_obsidian_export` | Writes or updates Markdown reports in a vault. |
 
 Resources:
 
 | URI | Meaning |
 |---|---|
-| `impact://repo/map` | Project map summary. |
-| `impact://report/{id}` | Full impact report. |
-| `impact://symbol/{semanticId}` | Symbol context packet. |
-| `impact://file/{path}` | File-level dependencies and evidence. |
+| `impact://report/{id}` | Future full impact report resource. Deferred until URI encoding and pagination are specified. |
 
 Security rule: every MCP path or URI must be normalized, validated against the
 configured repo/vault roots, and denied if it resolves outside those roots.
@@ -199,8 +193,8 @@ MCP capability model:
 
 All MCP tool arguments must have JSON Schema validation, realpath root containment
 after symlink resolution, size limits, time limits, and deterministic JSON-RPC
-errors. Write tools are absent from `tools/list` unless write mode is explicitly
-enabled.
+errors. Write tools are absent from `tools/list` in v1. Future write mode requires
+an explicit capability flag and a separate review.
 
 ## Obsidian Export
 
@@ -230,6 +224,7 @@ MVP is intentionally narrower than the full product:
 | Minimal read-only MCP `impact_trace_analyze_diff` | CodeQL adapter |
 | TypeScript/JavaScript extraction | Full multi-language semantic analysis |
 | Secret redaction and path safety | Remote sync |
+| One completed `index_run_id` per report | File/symbol MCP resources |
 
 ## Implementation Phases
 

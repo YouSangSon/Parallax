@@ -1,0 +1,34 @@
+{
+  "name": "impact-trace",
+  "version": "0.1.0",
+  "description": "Local-first code impact analysis for agentic coding workflows.",
+  "type": "module",
+  "bin": {
+    "impact-trace": "./dist/src/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test tests/**/*.test.ts",
+    "test:fixtures": "npm test",
+    "test:security": "tsx --test tests/security.test.ts",
+    "test:mcp": "tsx --test tests/mcp.test.ts",
+    "test:benchmark": "npm test",
+    "test:install-smoke": "npm run build && node dist/src/cli.js --help",
+    "docs:lint": "node scripts/docs-lint.js",
+    "lint": "npm run check && npm run docs:lint"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "docs"
+  ],
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  }
+}

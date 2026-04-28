@@ -1,0 +1,33 @@
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+
+import { databasePath, impactDir, openDatabase } from './store.js';
+import type { InitOptions, InitResult } from './types.js';
+
+export async function initProject(options: InitOptions): Promise<InitResult> {
+  const repoRoot = path.resolve(options.repoRoot);
+  const dir = impactDir(repoRoot);
+  mkdirSync(dir, { recursive: true });
+  const configPath = path.join(dir, 'config.json');
+  const created = !existsSync(configPath);
+  if (created) {
+    writeFileSync(
+      configPath,
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          project: 'impact-trace',
+          mcp: { readOnly: true },
+          redaction: { enabled: true }
+        },
+        null,
+        2
+      )}\n`,
+      'utf8'
+    );
+  }
+  const db = openDatabase(repoRoot);
+  db.close();
+  return { created, configPath, databasePath: databasePath(repoRoot) };
+}
+

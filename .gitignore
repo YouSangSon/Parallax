@@ -1,0 +1,9 @@
+node_modules/
+dist/
+coverage/
+.impact-trace/
+.DS_Store
+*.log
+*.tsbuildinfo
+tmp/
+

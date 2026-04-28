@@ -157,9 +157,10 @@ impact-trace index
 impact-trace analyze --base origin/main --head HEAD
 impact-trace analyze --diff-file patch.diff
 impact-trace explain src/foo.ts:handler
-impact-trace obsidian sync --vault ~/Obsidian/Engineering
 impact-trace mcp serve
 ```
+
+`impact-trace obsidian sync`는 read-only MCP loop가 안정화된 뒤 구현한다.
 
 ## MCP 표면
 
@@ -168,19 +169,12 @@ impact-trace mcp serve
 | Tool | Output |
 |---|---|
 | `impact_trace_analyze_diff` | 영향받는 파일, 심볼, 테스트, 문서, owner, risk evidence. |
-| `impact_trace_symbol_context` | 심볼 definition, caller/importer, 관련 테스트, 노트, 최근 변경. |
-| `impact_trace_test_plan` | 변경과 관련된 테스트 command와 fixture. |
-| `impact_trace_hotspots` | churn, failure, complexity, dependency risk. |
-| `impact_trace_obsidian_export` | Markdown report를 vault에 생성 또는 업데이트. |
 
 Resources:
 
 | URI | 의미 |
 |---|---|
-| `impact://repo/map` | project map summary. |
-| `impact://report/{id}` | full impact report. |
-| `impact://symbol/{semanticId}` | symbol context packet. |
-| `impact://file/{path}` | file-level dependency와 evidence. |
+| `impact://report/{id}` | future full impact report resource. URI encoding과 pagination이 정해질 때까지 보류. |
 
 보안 규칙: 모든 MCP path/URI는 normalize하고, 설정된 repo/vault root 안에 있는지
 검증해야 한다. root 밖으로 resolve되면 거절한다.
@@ -196,8 +190,8 @@ MCP capability model:
 
 모든 MCP tool argument는 JSON Schema validation, symlink resolution 이후 realpath
 root containment, size limit, time limit, deterministic JSON-RPC error를 가져야
-한다. write mode가 명시적으로 켜지지 않으면 write tool은 `tools/list`에도
-나오지 않는다.
+한다. v1에서는 write tool이 `tools/list`에 나오지 않는다. future write mode는
+명시적 capability flag와 별도 review가 필요하다.
 
 ## Obsidian Export
 
@@ -228,6 +222,7 @@ MVP는 전체 제품보다 좁게 잡는다.
 | 최소 read-only MCP `impact_trace_analyze_diff` | CodeQL adapter |
 | TypeScript/JavaScript extraction | 모든 언어 full semantic analysis |
 | secret redaction과 path safety | remote sync |
+| report마다 하나의 completed `index_run_id` 사용 | file/symbol MCP resources |
 
 ## 구현 단계
 

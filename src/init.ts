@@ -2,7 +2,7 @@ import { existsSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { normalizeRepoRoot } from './security.js';
-import { databasePath, ensureImpactDir, openDatabase } from './store.js';
+import { databasePath, ensureImpactDir, ensureRepo, openDatabase } from './store.js';
 import type { InitOptions, InitResult } from './types.js';
 
 export async function initProject(options: InitOptions): Promise<InitResult> {
@@ -27,6 +27,10 @@ export async function initProject(options: InitOptions): Promise<InitResult> {
     );
   }
   const db = openDatabase(repoRoot);
-  db.close();
+  try {
+    ensureRepo(db, repoRoot);
+  } finally {
+    db.close();
+  }
   return { created, configPath, databasePath: databasePath(repoRoot) };
 }

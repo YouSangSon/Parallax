@@ -1,3 +1,16 @@
+export { createBranch, recall, remember, trace, withAgentMemoryDb } from './agent_memory.js';
+export type {
+  BranchInput,
+  BranchResult,
+  RecallInput,
+  RecallResult,
+  RecalledFact,
+  RememberInput,
+  RememberResult,
+  RememberValue,
+  TraceInput,
+  TraceResult
+} from './agent_memory.js';
 export { analyzeDiff } from './analyzer.js';
 export { exportImpactGraph } from './graph.js';
 export { indexProject } from './indexer.js';

@@ -156,7 +156,7 @@ function dbArtifacts(repoRoot: string): string[] {
     .filter((file) => existsSync(path.join(repoRoot, '.impact-trace', file)));
 }
 
-test('MCP stdio server initializes and exposes only read-only tools by default', async () => {
+test('MCP stdio server initializes and exposes the full agent memory tool surface', async () => {
   const repoRoot = await makeRepo();
   const client = new McpProcessClient(repoRoot);
   try {
@@ -167,7 +167,23 @@ test('MCP stdio server initializes and exposes only read-only tools by default',
 
     const response = await client.request('tools/list', {});
     assert.equal(response.error, undefined);
-    assert.ok(response.result.tools.some((tool: { name: string }) => tool.name === 'impact_trace_analyze_diff'));
+    const toolByName = new Map<string, { name: string; annotations?: { readOnlyHint?: boolean } }>(
+      (response.result.tools as Array<{ name: string; annotations?: { readOnlyHint?: boolean } }>).map((tool) => [tool.name, tool])
+    );
+    for (const expected of [
+      'impact_trace_analyze_diff',
+      'impact_trace_remember',
+      'impact_trace_recall',
+      'impact_trace_branch',
+      'impact_trace_trace'
+    ]) {
+      assert.ok(toolByName.has(expected), `expected MCP tool ${expected} to be advertised`);
+    }
+    assert.equal(toolByName.get('impact_trace_analyze_diff')!.annotations?.readOnlyHint, true);
+    assert.equal(toolByName.get('impact_trace_recall')!.annotations?.readOnlyHint, true);
+    assert.equal(toolByName.get('impact_trace_trace')!.annotations?.readOnlyHint, true);
+    assert.equal(toolByName.get('impact_trace_remember')!.annotations?.readOnlyHint, false);
+    assert.equal(toolByName.get('impact_trace_branch')!.annotations?.readOnlyHint, false);
     assert.equal(response.result.tools.some((tool: { name: string }) => tool.name.includes('obsidian')), false);
   } finally {
     await client.close();

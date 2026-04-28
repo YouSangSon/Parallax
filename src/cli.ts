@@ -66,6 +66,77 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === 'remember') {
+    const { remember, withAgentMemoryDb } = await import('./index.js');
+    const entity = parseRequiredArg(args, '--entity');
+    const attribute = parseRequiredArg(args, '--attribute');
+    const value = parseAgentMemoryValue(parseRequiredArg(args, '--value'));
+    const branch = parseOptionalArg(args, '--branch');
+    const agent = parseOptionalArg(args, '--agent');
+    const evidenceRaw = parseOptionalArg(args, '--evidence-fact-ids');
+    const evidenceFactIds = evidenceRaw
+      ? evidenceRaw.split(',').map((item) => item.trim()).filter(Boolean)
+      : undefined;
+    const result = withAgentMemoryDb(repoRoot, false, (db) =>
+      remember(db, {
+        entity,
+        attribute,
+        value: value as never,
+        ...(branch !== undefined ? { branch } : {}),
+        ...(agent !== undefined ? { agent } : {}),
+        ...(evidenceFactIds !== undefined ? { evidenceFactIds } : {})
+      })
+    );
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  if (command === 'recall') {
+    const { recall, withAgentMemoryDb } = await import('./index.js');
+    const entity = parseOptionalArg(args, '--entity');
+    const attribute = parseOptionalArg(args, '--attribute');
+    const branch = parseOptionalArg(args, '--branch');
+    const k = parseIntegerArg(args, '--k');
+    const result = withAgentMemoryDb(repoRoot, true, (db) =>
+      recall(db, {
+        ...(entity !== undefined ? { entity } : {}),
+        ...(attribute !== undefined ? { attribute } : {}),
+        ...(branch !== undefined ? { branch } : {}),
+        ...(k !== undefined ? { k } : {})
+      })
+    );
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  if (command === 'branch') {
+    const { createBranch, withAgentMemoryDb } = await import('./index.js');
+    const name = parseRequiredArg(args, '--name');
+    const from = parseOptionalArg(args, '--from');
+    const result = withAgentMemoryDb(repoRoot, false, (db) =>
+      createBranch(db, {
+        name,
+        ...(from !== undefined ? { from } : {})
+      })
+    );
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  if (command === 'trace') {
+    const { trace, withAgentMemoryDb } = await import('./index.js');
+    const factId = parseRequiredArg(args, '--fact-id');
+    const depth = parseIntegerArg(args, '--depth');
+    const result = withAgentMemoryDb(repoRoot, true, (db) =>
+      trace(db, {
+        factId,
+        ...(depth !== undefined ? { depth } : {})
+      })
+    );
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
   throw new Error(`unknown command: ${command}`);
 }
 
@@ -114,7 +185,12 @@ function parseIntegerArg(args: string[], name: string): number | undefined {
 }
 
 function parsePositionals(args: string[]): string[] {
-  const valueFlags = new Set(['--changed', '--base', '--head', '--depth', '--max-fanout', '--max-file-bytes', '--report', '--format']);
+  const valueFlags = new Set([
+    '--changed', '--base', '--head', '--depth', '--max-fanout', '--max-file-bytes',
+    '--report', '--format',
+    '--entity', '--attribute', '--value', '--branch', '--agent', '--evidence-fact-ids',
+    '--name', '--from', '--fact-id', '--k'
+  ]);
   const positionals: string[] = [];
   for (let index = 0; index < args.length; index++) {
     const arg = args[index]!;
@@ -146,7 +222,22 @@ Commands:
   impact-trace analyze --base main [--head HEAD] [--depth 2] [--json]
   impact-trace graph export --report <id> [--format mermaid|json|dot]
   impact-trace mcp serve
+
+Agent memory:
+  impact-trace remember --entity <id> --attribute <name> --value <json|string>
+                        [--branch <name>] [--agent <id>] [--evidence-fact-ids id1,id2]
+  impact-trace recall   [--entity <id>] [--attribute <name>] [--branch <name>] [--k 20]
+  impact-trace branch   --name <name> [--from <name>]
+  impact-trace trace    --fact-id <id> [--depth 5]
 `);
+}
+
+function parseAgentMemoryValue(raw: string): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
+  }
 }
 
 main().catch((error: unknown) => {

@@ -1,6 +1,6 @@
-import { contentHash } from './store.js';
+import { contentHash, getRepoId, openDatabase } from './store.js';
 import type { Db } from './store.js';
-import { redactSecrets } from './security.js';
+import { normalizeRepoRoot, redactSecrets } from './security.js';
 
 export type RememberValue = string | number | boolean | null | RememberValue[] | { [key: string]: RememberValue };
 
@@ -219,6 +219,21 @@ export function createBranch(db: Db, input: BranchInput): BranchResult {
   } catch (error: unknown) {
     db.exec('ROLLBACK');
     throw error;
+  }
+}
+
+export function withAgentMemoryDb<T>(
+  repoRoot: string,
+  readOnly: boolean,
+  callback: (db: Db) => T
+): T {
+  const root = normalizeRepoRoot(repoRoot);
+  const db = openDatabase(root, { readOnly });
+  try {
+    getRepoId(db, root);
+    return callback(db);
+  } finally {
+    db.close();
   }
 }
 

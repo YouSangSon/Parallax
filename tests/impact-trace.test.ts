@@ -347,6 +347,51 @@ test('CLI analyze accepts --base and --head git merge-base diff input', async ()
   assert.ok(report.affectedFiles.some((file) => file.path === 'src/routes/private.ts'));
 });
 
+test('CLI exposes remember/recall as round-trip subcommands', async () => {
+  const repoRoot = await makeFixtureRepo();
+  await initProject({ repoRoot });
+
+  const rememberRun = spawnSync(
+    process.execPath,
+    [
+      '--import',
+      tsxLoaderPath,
+      path.resolve('src/cli.ts'),
+      'remember',
+      '--entity',
+      'file:src/auth/session.ts',
+      '--attribute',
+      'observed',
+      '--value',
+      '"compiled"'
+    ],
+    { cwd: repoRoot, encoding: 'utf8' }
+  );
+  assert.equal(rememberRun.status, 0, `remember failed: ${rememberRun.stderr}`);
+  const remembered = JSON.parse(rememberRun.stdout) as { factId: string; txId: string };
+  assert.match(remembered.factId, /^[0-9a-f]{64}$/);
+
+  const recallRun = spawnSync(
+    process.execPath,
+    [
+      '--import',
+      tsxLoaderPath,
+      path.resolve('src/cli.ts'),
+      'recall',
+      '--entity',
+      'file:src/auth/session.ts',
+      '--attribute',
+      'observed'
+    ],
+    { cwd: repoRoot, encoding: 'utf8' }
+  );
+  assert.equal(recallRun.status, 0, `recall failed: ${recallRun.stderr}`);
+  const recalled = JSON.parse(recallRun.stdout) as { facts: Array<{ id: string; value: unknown }> };
+  assert.equal(recalled.facts.length, 1);
+  assert.equal(recalled.facts[0]!.id, remembered.factId);
+  assert.equal(recalled.facts[0]!.value, 'compiled');
+});
+
 test('indexProject dual-writes relations to facts/transactions and advances main head', async () => {
   const repoRoot = await makeFixtureRepo();
   await initProject({ repoRoot });

@@ -425,6 +425,37 @@ test('remember with op=retract stores a retract fact and skips embedding', async
   }
 });
 
+test('recall with currentOnly suppresses retracted facts and dedupes by latest op', async () => {
+  const repoRoot = await makeFixtureRepo();
+  await initProject({ repoRoot });
+
+  const { remember, recall, withAgentMemoryDb } = await import('../src/index.js');
+
+  withAgentMemoryDb(repoRoot, false, (db) =>
+    remember(db, { entity: 'file:src/y.ts', attribute: 'observed', value: 'kept' })
+  );
+  withAgentMemoryDb(repoRoot, false, (db) =>
+    remember(db, { entity: 'file:src/y.ts', attribute: 'observed', value: 'dropped' })
+  );
+  withAgentMemoryDb(repoRoot, false, (db) =>
+    remember(db, { entity: 'file:src/y.ts', attribute: 'observed', value: 'dropped', op: 'retract' })
+  );
+
+  const all = withAgentMemoryDb(repoRoot, true, (db) =>
+    recall(db, { entity: 'file:src/y.ts', attribute: 'observed' })
+  );
+  assert.equal(all.facts.length, 3, 'without currentOnly all facts surface');
+
+  const current = withAgentMemoryDb(repoRoot, true, (db) =>
+    recall(db, { entity: 'file:src/y.ts', attribute: 'observed', currentOnly: true })
+  );
+  const currentValues = current.facts.map((fact) => fact.value).sort();
+  assert.deepEqual(currentValues, ['kept'], 'currentOnly drops the retracted value');
+  for (const fact of current.facts) {
+    assert.equal(fact.op, 'assert', 'currentOnly returns only assert ops');
+  }
+});
+
 test('recall with asOfTx returns only facts in the ancestor DAG of that tx', async () => {
   const repoRoot = await makeFixtureRepo();
   await initProject({ repoRoot });

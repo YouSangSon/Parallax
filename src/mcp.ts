@@ -108,7 +108,8 @@ export function createMcpServer(context: McpContext): McpServer {
         attribute: z.string().optional(),
         branch: z.string().optional(),
         k: z.number().int().min(1).max(100).optional(),
-        asOfTx: z.string().optional()
+        asOfTx: z.string().optional(),
+        currentOnly: z.boolean().optional()
       },
       annotations: {
         title: 'Recall facts',
@@ -118,7 +119,7 @@ export function createMcpServer(context: McpContext): McpServer {
         openWorldHint: false
       }
     },
-    async ({ query, entity, attribute, branch, k, asOfTx }) => {
+    async ({ query, entity, attribute, branch, k, asOfTx, currentOnly }) => {
       const result = withReadOnlyDb(context, (db) =>
         recall(db, {
           ...(query !== undefined ? { query } : {}),
@@ -126,7 +127,8 @@ export function createMcpServer(context: McpContext): McpServer {
           ...(attribute !== undefined ? { attribute } : {}),
           ...(branch !== undefined ? { branch } : {}),
           ...(k !== undefined ? { k } : {}),
-          ...(asOfTx !== undefined ? { asOfTx } : {})
+          ...(asOfTx !== undefined ? { asOfTx } : {}),
+          ...(currentOnly !== undefined ? { currentOnly } : {})
         })
       );
       return { content: [{ type: 'text', text: JSON.stringify(result) }] };

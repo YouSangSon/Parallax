@@ -157,7 +157,7 @@ impact-trace remember --entity <id> --attribute <name> --value <json|string>
 impact-trace retract  --entity <id> --attribute <name> --value <json|string>
                       [--branch <name>] [--agent <id>]
 impact-trace recall   [--entity <id>] [--attribute <name>] [--branch <name>]
-                      [--k 20] [--as-of-tx <tx-id>]
+                      [--k 20] [--as-of-tx <tx-id>] [--current-only]
 impact-trace branch   --name <name> [--from <name>]
 impact-trace trace    --fact-id <id> [--depth 5]
 ```

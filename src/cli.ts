@@ -101,13 +101,15 @@ async function main(): Promise<void> {
     const branch = parseOptionalArg(args, '--branch');
     const k = parseIntegerArg(args, '--k');
     const asOfTx = parseOptionalArg(args, '--as-of-tx');
+    const currentOnly = args.includes('--current-only') ? true : undefined;
     const result = withAgentMemoryDb(repoRoot, true, (db) =>
       recall(db, {
         ...(entity !== undefined ? { entity } : {}),
         ...(attribute !== undefined ? { attribute } : {}),
         ...(branch !== undefined ? { branch } : {}),
         ...(k !== undefined ? { k } : {}),
-        ...(asOfTx !== undefined ? { asOfTx } : {})
+        ...(asOfTx !== undefined ? { asOfTx } : {}),
+        ...(currentOnly !== undefined ? { currentOnly } : {})
       })
     );
     console.log(JSON.stringify(result, null, 2));
@@ -235,7 +237,7 @@ Agent memory:
   impact-trace retract  --entity <id> --attribute <name> --value <json|string>
                         [--branch <name>] [--agent <id>]
   impact-trace recall   [--entity <id>] [--attribute <name>] [--branch <name>]
-                        [--k 20] [--as-of-tx <tx-id>]
+                        [--k 20] [--as-of-tx <tx-id>] [--current-only]
   impact-trace branch   --name <name> [--from <name>]
   impact-trace trace    --fact-id <id> [--depth 5]
 `);

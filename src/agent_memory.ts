@@ -27,6 +27,7 @@ export interface RecallInput {
   branch?: string;
   k?: number;
   asOfTx?: string;
+  currentOnly?: boolean;
 }
 
 export interface RecalledFact {
@@ -196,38 +197,46 @@ export function recall(db: Db, input: RecallInput): RecallResult {
     whereParams.push(input.attribute);
   }
 
-  let sql: string;
-  let allParams: Array<string | number | null>;
-
-  if (input.asOfTx !== undefined) {
-    conditions.push('t.id IN (SELECT id FROM ancestor_txs)');
-    sql = `
-      WITH RECURSIVE ancestor_txs(id) AS (
+  const useAsOf = input.asOfTx !== undefined;
+  const currentOnly = input.currentOnly === true;
+  const cteHeader = useAsOf
+    ? `WITH RECURSIVE ancestor_txs(id) AS (
         SELECT ?
         UNION
         SELECT tt.parent_tx_id
         FROM transactions tt, ancestor_txs a
         WHERE tt.id = a.id AND tt.parent_tx_id IS NOT NULL
-      )
-      SELECT f.id, f.entity_id, f.attribute, f.value_blob, f.op, f.tx_id, f.redacted, t.ts
-      FROM facts f
-      INNER JOIN transactions t ON f.tx_id = t.id
-      WHERE ${conditions.join(' AND ')}
-      ORDER BY t.ts DESC, f.id ASC
-      LIMIT ?
-    `;
-    allParams = [input.asOfTx, ...whereParams, k];
-  } else {
-    sql = `
-      SELECT f.id, f.entity_id, f.attribute, f.value_blob, f.op, f.tx_id, f.redacted, t.ts
-      FROM facts f
-      INNER JOIN transactions t ON f.tx_id = t.id
-      WHERE ${conditions.join(' AND ')}
-      ORDER BY t.ts DESC, f.id ASC
-      LIMIT ?
-    `;
-    allParams = [...whereParams, k];
+      )`
+    : '';
+  if (useAsOf) {
+    conditions.push('t.id IN (SELECT id FROM ancestor_txs)');
   }
+
+  const baseSelect = `
+    SELECT f.id, f.entity_id, f.attribute, f.value_blob, f.op, f.tx_id, f.redacted, t.ts
+    FROM facts f
+    INNER JOIN transactions t ON f.tx_id = t.id
+    WHERE ${conditions.join(' AND ')}
+  `;
+
+  const sql = currentOnly
+    ? `${cteHeader}${useAsOf ? ',' : 'WITH'} ranked AS (
+        SELECT f.id, f.entity_id, f.attribute, f.value_blob, f.op, f.tx_id, f.redacted, t.ts,
+          ROW_NUMBER() OVER (PARTITION BY f.entity_id, f.attribute, f.value_blob ORDER BY t.ts DESC, f.id ASC) AS rn
+        FROM facts f
+        INNER JOIN transactions t ON f.tx_id = t.id
+        WHERE ${conditions.join(' AND ')}
+      )
+      SELECT id, entity_id, attribute, value_blob, op, tx_id, redacted, ts
+      FROM ranked
+      WHERE rn = 1 AND op = 'assert'
+      ORDER BY ts DESC, id ASC
+      LIMIT ?`
+    : `${cteHeader}${baseSelect} ORDER BY t.ts DESC, f.id ASC LIMIT ?`;
+
+  const allParams: Array<string | number | null> = [];
+  if (useAsOf) allParams.push(input.asOfTx as string);
+  allParams.push(...whereParams, k);
 
   const rows = db.prepare(sql).all(...allParams) as unknown as FactRow[];
   return { facts: rows.map(rowToRecalledFact) };

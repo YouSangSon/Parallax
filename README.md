@@ -85,6 +85,24 @@ agent memory 레이어**를 점진적으로 더합니다.
 두고 *증분으로* 더해집니다. 자세한 탐색·결정 기록은
 [docs/agent-db-exploration.ko.md](docs/agent-db-exploration.ko.md).
 
+```mermaid
+graph LR
+  Dev[개발자] -->|CLI| Cli["impact-trace CLI"]
+  Agent["Claude Code · Codex · Cursor"] -->|MCP stdio| Mcp["impact_trace_* tools"]
+  subgraph Local[" 단일 PC ・ 단일 .impact-trace/impact.db "]
+    Cli --> Mem
+    Mcp --> Mem
+    Cli --> Idx
+    Mcp --> Idx
+    Idx["Code Indexer<br/>(impact-trace index)"] -. dual-write .-> Mem
+    Mem["Agent Memory Layer<br/>facts · transactions · branches<br/>fact_provenance · embeddings · attribute_defs"]
+    Ana["Impact Analyzer<br/>(impact-trace analyze)"] --> Mem
+  end
+```
+
+데이터는 *전부* 사용자 PC 안에 머무르고, 한 `.db` 파일을 백업/공유/git checkin
+가능합니다. 외부 네트워크 의존 없음.
+
 ### 진행 단계
 
 | Phase | 무엇 | 상태 |

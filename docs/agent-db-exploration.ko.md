@@ -14,8 +14,32 @@
 | Q1+Q2 | CLI 4 명령 + tools/list 검증 + init이 ensureRepo 호출 | `51b09b0` |
 | M1 | 인덱서 evidence_snippet fact + fact_provenance | `650104f` |
 | P1+P2 | sqlite-vec 통합 + embedding 파이프라인 (stub) + redact-then-embed 게이트 | `d0c5cce` |
+| M3+M4 | retract 동작 + as_of_tx 시간여행 (recursive CTE) | `4562024` |
+| current-only | recall이 ROW_NUMBER 윈도우로 retract 자동 dedup | `34d185c` |
 
-테스트: 35/35 passing. Lint clean.
+테스트: 38/38 passing. Lint clean. 모두 origin/main에.
+
+```mermaid
+gantt
+  title Phase 진행
+  dateFormat X
+  axisFormat %s
+  section Phase 1
+  schema v4 + 4 MCP 툴      :done, p1, 0, 1
+  인덱서 듀얼 라이트          :done, p1_5, after p1, 1
+  CLI 4 명령 + tools/list    :done, q12, after p1_5, 1
+  evidence_snippet provenance :done, m1, after q12, 1
+  sqlite-vec + embedding stub :done, p12, after m1, 1
+  retract + as_of_tx          :done, m34, after p12, 1
+  current-only recall         :done, co, after m34, 1
+  section Phase 2 (계획)
+  실제 임베딩 모델 통합        :p2_emb, after co, 2
+  semantic recall              :p2_sem, after p2_emb, 2
+  branch merge                 :p2_merge, after p2_sem, 2
+  section Phase 3 (후순위)
+  reflective consolidation     :p3_ref, after p2_merge, 3
+  speculative GC               :p3_gc, after p3_ref, 2
+```
 
 ---
 
@@ -250,49 +274,43 @@ Cloud DB의 기능 70%는 *분산을 푸는 데* 쓰임. 단일 PC에선 그 복
 
 ## 6. 제안된 구체적 Stack
 
-```
-┌────────────────────────────────────────────────────────────┐
-│ Claude Code / Codex / Cursor                               │
-└──────────────────┬─────────────────────────────────────────┘
-                   │ MCP stdio (JSON-RPC)
-┌──────────────────▼─────────────────────────────────────────┐
-│ Single binary (Bun bundle ~10MB or Rust ~5MB)              │
-│ Cold start: 30–50ms                                        │
-│                                                             │
-│ Tools:                                                      │
-│   remember(fact, attr, value, evidence?)                   │
-│   recall(query, as_of?, branch?, k?)                       │
-│   branch(name, from?)                                       │
-│   trace(fact_id) → causal chain                            │
-│   reflect() → consolidate old episodes (optional)          │
-│   redact(pattern) → query-time filter                      │
-└──────────────────┬─────────────────────────────────────────┘
-                   │
-┌──────────────────▼─────────────────────────────────────────┐
-│ SQLite (single .db file, user-controlled location)         │
-│ + sqlite-vec extension (int8 + binary 2-tier)              │
-│ + WAL mode                                                  │
-│                                                             │
-│ Schema:                                                     │
-│   facts (id BLOB PK [xxhash3], entity, attribute,          │
-│          value_blob, tx_id, op)                            │
-│   transactions (id, parent_id, branch_id, timestamp,       │
-│                 agent, payload)                            │
-│   branches (id, head_tx, name, parent_branch)              │
-│   embeddings (fact_id, dim64_binary, dim768_int8)          │
-│   evidence (fact_id, source_fact_id) -- causal chain       │
-│   attribute_defs (name, value_type) -- typed schema        │
-│                                                             │
-│ Cache: in-process LRU (~100 MB)                            │
-│ Compression: LZ4 cold facts                                │
-│ Hashing: xxHash3                                            │
-└────────────────────────────────────────────────────────────┘
+> 현재 구현 상태를 반영. `xxHash3` → SHA-256 (`contentHash`)으로 변경, `evidence` 테이블 이름은 충돌 회피로 `fact_provenance`로 결정.
 
-User-visible: 한 .db 파일, 백업/공유/git checkin trivial
-Resource: idle ~80 MB RAM, busy ~500 MB
-Disk: ~1 GB / 100k facts
-Privacy: 데이터가 로컬 디스크 밖으로 안 나감
+```mermaid
+graph TB
+  Agent["Claude Code · Codex · Cursor"]
+  Mcp["MCP server (Node + TypeScript)<br/>cold start ~150ms (Node) / ~30ms (Bun, future)"]
+  Tools["Tools:<br/>analyze_diff · remember · recall · branch · trace<br/>(reflect / merge — Phase 2/3)"]
+  Cli["CLI: impact-trace remember / recall / branch / trace / retract"]
+  DB[("SQLite<br/>.impact-trace/impact.db<br/>schema v4 + WAL")]
+  VecExt["sqlite-vec extension<br/>(loaded on demand)"]
+
+  subgraph Schema["Schema (현재 구현)"]
+    direction LR
+    facts[("facts (content-addressable<br/>SHA-256 PK)")]
+    txs[("transactions (DAG)")]
+    brs[("branches (head_tx_id)")]
+    embs[("embeddings (8B + 768B)")]
+    prov[("fact_provenance")]
+    defs[("attribute_defs<br/>(runtime auto-register)")]
+  end
+
+  Agent -->|MCP stdio JSON-RPC| Mcp
+  Mcp --> Tools
+  Tools --> DB
+  Cli --> DB
+  DB --> Schema
+  DB -. loadExtension .-> VecExt
 ```
+
+| 자원 | 현재 |
+|---|---|
+| Cold start | ~150ms (Node + tsx) |
+| Idle RAM | ~80 MB |
+| Busy RAM | ~500 MB |
+| Disk | ~1 GB / 100k facts |
+| 외부 의존 | 없음 (전 데이터 로컬) |
+| 백업/공유 | `.impact-trace/impact.db` 파일 1개 복사 |
 
 ### 기존 MCP들과의 차별
 

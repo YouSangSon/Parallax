@@ -364,7 +364,9 @@ test('MCP branch forks a new branch from main without copying facts', async () =
     assert.equal(created.result.isError, undefined);
     const payload = JSON.parse(created.result.content[0].text) as { branchId: string; headTxId: string | null };
     assert.match(payload.branchId, /^br_[0-9a-f]{16}$/);
-    assert.equal(payload.headTxId, null);
+    // After makeRepo runs the indexer, main.head_tx_id is the indexer-produced tx hash;
+    // a fresh fork inherits that head pointer rather than null.
+    assert.match(payload.headTxId ?? '', /^[0-9a-f]{64}$/);
 
     const duplicate = await client.request('tools/call', {
       name: 'impact_trace_branch',

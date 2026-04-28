@@ -346,3 +346,36 @@ test('CLI analyze accepts --base and --head git merge-base diff input', async ()
   assert.equal(report.changedFiles.includes('README.md'), false);
   assert.ok(report.affectedFiles.some((file) => file.path === 'src/routes/private.ts'));
 });
+
+test('indexProject dual-writes relations to facts/transactions and advances main head', async () => {
+  const repoRoot = await makeFixtureRepo();
+  await initProject({ repoRoot });
+  await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const txCount = db.prepare('SELECT count(*) AS count FROM transactions WHERE agent = ?').get('indexer') as { count: number };
+    assert.equal(txCount.count, 1, 'expected one indexer-produced transaction');
+
+    const importsFacts = db
+      .prepare(
+        "SELECT f.entity_id, f.value_blob FROM facts f INNER JOIN transactions t ON f.tx_id = t.id WHERE t.agent = 'indexer' AND f.attribute = 'imports' ORDER BY f.entity_id"
+      )
+      .all() as Array<{ entity_id: string; value_blob: string }>;
+    assert.ok(
+      importsFacts.some(
+        (row) => row.entity_id === 'file:src/routes/private.ts' && JSON.parse(row.value_blob) === 'file:src/auth/session.ts'
+      ),
+      'expected an imports fact from private.ts to session.ts'
+    );
+
+    const mainHead = db.prepare("SELECT head_tx_id FROM branches WHERE name = 'main'").get() as { head_tx_id: string | null };
+    assert.match(mainHead.head_tx_id ?? '', /^[0-9a-f]{64}$/, 'main branch head should be advanced to indexer tx');
+
+    const declaresAttr = db.prepare("SELECT name, value_type FROM attribute_defs WHERE name = 'declares'").get() as { name: string; value_type: string } | undefined;
+    assert.ok(declaresAttr, 'expected declares attribute to be auto-registered');
+    assert.equal(declaresAttr?.value_type, 'entity_ref');
+  } finally {
+    db.close();
+  }
+});

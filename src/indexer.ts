@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 
-import { ensureRepo, openDatabase, type Db } from './store.js';
+import { contentHash, ensureRepo, openDatabase, type Db } from './store.js';
 import { normalizeRepoRoot, redactSecrets, toRelativePath } from './security.js';
 import type { EntityKind, IndexOptions, IndexResult } from './types.js';
 
@@ -104,6 +104,26 @@ export async function indexProject(options: IndexOptions): Promise<IndexResult> 
       `)
       .run(indexRunId, adapterId, adapterVersion, JSON.stringify(languageIds), 'running');
     const adapterRunId = Number(adapterRun.lastInsertRowid);
+
+    // Agent memory dual-write: one transaction per index run on the main branch.
+    const mainBranch = db
+      .prepare("SELECT id, head_tx_id FROM branches WHERE name = 'main'")
+      .get() as { id: string; head_tx_id: string | null } | undefined;
+    if (!mainBranch) {
+      throw new Error('main branch missing from agent memory schema (schema v4 not applied)');
+    }
+    const memoryTs = new Date().toISOString();
+    const memoryTxId = contentHash(mainBranch.head_tx_id ?? '', mainBranch.id, memoryTs, 'indexer');
+    db.prepare(
+      'INSERT OR IGNORE INTO transactions (id, parent_tx_id, branch_id, ts, agent, index_run_id) VALUES (?, ?, ?, ?, ?, ?)'
+    ).run(memoryTxId, mainBranch.head_tx_id, mainBranch.id, memoryTs, 'indexer', indexRunId);
+    const upsertAttributeDef = db.prepare(
+      "INSERT OR IGNORE INTO attribute_defs (name, value_type, is_code_relation, description) VALUES (?, 'entity_ref', 0, '')"
+    );
+    const insertFact = db.prepare(
+      'INSERT OR IGNORE INTO facts (id, entity_id, attribute, value_blob, op, tx_id, redacted) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    );
+
     const fileIdByPath = new Map<string, number>();
     const upsertFile = db.prepare(`
       INSERT INTO files (repo_id, path, language, content_hash, index_run_id)
@@ -237,7 +257,10 @@ export async function indexProject(options: IndexOptions): Promise<IndexResult> 
           insertRelation,
           insertRelationEvidence,
           canonicalEntityIds,
-          canonicalRelationIds
+          canonicalRelationIds,
+          upsertAttributeDef,
+          insertFact,
+          memoryTxId
         });
         canonicalEntityIds.add(symbolId);
         symbolsIndexed++;
@@ -285,7 +308,10 @@ export async function indexProject(options: IndexOptions): Promise<IndexResult> 
           insertRelation,
           insertRelationEvidence,
           canonicalEntityIds,
-          canonicalRelationIds
+          canonicalRelationIds,
+          upsertAttributeDef,
+          insertFact,
+          memoryTxId
         });
         edgesIndexed++;
       }
@@ -307,7 +333,10 @@ export async function indexProject(options: IndexOptions): Promise<IndexResult> 
             insertRelation,
             insertRelationEvidence,
             canonicalEntityIds,
-            canonicalRelationIds
+            canonicalRelationIds,
+            upsertAttributeDef,
+            insertFact,
+            memoryTxId
           });
           edgesIndexed++;
         }
@@ -330,7 +359,10 @@ export async function indexProject(options: IndexOptions): Promise<IndexResult> 
             insertRelation,
             insertRelationEvidence,
             canonicalEntityIds,
-            canonicalRelationIds
+            canonicalRelationIds,
+            upsertAttributeDef,
+            insertFact,
+            memoryTxId
           });
           edgesIndexed++;
         }
@@ -354,7 +386,10 @@ export async function indexProject(options: IndexOptions): Promise<IndexResult> 
             insertRelation,
             insertRelationEvidence,
             canonicalEntityIds,
-            canonicalRelationIds
+            canonicalRelationIds,
+            upsertAttributeDef,
+            insertFact,
+            memoryTxId
           });
           edgesIndexed++;
         }
@@ -373,6 +408,7 @@ export async function indexProject(options: IndexOptions): Promise<IndexResult> 
 
     db.prepare('UPDATE adapter_runs SET status = ?, finished_at = datetime(\'now\') WHERE id = ?').run('completed', adapterRunId);
     db.prepare('UPDATE index_runs SET status = ?, finished_at = datetime(\'now\') WHERE id = ?').run('completed', indexRunId);
+    db.prepare('UPDATE branches SET head_tx_id = ? WHERE id = ?').run(memoryTxId, mainBranch.id);
     db.close();
     return {
       indexRunId,
@@ -695,6 +731,9 @@ function insertCanonicalRelation(input: {
   insertRelationEvidence: Statement;
   canonicalEntityIds: Set<string>;
   canonicalRelationIds: Set<string>;
+  upsertAttributeDef: Statement;
+  insertFact: Statement;
+  memoryTxId: string;
 }): void {
   const id = relationId(input.kind, input.sourceEntityId, input.targetEntityId, input.provenance);
   input.insertRelation.run(
@@ -719,6 +758,17 @@ function insertCanonicalRelation(input: {
     input.indexRunId
   );
   input.canonicalRelationIds.add(id);
+
+  const attribute = relationKindToAttribute(input.kind);
+  input.upsertAttributeDef.run(attribute);
+  const valueBlob = JSON.stringify(input.targetEntityId);
+  const factId = contentHash(input.sourceEntityId, attribute, valueBlob, 'assert');
+  input.insertFact.run(factId, input.sourceEntityId, attribute, valueBlob, 'assert', input.memoryTxId, 0);
+}
+
+function relationKindToAttribute(kind: string): string {
+  if (kind === 'DEPENDS_ON') return 'imports';
+  return kind.toLowerCase();
 }
 
 function dedupeSymbols(symbols: ExtractedSymbol[]): ExtractedSymbol[] {

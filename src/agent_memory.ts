@@ -1,3 +1,4 @@
+import { computeEmbedding } from './embeddings.js';
 import { contentHash, getRepoId, openDatabase } from './store.js';
 import type { Db } from './store.js';
 import { normalizeRepoRoot, redactSecrets } from './security.js';
@@ -147,6 +148,16 @@ export function remember(db: Db, input: RememberInput): RememberResult {
     db.prepare(
       'INSERT OR IGNORE INTO facts (id, entity_id, attribute, value_blob, op, tx_id, redacted) VALUES (?, ?, ?, ?, ?, ?, ?)'
     ).run(factId, input.entity, input.attribute, finalValue, 'assert', txId, isRedacted ? 1 : 0);
+
+    // Redact-then-embed gate: only non-redacted facts get a vector. Redacted
+    // values would leak the secret into the embedding even though value_blob
+    // says [REDACTED]; skipping is the only safe policy.
+    if (!isRedacted) {
+      const embedding = computeEmbedding(`${input.entity}|${input.attribute}|${valueStr}`);
+      db.prepare(
+        'INSERT OR REPLACE INTO embeddings (fact_id, dim64_binary, dim768_int8) VALUES (?, ?, ?)'
+      ).run(factId, embedding.dim64Binary, embedding.dim768Int8);
+    }
 
     for (const sourceFactId of evidenceFactIds) {
       const provId = contentHash(factId, sourceFactId);

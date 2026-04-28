@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
-import { contentHash, openDatabase } from '../src/store.js';
+import { contentHash, loadVectorExtension, openDatabase } from '../src/store.js';
 import type { Db } from '../src/store.js';
 
 function withTempDb<T>(callback: (db: Db) => T): T {
@@ -96,4 +96,17 @@ test('contentHash is deterministic and stable across separator-distinct inputs',
 
   const c = contentHash('foobar');
   assert.notEqual(a, c, 'separator must distinguish concatenated inputs');
+});
+
+test('loadVectorExtension loads sqlite-vec and exposes vec_version when supported', () => {
+  withTempDb((db) => {
+    const loaded = loadVectorExtension(db);
+    if (!loaded) {
+      // No prebuilt sqlite-vec binary for this platform; treat as skipped.
+      return;
+    }
+    const row = db.prepare('SELECT vec_version() AS version').get() as { version: string };
+    assert.equal(typeof row.version, 'string');
+    assert.match(row.version, /^v\d+\.\d+/);
+  });
 });

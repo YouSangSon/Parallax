@@ -347,6 +347,58 @@ test('CLI analyze accepts --base and --head git merge-base diff input', async ()
   assert.ok(report.affectedFiles.some((file) => file.path === 'src/routes/private.ts'));
 });
 
+test('remember populates embeddings table for non-redacted facts', async () => {
+  const repoRoot = await makeFixtureRepo();
+  await initProject({ repoRoot });
+
+  const { remember, withAgentMemoryDb } = await import('../src/index.js');
+  const { factId } = withAgentMemoryDb(repoRoot, false, (db) =>
+    remember(db, {
+      entity: 'file:src/auth/session.ts',
+      attribute: 'observed',
+      value: 'compiled cleanly with no warnings'
+    })
+  );
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const row = db
+      .prepare('SELECT fact_id, length(dim64_binary) AS dim64_len, length(dim768_int8) AS dim768_len FROM embeddings WHERE fact_id = ?')
+      .get(factId) as { fact_id: string; dim64_len: number; dim768_len: number } | undefined;
+    assert.ok(row, 'expected embedding row for non-redacted fact');
+    assert.equal(row?.dim64_len, 8);
+    assert.equal(row?.dim768_len, 768);
+  } finally {
+    db.close();
+  }
+});
+
+test('remember skips embedding when value triggers redaction (privacy gate)', async () => {
+  const repoRoot = await makeFixtureRepo();
+  await initProject({ repoRoot });
+
+  const { remember, withAgentMemoryDb } = await import('../src/index.js');
+  const { factId } = withAgentMemoryDb(repoRoot, false, (db) =>
+    remember(db, {
+      entity: 'file:src/secrets.ts',
+      attribute: 'observed',
+      value: 'leaked sk-test-secret-1234567890 in test fixture'
+    })
+  );
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const fact = db.prepare('SELECT redacted, value_blob FROM facts WHERE id = ?').get(factId) as { redacted: number; value_blob: string };
+    assert.equal(fact.redacted, 1, 'redaction flag should be set');
+    assert.equal(fact.value_blob, '[REDACTED]');
+
+    const embedding = db.prepare('SELECT fact_id FROM embeddings WHERE fact_id = ?').get(factId);
+    assert.equal(embedding, undefined, 'redacted fact must not have an embedding row');
+  } finally {
+    db.close();
+  }
+});
+
 test('CLI exposes remember/recall as round-trip subcommands', async () => {
   const repoRoot = await makeFixtureRepo();
   await initProject({ repoRoot });

@@ -3,6 +3,8 @@ import { existsSync, lstatSync, mkdirSync, realpathSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
 
+import * as sqliteVec from 'sqlite-vec';
+
 export type Db = DatabaseSync;
 
 type OpenDatabaseOptions = {
@@ -40,7 +42,7 @@ export function openDatabase(repoRoot: string, options: OpenDatabaseOptions = {}
     }
   }
 
-  const db = new DatabaseSync(dbPath, { readOnly: options.readOnly ?? false, timeout: 5000 });
+  const db = new DatabaseSync(dbPath, { readOnly: options.readOnly ?? false, timeout: 5000, allowExtension: true });
   db.exec('PRAGMA foreign_keys = ON;');
   if (!options.readOnly) {
     db.exec('PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;');
@@ -470,4 +472,13 @@ export function contentHash(...parts: string[]): string {
     hash.update(' ');
   }
   return hash.digest('hex');
+}
+
+export function loadVectorExtension(db: Db): boolean {
+  try {
+    sqliteVec.load(db as unknown as Parameters<typeof sqliteVec.load>[0]);
+    return true;
+  } catch {
+    return false;
+  }
 }

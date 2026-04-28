@@ -16,7 +16,10 @@ export { exportImpactGraph } from './graph.js';
 export { indexProject } from './indexer.js';
 export { initProject } from './init.js';
 export { createMcpServer, serveMcp } from './mcp.js';
+export { computeEmbedding } from './embeddings.js';
+export type { EmbeddingResult } from './embeddings.js';
 export { redactSecrets, resolveInsideRoot } from './security.js';
+export { loadVectorExtension } from './store.js';
 export type {
   AffectedFile,
   AdapterUsage,

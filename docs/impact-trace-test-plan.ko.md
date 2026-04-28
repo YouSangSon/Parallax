@@ -39,6 +39,7 @@ security
 | Relation model | source/target entity, kind, confidence, adapter run, evidence 연결 |
 | Language adapter contract | TS/JS, Python, Go, Rust, Java/Kotlin, C#, C/C++ adapter가 같은 entity/relation shape를 반환 |
 | Workspace contract model | provider/consumer repo, contract version, cross-repo link ID가 deterministic |
+| Work artifact model | PRD/사업계획서/회의록/KPI/customer artifact ID와 relation이 deterministic |
 | Adapter coverage | unsupported language/system, skipped reason, parse error |
 | Git diff parser | rename, delete, untracked, binary, changed ranges, merge-base |
 | Graph export model | Mermaid/DOT/JSON output이 deterministic하고 secret-like label을 포함하지 않음 |
@@ -59,6 +60,7 @@ security
 | API contract | OpenAPI, GraphQL, route handler | endpoint와 구현체 연결 |
 | gRPC contract | protobuf, service implementation, generated client | RPC method와 provider/consumer 연결 |
 | Workspace contract | provider repo, consumer repo, OpenAPI/protobuf/GraphQL/AsyncAPI | cross-repo producer/consumer 영향 |
+| Company work artifact | PRD, 사업계획서, 회의록, KPI, 고객 문서 | 요구사항/결정/고객 영향이 코드 entity로 연결됨 |
 | Event contract | topic/channel schema, producer, subscriber | event producer/consumer 영향 |
 | Graph visualization | changed/affected/test/deploy/contract relation | Mermaid/DOT/JSON graph export |
 | Policy | CODEOWNERS, OPA/Rego, permission config | owns/governs/requires-review relation |
@@ -75,7 +77,7 @@ security
 | CLI JSON | `reportVersion`, `schemaVersion`, `repo`, `workspace`, `diff`, `changed`, `affected`, `actions`, `evidence`, `coverage`, `graph` |
 | Exit codes | `0` clean, `1` findings/risk, `2` user/config error, `3` internal error |
 | MCP tools | read-only annotation, compact response, deterministic errors |
-| MCP resources | `impact://report/{id}`, `impact://evidence/{id}`, `impact://workspace/{id}`, `impact://contract/{id}`, `impact://graph/{id}`, pagination, not found error |
+| MCP resources | `impact-trace://reports/{id}`, `impact-trace://entities/{id}`, `impact-trace://reports/{id}/graph/{format}`, `impact-trace://coverage/latest`, pagination, not found error |
 | Graph export | Mermaid/DOT/JSON schema, stable node IDs, relation legend, confidence metadata |
 | Report compatibility | deprecated field와 새 field가 migration 기간에 함께 유지됨 |
 
@@ -113,10 +115,11 @@ security
 2. `impact-trace index`가 entity, relation, evidence, coverage를 저장한다.
 3. `impact-trace analyze --base main --head feature --json`이 changed/affected entity를 반환한다.
 4. workspace fixture에서 provider contract 변경이 consumer repo의 affected entity로 이어진다.
-5. graph export가 같은 report에서 deterministic Mermaid/JSON graph를 만든다.
+5. graph export가 같은 report에서 deterministic Mermaid/JSON/DOT graph를 만든다.
 6. MCP client가 같은 report를 compact response와 resource URI로 읽는다.
-7. report에 missing adapter, skipped file, confidence가 포함된다.
-8. security fixture에서 raw secret이 SQLite, Markdown, MCP, graph export 어디에도 나오지 않는다.
+7. report에 missing adapter, skipped file, stale-index warning, confidence가 포함된다.
+8. 회사 업무 artifact fixture에서 PRD/회의록/고객 문서가 요구사항과 코드 entity로 연결된다.
+9. security fixture에서 raw secret이 SQLite, Markdown, MCP, graph export 어디에도 나오지 않는다.
 
 ## 회귀 규칙
 

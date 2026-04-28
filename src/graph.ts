@@ -75,12 +75,22 @@ export async function exportImpactGraph(options: GraphExportOptions): Promise<Gr
       });
     }
 
-    const changedEntityIds = report.changed.map((entity) => entity.id);
-    const canonicalRows = loadCanonicalRows(db, repoId, report.indexRunId, changedEntityIds);
+    const changedEntityIds = new Set(report.changed.map((entity) => entity.id));
+    const affectedEntityIds = new Set(report.affected.map((item) => item.target.id));
+    const graphScopeEntityIds = [...new Set([...changedEntityIds, ...affectedEntityIds])];
+    const canonicalRows = loadCanonicalRows(db, repoId, report.indexRunId, graphScopeEntityIds);
     if (canonicalRows.length > 0) {
       for (const row of canonicalRows) {
         upsertRowNode(nodes, row.source_id, row.source_kind, row.source_display_name, row.source_path, 'affected', asConfidence(row.confidence));
-        upsertRowNode(nodes, row.target_id, row.target_kind, row.target_display_name, row.target_path, 'changed', asConfidence(row.confidence));
+        upsertRowNode(
+          nodes,
+          row.target_id,
+          row.target_kind,
+          row.target_display_name,
+          row.target_path,
+          changedEntityIds.has(row.target_id) ? 'changed' : affectedEntityIds.has(row.target_id) ? 'affected' : 'context',
+          asConfidence(row.confidence)
+        );
         edges.set(row.relation_id, {
           id: row.relation_id,
           source: row.source_id,
@@ -117,9 +127,7 @@ export async function exportImpactGraph(options: GraphExportOptions): Promise<Gr
       edges: graphEdges,
       rendered: ''
     };
-    graph.rendered = options.format === 'json'
-      ? JSON.stringify({ ...graph, rendered: undefined }, null, 2)
-      : renderMermaid(graphNodes, graphEdges);
+    graph.rendered = renderGraph(options.format, graphNodes, graphEdges, graph);
     return graph;
   } finally {
     db.close();
@@ -130,10 +138,10 @@ function loadCanonicalRows(
   db: ReturnType<typeof openDatabase>,
   repoId: number,
   indexRunId: number,
-  changedEntityIds: string[]
+  scopeEntityIds: string[]
 ): CanonicalGraphRow[] {
-  if (changedEntityIds.length === 0) return [];
-  const placeholders = changedEntityIds.map(() => '?').join(', ');
+  if (scopeEntityIds.length === 0) return [];
+  const placeholders = scopeEntityIds.map(() => '?').join(', ');
   return db
     .prepare(`
       SELECT
@@ -154,10 +162,11 @@ function loadCanonicalRows(
       WHERE r.repo_id = ?
         AND r.index_run_id = ?
         AND r.target_entity_id IN (${placeholders})
+        AND r.source_entity_id IN (${placeholders})
         AND source.path IS NOT NULL
       ORDER BY source.display_name, target.display_name, r.kind
     `)
-    .all(repoId, indexRunId, ...changedEntityIds) as CanonicalGraphRow[];
+    .all(repoId, indexRunId, ...scopeEntityIds, ...scopeEntityIds) as CanonicalGraphRow[];
 }
 
 function loadLegacyRows(
@@ -226,12 +235,45 @@ function renderMermaid(nodes: GraphNode[], edges: GraphEdge[]): string {
   return `${lines.join('\n')}\n`;
 }
 
+function renderGraph(format: 'json' | 'mermaid' | 'dot', nodes: GraphNode[], edges: GraphEdge[], graph: Omit<GraphExport, 'rendered'>): string {
+  if (format === 'json') return JSON.stringify({ ...graph, rendered: undefined }, null, 2);
+  if (format === 'dot') return renderDot(nodes, edges);
+  return renderMermaid(nodes, edges);
+}
+
+function renderDot(nodes: GraphNode[], edges: GraphEdge[]): string {
+  const lines = [
+    'digraph impact_trace {',
+    '  rankdir=LR;',
+    '  node [shape=box, style="rounded,filled", fontname="Helvetica"];'
+  ];
+  for (const node of nodes) {
+    const fill = node.group === 'changed' ? '#fde68a' : node.group === 'affected' ? '#bfdbfe' : '#e5e7eb';
+    lines.push(`  "${escapeDotId(node.id)}" [label="${escapeDotLabel(node.label)}", fillcolor="${fill}"];`);
+  }
+  for (const edge of edges) {
+    lines.push(
+      `  "${escapeDotId(edge.source)}" -> "${escapeDotId(edge.target)}" [label="${escapeDotLabel(`${edge.label}:${edge.confidence}`)}"];`
+    );
+  }
+  lines.push('}');
+  return `${lines.join('\n')}\n`;
+}
+
 function escapeMermaidLabel(value: string): string {
   return value
     .replace(/\\/g, '\\\\')
     .replace(/"/g, '\\"')
     .replace(/\n/g, ' ')
     .replace(/\r/g, ' ');
+}
+
+function escapeDotId(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function escapeDotLabel(value: string): string {
+  return escapeDotId(value).replace(/\n/g, ' ').replace(/\r/g, ' ');
 }
 
 function asConfidence(value: string): Confidence {
@@ -261,6 +303,13 @@ function isEntityKind(value: string): value is EntityKind {
     'endpoint',
     'contract',
     'event',
+    'business_plan',
+    'requirement',
+    'decision',
+    'meeting_note',
+    'metric',
+    'customer_artifact',
+    'task',
     'external_entity'
   ].includes(value);
 }

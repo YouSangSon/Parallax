@@ -8,7 +8,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
 
-import { indexProject, initProject } from '../src/index.js';
+import { analyzeDiff, indexProject, initProject } from '../src/index.js';
 import { databasePath } from '../src/store.js';
 
 const require = createRequire(import.meta.url);
@@ -219,6 +219,66 @@ test('MCP analyze_diff does not persist reports', async () => {
     assert.equal(countReports(repoRoot), 0);
     assert.deepEqual(dbArtifacts(repoRoot), artifactsBefore);
     assert.equal(existsSync(path.join(repoRoot, '.impact-trace/reports')), false);
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP exposes report, entity, graph, and coverage resources', async () => {
+  const repoRoot = await makeRepo();
+  const report = await analyzeDiff({ repoRoot, changedFiles: ['src/a.ts'] });
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+
+    const templates = await client.request('resources/templates/list', {});
+    assert.equal(templates.error, undefined);
+    const templateUris = templates.result.resourceTemplates.map((item: { uriTemplate: string }) => item.uriTemplate);
+    assert.ok(templateUris.includes('impact-trace://reports/{reportId}'));
+    assert.ok(templateUris.includes('impact-trace://entities/{entityId}'));
+    assert.ok(templateUris.includes('impact-trace://reports/{reportId}/graph/{format}'));
+
+    const resources = await client.request('resources/list', {});
+    assert.equal(resources.error, undefined);
+    const resourceUris = resources.result.resources.map((item: { uri: string }) => item.uri);
+    assert.ok(resourceUris.includes(`impact-trace://reports/${report.id}`));
+    assert.ok(resourceUris.includes(`impact-trace://reports/${report.id}/graph/dot`));
+    assert.ok(resourceUris.includes('impact-trace://coverage/latest'));
+
+    const reportResource = await client.request('resources/read', {
+      uri: `impact-trace://reports/${report.id}`
+    });
+    assert.equal(reportResource.error, undefined);
+    const reportJson = JSON.parse(reportResource.result.contents[0].text) as { id: string };
+    assert.equal(reportJson.id, report.id);
+
+    const entityResource = await client.request('resources/read', {
+      uri: `impact-trace://entities/${encodeURIComponent('file:src/a.ts')}`
+    });
+    assert.equal(entityResource.error, undefined);
+    const entityJson = JSON.parse(entityResource.result.contents[0].text) as {
+      entity: { id: string };
+      incoming: unknown[];
+      limits: { incomingTruncated: boolean; outgoingTruncated: boolean };
+    };
+    assert.equal(entityJson.entity.id, 'file:src/a.ts');
+    assert.ok(entityJson.incoming.length > 0);
+    assert.equal(entityJson.limits.incomingTruncated, false);
+    assert.equal(entityJson.limits.outgoingTruncated, false);
+
+    const graphResource = await client.request('resources/read', {
+      uri: `impact-trace://reports/${report.id}/graph/dot`
+    });
+    assert.equal(graphResource.error, undefined);
+    assert.match(graphResource.result.contents[0].text, /^digraph impact_trace/);
+
+    const coverageResource = await client.request('resources/read', {
+      uri: 'impact-trace://coverage/latest'
+    });
+    assert.equal(coverageResource.error, undefined);
+    const coverageJson = JSON.parse(coverageResource.result.contents[0].text) as { coverage: unknown[]; truncated: boolean };
+    assert.ok(coverageJson.coverage.length > 0);
+    assert.equal(coverageJson.truncated, false);
   } finally {
     await client.close();
   }

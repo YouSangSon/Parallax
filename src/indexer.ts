@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import { ensureRepo, openDatabase, type Db } from './store.js';
@@ -29,11 +29,28 @@ const languageByExtension = new Map<string, string>([
   ['.cxx', 'cpp'],
   ['.hpp', 'cpp'],
   ['.hh', 'cpp'],
-  ['.hxx', 'cpp']
+  ['.hxx', 'cpp'],
+  ['.sh', 'shell'],
+  ['.bash', 'shell'],
+  ['.zsh', 'shell'],
+  ['.yaml', 'yaml'],
+  ['.yml', 'yaml'],
+  ['.json', 'json'],
+  ['.toml', 'toml'],
+  ['.tf', 'terraform'],
+  ['.proto', 'protobuf'],
+  ['.graphql', 'graphql'],
+  ['.gql', 'graphql']
 ]);
-const sourceExtensions = new Set(languageByExtension.keys());
+const languageByFileName = new Map<string, string>([
+  ['Dockerfile', 'dockerfile'],
+  ['Containerfile', 'dockerfile'],
+  ['Makefile', 'makefile'],
+  ['CODEOWNERS', 'policy']
+]);
 const adapterId = 'multi-language-regex-mvp';
 const adapterVersion = '2';
+const defaultMaxFileBytes = 1_000_000;
 
 type ScannedFile = {
   absolutePath: string;
@@ -41,6 +58,17 @@ type ScannedFile = {
   content: string;
   hash: string;
   language: string;
+};
+
+type SkippedFile = {
+  relativePath: string;
+  language?: string;
+  reason: string;
+};
+
+type ScanResult = {
+  files: ScannedFile[];
+  skipped: SkippedFile[];
 };
 
 type ExtractedSymbol = {
@@ -57,12 +85,18 @@ export async function indexProject(options: IndexOptions): Promise<IndexResult> 
   const repoId = ensureRepo(db, repoRoot);
   const run = db
     .prepare('INSERT INTO index_runs (repo_id, status, started_at, extractor_version) VALUES (?, ?, datetime(\'now\'), ?)')
-    .run(repoId, 'running', 'mvp-ts-js-1');
+    .run(repoId, 'running', `${adapterId}-${adapterVersion}`);
   const indexRunId = Number(run.lastInsertRowid);
 
   try {
-    const files = scanFiles(repoRoot);
-    const languageIds = [...new Set(files.map((file) => file.language))].sort();
+    const scan = scanFiles(repoRoot, options.maxFileBytes ?? defaultMaxFileBytes);
+    const files = scan.files;
+    const languageIds = [
+      ...new Set([
+        ...files.map((file) => file.language),
+        ...scan.skipped.flatMap((file) => file.language ? [file.language] : [])
+      ])
+    ].sort();
     const adapterRun = db
       .prepare(`
         INSERT INTO adapter_runs (index_run_id, adapter_id, adapter_version, language_ids, status, started_at)
@@ -116,6 +150,10 @@ export async function indexProject(options: IndexOptions): Promise<IndexResult> 
 
     const canonicalEntityIds = new Set<string>();
     const canonicalRelationIds = new Set<string>();
+
+    for (const skipped of scan.skipped) {
+      insertCoverage.run(indexRunId, adapterId, skipped.relativePath, skipped.language ?? null, 'skipped', skipped.reason);
+    }
 
     for (const file of files) {
       upsertFile.run(repoId, file.relativePath, file.language, file.hash, indexRunId);
@@ -298,6 +336,30 @@ export async function indexProject(options: IndexOptions): Promise<IndexResult> 
         }
       }
 
+      if (isSystemOrContractLanguage(file.language)) {
+        for (const sourcePath of inferTextTargets(file.relativePath, file.content, fileIdByPath)) {
+          const relationKind = relationKindForSystemReference(file.language);
+          insertEdge.run(repoId, fileId, fileIdByPath.get(sourcePath)!, relationKind, sourcePath, 'heuristic', 'system/config mention', indexRunId);
+          insertCanonicalRelation({
+            repoId,
+            sourceEntityId: fileEntityId(file.relativePath),
+            targetEntityId: fileEntityId(sourcePath),
+            kind: relationKind,
+            confidence: 'heuristic',
+            provenance: 'system/config mention',
+            adapterRunId,
+            indexRunId,
+            sourcePath: file.relativePath,
+            snippet: file.content,
+            insertRelation,
+            insertRelationEvidence,
+            canonicalEntityIds,
+            canonicalRelationIds
+          });
+          edgesIndexed++;
+        }
+      }
+
       insertEvidence.run(
         evidenceId(file.relativePath, 'scan'),
         repoId,
@@ -328,8 +390,14 @@ export async function indexProject(options: IndexOptions): Promise<IndexResult> 
       ],
       coverage: {
         indexedPaths: files.length,
-        skippedPaths: 0,
-        unsupportedLanguageIds: []
+        skippedPaths: scan.skipped.length,
+        unsupportedLanguageIds: [],
+        skipped: scan.skipped.map((file) => ({
+          path: file.relativePath,
+          ...(file.language ? { languageId: file.language } : {}),
+          status: 'skipped',
+          reason: file.reason
+        }))
       }
     };
   } catch (error) {
@@ -341,8 +409,9 @@ export async function indexProject(options: IndexOptions): Promise<IndexResult> 
   }
 }
 
-function scanFiles(repoRoot: string): ScannedFile[] {
+function scanFiles(repoRoot: string, maxFileBytes: number): ScanResult {
   const out: ScannedFile[] = [];
+  const skipped: SkippedFile[] = [];
   const walk = (dir: string) => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       if (entry.isDirectory()) {
@@ -353,25 +422,37 @@ function scanFiles(repoRoot: string): ScannedFile[] {
       }
       if (!entry.isFile()) continue;
       const absolutePath = path.join(dir, entry.name);
-      const ext = path.extname(entry.name).toLowerCase();
-      if (!sourceExtensions.has(ext)) continue;
-      const content = readFileSync(absolutePath, 'utf8');
       const relativePath = toRelativePath(repoRoot, absolutePath);
+      const language = languageForPath(relativePath);
+      if (!language) continue;
+      const size = statSync(absolutePath).size;
+      if (size > maxFileBytes) {
+        skipped.push({
+          relativePath,
+          language,
+          reason: `file exceeds maxFileBytes (${size} > ${maxFileBytes})`
+        });
+        continue;
+      }
+      const content = readFileSync(absolutePath, 'utf8');
       out.push({
         absolutePath,
         relativePath,
         content,
         hash: createHash('sha256').update(content).digest('hex'),
-        language: languageByExtension.get(ext) ?? ext.slice(1) ?? 'text'
+        language
       });
     }
   };
   walk(repoRoot);
-  return out.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+  return {
+    files: out.sort((a, b) => a.relativePath.localeCompare(b.relativePath)),
+    skipped: skipped.sort((a, b) => a.relativePath.localeCompare(b.relativePath))
+  };
 }
 
 function extractSymbols(file: ScannedFile): ExtractedSymbol[] {
-  if (file.relativePath.endsWith('.md')) return [];
+  if (file.relativePath.endsWith('.md') || isSystemOrContractLanguage(file.language)) return [];
   const symbols: ExtractedSymbol[] = [];
   const addMatches = (pattern: RegExp, kindIndex: number, nameIndex: number, exportedIndex?: number) => {
     let match: RegExpExecArray | null;
@@ -439,6 +520,12 @@ function extractImports(file: ScannedFile): string[] {
     patterns.push(/^\s*using\s+([A-Za-z_][\w.]*)\s*;/gm);
   } else if (file.language === 'c' || file.language === 'cpp') {
     patterns.push(/^\s*#include\s+[<"]([^>"]+)[>"]/gm);
+  } else if (file.language === 'shell') {
+    patterns.push(/^\s*(?:source|\.)\s+([^\s#]+)/gm);
+  } else if (file.language === 'dockerfile') {
+    patterns.push(/^\s*(?:COPY|ADD)\s+([^\s]+)\s+/gim);
+  } else if (file.language === 'protobuf') {
+    patterns.push(/^\s*import\s+"([^"]+)";/gm);
   }
   for (const pattern of patterns) {
     let match: RegExpExecArray | null;
@@ -470,6 +557,13 @@ function resolveImportPath(sourcePath: string, specifier: string, fileIdByPath: 
     `${base}.h`,
     `${base}.cpp`,
     `${base}.hpp`,
+    `${base}.sh`,
+    `${base}.yaml`,
+    `${base}.yml`,
+    `${base}.json`,
+    `${base}.toml`,
+    `${base}.proto`,
+    `${base}.graphql`,
     path.posix.join(base, '__init__.py'),
     path.posix.join(base, 'mod.rs'),
     path.posix.join(base, 'index.ts'),
@@ -492,11 +586,19 @@ function inferTestTargets(relativePath: string, content: string, fileIdByPath: M
 }
 
 function inferDocTargets(content: string, fileIdByPath: Map<string, number>): string[] {
+  return inferTextTargets('', content, fileIdByPath);
+}
+
+function inferTextTargets(relativePath: string, content: string, fileIdByPath: Map<string, number>): string[] {
   const targets: string[] = [];
   const normalizedContent = content.toLowerCase();
   for (const file of fileIdByPath.keys()) {
+    if (file === relativePath) continue;
     const stem = path.posix.basename(file).replace(/\.[^.]+$/, '').toLowerCase();
-    if (stem && normalizedContent.includes(stem)) {
+    if (
+      normalizedContent.includes(file.toLowerCase()) ||
+      (stem.length >= 4 && normalizedContent.includes(stem))
+    ) {
       targets.push(file);
     }
   }
@@ -518,7 +620,45 @@ function fileEntityId(relativePath: string): string {
 function fileKind(relativePath: string, languageId: string): EntityKind {
   if (isTestFile(relativePath)) return 'test';
   if (languageId === 'markdown') return 'doc';
+  if (languageId === 'policy') return 'policy';
+  if (languageId === 'yaml' && relativePath.startsWith('.github/workflows/')) return 'workflow';
+  if (languageId === 'dockerfile' || languageId === 'terraform') return 'resource';
+  if (languageId === 'yaml' || languageId === 'json' || languageId === 'toml' || languageId === 'shell' || languageId === 'makefile') return 'config';
+  if (languageId === 'protobuf' || languageId === 'graphql') return 'contract';
   return 'file';
+}
+
+function languageForPath(relativePath: string): string | undefined {
+  const basename = path.posix.basename(relativePath);
+  const byName = languageByFileName.get(basename);
+  if (byName) return byName;
+  const ext = path.posix.extname(basename).toLowerCase();
+  return languageByExtension.get(ext);
+}
+
+function isSystemOrContractLanguage(languageId: string): boolean {
+  return [
+    'shell',
+    'yaml',
+    'json',
+    'toml',
+    'dockerfile',
+    'makefile',
+    'terraform',
+    'protobuf',
+    'graphql',
+    'policy'
+  ].includes(languageId);
+}
+
+function relationKindForSystemReference(languageId: string): string {
+  if (languageId === 'policy') return 'GOVERNS';
+  if (languageId === 'dockerfile' || languageId === 'terraform' || languageId === 'yaml' || languageId === 'json' || languageId === 'toml') {
+    return 'CONFIGURES';
+  }
+  if (languageId === 'protobuf' || languageId === 'graphql') return 'IMPLEMENTS';
+  if (languageId === 'shell' || languageId === 'makefile') return 'CALLS';
+  return 'REFERENCES';
 }
 
 function symbolEntityId(relativePath: string, languageId: string, symbol: ExtractedSymbol): string {

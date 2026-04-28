@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -8,11 +10,15 @@ import { test } from 'node:test';
 import { analyzeDiff, exportImpactGraph, indexProject, initProject } from '../src/index.js';
 import { databasePath } from '../src/store.js';
 
+const require = createRequire(import.meta.url);
+const tsxLoaderPath = require.resolve('tsx');
+
 async function makeFixtureRepo(): Promise<string> {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-'));
   await mkdir(path.join(repoRoot, 'src/auth'), { recursive: true });
   await mkdir(path.join(repoRoot, 'src/routes'), { recursive: true });
   await mkdir(path.join(repoRoot, 'tests'), { recursive: true });
+  await mkdir(path.join(repoRoot, '.github/workflows'), { recursive: true });
 
   await writeFile(
     path.join(repoRoot, 'src/auth/session.ts'),
@@ -48,6 +54,19 @@ async function makeFixtureRepo(): Promise<string> {
     path.join(repoRoot, 'README.md'),
     'Call `validateSession` before rendering private routes.\n'
   );
+  await writeFile(
+    path.join(repoRoot, '.github/workflows/ci.yml'),
+    [
+      'name: ci',
+      'on: [push]',
+      'jobs:',
+      '  test:',
+      '    runs-on: ubuntu-latest',
+      '    steps:',
+      '      - run: npm test -- src/auth/session.ts',
+      ''
+    ].join('\n')
+  );
 
   return repoRoot;
 }
@@ -61,7 +80,19 @@ test('initProject creates config and SQLite database tables', async () => {
   assert.equal(result.configPath.endsWith('.impact-trace/config.json'), true);
   assert.equal(result.databasePath.endsWith('.impact-trace/impact.db'), true);
   const config = JSON.parse(await readFile(result.configPath, 'utf8')) as { schemaVersion: number };
-  assert.equal(config.schemaVersion, 1);
+  assert.equal(config.schemaVersion, 3);
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const tables = db.prepare('SELECT group_concat(name) AS names FROM sqlite_master WHERE type = ?').get('table') as { names: string };
+    const schemaVersion = db.prepare('SELECT max(version) AS version FROM schema_versions').get() as { version: number };
+    assert.match(tables.names, /workspaces/);
+    assert.match(tables.names, /contracts/);
+    assert.match(tables.names, /cross_repo_links/);
+    assert.match(tables.names, /work_artifacts/);
+    assert.equal(schemaVersion.version, 3);
+  } finally {
+    db.close();
+  }
 });
 
 test('indexProject and analyzeDiff report direct importers, tests, docs, runnable commands, and redacted evidence', async () => {
@@ -80,6 +111,7 @@ test('indexProject and analyzeDiff report direct importers, tests, docs, runnabl
   assert.ok(report.affectedFiles.some((file) => file.path === 'src/routes/private.ts'));
   assert.ok(report.affectedFiles.some((file) => file.path === 'tests/session.test.ts'));
   assert.ok(report.affectedFiles.some((file) => file.path === 'README.md'));
+  assert.ok(report.affectedFiles.some((file) => file.path === '.github/workflows/ci.yml'));
   assert.ok(report.testCommands.some((command) => command.command === 'npm' && command.args?.includes('tests/session.test.ts')));
   assert.ok(report.evidence.length > 0);
   assert.ok(report.evidence.some((item) => item.extractorId === 'canonical-entity-graph'));
@@ -102,6 +134,8 @@ test('indexProject writes canonical entity graph and broad language file entitie
   await writeFile(path.join(repoRoot, 'src/Program.cs'), 'using System;\npublic class Program { public void Run() {} }\n');
   await writeFile(path.join(repoRoot, 'src/native/main.hpp'), 'int add(int a, int b);\n');
   await writeFile(path.join(repoRoot, 'src/native/main.cpp'), '#include "main.hpp"\nint add(int a, int b) { return a + b; }\n');
+  await writeFile(path.join(repoRoot, 'Dockerfile'), 'COPY src/Main.java /app/Main.java\n');
+  await writeFile(path.join(repoRoot, 'schema.proto'), 'syntax = "proto3";\nservice UserService {}\n');
 
   await initProject({ repoRoot });
   const index = await indexProject({ repoRoot });
@@ -112,6 +146,8 @@ test('indexProject writes canonical entity graph and broad language file entitie
   assert.ok(index.adaptersUsed?.[0]?.languageIds.includes('kotlin'));
   assert.ok(index.adaptersUsed?.[0]?.languageIds.includes('csharp'));
   assert.ok(index.adaptersUsed?.[0]?.languageIds.includes('cpp'));
+  assert.ok(index.adaptersUsed?.[0]?.languageIds.includes('dockerfile'));
+  assert.ok(index.adaptersUsed?.[0]?.languageIds.includes('protobuf'));
 
   const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
   try {
@@ -129,6 +165,8 @@ test('indexProject writes canonical entity graph and broad language file entitie
     assert.match(indexedLanguages.languages, /kotlin/);
     assert.match(indexedLanguages.languages, /csharp/);
     assert.match(indexedLanguages.languages, /cpp/);
+    assert.match(indexedLanguages.languages, /dockerfile/);
+    assert.match(indexedLanguages.languages, /protobuf/);
     assert.equal(adapterRuns.count, 1);
   } finally {
     db.close();
@@ -161,6 +199,96 @@ test('exportImpactGraph renders report graph from SQLite relations without graph
   assert.match(mermaidGraph.rendered, /src\/auth\/session\.ts/);
   assert.match(mermaidGraph.rendered, /DEPENDS_ON/);
   assert.doesNotMatch(mermaidGraph.rendered, /sk-test-secret/);
+
+  const dotGraph = await exportImpactGraph({ repoRoot, reportId: report.id, format: 'dot' });
+  assert.match(dotGraph.rendered, /^digraph impact_trace/);
+  assert.match(dotGraph.rendered, /src\/auth\/session\.ts/);
+  assert.match(dotGraph.rendered, /DEPENDS_ON/);
+  assert.doesNotMatch(dotGraph.rendered, /sk-test-secret/);
+});
+
+test('analyzeDiff follows bounded multi-hop relations with cycle protection', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-depth-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await mkdir(path.join(repoRoot, 'tests'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/core.ts'), 'export function core() { return 1; }\n');
+  await writeFile(path.join(repoRoot, 'src/service.ts'), 'import { core } from "./core"; export const service = core();\n');
+  await writeFile(path.join(repoRoot, 'src/route.ts'), 'import { service } from "./service"; export const route = service;\n');
+  await writeFile(path.join(repoRoot, 'tests/route.test.ts'), 'import { route } from "../src/route"; test("route", () => route);\n');
+  await initProject({ repoRoot });
+  await indexProject({ repoRoot });
+
+  const shallow = await analyzeDiff({ repoRoot, changedFiles: ['src/core.ts'], maxDepth: 1 });
+  assert.ok(shallow.affectedFiles.some((file) => file.path === 'src/service.ts'));
+  assert.equal(shallow.affectedFiles.some((file) => file.path === 'src/route.ts'), false);
+
+  const deep = await analyzeDiff({ repoRoot, changedFiles: ['src/core.ts'], maxDepth: 3 });
+  const route = deep.affectedFiles.find((file) => file.path === 'src/route.ts');
+  const testFile = deep.affectedFiles.find((file) => file.path === 'tests/route.test.ts');
+  assert.ok(route);
+  assert.ok(testFile);
+  assert.equal(route.depth, 2);
+  assert.equal(testFile.depth, 3);
+  assert.ok(testFile.relationPath && testFile.relationPath.length >= 3);
+
+  const bounded = await analyzeDiff({ repoRoot, changedFiles: ['src/core.ts'], maxDepth: 2 });
+  const boundedGraph = await exportImpactGraph({ repoRoot, reportId: bounded.id, format: 'json' });
+  const parsedGraph = JSON.parse(boundedGraph.rendered) as { nodes: Array<{ id: string }> };
+  assert.equal(bounded.affectedFiles.some((file) => file.path === 'tests/route.test.ts'), false);
+  assert.equal(parsedGraph.nodes.some((node) => node.id === 'file:tests/route.test.ts'), false);
+});
+
+test('analyzeDiff report IDs include fanout options that change impact scope', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-fanout-id-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/core.ts'), 'export const core = 1;\n');
+  await writeFile(path.join(repoRoot, 'src/a.ts'), 'import { core } from "./core"; export const a = core;\n');
+  await writeFile(path.join(repoRoot, 'src/b.ts'), 'import { core } from "./core"; export const b = core;\n');
+  await initProject({ repoRoot });
+  await indexProject({ repoRoot });
+
+  const fanoutOne = await analyzeDiff({ repoRoot, changedFiles: ['src/core.ts'], maxFanout: 1 });
+  const fanoutTwo = await analyzeDiff({ repoRoot, changedFiles: ['src/core.ts'], maxFanout: 2 });
+
+  assert.notEqual(fanoutOne.id, fanoutTwo.id);
+  assert.ok(fanoutTwo.affectedFiles.length >= fanoutOne.affectedFiles.length);
+});
+
+test('indexProject records skipped files when resource limits are exceeded', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-limits-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/small.ts'), 'export const ok = 1;\n');
+  await writeFile(path.join(repoRoot, 'src/large.ts'), `export const big = "${'x'.repeat(200)}";\n`);
+  await initProject({ repoRoot });
+
+  const index = await indexProject({ repoRoot, maxFileBytes: 40 });
+
+  assert.equal(index.filesIndexed, 1);
+  assert.equal(index.coverage?.skippedPaths, 1);
+  assert.equal(index.coverage?.skipped?.[0]?.path, 'src/large.ts');
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const skipped = db
+      .prepare('SELECT path, status, reason FROM index_coverage WHERE status = ?')
+      .get('skipped') as { path: string; status: string; reason: string };
+    assert.equal(skipped.path, 'src/large.ts');
+    assert.equal(skipped.status, 'skipped');
+    assert.match(skipped.reason, /maxFileBytes/);
+  } finally {
+    db.close();
+  }
+});
+
+test('analyzeDiff warns when the working tree is stale relative to the latest index', async () => {
+  const repoRoot = await makeFixtureRepo();
+  await initProject({ repoRoot });
+  await indexProject({ repoRoot });
+  await writeFile(path.join(repoRoot, 'src/auth/session.ts'), 'export function validateSession() { return false; }\n');
+
+  const report = await analyzeDiff({ repoRoot, changedFiles: ['src/auth/session.ts'] });
+
+  assert.ok(report.warnings?.some((warning) => warning.includes('stale index')));
 });
 
 test('analyzeDiff returns structured test commands for repo-controlled filenames', async () => {
@@ -178,4 +306,43 @@ test('analyzeDiff returns structured test commands for repo-controlled filenames
   assert.ok(command);
   assert.deepEqual(command.args, ['test', '--', 'tests/pwn$(touch_HACKED).test.ts']);
   assert.ok(command.display.includes("'tests/pwn$(touch_HACKED).test.ts'"));
+});
+
+test('CLI analyze accepts --base and --head git merge-base diff input', async () => {
+  const repoRoot = await makeFixtureRepo();
+  execFileSync('git', ['init', '-b', 'main'], { cwd: repoRoot });
+  execFileSync('git', ['config', 'user.email', 'impact-trace@example.com'], { cwd: repoRoot });
+  execFileSync('git', ['config', 'user.name', 'Impact Trace Test'], { cwd: repoRoot });
+  execFileSync('git', ['add', '.'], { cwd: repoRoot });
+  execFileSync('git', ['commit', '-m', 'base'], { cwd: repoRoot, stdio: 'ignore' });
+  execFileSync('git', ['checkout', '-b', 'feature'], { cwd: repoRoot, stdio: 'ignore' });
+  await writeFile(
+    path.join(repoRoot, 'src/auth/session.ts'),
+    [
+      'export function validateSession(token: string) {',
+      '  return token.length > 2;',
+      '}',
+      ''
+    ].join('\n')
+  );
+  execFileSync('git', ['add', 'src/auth/session.ts'], { cwd: repoRoot });
+  execFileSync('git', ['commit', '-m', 'change session'], { cwd: repoRoot, stdio: 'ignore' });
+  execFileSync('git', ['checkout', 'main'], { cwd: repoRoot, stdio: 'ignore' });
+  await writeFile(path.join(repoRoot, 'README.md'), 'Main branch only docs change.\n');
+  execFileSync('git', ['add', 'README.md'], { cwd: repoRoot });
+  execFileSync('git', ['commit', '-m', 'main docs change'], { cwd: repoRoot, stdio: 'ignore' });
+  execFileSync('git', ['checkout', 'feature'], { cwd: repoRoot, stdio: 'ignore' });
+  await initProject({ repoRoot });
+  await indexProject({ repoRoot });
+
+  const result = spawnSync(process.execPath, ['--import', tsxLoaderPath, path.resolve('src/cli.ts'), 'analyze', '--base', 'main', '--head', 'HEAD', '--json'], {
+    cwd: repoRoot,
+    encoding: 'utf8'
+  });
+
+  assert.equal(result.status, 1);
+  const report = JSON.parse(result.stdout) as { changedFiles: string[]; affectedFiles: Array<{ path: string }> };
+  assert.deepEqual(report.changedFiles, ['src/auth/session.ts']);
+  assert.equal(report.changedFiles.includes('README.md'), false);
+  assert.ok(report.affectedFiles.some((file) => file.path === 'src/routes/private.ts'));
 });

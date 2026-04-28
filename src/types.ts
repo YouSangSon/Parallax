@@ -10,6 +10,7 @@ export type InitResult = {
 
 export type IndexOptions = {
   repoRoot: string;
+  maxFileBytes?: number;
 };
 
 export type IndexResult = {
@@ -29,9 +30,11 @@ export type AnalyzeOptions = {
   writeReport?: boolean;
   persistReport?: boolean;
   readOnly?: boolean;
+  maxDepth?: number;
+  maxFanout?: number;
 };
 
-export type GraphExportFormat = 'json' | 'mermaid';
+export type GraphExportFormat = 'json' | 'mermaid' | 'dot';
 
 export type GraphExportOptions = {
   repoRoot: string;
@@ -56,6 +59,8 @@ export type AffectedFile = {
   path: string;
   reason: string;
   confidence: Confidence;
+  depth?: number;
+  relationPath?: string[];
 };
 
 export type EntityKind =
@@ -72,6 +77,13 @@ export type EntityKind =
   | 'endpoint'
   | 'contract'
   | 'event'
+  | 'business_plan'
+  | 'requirement'
+  | 'decision'
+  | 'meeting_note'
+  | 'metric'
+  | 'customer_artifact'
+  | 'task'
   | 'external_entity';
 
 export type EntityRef = {
@@ -109,6 +121,14 @@ export type IndexCoverage = {
   indexedPaths: number;
   skippedPaths: number;
   unsupportedLanguageIds: string[];
+  skipped?: IndexCoverageItem[];
+};
+
+export type IndexCoverageItem = {
+  path: string;
+  languageId?: string;
+  status: 'indexed' | 'skipped';
+  reason: string;
 };
 
 export type ImpactReport = {
@@ -124,6 +144,7 @@ export type ImpactReport = {
    */
   testCommands: ImpactAction[];
   evidence: Evidence[];
+  warnings?: string[];
   reportPath?: string;
 };
 

@@ -10,6 +10,8 @@ starting point. The final analysis units are functions, variables, classes, modu
 packages, shell commands, YAML workflows, Kubernetes resources, Terraform resources,
 policy rules, docs, tests, contracts, and events. Language coverage starts with TS/JS
 but expands through Python, Go, Rust, Java, Kotlin, C#, C, and C++ under the same model.
+Later, business plans, PRDs, meeting notes, decisions, KPIs, and customer/sales
+documents become entities under that same model.
 
 ## Core Terms
 
@@ -21,6 +23,7 @@ but expands through Python, Go, Rust, Java, Kotlin, C#, C, and C++ under the sam
 | Adapter | Extracts entities and relations from a language or system | TS/JS, Python, Go, Rust, Java/Kotlin, C#, C/C++, shell, YAML, CI, Terraform can evolve independently. |
 | Workspace | A product/service boundary that groups multiple repos | Tracks impact across projects connected by API, gRPC, and events. |
 | Contract | A service contract such as OpenAPI, protobuf, GraphQL, or AsyncAPI | Determines whether provider changes can break consumers. |
+| Work Artifact | Business plan, PRD, meeting note, KPI, or customer document | Connects code changes to company work and company work changes back to implementation. |
 | Coverage | What was indexed and what was skipped | Unknown areas are visible. |
 | Visualization | A relationship view derived from the entity graph | Agents and humans inspect the same impact path. |
 | Action | Recommended verification or review work | Tests, owner reviews, policy reviews, and docs updates are structured. |
@@ -37,6 +40,7 @@ but expands through Python, Go, Rust, Java, Kotlin, C#, C, and C++ under the sam
 | Infra | `resource` | Docker image, Kubernetes deployment, Terraform resource |
 | API | `endpoint` | REST route, GraphQL field, protobuf service |
 | Contract | `contract`, `event` | OpenAPI operation, protobuf method, GraphQL field, Kafka topic |
+| Company Work | `business_plan`, `requirement`, `decision`, `meeting_note`, `metric`, `customer_artifact`, `task` | Business plan, PRD, meeting note, KPI, customer/sales document, roadmap task |
 | External | `external_entity` | SaaS API, third-party service, unmanaged repo outside the workspace |
 | Governance | `policy` | CODEOWNERS rule, OPA/Rego rule, permission manifest |
 
@@ -82,6 +86,9 @@ collisions.
 | OpenAPI contract | `repo:billing-api:contract:openapi:/paths/~1invoices/get` |
 | Protobuf method | `repo:user-api:contract:protobuf:user.v1.UserService/GetUser` |
 | Event topic | `repo:orders:event:kafka:order.created` |
+| PRD requirement | `artifact:prd:billing-v2#requirement:invoice-retry` |
+| Business plan section | `artifact:business-plan:fy2026#pricing` |
+| Customer artifact | `artifact:customer:acme#support:case-1234` |
 | External API | `external:stripe:/v1/customers` |
 
 ## Language Adapter Scope
@@ -116,6 +123,24 @@ repo-local DBs; it reads completed indexes from each repo and adds cross-repo re
 Contract diffs are classified as `breaking`, `non-breaking`, or `unknown`. The analyzer
 connects potentially breaking changes to consumer repos, related tests, and owner review
 actions.
+
+## Company Work Artifact Links
+
+Code-only graphs are not enough for enterprise impact analysis. Business plans, PRDs,
+meeting notes, policies, KPIs, and customer/sales documents carry implementation intent
+and verification criteria.
+
+| Artifact | Entity | Main Relations |
+|---|---|---|
+| Business plan/GTM plan | `business_plan` | `DOCUMENTS`, `GOVERNS`, `REFERENCES` |
+| PRD/requirement | `requirement` | `GOVERNS`, `VERIFIES`, `REFERENCES` |
+| Meeting notes/decision records | `meeting_note`, `decision` | `DOCUMENTS`, `GOVERNS` |
+| KPI/OKR/metric definition | `metric` | `VERIFIES`, `REFERENCES` |
+| Customer/sales document | `customer_artifact` | `REFERENCES`, `GOVERNS` |
+| Task/roadmap item | `task` | `IMPLEMENTS`, `VERIFIES`, `DOCUMENTS` |
+
+The first adapter should read repo-local Markdown/docs. Later adapters can project from
+Obsidian vaults, Google Drive, Docs/Sheets, and ticket systems.
 
 ## Relationship Visualization Model
 
@@ -154,6 +179,7 @@ Repo files
 | Config/system | YAML, JSON, TOML, shell, Docker, Kubernetes, Terraform, CI. |
 | Workspace/contract | Repo catalogs, OpenAPI, protobuf, GraphQL, AsyncAPI, event schemas. |
 | Policy/governance | CODEOWNERS, OPA/Rego, permission manifests. |
+| Company work artifact | PRDs, business plans, meeting notes, KPIs, and customer documents. |
 | Action provider | Recommends test, review, docs, and deploy checks. |
 | Projection | Derives graph DB, visual graph, vector DB, or Obsidian surfaces from SQLite. |
 
@@ -164,6 +190,7 @@ Repo files
 | `entities` and `relations` are canonical | Enables general impact analysis without a graph DB. |
 | `workspaces` and `workspace_repos` are thin layers above repo-local DBs | Keeps single-repo use simple while enabling cross-repo analysis. |
 | `contracts`, `contract_versions`, and `cross_repo_links` exist | Stores producer/consumer impact for API/gRPC/event changes. |
+| `work_artifacts` and `artifact_links` exist | Stores requirements and decisions between code and product/business/operations documents. |
 | `adapter_runs` are stored | Shows which adapter version read which inputs. |
 | `relation_evidence` stores source spans | Reports can show line-level proof. |
 | `index_coverage` stores skipped reasons | Unsupported languages and oversized files are visible. |
@@ -194,8 +221,8 @@ Repo files
 | `edges.target_path` reverse lookup | `relations.target_entity_id` graph traversal |
 | Regex TS/JS extraction | Semantic adapter plus fallback adapter |
 | Whole-file snippet evidence | Source span evidence |
-| `changedFiles` input | Git diff, entity input, patch input |
+| `changedFiles` and git diff input | Entity input, patch input |
 | npm test action | Runner/action provider |
-| Single MCP tool JSON text | Compact tool plus paginated resources |
+| MCP tool plus report/entity/graph/coverage resources | Paginated evidence/workspace/contract resources |
 | Repo-local impact only | Workspace-aware API/gRPC/event contract impact |
-| No graph visualization | Mermaid/DOT/JSON graph export plus optional web explorer |
+| Mermaid/DOT/JSON graph export | Optional web explorer |

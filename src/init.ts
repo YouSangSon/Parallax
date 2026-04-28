@@ -15,7 +15,7 @@ export async function initProject(options: InitOptions): Promise<InitResult> {
       configPath,
       `${JSON.stringify(
         {
-          schemaVersion: 1,
+          schemaVersion: 3,
           project: 'impact-trace',
           mcp: { readOnly: true },
           redaction: { enabled: true }

@@ -15,6 +15,8 @@ The core is not a graph database. The core is a canonical entity/relation model 
 can connect functions, variables, classes, modules, shell scripts, YAML, CI workflows,
 Terraform, Kubernetes, OpenAPI, policy files, docs, and tests inside one repository,
 plus REST API, gRPC/protobuf, GraphQL, and AsyncAPI/event contracts across repositories.
+Longer term, the same model should include company work artifacts such as business
+plans, PRDs, meeting notes, decisions, KPI definitions, and customer/sales documents.
 SQLite remains the source of truth. Graph databases are optional projections.
 
 ## Table Of Contents
@@ -43,6 +45,7 @@ SQLite remains the source of truth. Graph databases are optional projections.
 | Storage-neutral core | SQLite is the source of truth; graph/vector/CodeQL are optional adapters. |
 | Multi-language by default | A real repo can mix TS/JS, Python, Go, Rust, Java, Kotlin, C#, C, C++, and system configs. |
 | Workspace-aware impact | A product can be split across repos and service contracts. |
+| Company-work aware impact | Business plans, PRDs, meeting notes, policies, KPIs, and customer documents are graph entities too. |
 | Visualization is a projection | Relationship visualization is derived from the canonical graph, not a source of truth. |
 | No silent certainty | Unknowns appear as `unknown`, coverage gaps, or missing adapters. |
 | Read-only agent surface first | MCP starts as a safe read-only analysis surface. |
@@ -55,11 +58,11 @@ The MVP is intentionally narrow.
 | Area | Current State |
 |---|---|
 | CLI | `init`, `index`, `analyze`, `graph export`, `mcp serve` |
-| MCP | Official MCP SDK stdio server with read-only `impact_trace_analyze_diff` |
-| Storage | Repo-local SQLite with legacy `files/symbols/edges` and canonical `entities/relations/relation_evidence` in parallel |
-| Indexing | TS/JS/Markdown plus Python/Go/Rust/Java/Kotlin/C#/C/C++ files and basic symbol/dependency heuristics |
-| Report | Canonical `relations` first, legacy `edges` fallback, language-neutral `changed`, `affected`, `actions`, `evidence` report model |
-| Visualization | Mermaid/JSON graph export for report scope; DOT and web explorer are planned |
+| MCP | Official MCP SDK stdio server with read-only `impact_trace_analyze_diff` plus report/entity/graph/coverage resources |
+| Storage | Repo-local SQLite with legacy `files/symbols/edges`, canonical `entities/relations/relation_evidence`, and workspace/contract/work-artifact extension schema |
+| Indexing | TS/JS/Markdown plus Python/Go/Rust/Java/Kotlin/C#/C/C++, shell/YAML/JSON/TOML/Dockerfile/Makefile/Terraform/protobuf/GraphQL/CODEOWNERS heuristics |
+| Report | Canonical bounded multi-hop traversal, legacy `edges` fallback, language-neutral `changed`, `affected`, `actions`, `evidence`, `warnings` report model |
+| Visualization | Mermaid/JSON/DOT graph export for report scope; web explorer is planned |
 | Security | Path containment, symlink escape defense, MCP no-persistence, redaction tests |
 | Tests | Unit, integration, security, MCP, install smoke |
 
@@ -68,13 +71,14 @@ The major limitations are also clear.
 | Limitation | Impact |
 |---|---|
 | DB is centered on `files`, `symbols`, `edges` | Policy, CI, infra, endpoints, and resources are awkward to represent. |
-| Analyzer input is `changedFiles` | Symbol, package, workflow, and resource analysis cannot fit naturally. |
+| Analyzer input is still file-first | Symbol, package, workflow, and resource models exist, but richer resolvers are needed. |
 | TS/JS extraction is regex-based | Re-exports, aliases, type-only imports, references, and calls are missed. |
-| Analysis is one-hop reverse edge lookup | Enterprise side effects are under-reported. |
+| Analysis is regex/mention-based multi-hop | Side-effect propagation works, but semantic accuracy depends on better adapters. |
 | Snapshot isolation is incomplete | Running indexes can mutate data relied on by completed indexes. |
 | Source spans and provenance are thin | Reports are difficult to audit. |
-| Resource limits are missing | Large or malicious repos can slow or break indexing. |
-| No cross-repo contract model | API/gRPC changes in project A cannot yet be traced to clients or consumers in project B. |
+| Resource limits are file-size-first | File count, wall-clock time, relation fan-out, and memory budgets need stronger controls. |
+| No cross-repo resolver yet | Schema exists, but project A API/gRPC changes are not yet linked to project B consumers. |
+| No company artifact adapter yet | Business plans, PRDs, notes, and customer docs fit the model, but connectors and extraction rules are needed. |
 
 ## Problem
 
@@ -181,6 +185,8 @@ The main v1 shift is from a file-edge store to an entity graph store.
 | `contracts` | Owner repo, service, and version metadata for OpenAPI, protobuf, GraphQL, and AsyncAPI contracts. |
 | `contract_versions` | Contract hash, schema version, compatibility baseline, breaking-change summary. |
 | `cross_repo_links` | Producer/consumer, client/server, and topic subscriber links across repos. |
+| `work_artifacts` | Metadata for business plans, PRDs, meeting notes, KPIs, and customer documents. |
+| `artifact_links` | Requirement, evidence, decision, and customer-impact relations between work artifacts and entities. |
 | `index_coverage` | Indexed/skipped paths, unsupported languages/systems, parse errors, size-limit skips. |
 | `reports` | Versioned impact report JSON and related evidence IDs. |
 | `graph_projection_runs` | Optional graph projection source index run, schema version, invalidation state. |
@@ -202,6 +208,13 @@ The main v1 shift is from a file-edge store to an entity graph store.
 | `endpoint` | REST route, GraphQL field, gRPC/protobuf service |
 | `contract` | OpenAPI operation, protobuf service/method, GraphQL schema field, AsyncAPI channel |
 | `event` | Kafka topic, queue message, webhook event, domain event |
+| `business_plan` | Business plan, GTM plan, pricing plan |
+| `requirement` | PRD requirement, acceptance criteria, customer request |
+| `decision` | ADR, meeting decision, approval/rejection record |
+| `meeting_note` | Meeting notes, interview notes, call notes |
+| `metric` | KPI, OKR, dashboard metric definition |
+| `customer_artifact` | Customer requirement document, sales note, support ticket summary |
+| `task` | Project task, issue, roadmap item |
 | `external_entity` | SaaS API, third-party service, or unmanaged repo outside the workspace |
 
 ### Relation Kinds

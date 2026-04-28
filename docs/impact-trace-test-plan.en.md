@@ -39,6 +39,7 @@ security
 | Relation model | Source/target entity, kind, confidence, adapter run, evidence link |
 | Language adapter contract | TS/JS, Python, Go, Rust, Java/Kotlin, C#, and C/C++ adapters return the same entity/relation shape |
 | Workspace contract model | Provider/consumer repos, contract versions, and cross-repo link IDs are deterministic |
+| Work artifact model | PRD/business-plan/meeting-note/KPI/customer artifact IDs and relations are deterministic |
 | Adapter coverage | Unsupported language/system, skipped reason, parse error |
 | Git diff parser | Rename, delete, untracked, binary, changed ranges, merge-base |
 | Graph export model | Mermaid/DOT/JSON output is deterministic and contains no secret-like labels |
@@ -59,6 +60,7 @@ security
 | API contract | OpenAPI, GraphQL, route handler | Endpoint to implementation links |
 | gRPC contract | Protobuf, service implementation, generated client | RPC method to provider/consumer links |
 | Workspace contract | Provider repo, consumer repo, OpenAPI/protobuf/GraphQL/AsyncAPI | Cross-repo producer/consumer impact |
+| Company work artifact | PRD, business plan, meeting notes, KPI, customer document | Requirements, decisions, and customer impact link to code entities |
 | Event contract | Topic/channel schema, producer, subscriber | Event producer/consumer impact |
 | Graph visualization | Changed/affected/test/deploy/contract relations | Mermaid/DOT/JSON graph export |
 | Policy | CODEOWNERS, OPA/Rego, permission config | owns/governs/requires-review relations |
@@ -75,7 +77,7 @@ security
 | CLI JSON | `reportVersion`, `schemaVersion`, `repo`, `workspace`, `diff`, `changed`, `affected`, `actions`, `evidence`, `coverage`, `graph` |
 | Exit codes | `0` clean, `1` findings/risk, `2` user/config error, `3` internal error |
 | MCP tools | Read-only annotation, compact response, deterministic errors |
-| MCP resources | `impact://report/{id}`, `impact://evidence/{id}`, `impact://workspace/{id}`, `impact://contract/{id}`, `impact://graph/{id}`, pagination, not found error |
+| MCP resources | `impact-trace://reports/{id}`, `impact-trace://entities/{id}`, `impact-trace://reports/{id}/graph/{format}`, `impact-trace://coverage/latest`, pagination, not found error |
 | Graph export | Mermaid/DOT/JSON schema, stable node IDs, relation legend, confidence metadata |
 | Report compatibility | Deprecated and new fields coexist during migrations |
 
@@ -113,10 +115,11 @@ security
 2. `impact-trace index` stores entities, relations, evidence, and coverage.
 3. `impact-trace analyze --base main --head feature --json` returns changed and affected entities.
 4. In the workspace fixture, a provider contract change reaches affected entities in a consumer repo.
-5. Graph export creates deterministic Mermaid/JSON graphs from the same report.
+5. Graph export creates deterministic Mermaid/JSON/DOT graphs from the same report.
 6. An MCP client reads the same report through compact responses and resource URIs.
-7. The report includes missing adapters, skipped files, and confidence labels.
-8. The security fixture leaks no raw secret to SQLite, Markdown, MCP, or graph export.
+7. The report includes missing adapters, skipped files, stale-index warnings, and confidence labels.
+8. A company work artifact fixture links PRDs/meeting notes/customer documents to requirements and code entities.
+9. The security fixture leaks no raw secret to SQLite, Markdown, MCP, or graph export.
 
 ## Regression Rule
 

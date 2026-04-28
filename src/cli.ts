@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { execFileSync } from 'node:child_process';
 import process from 'node:process';
 
 async function main(): Promise<void> {
@@ -19,15 +20,24 @@ async function main(): Promise<void> {
 
   if (command === 'index') {
     const { indexProject } = await import('./index.js');
-    const result = await indexProject({ repoRoot });
+    const maxFileBytes = parseIntegerArg(args, '--max-file-bytes');
+    const result = await indexProject({ repoRoot, ...(maxFileBytes === undefined ? {} : { maxFileBytes }) });
     console.log(JSON.stringify(result, null, 2));
     return;
   }
 
   if (command === 'analyze') {
     const { analyzeDiff } = await import('./index.js');
-    const changedFiles = parseChangedFiles(args);
-    const report = await analyzeDiff({ repoRoot, changedFiles, writeReport: !args.includes('--json') });
+    const changedFiles = parseChangedFiles(args, repoRoot);
+    const maxDepth = parseIntegerArg(args, '--depth');
+    const maxFanout = parseIntegerArg(args, '--max-fanout');
+    const report = await analyzeDiff({
+      repoRoot,
+      changedFiles,
+      writeReport: !args.includes('--json'),
+      ...(maxDepth === undefined ? {} : { maxDepth }),
+      ...(maxFanout === undefined ? {} : { maxFanout })
+    });
     if (args.includes('--json')) {
       console.log(JSON.stringify(report, null, 2));
     } else {
@@ -59,14 +69,26 @@ async function main(): Promise<void> {
   throw new Error(`unknown command: ${command}`);
 }
 
-function parseChangedFiles(args: string[]): string[] {
+function parseChangedFiles(args: string[], repoRoot: string): string[] {
   const index = args.indexOf('--changed');
   if (index >= 0 && args[index + 1]) {
     return args[index + 1]!.split(',').map((item) => item.trim()).filter(Boolean);
   }
-  const positional = args.filter((arg) => !arg.startsWith('--'));
+  const base = parseOptionalArg(args, '--base');
+  const head = parseOptionalArg(args, '--head');
+  if (base) {
+    const diffArgs = ['diff', '--name-only', '--diff-filter=ACMR', `${base}...${head ?? 'HEAD'}`];
+    return execFileSync('git', diffArgs, { cwd: repoRoot, encoding: 'utf8' })
+      .split(/\r?\n/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  if (head) {
+    throw new Error('analyze --head requires --base');
+  }
+  const positional = parsePositionals(args);
   if (positional.length > 0) return positional;
-  throw new Error('analyze requires --changed <file[,file]> for this MVP');
+  throw new Error('analyze requires --changed <file[,file]> or --base <ref> [--head <ref>]');
 }
 
 function parseRequiredArg(args: string[], name: string): string {
@@ -75,12 +97,43 @@ function parseRequiredArg(args: string[], name: string): string {
   throw new Error(`missing required ${name}`);
 }
 
-function parseGraphFormat(args: string[]): 'json' | 'mermaid' {
+function parseOptionalArg(args: string[], name: string): string | undefined {
+  const index = args.indexOf(name);
+  if (index >= 0 && args[index + 1]) return args[index + 1]!;
+  return undefined;
+}
+
+function parseIntegerArg(args: string[], name: string): number | undefined {
+  const value = parseOptionalArg(args, name);
+  if (!value) return undefined;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`${name} must be an integer`);
+  }
+  return parsed;
+}
+
+function parsePositionals(args: string[]): string[] {
+  const valueFlags = new Set(['--changed', '--base', '--head', '--depth', '--max-fanout', '--max-file-bytes', '--report', '--format']);
+  const positionals: string[] = [];
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index]!;
+    if (valueFlags.has(arg)) {
+      index++;
+      continue;
+    }
+    if (!arg.startsWith('--')) positionals.push(arg);
+  }
+  return positionals;
+}
+
+function parseGraphFormat(args: string[]): 'json' | 'mermaid' | 'dot' {
   const index = args.indexOf('--format');
   const value = index >= 0 ? args[index + 1] : undefined;
   if (!value || value === 'mermaid') return 'mermaid';
   if (value === 'json') return 'json';
-  throw new Error('graph export --format must be mermaid or json');
+  if (value === 'dot') return 'dot';
+  throw new Error('graph export --format must be mermaid, json, or dot');
 }
 
 function printHelp(): void {
@@ -88,9 +141,10 @@ function printHelp(): void {
 
 Commands:
   impact-trace init
-  impact-trace index
-  impact-trace analyze --changed src/file.ts [--json]
-  impact-trace graph export --report <id> [--format mermaid|json]
+  impact-trace index [--max-file-bytes 1000000]
+  impact-trace analyze --changed src/file.ts [--depth 2] [--json]
+  impact-trace analyze --base main [--head HEAD] [--depth 2] [--json]
+  impact-trace graph export --report <id> [--format mermaid|json|dot]
   impact-trace mcp serve
 `);
 }

@@ -20,6 +20,7 @@ export type {
   ImpactTarget,
   ImpactReport,
   IndexCoverage,
+  IndexCoverageItem,
   IndexOptions,
   IndexResult,
   InitOptions,

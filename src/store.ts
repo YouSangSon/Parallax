@@ -85,6 +85,8 @@ function migrate(db: Db): void {
     VALUES (1, datetime('now'));
     INSERT OR IGNORE INTO schema_versions (version, applied_at)
     VALUES (2, datetime('now'));
+    INSERT OR IGNORE INTO schema_versions (version, applied_at)
+    VALUES (3, datetime('now'));
 
     CREATE TABLE IF NOT EXISTS repos (
       id INTEGER PRIMARY KEY,
@@ -173,6 +175,106 @@ function migrate(db: Db): void {
       FOREIGN KEY(index_run_id) REFERENCES index_runs(id)
     );
 
+    CREATE TABLE IF NOT EXISTS workspaces (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      config_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS workspace_repos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      workspace_id INTEGER NOT NULL,
+      repo_id INTEGER,
+      local_path TEXT NOT NULL,
+      remote_url TEXT,
+      service_name TEXT,
+      trust_policy_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      UNIQUE(workspace_id, local_path),
+      FOREIGN KEY(workspace_id) REFERENCES workspaces(id),
+      FOREIGN KEY(repo_id) REFERENCES repos(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS contracts (
+      id TEXT PRIMARY KEY,
+      workspace_id INTEGER,
+      repo_id INTEGER,
+      kind TEXT NOT NULL,
+      service_name TEXT,
+      path TEXT,
+      display_name TEXT NOT NULL,
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      FOREIGN KEY(workspace_id) REFERENCES workspaces(id),
+      FOREIGN KEY(repo_id) REFERENCES repos(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS contract_versions (
+      id TEXT PRIMARY KEY,
+      contract_id TEXT NOT NULL,
+      index_run_id INTEGER,
+      content_hash TEXT NOT NULL,
+      schema_version TEXT,
+      compatibility_json TEXT NOT NULL DEFAULT '{}',
+      breaking_change_summary TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY(contract_id) REFERENCES contracts(id),
+      FOREIGN KEY(index_run_id) REFERENCES index_runs(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS cross_repo_links (
+      id TEXT PRIMARY KEY,
+      workspace_id INTEGER,
+      source_repo_id INTEGER,
+      target_repo_id INTEGER,
+      source_entity_id TEXT,
+      target_entity_id TEXT,
+      kind TEXT NOT NULL,
+      confidence TEXT NOT NULL,
+      provenance TEXT NOT NULL,
+      index_run_id INTEGER,
+      FOREIGN KEY(workspace_id) REFERENCES workspaces(id),
+      FOREIGN KEY(source_repo_id) REFERENCES repos(id),
+      FOREIGN KEY(target_repo_id) REFERENCES repos(id),
+      FOREIGN KEY(source_entity_id) REFERENCES entities(id),
+      FOREIGN KEY(target_entity_id) REFERENCES entities(id),
+      FOREIGN KEY(index_run_id) REFERENCES index_runs(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS work_artifacts (
+      id TEXT PRIMARY KEY,
+      workspace_id INTEGER,
+      repo_id INTEGER,
+      kind TEXT NOT NULL,
+      path TEXT,
+      external_uri TEXT,
+      title TEXT NOT NULL,
+      owner TEXT,
+      content_hash TEXT,
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      updated_index_run_id INTEGER,
+      FOREIGN KEY(workspace_id) REFERENCES workspaces(id),
+      FOREIGN KEY(repo_id) REFERENCES repos(id),
+      FOREIGN KEY(updated_index_run_id) REFERENCES index_runs(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS artifact_links (
+      id TEXT PRIMARY KEY,
+      workspace_id INTEGER,
+      source_entity_id TEXT,
+      target_entity_id TEXT,
+      kind TEXT NOT NULL,
+      confidence TEXT NOT NULL,
+      provenance TEXT NOT NULL,
+      evidence_json TEXT NOT NULL DEFAULT '{}',
+      index_run_id INTEGER,
+      FOREIGN KEY(workspace_id) REFERENCES workspaces(id),
+      FOREIGN KEY(source_entity_id) REFERENCES entities(id),
+      FOREIGN KEY(target_entity_id) REFERENCES entities(id),
+      FOREIGN KEY(index_run_id) REFERENCES index_runs(id)
+    );
+
     CREATE TABLE IF NOT EXISTS index_coverage (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       index_run_id INTEGER NOT NULL,
@@ -254,6 +356,10 @@ function migrate(db: Db): void {
     CREATE INDEX IF NOT EXISTS idx_relations_target ON relations(repo_id, target_entity_id, index_run_id);
     CREATE INDEX IF NOT EXISTS idx_relations_source ON relations(repo_id, source_entity_id, index_run_id);
     CREATE INDEX IF NOT EXISTS idx_index_coverage_run ON index_coverage(index_run_id, status);
+    CREATE INDEX IF NOT EXISTS idx_workspace_repos_workspace ON workspace_repos(workspace_id);
+    CREATE INDEX IF NOT EXISTS idx_contracts_workspace ON contracts(workspace_id, kind);
+    CREATE INDEX IF NOT EXISTS idx_cross_repo_links_workspace ON cross_repo_links(workspace_id, kind);
+    CREATE INDEX IF NOT EXISTS idx_work_artifacts_workspace ON work_artifacts(workspace_id, kind);
   `);
 }
 

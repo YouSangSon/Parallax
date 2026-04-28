@@ -2,6 +2,8 @@ import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mc
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 
+import { createBranch, recall, remember, trace } from './agent_memory.js';
+import type { RememberValue } from './agent_memory.js';
 import { normalizeRepoRoot } from './security.js';
 import { getRepoId, latestCompletedIndexRun, openDatabase } from './store.js';
 import type { GraphExportFormat } from './types.js';
@@ -52,6 +54,134 @@ export function createMcpServer(context: McpContext): McpServer {
           }
         ]
       };
+    }
+  );
+
+  server.registerTool(
+    'impact_trace_remember',
+    {
+      title: 'Remember a fact',
+      description:
+        'Persist an agent observation as a content-addressable fact on the given branch (default main).',
+      inputSchema: {
+        entity: z.string().min(1),
+        attribute: z.string().min(1),
+        value: z.unknown(),
+        evidenceFactIds: z.array(z.string()).optional(),
+        branch: z.string().optional(),
+        agent: z.string().optional()
+      },
+      annotations: {
+        title: 'Remember a fact',
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      }
+    },
+    async ({ entity, attribute, value, evidenceFactIds, branch, agent }) => {
+      const result = withWritableDb(context, (db) =>
+        remember(db, {
+          entity,
+          attribute,
+          value: value as RememberValue,
+          ...(evidenceFactIds !== undefined ? { evidenceFactIds } : {}),
+          ...(branch !== undefined ? { branch } : {}),
+          ...(agent !== undefined ? { agent } : {})
+        })
+      );
+      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+    }
+  );
+
+  server.registerTool(
+    'impact_trace_recall',
+    {
+      title: 'Recall facts',
+      description:
+        'Query facts by entity, attribute, and branch. Phase 1 returns structured filter results only.',
+      inputSchema: {
+        query: z.string().optional(),
+        entity: z.string().optional(),
+        attribute: z.string().optional(),
+        branch: z.string().optional(),
+        k: z.number().int().min(1).max(100).optional()
+      },
+      annotations: {
+        title: 'Recall facts',
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      }
+    },
+    async ({ query, entity, attribute, branch, k }) => {
+      const result = withReadOnlyDb(context, (db) =>
+        recall(db, {
+          ...(query !== undefined ? { query } : {}),
+          ...(entity !== undefined ? { entity } : {}),
+          ...(attribute !== undefined ? { attribute } : {}),
+          ...(branch !== undefined ? { branch } : {}),
+          ...(k !== undefined ? { k } : {})
+        })
+      );
+      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+    }
+  );
+
+  server.registerTool(
+    'impact_trace_branch',
+    {
+      title: 'Create a branch',
+      description: 'Create a new branch forking from an existing branch (default main). No data copied.',
+      inputSchema: {
+        name: z.string().min(1),
+        from: z.string().optional()
+      },
+      annotations: {
+        title: 'Create a branch',
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false
+      }
+    },
+    async ({ name, from }) => {
+      const result = withWritableDb(context, (db) =>
+        createBranch(db, {
+          name,
+          ...(from !== undefined ? { from } : {})
+        })
+      );
+      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+    }
+  );
+
+  server.registerTool(
+    'impact_trace_trace',
+    {
+      title: 'Trace causal chain',
+      description: 'Walk fact_provenance edges from the given fact back through its evidence chain.',
+      inputSchema: {
+        factId: z.string().min(1),
+        depth: z.number().int().min(1).max(20).optional()
+      },
+      annotations: {
+        title: 'Trace causal chain',
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      }
+    },
+    async ({ factId, depth }) => {
+      const result = withReadOnlyDb(context, (db) =>
+        trace(db, {
+          factId,
+          ...(depth !== undefined ? { depth } : {})
+        })
+      );
+      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
     }
   );
 
@@ -238,6 +368,17 @@ function readLatestCoverage(context: McpContext): unknown {
 function withReadOnlyDb<T>(context: McpContext, callback: (db: ReturnType<typeof openDatabase>, repoId: number) => T): T {
   const repoRoot = normalizeRepoRoot(context.repoRoot);
   const db = openDatabase(repoRoot, { readOnly: true });
+  try {
+    const repoId = getRepoId(db, repoRoot);
+    return callback(db, repoId);
+  } finally {
+    db.close();
+  }
+}
+
+function withWritableDb<T>(context: McpContext, callback: (db: ReturnType<typeof openDatabase>, repoId: number) => T): T {
+  const repoRoot = normalizeRepoRoot(context.repoRoot);
+  const db = openDatabase(repoRoot, { readOnly: false });
   try {
     const repoId = getRepoId(db, repoRoot);
     return callback(db, repoId);

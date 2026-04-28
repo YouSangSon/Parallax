@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, mkdirSync, realpathSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
@@ -42,7 +43,7 @@ export function openDatabase(repoRoot: string, options: OpenDatabaseOptions = {}
   const db = new DatabaseSync(dbPath, { readOnly: options.readOnly ?? false, timeout: 5000 });
   db.exec('PRAGMA foreign_keys = ON;');
   if (!options.readOnly) {
-    db.exec('PRAGMA journal_mode = DELETE; PRAGMA busy_timeout = 5000;');
+    db.exec('PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;');
     migrate(db);
   }
   return db;
@@ -361,6 +362,82 @@ function migrate(db: Db): void {
     CREATE INDEX IF NOT EXISTS idx_cross_repo_links_workspace ON cross_repo_links(workspace_id, kind);
     CREATE INDEX IF NOT EXISTS idx_work_artifacts_workspace ON work_artifacts(workspace_id, kind);
   `);
+
+  db.exec(`
+    -- Agent memory layer (schema v4). See docs/agent-db-exploration.ko.md.
+    CREATE TABLE IF NOT EXISTS attribute_defs (
+      name TEXT PRIMARY KEY NOT NULL,
+      value_type TEXT NOT NULL,
+      is_code_relation INTEGER NOT NULL DEFAULT 0,
+      description TEXT NOT NULL DEFAULT ''
+    );
+
+    CREATE TABLE IF NOT EXISTS branches (
+      id TEXT PRIMARY KEY NOT NULL,
+      name TEXT NOT NULL UNIQUE,
+      head_tx_id TEXT,
+      parent_branch_id TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY(parent_branch_id) REFERENCES branches(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS transactions (
+      id TEXT PRIMARY KEY NOT NULL,
+      parent_tx_id TEXT,
+      branch_id TEXT NOT NULL,
+      ts TEXT NOT NULL,
+      agent TEXT NOT NULL,
+      index_run_id INTEGER,
+      FOREIGN KEY(parent_tx_id) REFERENCES transactions(id),
+      FOREIGN KEY(branch_id) REFERENCES branches(id),
+      FOREIGN KEY(index_run_id) REFERENCES index_runs(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS facts (
+      id TEXT PRIMARY KEY NOT NULL,
+      entity_id TEXT NOT NULL,
+      attribute TEXT NOT NULL,
+      value_blob TEXT NOT NULL,
+      op TEXT NOT NULL DEFAULT 'assert',
+      tx_id TEXT NOT NULL,
+      redacted INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY(attribute) REFERENCES attribute_defs(name),
+      FOREIGN KEY(tx_id) REFERENCES transactions(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS embeddings (
+      fact_id TEXT PRIMARY KEY NOT NULL,
+      dim64_binary BLOB,
+      dim768_int8 BLOB,
+      FOREIGN KEY(fact_id) REFERENCES facts(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS fact_provenance (
+      id TEXT PRIMARY KEY NOT NULL,
+      fact_id TEXT NOT NULL,
+      source_fact_id TEXT NOT NULL,
+      UNIQUE(fact_id, source_fact_id),
+      FOREIGN KEY(fact_id) REFERENCES facts(id),
+      FOREIGN KEY(source_fact_id) REFERENCES facts(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_facts_entity_attr ON facts(entity_id, attribute);
+    CREATE INDEX IF NOT EXISTS idx_facts_tx ON facts(tx_id);
+    CREATE INDEX IF NOT EXISTS idx_transactions_branch ON transactions(branch_id, ts);
+    CREATE INDEX IF NOT EXISTS idx_fact_provenance_fact ON fact_provenance(fact_id);
+
+    INSERT OR IGNORE INTO schema_versions (version, applied_at)
+    VALUES (4, datetime('now'));
+
+    INSERT OR IGNORE INTO attribute_defs (name, value_type, is_code_relation, description) VALUES
+      ('imports', 'entity_ref', 1, 'File or module import edge'),
+      ('calls', 'entity_ref', 1, 'Function or method call edge'),
+      ('affects', 'entity_ref', 1, 'Inferred side-effect dependency'),
+      ('depends_on', 'entity_ref', 1, 'Declared package or module dependency');
+
+    INSERT OR IGNORE INTO branches (id, name, head_tx_id, parent_branch_id, created_at)
+    VALUES ('br_main', 'main', NULL, NULL, datetime('now'));
+  `);
 }
 
 export function ensureRepo(db: Db, repoRoot: string): number {
@@ -384,4 +461,13 @@ export function latestCompletedIndexRun(db: Db, repoId: number): number {
     throw new Error('no completed index found; run impact-trace index first');
   }
   return row.id;
+}
+
+export function contentHash(...parts: string[]): string {
+  const hash = createHash('sha256');
+  for (const part of parts) {
+    hash.update(part);
+    hash.update(' ');
+  }
+  return hash.digest('hex');
 }

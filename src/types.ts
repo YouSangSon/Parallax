@@ -174,3 +174,47 @@ export type GraphExport = {
   edges: GraphEdge[];
   rendered: string;
 };
+
+export type AttributeValueType = 'text' | 'entity_ref' | 'json' | 'int' | 'float';
+
+export interface AttributeDef {
+  name: string;
+  valueType: AttributeValueType;
+  isCodeRelation: boolean;
+  description: string;
+}
+
+export interface Branch {
+  id: string;
+  name: string;
+  headTxId: string | null;
+  parentBranchId: string | null;
+  createdAt: string;
+}
+
+export interface Transaction {
+  id: string;
+  parentTxId: string | null;
+  branchId: string;
+  ts: string;
+  agent: string;
+  indexRunId: number | null;
+}
+
+export type FactOp = 'assert' | 'retract';
+
+export interface Fact {
+  id: string;
+  entityId: string;
+  attribute: string;
+  valueBlob: string;
+  op: FactOp;
+  txId: string;
+  redacted: boolean;
+}
+
+export interface FactProvenance {
+  id: string;
+  factId: string;
+  sourceFactId: string;
+}

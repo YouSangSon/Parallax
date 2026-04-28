@@ -68,6 +68,31 @@ Java, Kotlin, C#, C, C++ 같은 언어는 Tree-sitter, LSP, CodeQL, build-system
 - line/source-span evidence
 - 에이전트가 직접 코드를 수정하는 기능
 
+## Direction: agent memory layer
+
+Impact Trace의 큰 방향은 *코드 영향도 분석*에 그치지 않습니다. 같은 local-first
+SQLite + MCP stdio 위에 **agent의 결정·관찰·근거를 1급 시민으로 저장하는
+agent memory 레이어**를 점진적으로 더합니다.
+
+목표:
+
+- agent가 작업 중에 만든 결정과 관찰을 fact로 영속화
+- 시간 질의: "이 변경 5턴 전 상태에서는 어떻게 보였는가"
+- branching: agent가 여러 plan을 시뮬레이션하고 그중 하나만 commit
+- causal trace: 어떤 결정의 근거 사슬을 1쿼리로 추적
+
+이 방향은 프로젝트 정체성(local-first, single .db, privacy, redaction)을 그대로
+두고 *증분으로* 더해집니다. 자세한 탐색·결정 기록은
+[docs/agent-db-exploration.ko.md](docs/agent-db-exploration.ko.md).
+
+### 진행 단계
+
+| Phase | 무엇 | 상태 |
+|---|---|---|
+| 1 | facts/transactions/branches 스키마, 4 MCP 툴 (`remember`, `recall`, `branch`, `trace`), 코드 관계 1급 시민 attribute 시드 | 진행 중 |
+| 2 | sqlite-vec 통합, semantic recall, embedding-redaction 게이트, causal trace cache-aware index | 계획 |
+| 3 | reflective consolidation (LLM 자동 요약), speculative branching GC | 후순위 |
+
 ## 요구 사항
 
 - Node.js `>=24.0.0`
@@ -205,6 +230,14 @@ MVP에서 노출하는 tool은 하나입니다.
 | Tool | 역할 |
 |---|---|
 | `impact_trace_analyze_diff` | 변경 파일을 분석하고 CLI와 같은 report model을 반환합니다. |
+| `impact_trace_remember` | agent의 결정/관찰을 content-addressable fact로 저장합니다 (Phase 1). |
+| `impact_trace_recall` | branch/entity/attribute로 fact를 조회합니다 (Phase 1, structured filter only). |
+| `impact_trace_branch` | 새 branch를 기존 branch에서 fork합니다. 데이터 복사 없음. |
+| `impact_trace_trace` | fact_provenance edge를 따라 결정의 인과 사슬을 반환합니다. |
+
+agent memory 툴(`remember`/`branch`)은 DB에 쓰지만 모두 *현재 저장소의*
+`.impact-trace/impact.db` 안에서만 동작합니다. Obsidian export 같은 외부 시스템
+write는 여전히 별도 권한 모델과 리뷰를 거친 뒤 추가합니다.
 
 MVP에서 노출하는 resource는 read-only입니다.
 

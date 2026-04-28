@@ -217,7 +217,9 @@ test('MCP analyze_diff does not persist reports', async () => {
 
     assert.equal(response.error, undefined);
     assert.equal(countReports(repoRoot), 0);
-    assert.deepEqual(dbArtifacts(repoRoot), artifactsBefore);
+    const filterWalAux = (names: string[]): string[] =>
+      names.filter((name) => !/\.db-(wal|shm)$/.test(name));
+    assert.deepEqual(filterWalAux(dbArtifacts(repoRoot)), filterWalAux(artifactsBefore));
     assert.equal(existsSync(path.join(repoRoot, '.impact-trace/reports')), false);
   } finally {
     await client.close();
@@ -300,6 +302,148 @@ test('MCP analyze_diff on uninitialized repo does not create workspace files', a
     assert.equal(response.result.isError, true);
     assert.match(response.result.content[0].text, /database not found|init and impact-trace index/);
     assert.equal(existsSync(path.join(repoRoot, '.impact-trace')), false);
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP remember persists a fact and recall returns it on the main branch', async () => {
+  const repoRoot = await makeRepo();
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+
+    const remembered = await client.request('tools/call', {
+      name: 'impact_trace_remember',
+      arguments: {
+        entity: 'file:src/a.ts',
+        attribute: 'observed',
+        value: 'compiled cleanly'
+      }
+    });
+
+    assert.equal(remembered.error, undefined);
+    assert.equal(remembered.result.isError, undefined);
+    const rememberPayload = JSON.parse(remembered.result.content[0].text) as { factId: string; txId: string };
+    assert.match(rememberPayload.factId, /^[0-9a-f]{64}$/);
+    assert.match(rememberPayload.txId, /^[0-9a-f]{64}$/);
+
+    const recalled = await client.request('tools/call', {
+      name: 'impact_trace_recall',
+      arguments: { entity: 'file:src/a.ts', attribute: 'observed' }
+    });
+
+    assert.equal(recalled.error, undefined);
+    const recallPayload = JSON.parse(recalled.result.content[0].text) as {
+      facts: Array<{ id: string; entityId: string; attribute: string; value: unknown; op: string }>;
+    };
+    assert.equal(recallPayload.facts.length, 1);
+    const fact = recallPayload.facts[0]!;
+    assert.equal(fact.id, rememberPayload.factId);
+    assert.equal(fact.entityId, 'file:src/a.ts');
+    assert.equal(fact.attribute, 'observed');
+    assert.equal(fact.value, 'compiled cleanly');
+    assert.equal(fact.op, 'assert');
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP branch forks a new branch from main without copying facts', async () => {
+  const repoRoot = await makeRepo();
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+
+    const created = await client.request('tools/call', {
+      name: 'impact_trace_branch',
+      arguments: { name: 'experiment-1' }
+    });
+
+    assert.equal(created.error, undefined);
+    assert.equal(created.result.isError, undefined);
+    const payload = JSON.parse(created.result.content[0].text) as { branchId: string; headTxId: string | null };
+    assert.match(payload.branchId, /^br_[0-9a-f]{16}$/);
+    assert.equal(payload.headTxId, null);
+
+    const duplicate = await client.request('tools/call', {
+      name: 'impact_trace_branch',
+      arguments: { name: 'experiment-1' }
+    });
+    assert.equal(duplicate.result.isError, true);
+    assert.match(duplicate.result.content[0].text, /branch already exists/);
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP trace walks fact_provenance back through the causal chain', async () => {
+  const repoRoot = await makeRepo();
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+
+    const sourceResp = await client.request('tools/call', {
+      name: 'impact_trace_remember',
+      arguments: {
+        entity: 'file:src/a.ts',
+        attribute: 'observed',
+        value: 'export-symbol-a'
+      }
+    });
+    const source = JSON.parse(sourceResp.result.content[0].text) as { factId: string };
+
+    const derivedResp = await client.request('tools/call', {
+      name: 'impact_trace_remember',
+      arguments: {
+        entity: 'file:src/b.ts',
+        attribute: 'observed',
+        value: 'imports-a',
+        evidenceFactIds: [source.factId]
+      }
+    });
+    const derived = JSON.parse(derivedResp.result.content[0].text) as { factId: string };
+
+    const traced = await client.request('tools/call', {
+      name: 'impact_trace_trace',
+      arguments: { factId: derived.factId }
+    });
+    assert.equal(traced.error, undefined);
+    const tracePayload = JSON.parse(traced.result.content[0].text) as {
+      chain: Array<{ id: string }>;
+    };
+    const chainIds = tracePayload.chain.map((entry) => entry.id);
+    assert.deepEqual(chainIds, [derived.factId, source.factId]);
+
+    const missing = await client.request('tools/call', {
+      name: 'impact_trace_trace',
+      arguments: { factId: '0000000000000000000000000000000000000000000000000000000000000000' }
+    });
+    assert.equal(missing.result.isError, true);
+    assert.match(missing.result.content[0].text, /fact not found/);
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP remember rejects unknown branches', async () => {
+  const repoRoot = await makeRepo();
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+
+    const response = await client.request('tools/call', {
+      name: 'impact_trace_remember',
+      arguments: {
+        entity: 'file:src/a.ts',
+        attribute: 'observed',
+        value: 'whatever',
+        branch: 'does-not-exist'
+      }
+    });
+
+    assert.equal(response.result.isError, true);
+    assert.match(response.result.content[0].text, /branch not found/);
   } finally {
     await client.close();
   }

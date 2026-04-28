@@ -8,7 +8,8 @@
 
 테스트의 목적은 Impact Trace가 "그럴듯한 report"가 아니라 증거 기반 영향도 분석을
 안전하게 제공하는지 검증하는 것이다. 특히 한 repo 안에 여러 언어, shell script,
-YAML, CI, infra, policy가 섞인 상황을 기본 fixture로 다룬다.
+YAML, CI, infra, policy가 섞인 상황과 여러 repo가 API/gRPC/event contract로 연결된
+상황을 기본 fixture로 다룬다.
 
 ## 테스트 피라미드
 
@@ -36,8 +37,11 @@ security
 | Migration runner | schema version, failed migration, compatibility check |
 | Entity IDs | 같은 입력에서 deterministic ID 생성 |
 | Relation model | source/target entity, kind, confidence, adapter run, evidence 연결 |
+| Language adapter contract | TS/JS, Python, Go, Rust, Java/Kotlin, C#, C/C++ adapter가 같은 entity/relation shape를 반환 |
+| Workspace contract model | provider/consumer repo, contract version, cross-repo link ID가 deterministic |
 | Adapter coverage | unsupported language/system, skipped reason, parse error |
 | Git diff parser | rename, delete, untracked, binary, changed ranges, merge-base |
+| Graph export model | Mermaid/DOT/JSON output이 deterministic하고 secret-like label을 포함하지 않음 |
 | Action rendering | command와 args는 구조화되고 display는 non-authoritative여야 한다. |
 
 ## Integration Fixture Matrix
@@ -45,10 +49,18 @@ security
 | Fixture | 포함할 파일 | 검증할 것 |
 |---|---|---|
 | TS semantic | TS/JS, `tsconfig`, path alias, re-export | symbol/import/reference/call relation |
-| Mixed language | TS, Python, shell, YAML, Markdown | 여러 adapter의 coverage와 relation merge |
+| Python/Go/Rust | Python package, Go module, Rust crate | module/package/import/reference relation |
+| JVM | Java, Kotlin, Maven, Gradle, annotation, test source set | package/class/method/build/test relation |
+| .NET | C#, solution, project reference, NuGet, test project | namespace/class/method/project dependency relation |
+| Native | C, C++, header, macro, CMake/Make/Bazel target | include/reference/build target relation |
+| Mixed language | TS, Python, Go, Rust, Java, Kotlin, C#, C/C++, shell, YAML, Markdown | 여러 adapter의 coverage와 relation merge |
 | CI workflow | GitHub Actions, package scripts, shell step | workflow/job/step/test action relation |
 | Infra | Dockerfile, Compose, Kubernetes YAML, Terraform | configures/deploys/resource relation |
 | API contract | OpenAPI, GraphQL, route handler | endpoint와 구현체 연결 |
+| gRPC contract | protobuf, service implementation, generated client | RPC method와 provider/consumer 연결 |
+| Workspace contract | provider repo, consumer repo, OpenAPI/protobuf/GraphQL/AsyncAPI | cross-repo producer/consumer 영향 |
+| Event contract | topic/channel schema, producer, subscriber | event producer/consumer 영향 |
+| Graph visualization | changed/affected/test/deploy/contract relation | Mermaid/DOT/JSON graph export |
 | Policy | CODEOWNERS, OPA/Rego, permission config | owns/governs/requires-review relation |
 | Monorepo | npm/pnpm/yarn/bun workspace | package boundary와 package-level action |
 | Secret fixture | `.env`, K8s Secret, token-like text, PEM | SQLite/MCP/Markdown raw leak 0건 |
@@ -60,10 +72,11 @@ security
 | 표면 | 검증 |
 |---|---|
 | CLI human output | 짧은 summary, affected count, report path |
-| CLI JSON | `reportVersion`, `schemaVersion`, `repo`, `diff`, `changed`, `affected`, `actions`, `evidence`, `coverage` |
+| CLI JSON | `reportVersion`, `schemaVersion`, `repo`, `workspace`, `diff`, `changed`, `affected`, `actions`, `evidence`, `coverage`, `graph` |
 | Exit codes | `0` clean, `1` findings/risk, `2` user/config error, `3` internal error |
 | MCP tools | read-only annotation, compact response, deterministic errors |
-| MCP resources | `impact://report/{id}`, `impact://evidence/{id}`, pagination, not found error |
+| MCP resources | `impact://report/{id}`, `impact://evidence/{id}`, `impact://workspace/{id}`, `impact://contract/{id}`, `impact://graph/{id}`, pagination, not found error |
+| Graph export | Mermaid/DOT/JSON schema, stable node IDs, relation legend, confidence metadata |
 | Report compatibility | deprecated field와 새 field가 migration 기간에 함께 유지됨 |
 
 ## Security Tests
@@ -76,6 +89,8 @@ security
 | resource exhaustion | file size/count/depth/time limit 초과 시 skip coverage |
 | read-only MCP | uninitialized repo에서 workspace 생성 금지, initialized repo에서 reports/sidecar 생성 금지 |
 | command execution | action은 실행되지 않고 allowlisted runner 없이 executable state가 되지 않음 |
+| cross-repo traversal | workspace allowlist 밖 repo나 remote URL을 자동으로 읽거나 clone하지 않음 |
+| graph leakage | graph label, tooltip, JSON node metadata에 raw secret/source snippet이 들어가지 않음 |
 | prompt injection | repo content는 evidence로만 표시되고 지시문으로 해석하지 않음 |
 
 ## 정확도 게이트
@@ -89,15 +104,19 @@ security
 | secret leak | 0 |
 | unsupported coverage reporting | fixture 100% |
 | MCP read-only mutation | 0 |
+| cross-repo contract recall | >= 85% |
+| graph export determinism | fixture 100% |
 
 ## E2E 시나리오
 
 1. mixed-language fixture에서 `impact-trace init`을 실행한다.
 2. `impact-trace index`가 entity, relation, evidence, coverage를 저장한다.
 3. `impact-trace analyze --base main --head feature --json`이 changed/affected entity를 반환한다.
-4. MCP client가 같은 report를 compact response와 resource URI로 읽는다.
-5. report에 missing adapter, skipped file, confidence가 포함된다.
-6. security fixture에서 raw secret이 SQLite, Markdown, MCP 어디에도 나오지 않는다.
+4. workspace fixture에서 provider contract 변경이 consumer repo의 affected entity로 이어진다.
+5. graph export가 같은 report에서 deterministic Mermaid/JSON graph를 만든다.
+6. MCP client가 같은 report를 compact response와 resource URI로 읽는다.
+7. report에 missing adapter, skipped file, confidence가 포함된다.
+8. security fixture에서 raw secret이 SQLite, Markdown, MCP, graph export 어디에도 나오지 않는다.
 
 ## 회귀 규칙
 

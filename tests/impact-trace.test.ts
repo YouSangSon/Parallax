@@ -82,6 +82,7 @@ test('indexProject and analyzeDiff report direct importers, tests, docs, runnabl
   assert.ok(report.affectedFiles.some((file) => file.path === 'README.md'));
   assert.ok(report.testCommands.some((command) => command.command === 'npm' && command.args?.includes('tests/session.test.ts')));
   assert.ok(report.evidence.length > 0);
+  assert.ok(report.evidence.some((item) => item.extractorId === 'canonical-entity-graph'));
   assert.equal(report.evidence.some((item) => item.snippet.includes('sk-test-secret')), false);
   assert.ok(report.reportPath);
   const markdown = await readFile(path.join(repoRoot, report.reportPath), 'utf8');

@@ -56,7 +56,7 @@ graph DB는 필요할 때 파생하는 projection이다.
 | MCP | 공식 MCP SDK 기반 stdio server, read-only `impact_trace_analyze_diff` 제공 |
 | Storage | repo-local SQLite, legacy `files/symbols/edges`, canonical `entities/relations/relation_evidence` 병행 저장 |
 | Indexing | TS/JS/Markdown + Python/Go/Rust/Java/Kotlin/C#/C/C++ 파일과 기본 symbol/dependency 휴리스틱 추출 |
-| Report | `changed`, `affected`, `actions`, `evidence` 중심의 언어 중립 report model |
+| Report | canonical `relations` 우선 분석, legacy `edges` fallback, `changed`, `affected`, `actions`, `evidence` report model |
 | Security | path containment, symlink escape 방어, MCP report persistence 차단, redaction 기본 테스트 |
 | Tests | unit/integration/security/MCP/install smoke 테스트 |
 

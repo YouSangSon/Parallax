@@ -28,6 +28,7 @@ MVP 구현이 들어가 있습니다.
 - adapter run과 index coverage metadata 저장
 - 현재 내장 adapter로 TypeScript, JavaScript, Markdown 파일 인덱싱
 - Python, Go, Rust, Java, Kotlin, C#, C, C++ 파일과 기본 symbol/dependency 휴리스틱 인덱싱
+- 분석 시 canonical `relations`를 우선 사용하고 legacy `edges`는 fallback으로 사용
 - TS/JS export symbol 추출
 - TS/JS import edge 추출
 - import 기반 관련 테스트 추론
@@ -310,6 +311,11 @@ npm audit --audit-level=high
 - [테스트 계획 index](docs/impact-trace-test-plan.md)
 - [한국어 테스트 계획](docs/impact-trace-test-plan.ko.md)
 - [English test plan](docs/impact-trace-test-plan.en.md)
+
+진행상황:
+
+- [진행상황 index](docs/progress.md)
+- [한국어 진행상황](docs/progress.ko.md)
 
 ## 기여
 

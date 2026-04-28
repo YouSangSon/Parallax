@@ -42,7 +42,8 @@ test('analyzeDiff does not read post-index symlink evidence outside repo root', 
 
   const evidenceText = report.evidence.map((item) => item.snippet).join('\n');
   assert.doesNotMatch(evidenceText, /# User Database|root:[^\s]/);
-  assert.ok(report.evidence.some((item) => item.kind === 'evidence-unavailable'));
+  assert.ok(report.evidence.some((item) => item.extractorId === 'canonical-entity-graph'));
+  assert.equal(report.evidence.some((item) => item.file === 'src/importer.ts'), true);
 });
 
 test('redactSecrets removes common token and private key shapes', () => {

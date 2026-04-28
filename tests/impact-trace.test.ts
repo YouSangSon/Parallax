@@ -490,6 +490,76 @@ test('recall with asOfTx returns only facts in the ancestor DAG of that tx', asy
   assert.deepEqual(earlierOnly.facts.map((f) => f.value), ['first']);
 });
 
+function runCli(repoRoot: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
+  const result = spawnSync(
+    process.execPath,
+    ['--import', tsxLoaderPath, path.resolve('src/cli.ts'), ...args],
+    { cwd: repoRoot, encoding: 'utf8' }
+  );
+  return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+}
+
+test('CLI branch + trace + retract subcommands round-trip', async () => {
+  const repoRoot = await makeFixtureRepo();
+  await initProject({ repoRoot });
+
+  // branch from main
+  const branchRun = runCli(repoRoot, ['branch', '--name', 'cli-experiment']);
+  assert.equal(branchRun.status, 0, `branch failed: ${branchRun.stderr}`);
+  const branchPayload = JSON.parse(branchRun.stdout) as { branchId: string };
+  assert.match(branchPayload.branchId, /^br_[0-9a-f]{16}$/);
+
+  // remember a source fact
+  const sourceRun = runCli(repoRoot, [
+    'remember',
+    '--entity', 'file:src/x.ts',
+    '--attribute', 'observed',
+    '--value', '"first inference"'
+  ]);
+  assert.equal(sourceRun.status, 0, `source remember failed: ${sourceRun.stderr}`);
+  const source = JSON.parse(sourceRun.stdout) as { factId: string };
+
+  // remember a derived fact citing the source as evidence
+  const derivedRun = runCli(repoRoot, [
+    'remember',
+    '--entity', 'file:src/x.ts',
+    '--attribute', 'concern',
+    '--value', '"derived"',
+    '--evidence-fact-ids', source.factId
+  ]);
+  assert.equal(derivedRun.status, 0, `derived remember failed: ${derivedRun.stderr}`);
+  const derived = JSON.parse(derivedRun.stdout) as { factId: string };
+
+  // trace from derived back to source
+  const traceRun = runCli(repoRoot, ['trace', '--fact-id', derived.factId]);
+  assert.equal(traceRun.status, 0, `trace failed: ${traceRun.stderr}`);
+  const tracePayload = JSON.parse(traceRun.stdout) as { chain: Array<{ id: string }> };
+  assert.deepEqual(
+    tracePayload.chain.map((entry) => entry.id),
+    [derived.factId, source.factId]
+  );
+
+  // retract sugar: equivalent to remember --op retract
+  const retractRun = runCli(repoRoot, [
+    'retract',
+    '--entity', 'file:src/x.ts',
+    '--attribute', 'observed',
+    '--value', '"first inference"'
+  ]);
+  assert.equal(retractRun.status, 0, `retract failed: ${retractRun.stderr}`);
+
+  // recall --current-only should drop the retracted value
+  const recallRun = runCli(repoRoot, [
+    'recall',
+    '--entity', 'file:src/x.ts',
+    '--attribute', 'observed',
+    '--current-only'
+  ]);
+  assert.equal(recallRun.status, 0, `recall failed: ${recallRun.stderr}`);
+  const recallPayload = JSON.parse(recallRun.stdout) as { facts: Array<{ value: string }> };
+  assert.deepEqual(recallPayload.facts, [], 'current-only excludes the retracted value');
+});
+
 test('CLI exposes remember/recall as round-trip subcommands', async () => {
   const repoRoot = await makeFixtureRepo();
   await initProject({ repoRoot });

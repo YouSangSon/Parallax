@@ -19,12 +19,14 @@ file-edge MVP를 유지하면서 canonical `Entity`/`Relation` 저장 모델을 
 | 2026-04-28 | P0 | `entities`, `entity_versions`, `relations`, `relation_evidence`, `adapter_runs`, `index_coverage` 저장 모델 추가 |
 | 2026-04-28 | P0 | TS/JS/Markdown 외 Python, Go, Rust, Java, Kotlin, C#, C, C++ 파일과 기본 symbol/dependency 휴리스틱 인덱싱 |
 | 2026-04-28 | P0 | `analyze`가 canonical `relations`를 우선 사용하고 legacy `edges`를 fallback으로 사용하도록 전환 |
+| 2026-04-28 | P1 | 별도 graph DB 없이 SQLite `entities`/`relations`에서 report 범위 Mermaid/JSON graph export 생성 |
 
 ## 진행 중
 
 | 단계 | 작업 | 상태 |
 |---|---|---|
 | P0 | analyzer를 canonical graph traversal 기반으로 확장 | direct reverse relation 우선 조회 완료, multi-hop traversal 예정 |
+| P1 | 관계 시각화 | Mermaid/JSON report graph export 완료, DOT/MCP graph resource 예정 |
 | P0 | snapshot-safe indexing | schema 기반은 준비, running/completed isolation 강화 필요 |
 | P0 | git diff input | 아직 `--changed` 중심, `--base/--head` 예정 |
 
@@ -33,14 +35,14 @@ file-edge MVP를 유지하면서 canonical `Entity`/`Relation` 저장 모델을 
 | 날짜 | 명령 | 결과 |
 |---|---|---|
 | 2026-04-28 | `npm run lint` | 통과 |
-| 2026-04-28 | `npm test` | 13개 테스트 통과 |
+| 2026-04-28 | `npm test` | 14개 테스트 통과 |
 | 2026-04-28 | `npm run test:install-smoke` | 통과 |
 | 2026-04-28 | `git diff --check` | 통과 |
 
 ## 다음 작업
 
 1. `analyze`를 1-hop reverse lookup에서 bounded multi-hop traversal로 확장한다.
-2. Mermaid/JSON graph export를 추가해 report의 관계를 시각화한다.
+2. DOT export와 MCP graph resource를 추가한다.
 3. workspace catalog schema와 cross-repo contract baseline을 구현한다.
 4. `--base`, `--head` git diff 입력과 stale-index warning을 추가한다.
 

@@ -29,6 +29,7 @@ MVP 구현이 들어가 있습니다.
 - 현재 내장 adapter로 TypeScript, JavaScript, Markdown 파일 인덱싱
 - Python, Go, Rust, Java, Kotlin, C#, C, C++ 파일과 기본 symbol/dependency 휴리스틱 인덱싱
 - 분석 시 canonical `relations`를 우선 사용하고 legacy `edges`는 fallback으로 사용
+- 저장된 report에서 Mermaid/JSON graph export 생성
 - TS/JS export symbol 추출
 - TS/JS import edge 추출
 - import 기반 관련 테스트 추론
@@ -50,7 +51,7 @@ Java, Kotlin, C#, C, C++ 같은 언어는 Tree-sitter, LSP, CodeQL, build-system
 - Obsidian write sync
 - graph DB projection
 - workspace/cross-repo contract index
-- Mermaid/DOT/JSON graph visualization export
+- DOT graph export와 web graph explorer
 - CodeQL adapter
 - 모든 언어의 full semantic analysis
 - file/symbol MCP resource
@@ -106,6 +107,7 @@ Markdown report는 아래 경로에 생성됩니다.
 impact-trace init
 impact-trace index
 impact-trace analyze --changed src/file.ts [--json]
+impact-trace graph export --report <id> [--format mermaid|json]
 impact-trace mcp serve
 ```
 
@@ -152,6 +154,16 @@ JSON report에는 아래 정보가 들어갑니다.
 - `evidence`
 - `indexRunId`
 - `reportPath`
+
+### `graph export`
+
+저장된 report를 기준으로 관계 그래프를 출력합니다. 이 기능은 별도 graph DB 없이
+SQLite의 canonical `entities`와 `relations`에서 파생합니다.
+
+```bash
+impact-trace graph export --report <report-id> --format mermaid
+impact-trace graph export --report <report-id> --format json
+```
 
 ## MCP
 

@@ -39,6 +39,17 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === 'graph' && args[0] === 'export') {
+    const { exportImpactGraph } = await import('./graph.js');
+    const graph = await exportImpactGraph({
+      repoRoot,
+      reportId: parseRequiredArg(args, '--report'),
+      format: parseGraphFormat(args)
+    });
+    console.log(graph.rendered);
+    return;
+  }
+
   if (command === 'mcp' && args[0] === 'serve') {
     const { serveMcp } = await import('./mcp.js');
     await serveMcp({ repoRoot });
@@ -58,6 +69,20 @@ function parseChangedFiles(args: string[]): string[] {
   throw new Error('analyze requires --changed <file[,file]> for this MVP');
 }
 
+function parseRequiredArg(args: string[], name: string): string {
+  const index = args.indexOf(name);
+  if (index >= 0 && args[index + 1]) return args[index + 1]!;
+  throw new Error(`missing required ${name}`);
+}
+
+function parseGraphFormat(args: string[]): 'json' | 'mermaid' {
+  const index = args.indexOf('--format');
+  const value = index >= 0 ? args[index + 1] : undefined;
+  if (!value || value === 'mermaid') return 'mermaid';
+  if (value === 'json') return 'json';
+  throw new Error('graph export --format must be mermaid or json');
+}
+
 function printHelp(): void {
   console.log(`impact-trace
 
@@ -65,6 +90,7 @@ Commands:
   impact-trace init
   impact-trace index
   impact-trace analyze --changed src/file.ts [--json]
+  impact-trace graph export --report <id> [--format mermaid|json]
   impact-trace mcp serve
 `);
 }

@@ -52,11 +52,12 @@ graph DB는 필요할 때 파생하는 projection이다.
 
 | 영역 | 현재 상태 |
 |---|---|
-| CLI | `init`, `index`, `analyze`, `mcp serve` 제공 |
+| CLI | `init`, `index`, `analyze`, `graph export`, `mcp serve` 제공 |
 | MCP | 공식 MCP SDK 기반 stdio server, read-only `impact_trace_analyze_diff` 제공 |
 | Storage | repo-local SQLite, legacy `files/symbols/edges`, canonical `entities/relations/relation_evidence` 병행 저장 |
 | Indexing | TS/JS/Markdown + Python/Go/Rust/Java/Kotlin/C#/C/C++ 파일과 기본 symbol/dependency 휴리스틱 추출 |
 | Report | canonical `relations` 우선 분석, legacy `edges` fallback, `changed`, `affected`, `actions`, `evidence` report model |
+| Visualization | report 범위의 Mermaid/JSON graph export 제공, DOT/web explorer는 예정 |
 | Security | path containment, symlink escape 방어, MCP report persistence 차단, redaction 기본 테스트 |
 | Tests | unit/integration/security/MCP/install smoke 테스트 |
 

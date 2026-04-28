@@ -31,6 +31,14 @@ export type AnalyzeOptions = {
   readOnly?: boolean;
 };
 
+export type GraphExportFormat = 'json' | 'mermaid';
+
+export type GraphExportOptions = {
+  repoRoot: string;
+  reportId: string;
+  format: GraphExportFormat;
+};
+
 export type Confidence = 'proven' | 'inferred' | 'heuristic' | 'unknown';
 
 export type Evidence = {
@@ -117,4 +125,31 @@ export type ImpactReport = {
   testCommands: ImpactAction[];
   evidence: Evidence[];
   reportPath?: string;
+};
+
+export type GraphNode = {
+  id: string;
+  label: string;
+  kind: EntityKind;
+  path?: string;
+  group: 'changed' | 'affected' | 'context';
+  confidence?: Confidence;
+};
+
+export type GraphEdge = {
+  id: string;
+  source: string;
+  target: string;
+  kind: string;
+  confidence: Confidence;
+  label: string;
+};
+
+export type GraphExport = {
+  reportId: string;
+  indexRunId: number;
+  format: GraphExportFormat;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  rendered: string;
 };

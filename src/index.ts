@@ -1,4 +1,5 @@
 export { analyzeDiff } from './analyzer.js';
+export { exportImpactGraph } from './graph.js';
 export { indexProject } from './indexer.js';
 export { initProject } from './init.js';
 export { createMcpServer, serveMcp } from './mcp.js';
@@ -10,6 +11,11 @@ export type {
   EntityKind,
   EntityRef,
   Evidence,
+  GraphEdge,
+  GraphExport,
+  GraphExportFormat,
+  GraphExportOptions,
+  GraphNode,
   ImpactAction,
   ImpactTarget,
   ImpactReport,

@@ -54,11 +54,12 @@ The MVP is intentionally narrow.
 
 | Area | Current State |
 |---|---|
-| CLI | `init`, `index`, `analyze`, `mcp serve` |
+| CLI | `init`, `index`, `analyze`, `graph export`, `mcp serve` |
 | MCP | Official MCP SDK stdio server with read-only `impact_trace_analyze_diff` |
 | Storage | Repo-local SQLite with legacy `files/symbols/edges` and canonical `entities/relations/relation_evidence` in parallel |
 | Indexing | TS/JS/Markdown plus Python/Go/Rust/Java/Kotlin/C#/C/C++ files and basic symbol/dependency heuristics |
 | Report | Canonical `relations` first, legacy `edges` fallback, language-neutral `changed`, `affected`, `actions`, `evidence` report model |
+| Visualization | Mermaid/JSON graph export for report scope; DOT and web explorer are planned |
 | Security | Path containment, symlink escape defense, MCP no-persistence, redaction tests |
 | Tests | Unit, integration, security, MCP, install smoke |
 

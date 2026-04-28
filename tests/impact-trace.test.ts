@@ -5,7 +5,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
 
-import { analyzeDiff, indexProject, initProject } from '../src/index.js';
+import { analyzeDiff, exportImpactGraph, indexProject, initProject } from '../src/index.js';
 import { databasePath } from '../src/store.js';
 
 async function makeFixtureRepo(): Promise<string> {
@@ -133,6 +133,34 @@ test('indexProject writes canonical entity graph and broad language file entitie
   } finally {
     db.close();
   }
+});
+
+test('exportImpactGraph renders report graph from SQLite relations without graph DB', async () => {
+  const repoRoot = await makeFixtureRepo();
+  await initProject({ repoRoot });
+  await indexProject({ repoRoot });
+  const report = await analyzeDiff({
+    repoRoot,
+    changedFiles: ['src/auth/session.ts'],
+    writeReport: true
+  });
+
+  const jsonGraph = await exportImpactGraph({ repoRoot, reportId: report.id, format: 'json' });
+  const parsed = JSON.parse(jsonGraph.rendered) as {
+    nodes: Array<{ id: string; group: string }>;
+    edges: Array<{ kind: string; source: string; target: string }>;
+  };
+  assert.equal(jsonGraph.format, 'json');
+  assert.ok(parsed.nodes.some((node) => node.id === 'file:src/auth/session.ts' && node.group === 'changed'));
+  assert.ok(parsed.nodes.some((node) => node.id === 'file:src/routes/private.ts' && node.group === 'affected'));
+  assert.ok(parsed.edges.some((edge) => edge.kind === 'DEPENDS_ON'));
+  assert.doesNotMatch(jsonGraph.rendered, /sk-test-secret/);
+
+  const mermaidGraph = await exportImpactGraph({ repoRoot, reportId: report.id, format: 'mermaid' });
+  assert.match(mermaidGraph.rendered, /^flowchart LR/);
+  assert.match(mermaidGraph.rendered, /src\/auth\/session\.ts/);
+  assert.match(mermaidGraph.rendered, /DEPENDS_ON/);
+  assert.doesNotMatch(mermaidGraph.rendered, /sk-test-secret/);
 });
 
 test('analyzeDiff returns structured test commands for repo-controlled filenames', async () => {

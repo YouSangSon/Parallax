@@ -326,6 +326,8 @@ sqlite3 .impact-trace/impact.db \
 | 결정을 retract | `impact-trace retract --entity ... --attribute ... --value ...` |
 | 과거 시점 상태 보기 | `impact-trace recall --as-of-tx <tx-id>` |
 | 지금 유효한 결정만 (retract dedup 자동) | `impact-trace recall --current-only` |
+| Branch 합치기 | `impact-trace merge --target main --source experiment-1` |
+| 합쳐진 후 양 branch facts 보기 | merge 결과의 `mergeTxId`로 `recall --as-of-tx <merge-tx>` |
 | MCP 통해 agent가 같은 동작 | tool call에 `impact_trace_*` 사용 |
 
 ---
@@ -336,7 +338,7 @@ sqlite3 .impact-trace/impact.db \
 
 - **실제 임베딩 모델 통합:** 현재 `src/embeddings.ts`의 stub은 SHA-256 chain 기반 deterministic pseudo-vector. 진짜 semantic 의미는 없음. 같은 함수 시그니처로 Ollama / OpenAI / Cohere / Voyage 모델 swap-in 예정.
 - **Semantic recall:** `recall(query: "비슷한 결정 찾아줘", k: 10)` — Matryoshka 64-dim binary 1차 + 768-int8 2차 검색.
-- **Branch merge:** 두 branch의 facts를 합쳐 새 branch 생성.
+- ~~**Branch merge:** 두 branch의 facts를 합쳐 새 branch 생성.~~ ✅ 완료 — `impact-trace merge --target ... --source ...` 그리고 `impact_trace_merge` MCP 툴.
 
 ---
 

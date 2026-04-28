@@ -2,7 +2,7 @@ import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mc
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 
-import { createBranch, recall, remember, trace } from './agent_memory.js';
+import { createBranch, mergeBranches, recall, remember, trace } from './agent_memory.js';
 import type { RememberValue } from './agent_memory.js';
 import { normalizeRepoRoot } from './security.js';
 import { getRepoId, latestCompletedIndexRun, openDatabase } from './store.js';
@@ -157,6 +157,37 @@ export function createMcpServer(context: McpContext): McpServer {
         createBranch(db, {
           name,
           ...(from !== undefined ? { from } : {})
+        })
+      );
+      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+    }
+  );
+
+  server.registerTool(
+    'impact_trace_merge',
+    {
+      title: 'Merge a branch into another',
+      description:
+        'Create a merge transaction on the target branch with both branch heads as parents. No fact copy needed (content-addressable); recall on target now walks both DAGs.',
+      inputSchema: {
+        target: z.string().min(1),
+        source: z.string().min(1),
+        agent: z.string().optional()
+      },
+      annotations: {
+        title: 'Merge a branch into another',
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false
+      }
+    },
+    async ({ target, source, agent }) => {
+      const result = withWritableDb(context, (db) =>
+        mergeBranches(db, {
+          target,
+          source,
+          ...(agent !== undefined ? { agent } : {})
         })
       );
       return { content: [{ type: 'text', text: JSON.stringify(result) }] };

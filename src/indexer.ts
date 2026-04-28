@@ -117,6 +117,11 @@ export async function indexProject(options: IndexOptions): Promise<IndexResult> 
     db.prepare(
       'INSERT OR IGNORE INTO transactions (id, parent_tx_id, branch_id, ts, agent, index_run_id) VALUES (?, ?, ?, ?, ?, ?)'
     ).run(memoryTxId, mainBranch.head_tx_id, mainBranch.id, memoryTs, 'indexer', indexRunId);
+    if (mainBranch.head_tx_id) {
+      db.prepare(
+        'INSERT OR IGNORE INTO transaction_parents (tx_id, parent_tx_id) VALUES (?, ?)'
+      ).run(memoryTxId, mainBranch.head_tx_id);
+    }
     const upsertAttributeDef = db.prepare(
       "INSERT OR IGNORE INTO attribute_defs (name, value_type, is_code_relation, description) VALUES (?, 'entity_ref', 0, '')"
     );

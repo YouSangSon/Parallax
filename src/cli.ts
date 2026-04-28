@@ -130,6 +130,22 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === 'merge') {
+    const { mergeBranches, withAgentMemoryDb } = await import('./index.js');
+    const target = parseRequiredArg(args, '--target');
+    const source = parseRequiredArg(args, '--source');
+    const agent = parseOptionalArg(args, '--agent');
+    const result = withAgentMemoryDb(repoRoot, false, (db) =>
+      mergeBranches(db, {
+        target,
+        source,
+        ...(agent !== undefined ? { agent } : {})
+      })
+    );
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
   if (command === 'trace') {
     const { trace, withAgentMemoryDb } = await import('./index.js');
     const factId = parseRequiredArg(args, '--fact-id');
@@ -196,7 +212,8 @@ function parsePositionals(args: string[]): string[] {
     '--changed', '--base', '--head', '--depth', '--max-fanout', '--max-file-bytes',
     '--report', '--format',
     '--entity', '--attribute', '--value', '--branch', '--agent', '--evidence-fact-ids',
-    '--name', '--from', '--fact-id', '--k', '--op', '--as-of-tx'
+    '--name', '--from', '--fact-id', '--k', '--op', '--as-of-tx',
+    '--target', '--source'
   ]);
   const positionals: string[] = [];
   for (let index = 0; index < args.length; index++) {
@@ -239,6 +256,7 @@ Agent memory:
   impact-trace recall   [--entity <id>] [--attribute <name>] [--branch <name>]
                         [--k 20] [--as-of-tx <tx-id>] [--current-only]
   impact-trace branch   --name <name> [--from <name>]
+  impact-trace merge    --target <branch> --source <branch> [--agent <id>]
   impact-trace trace    --fact-id <id> [--depth 5]
 `);
 }

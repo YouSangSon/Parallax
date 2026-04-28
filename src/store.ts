@@ -423,13 +423,32 @@ function migrate(db: Db): void {
       FOREIGN KEY(source_fact_id) REFERENCES facts(id)
     );
 
+    -- Multi-parent transaction graph (schema v5). transactions.parent_tx_id is
+    -- kept as the primary parent for backward compatibility; merge transactions
+    -- record additional parents here so recall walks the full DAG.
+    CREATE TABLE IF NOT EXISTS transaction_parents (
+      tx_id TEXT NOT NULL,
+      parent_tx_id TEXT NOT NULL,
+      PRIMARY KEY (tx_id, parent_tx_id),
+      FOREIGN KEY(tx_id) REFERENCES transactions(id),
+      FOREIGN KEY(parent_tx_id) REFERENCES transactions(id)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_facts_entity_attr ON facts(entity_id, attribute);
     CREATE INDEX IF NOT EXISTS idx_facts_tx ON facts(tx_id);
     CREATE INDEX IF NOT EXISTS idx_transactions_branch ON transactions(branch_id, ts);
     CREATE INDEX IF NOT EXISTS idx_fact_provenance_fact ON fact_provenance(fact_id);
+    CREATE INDEX IF NOT EXISTS idx_transaction_parents_tx ON transaction_parents(tx_id);
+
+    -- Backfill v5: every existing transactions row with non-null parent gets
+    -- a transaction_parents row. Idempotent on re-run.
+    INSERT OR IGNORE INTO transaction_parents (tx_id, parent_tx_id)
+    SELECT id, parent_tx_id FROM transactions WHERE parent_tx_id IS NOT NULL;
 
     INSERT OR IGNORE INTO schema_versions (version, applied_at)
     VALUES (4, datetime('now'));
+    INSERT OR IGNORE INTO schema_versions (version, applied_at)
+    VALUES (5, datetime('now'));
 
     INSERT OR IGNORE INTO attribute_defs (name, value_type, is_code_relation, description) VALUES
       ('imports', 'entity_ref', 1, 'File or module import edge'),

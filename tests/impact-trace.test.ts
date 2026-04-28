@@ -89,7 +89,7 @@ test('initProject creates config and SQLite database tables', async () => {
     assert.match(tables.names, /contracts/);
     assert.match(tables.names, /cross_repo_links/);
     assert.match(tables.names, /work_artifacts/);
-    assert.equal(schemaVersion.version, 4);
+    assert.equal(schemaVersion.version, 5);
   } finally {
     db.close();
   }
@@ -488,6 +488,92 @@ test('recall with asOfTx returns only facts in the ancestor DAG of that tx', asy
     recall(db, { entity: 'file:src/x.ts', attribute: 'observed', asOfTx: earlier.txId })
   );
   assert.deepEqual(earlierOnly.facts.map((f) => f.value), ['first']);
+});
+
+test('mergeBranches creates a multi-parent tx and target recall sees source facts', async () => {
+  const repoRoot = await makeFixtureRepo();
+  await initProject({ repoRoot });
+
+  const { remember, recall, createBranch, mergeBranches, withAgentMemoryDb } = await import('../src/index.js');
+
+  // Establish baseline on main
+  withAgentMemoryDb(repoRoot, false, (db) =>
+    remember(db, { entity: 'file:src/m.ts', attribute: 'observed', value: 'on main' })
+  );
+
+  // Fork
+  withAgentMemoryDb(repoRoot, false, (db) =>
+    createBranch(db, { name: 'experiment-merge', from: 'main' })
+  );
+
+  // Diverge: assert on the experiment branch only
+  withAgentMemoryDb(repoRoot, false, (db) =>
+    remember(db, {
+      entity: 'file:src/m.ts',
+      attribute: 'observed',
+      value: 'on experiment',
+      branch: 'experiment-merge'
+    })
+  );
+
+  // Before merge: main does not see the experiment-only fact
+  const mainBefore = withAgentMemoryDb(repoRoot, true, (db) =>
+    recall(db, { entity: 'file:src/m.ts', attribute: 'observed', branch: 'main' })
+  );
+  assert.deepEqual(
+    mainBefore.facts.map((f) => f.value).sort(),
+    ['on main'],
+    'main should not see experiment-only fact pre-merge'
+  );
+
+  // Merge experiment-merge into main
+  const merge = withAgentMemoryDb(repoRoot, false, (db) =>
+    mergeBranches(db, { target: 'main', source: 'experiment-merge' })
+  );
+  assert.match(merge.mergeTxId, /^[0-9a-f]{64}$/);
+
+  // Verify the merge tx has two parents in transaction_parents
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const parents = db
+      .prepare('SELECT parent_tx_id FROM transaction_parents WHERE tx_id = ? ORDER BY parent_tx_id')
+      .all(merge.mergeTxId) as Array<{ parent_tx_id: string }>;
+    assert.equal(parents.length, 2, 'merge tx should have two parents');
+  } finally {
+    db.close();
+  }
+
+  // After merge: main sees both facts via the multi-parent DAG walk
+  const mainAfter = withAgentMemoryDb(repoRoot, true, (db) =>
+    recall(db, {
+      entity: 'file:src/m.ts',
+      attribute: 'observed',
+      branch: 'main',
+      asOfTx: merge.mergeTxId
+    })
+  );
+  assert.deepEqual(
+    mainAfter.facts.map((f) => f.value).sort(),
+    ['on experiment', 'on main'],
+    'main should see both facts after merge via asOfTx walk'
+  );
+});
+
+test('mergeBranches refuses self-merge and empty source', async () => {
+  const repoRoot = await makeFixtureRepo();
+  await initProject({ repoRoot });
+  const { mergeBranches, createBranch, withAgentMemoryDb } = await import('../src/index.js');
+
+  assert.throws(
+    () => withAgentMemoryDb(repoRoot, false, (db) => mergeBranches(db, { target: 'main', source: 'main' })),
+    /cannot merge a branch into itself/
+  );
+
+  withAgentMemoryDb(repoRoot, false, (db) => createBranch(db, { name: 'empty-source', from: 'main' }));
+  assert.throws(
+    () => withAgentMemoryDb(repoRoot, false, (db) => mergeBranches(db, { target: 'main', source: 'empty-source' })),
+    /source branch has no head/
+  );
 });
 
 function runCli(repoRoot: string, args: string[]): { status: number | null; stdout: string; stderr: string } {

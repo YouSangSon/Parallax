@@ -54,6 +54,20 @@ export interface BranchResult {
   headTxId: string | null;
 }
 
+export interface MergeBranchInput {
+  target: string;
+  source: string;
+  agent?: string;
+}
+
+export interface MergeBranchResult {
+  mergeTxId: string;
+  targetBranchId: string;
+  sourceBranchId: string;
+  previousTargetHead: string | null;
+  sourceHead: string;
+}
+
 export interface TraceInput {
   factId: string;
   depth?: number;
@@ -147,6 +161,11 @@ export function remember(db: Db, input: RememberInput): RememberResult {
     db.prepare(
       'INSERT OR IGNORE INTO transactions (id, parent_tx_id, branch_id, ts, agent, index_run_id) VALUES (?, ?, ?, ?, ?, NULL)'
     ).run(txId, branch.head_tx_id, branch.id, ts, agent);
+    if (branch.head_tx_id) {
+      db.prepare(
+        'INSERT OR IGNORE INTO transaction_parents (tx_id, parent_tx_id) VALUES (?, ?)'
+      ).run(txId, branch.head_tx_id);
+    }
 
     const factId = contentHash(input.entity, input.attribute, finalValue, op);
     db.prepare(
@@ -185,8 +204,22 @@ export function recall(db: Db, input: RecallInput): RecallResult {
   const k = Math.min(input.k ?? 20, MAX_RECALL_K);
   const branch = loadBranch(db, branchName);
 
-  const conditions: string[] = ['t.branch_id = ?'];
-  const whereParams: Array<string | number | null> = [branch.id];
+  const useAsOf = input.asOfTx !== undefined;
+  const currentOnly = input.currentOnly === true;
+
+  // Branch and asOfTx are alternative scopes:
+  //   - without asOfTx: filter by branch (full branch history)
+  //   - with asOfTx: DAG walk from that tx is the source of truth,
+  //     branch filter is dropped so merge txs can surface facts from
+  //     both parent branches.
+  const conditions: string[] = [];
+  const whereParams: Array<string | number | null> = [];
+  if (!useAsOf) {
+    conditions.push('t.branch_id = ?');
+    whereParams.push(branch.id);
+  } else {
+    conditions.push('t.id IN (SELECT id FROM ancestor_txs)');
+  }
 
   if (input.entity !== undefined) {
     conditions.push('f.entity_id = ?');
@@ -197,20 +230,15 @@ export function recall(db: Db, input: RecallInput): RecallResult {
     whereParams.push(input.attribute);
   }
 
-  const useAsOf = input.asOfTx !== undefined;
-  const currentOnly = input.currentOnly === true;
   const cteHeader = useAsOf
     ? `WITH RECURSIVE ancestor_txs(id) AS (
         SELECT ?
         UNION
-        SELECT tt.parent_tx_id
-        FROM transactions tt, ancestor_txs a
-        WHERE tt.id = a.id AND tt.parent_tx_id IS NOT NULL
+        SELECT tp.parent_tx_id
+        FROM transaction_parents tp, ancestor_txs a
+        WHERE tp.tx_id = a.id
       )`
     : '';
-  if (useAsOf) {
-    conditions.push('t.id IN (SELECT id FROM ancestor_txs)');
-  }
 
   const baseSelect = `
     SELECT f.id, f.entity_id, f.attribute, f.value_blob, f.op, f.tx_id, f.redacted, t.ts
@@ -281,6 +309,59 @@ export function withAgentMemoryDb<T>(
     return callback(db);
   } finally {
     db.close();
+  }
+}
+
+export function mergeBranches(db: Db, input: MergeBranchInput): MergeBranchResult {
+  if (input.target === input.source) {
+    throw new Error('cannot merge a branch into itself');
+  }
+  const agent = input.agent ?? 'mcp:merge';
+
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const target = loadBranch(db, input.target);
+    const source = loadBranch(db, input.source);
+    if (source.head_tx_id === null) {
+      throw new Error(`source branch has no head: ${input.source}`);
+    }
+
+    const ts = new Date().toISOString();
+    const mergeTxId = contentHash(
+      target.head_tx_id ?? '',
+      source.head_tx_id,
+      target.id,
+      source.id,
+      ts,
+      agent
+    );
+
+    db.prepare(
+      'INSERT OR IGNORE INTO transactions (id, parent_tx_id, branch_id, ts, agent, index_run_id) VALUES (?, ?, ?, ?, ?, NULL)'
+    ).run(mergeTxId, target.head_tx_id, target.id, ts, agent);
+
+    if (target.head_tx_id) {
+      db.prepare(
+        'INSERT OR IGNORE INTO transaction_parents (tx_id, parent_tx_id) VALUES (?, ?)'
+      ).run(mergeTxId, target.head_tx_id);
+    }
+    db.prepare(
+      'INSERT OR IGNORE INTO transaction_parents (tx_id, parent_tx_id) VALUES (?, ?)'
+    ).run(mergeTxId, source.head_tx_id);
+
+    db.prepare('UPDATE branches SET head_tx_id = ? WHERE id = ?').run(mergeTxId, target.id);
+
+    db.exec('COMMIT');
+    return {
+      mergeTxId,
+      targetBranchId: target.id,
+      sourceBranchId: source.id,
+      previousTargetHead: target.head_tx_id,
+      sourceHead: source.head_tx_id
+    };
+  } catch (error: unknown) {
+    db.exec('ROLLBACK');
+    throw error;
   }
 }
 

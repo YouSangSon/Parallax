@@ -16,8 +16,9 @@
 | P1+P2 | sqlite-vec 통합 + embedding 파이프라인 (stub) + redact-then-embed 게이트 | `d0c5cce` |
 | M3+M4 | retract 동작 + as_of_tx 시간여행 (recursive CTE) | `4562024` |
 | current-only | recall이 ROW_NUMBER 윈도우로 retract 자동 dedup | `34d185c` |
+| Branch merge | schema v5 + `transaction_parents` multi-parent DAG + `impact_trace_merge` 툴 | (이번 commit) |
 
-테스트: 38/38 passing. Lint clean. 모두 origin/main에.
+테스트: 41/41 passing. Lint clean. 모두 origin/main에.
 
 ```mermaid
 gantt

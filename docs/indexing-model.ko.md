@@ -224,3 +224,63 @@ Repo files
 | single MCP tool JSON text | compact tool + paginated resources |
 | repo-local impact only | workspace-aware API/gRPC/event contract impact |
 | no graph visualization | Mermaid/DOT/JSON graph export + optional web explorer |
+
+## Agent Memory 레이어 (Schema v4 · 2026-04-29)
+
+위 canonical entity/relation 모델 위에 **agent의 결정·관찰·근거**를
+content-addressable fact로 저장하는 레이어를 동일 SQLite 파일 안에
+추가했다. 인덱서는 자기가 만드는 `relations` 옆에 facts를 *듀얼-라이트*하므로
+같은 데이터를 두 시각으로 (entity-relation graph / agent fact log) 동시에
+조회할 수 있다.
+
+```mermaid
+erDiagram
+  BRANCHES ||--o{ TRANSACTIONS : "txs on this branch"
+  BRANCHES ||--o{ BRANCHES : "parent_branch_id"
+  TRANSACTIONS ||--o{ TRANSACTIONS : "parent_tx_id (DAG)"
+  TRANSACTIONS ||--o{ FACTS : "produces"
+  TRANSACTIONS }o--|| INDEX_RUNS : "indexer-originated tx"
+  FACTS ||--o| EMBEDDINGS : "vector (assert + non-redacted)"
+  FACTS ||--o{ FACT_PROVENANCE : "fact_id"
+  FACTS ||--o{ FACT_PROVENANCE : "source_fact_id"
+  ATTRIBUTE_DEFS ||--o{ FACTS : "typed by"
+  RELATIONS }o..o{ FACTS : "indexer dual-write"
+
+  BRANCHES { TEXT id PK; TEXT name UK; TEXT head_tx_id FK; TEXT parent_branch_id FK; TEXT created_at }
+  TRANSACTIONS { TEXT id PK; TEXT parent_tx_id FK; TEXT branch_id FK; TEXT ts; TEXT agent; INT index_run_id }
+  FACTS { TEXT id PK; TEXT entity_id; TEXT attribute FK; TEXT value_blob; TEXT op; TEXT tx_id FK; INT redacted }
+  EMBEDDINGS { TEXT fact_id PK_FK; BLOB dim64_binary; BLOB dim768_int8 }
+  FACT_PROVENANCE { TEXT id PK; TEXT fact_id FK; TEXT source_fact_id FK }
+  ATTRIBUTE_DEFS { TEXT name PK; TEXT value_type; INT is_code_relation; TEXT description }
+```
+
+### 핵심 invariants
+
+- **Content-addressable fact id** = `SHA-256(entity_id, attribute, value_blob, op)`. 동일 (entity, attribute, value, op) 조합은 한 번만 저장.
+- **Immutable transaction DAG.** `transactions.parent_tx_id`로 단일-부모 체인을 만든다 (multi-parent merge는 Phase 2).
+- **Branch는 head pointer일 뿐.** 데이터 복사 없이 fork; `branches.head_tx_id`만 새 commit으로 advance.
+- **Redact-then-embed.** secret 패턴이 매치되면 `value_blob='[REDACTED]'`, `redacted=1`, 그리고 `embeddings`에 row가 *생성되지 않음*.
+- **Indexer가 만든 fact는 evidence_snippet fact를 자동으로 만들어 `fact_provenance`로 연결**한다 — `trace`로 한 줄 코드까지 도달 가능.
+
+### 코드 관계의 1급 시민 attribute
+
+인덱서가 emit하는 relation kind는 다음 매핑으로 fact attribute가 된다:
+
+| `relations.kind` | `attribute_defs.name` | 비고 |
+|---|---|---|
+| `DEPENDS_ON` | `imports` | 사용자 친숙 명칭으로 정규화 |
+| `DECLARES` | `declares` | 자동 등록 |
+| `VERIFIES` | `verifies` | 자동 등록 |
+| `DOCUMENTS` | `documents` | 자동 등록 |
+| `CONFIGURES` / `GOVERNS` / `IMPLEMENTS` / `CALLS` / `REFERENCES` | 동일 (lowercase) | 자동 등록 |
+
+자동 등록 시 `value_type='entity_ref'`, `is_code_relation=0`. seed로
+들어가는 4개(`imports`, `calls`, `affects`, `depends_on`)는 `is_code_relation=1`.
+
+### MCP/CLI 노출
+
+- MCP tools: `impact_trace_remember`, `impact_trace_recall`, `impact_trace_branch`, `impact_trace_trace` + 기존 `impact_trace_analyze_diff`.
+- CLI: `impact-trace remember | recall | branch | trace | retract` + 기존 명령들.
+- recall은 `--branch`, `--entity`, `--attribute`, `--k`, `--as-of-tx`, `--current-only` 필터 지원.
+
+자세한 사용 예와 흐름은 [agent-memory-cookbook.ko.md](agent-memory-cookbook.ko.md).

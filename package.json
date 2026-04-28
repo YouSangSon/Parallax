@@ -2,6 +2,23 @@
   "name": "impact-trace",
   "version": "0.1.0",
   "description": "Local-first code impact analysis for agentic coding workflows.",
+  "license": "MIT",
+  "author": "YouSangSon",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YouSangSon/Impact-trace.git"
+  },
+  "bugs": {
+    "url": "https://github.com/YouSangSon/Impact-trace/issues"
+  },
+  "homepage": "https://github.com/YouSangSon/Impact-trace#readme",
+  "keywords": [
+    "agentic-coding",
+    "code-analysis",
+    "impact-analysis",
+    "mcp",
+    "typescript"
+  ],
   "type": "module",
   "bin": {
     "impact-trace": "./dist/src/cli.js"

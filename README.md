@@ -199,6 +199,14 @@ npm audit --audit-level=high
 - [한국어 테스트 계획](docs/impact-trace-test-plan.ko.md)
 - [English test plan](docs/impact-trace-test-plan.en.md)
 
+## 기여
+
+기여를 환영합니다. 시작하기 전에 [CONTRIBUTING.md](CONTRIBUTING.md)를 읽어
+주세요.
+
+보안 이슈는 공개 issue에 민감한 정보를 올리지 말고 [SECURITY.md](SECURITY.md)의
+방식으로 신고해 주세요.
+
 ## Roadmap
 
 1. `--changed` 입력 대신 실제 git diff parsing 추가
@@ -210,5 +218,4 @@ npm audit --audit-level=high
 
 ## License
 
-아직 license를 선택하지 않았습니다.
-
+MIT License입니다. 자세한 내용은 [LICENSE](LICENSE)를 확인해 주세요.

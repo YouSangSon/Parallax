@@ -1,9 +1,21 @@
 # Agent/AI 특화 DB 탐색 — Impact-trace 맥락에서
 
-> **상태:** 초기 탐색 (브레인스토밍 결과 정리, 아직 commit된 결정 없음)
-> **시점:** 2026-04-28 세션
+> **상태:** **Phase 1 + 1.5 구현 완료, Phase 2 scaffolding 준비 완료** (2026-04-28 세션 기준)
 > **출발 질문:** "기존 DB를 써야 하나, 새로 기똥차게 만들 순 없나?"
 > **수렴 지점:** 단일 PC에서 도는 MCP server로서, agent의 결정·근거·시간·분기를 1급 시민으로 두는 local-first 시스템.
+> **사용 가이드:** [docs/agent-memory-cookbook.ko.md](agent-memory-cookbook.ko.md) — CLI/MCP 흐름, 실전 패턴.
+
+## Implementation Status
+
+| Phase | 무엇 | 커밋 |
+|---|---|---|
+| 1 | Schema v4 (6 테이블) + WAL + 4 MCP 툴 + 4 1급 attributes | `ffc4bf4` |
+| 1.5 | 인덱서 듀얼 라이트 (relations → facts/transactions) | `b543ce3` |
+| Q1+Q2 | CLI 4 명령 + tools/list 검증 + init이 ensureRepo 호출 | `51b09b0` |
+| M1 | 인덱서 evidence_snippet fact + fact_provenance | `650104f` |
+| P1+P2 | sqlite-vec 통합 + embedding 파이프라인 (stub) + redact-then-embed 게이트 | `d0c5cce` |
+
+테스트: 35/35 passing. Lint clean.
 
 ---
 
@@ -297,7 +309,9 @@ Privacy: 데이터가 로컬 디스크 밖으로 안 나감
 
 ---
 
-## 7. 미결 결정들
+## 7. 결정 기록 (해결됨 — 모두 코드에 반영)
+
+> 원래는 "미결 결정들"이었으나 모두 구현됨. 보존을 위해 결정과 근거를 그대로 남김.
 
 ### 결정 P — 프로젝트 구조
 

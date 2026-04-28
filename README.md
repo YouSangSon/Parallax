@@ -89,9 +89,11 @@ agent memory 레이어**를 점진적으로 더합니다.
 
 | Phase | 무엇 | 상태 |
 |---|---|---|
-| 1 | facts/transactions/branches 스키마, 4 MCP 툴 (`remember`, `recall`, `branch`, `trace`), 코드 관계 1급 시민 attribute 시드 | 진행 중 |
-| 2 | sqlite-vec 통합, semantic recall, embedding-redaction 게이트, causal trace cache-aware index | 계획 |
+| 1 | facts/transactions/branches 스키마, 4 MCP 툴 + 4 CLI 명령 (`remember`, `recall`, `branch`, `trace`), 코드 관계 1급 시민 attribute 시드, 인덱서 듀얼 라이트 + evidence_snippet provenance, sqlite-vec 통합, embedding 파이프라인 (stub) + redact-then-embed 게이트 | ✅ 완료 |
+| 2 | 실제 임베딩 모델 (Ollama / OpenAI / Cohere) 통합, semantic recall, `as_of_tx` 시간여행, branch merge | 계획 |
 | 3 | reflective consolidation (LLM 자동 요약), speculative branching GC | 후순위 |
+
+자세한 사용 예시는 [docs/agent-memory-cookbook.ko.md](docs/agent-memory-cookbook.ko.md).
 
 ## 요구 사항
 
@@ -147,6 +149,13 @@ impact-trace analyze --changed src/file.ts [--depth 2] [--json]
 impact-trace analyze --base main [--head HEAD] [--depth 2] [--json]
 impact-trace graph export --report <id> [--format mermaid|json|dot]
 impact-trace mcp serve
+
+# agent memory (Phase 1)
+impact-trace remember --entity <id> --attribute <name> --value <json|string>
+                      [--branch <name>] [--agent <id>] [--evidence-fact-ids id1,id2]
+impact-trace recall   [--entity <id>] [--attribute <name>] [--branch <name>] [--k 20]
+impact-trace branch   --name <name> [--from <name>]
+impact-trace trace    --fact-id <id> [--depth 5]
 ```
 
 ### `init`
@@ -207,6 +216,27 @@ impact-trace graph export --report <report-id> --format mermaid
 impact-trace graph export --report <report-id> --format json
 impact-trace graph export --report <report-id> --format dot
 ```
+
+### Agent memory 명령 (`remember` / `recall` / `branch` / `trace`)
+
+같은 `.impact-trace/impact.db` 위에서 agent의 결정/관찰을 content-addressable
+fact로 영속화합니다. MCP 툴과 1:1 동등하며, 출력은 모두 JSON (stdout).
+
+```bash
+# 결정 저장 — value는 JSON 또는 문자열, secret 패턴은 자동 redaction
+impact-trace remember --entity file:src/auth.ts --attribute observed --value '"compiled"'
+
+# 조회 — 구조 필터 (Phase 1: structured-only, semantic은 Phase 2)
+impact-trace recall --entity file:src/auth.ts --attribute observed --k 10
+
+# 분기 — 데이터 복사 없이 main에서 fork
+impact-trace branch --name experiment-1 --from main
+
+# 인과 사슬 — fact_provenance edge를 따라 evidence까지 도달
+impact-trace trace --fact-id <sha256-hex> --depth 5
+```
+
+자세한 흐름·패턴: [docs/agent-memory-cookbook.ko.md](docs/agent-memory-cookbook.ko.md).
 
 ## MCP
 

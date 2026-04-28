@@ -6,4 +6,4 @@ coverage/
 *.log
 *.tsbuildinfo
 tmp/
-
+.worktrees/

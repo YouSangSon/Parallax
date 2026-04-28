@@ -122,7 +122,48 @@ impact-trace recall --branch try-rate-limiter --entity file:src/api/handler.ts
 # → 실험 fact만 보임
 ```
 
-### 2.4 trace로 코드까지 따라가기 (인덱서 facts 활용)
+### 2.4.1 retract — "이 사실은 더 이상 맞지 않음"
+
+```bash
+# 기존 결정을 retract (op=retract fact로 영속)
+impact-trace retract \
+  --entity file:src/auth.ts \
+  --attribute observed \
+  --value '"compiles cleanly"'
+
+# 또는 remember 명령으로 같은 효과
+impact-trace remember \
+  --entity file:src/auth.ts \
+  --attribute observed \
+  --value '"compiles cleanly"' \
+  --op retract
+
+# recall로 둘 다 보임 (Phase 1: 자동 dedup 없음, op 필드로 caller가 구분)
+impact-trace recall --entity file:src/auth.ts --attribute observed
+# → {"facts":[{...,"op":"retract"},{...,"op":"assert"}]}
+```
+
+**중요:** retract된 fact는 *embedding되지 않음* — 의도적 정책. Semantic recall이
+"retract됨" 의미를 검색해서 잘못 매칭되는 것을 방지.
+
+### 2.4.2 as_of_tx — 과거 시점 상태로 시간여행
+
+```bash
+# 시점 1
+TX1=$(impact-trace remember --entity file:src/x.ts --attribute role \
+  --value '"primary auth"' | jq -r .txId)
+
+# 시점 2 (이후 변경)
+impact-trace remember --entity file:src/x.ts --attribute role \
+  --value '"deprecated"'
+
+# TX1 시점의 상태로만 recall
+impact-trace recall --entity file:src/x.ts --as-of-tx "$TX1"
+# → {"facts":[{...,"value":"primary auth"}]} ← 첫 fact만
+# transactions DAG의 ancestor만 포함 (parent_tx_id 체인)
+```
+
+### 2.5 trace로 코드까지 따라가기 (인덱서 facts 활용)
 
 ```bash
 # import 관계 fact 하나 잡기
@@ -261,6 +302,8 @@ sqlite3 .impact-trace/impact.db \
 | 가장 최근 결정만 | `impact-trace recall --k 5` (recall은 ts DESC 정렬) |
 | 새 branch 만들기 | `impact-trace branch --name BR --from main` |
 | 결정의 근거 사슬 따라가기 | `impact-trace trace --fact-id ID --depth 10` |
+| 결정을 retract | `impact-trace retract --entity ... --attribute ... --value ...` |
+| 과거 시점 상태 보기 | `impact-trace recall --as-of-tx <tx-id>` |
 | MCP 통해 agent가 같은 동작 | tool call에 `impact_trace_*` 사용 |
 
 ---
@@ -271,8 +314,8 @@ sqlite3 .impact-trace/impact.db \
 
 - **실제 임베딩 모델 통합:** 현재 `src/embeddings.ts`의 stub은 SHA-256 chain 기반 deterministic pseudo-vector. 진짜 semantic 의미는 없음. 같은 함수 시그니처로 Ollama / OpenAI / Cohere / Voyage 모델 swap-in 예정.
 - **Semantic recall:** `recall(query: "비슷한 결정 찾아줘", k: 10)` — Matryoshka 64-dim binary 1차 + 768-int8 2차 검색.
-- **`as_of_tx` 시간여행:** `recall --as-of <tx-id>`로 과거 시점 상태 조회.
 - **Branch merge:** 두 branch의 facts를 합쳐 새 branch 생성.
+- **Current-state SQL:** retract을 자동으로 dedup해서 "지금 유효한 facts만" 반환하는 query mode (현재는 caller가 op 필드로 직접 구분).
 
 ---
 

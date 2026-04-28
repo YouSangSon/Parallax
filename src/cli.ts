@@ -66,13 +66,15 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (command === 'remember') {
+  if (command === 'remember' || command === 'retract') {
     const { remember, withAgentMemoryDb } = await import('./index.js');
     const entity = parseRequiredArg(args, '--entity');
     const attribute = parseRequiredArg(args, '--attribute');
     const value = parseAgentMemoryValue(parseRequiredArg(args, '--value'));
     const branch = parseOptionalArg(args, '--branch');
     const agent = parseOptionalArg(args, '--agent');
+    const opFlag = parseOptionalArg(args, '--op');
+    const op = command === 'retract' ? 'retract' : opFlag === 'retract' ? 'retract' : 'assert';
     const evidenceRaw = parseOptionalArg(args, '--evidence-fact-ids');
     const evidenceFactIds = evidenceRaw
       ? evidenceRaw.split(',').map((item) => item.trim()).filter(Boolean)
@@ -82,6 +84,7 @@ async function main(): Promise<void> {
         entity,
         attribute,
         value: value as never,
+        op,
         ...(branch !== undefined ? { branch } : {}),
         ...(agent !== undefined ? { agent } : {}),
         ...(evidenceFactIds !== undefined ? { evidenceFactIds } : {})
@@ -97,12 +100,14 @@ async function main(): Promise<void> {
     const attribute = parseOptionalArg(args, '--attribute');
     const branch = parseOptionalArg(args, '--branch');
     const k = parseIntegerArg(args, '--k');
+    const asOfTx = parseOptionalArg(args, '--as-of-tx');
     const result = withAgentMemoryDb(repoRoot, true, (db) =>
       recall(db, {
         ...(entity !== undefined ? { entity } : {}),
         ...(attribute !== undefined ? { attribute } : {}),
         ...(branch !== undefined ? { branch } : {}),
-        ...(k !== undefined ? { k } : {})
+        ...(k !== undefined ? { k } : {}),
+        ...(asOfTx !== undefined ? { asOfTx } : {})
       })
     );
     console.log(JSON.stringify(result, null, 2));
@@ -189,7 +194,7 @@ function parsePositionals(args: string[]): string[] {
     '--changed', '--base', '--head', '--depth', '--max-fanout', '--max-file-bytes',
     '--report', '--format',
     '--entity', '--attribute', '--value', '--branch', '--agent', '--evidence-fact-ids',
-    '--name', '--from', '--fact-id', '--k'
+    '--name', '--from', '--fact-id', '--k', '--op', '--as-of-tx'
   ]);
   const positionals: string[] = [];
   for (let index = 0; index < args.length; index++) {
@@ -225,8 +230,12 @@ Commands:
 
 Agent memory:
   impact-trace remember --entity <id> --attribute <name> --value <json|string>
-                        [--branch <name>] [--agent <id>] [--evidence-fact-ids id1,id2]
-  impact-trace recall   [--entity <id>] [--attribute <name>] [--branch <name>] [--k 20]
+                        [--branch <name>] [--agent <id>] [--op assert|retract]
+                        [--evidence-fact-ids id1,id2]
+  impact-trace retract  --entity <id> --attribute <name> --value <json|string>
+                        [--branch <name>] [--agent <id>]
+  impact-trace recall   [--entity <id>] [--attribute <name>] [--branch <name>]
+                        [--k 20] [--as-of-tx <tx-id>]
   impact-trace branch   --name <name> [--from <name>]
   impact-trace trace    --fact-id <id> [--depth 5]
 `);

@@ -152,8 +152,12 @@ impact-trace mcp serve
 
 # agent memory (Phase 1)
 impact-trace remember --entity <id> --attribute <name> --value <json|string>
-                      [--branch <name>] [--agent <id>] [--evidence-fact-ids id1,id2]
-impact-trace recall   [--entity <id>] [--attribute <name>] [--branch <name>] [--k 20]
+                      [--branch <name>] [--agent <id>] [--op assert|retract]
+                      [--evidence-fact-ids id1,id2]
+impact-trace retract  --entity <id> --attribute <name> --value <json|string>
+                      [--branch <name>] [--agent <id>]
+impact-trace recall   [--entity <id>] [--attribute <name>] [--branch <name>]
+                      [--k 20] [--as-of-tx <tx-id>]
 impact-trace branch   --name <name> [--from <name>]
 impact-trace trace    --fact-id <id> [--depth 5]
 ```

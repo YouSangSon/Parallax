@@ -12,6 +12,7 @@ export interface RememberInput {
   evidenceFactIds?: string[];
   branch?: string;
   agent?: string;
+  op?: 'assert' | 'retract';
 }
 
 export interface RememberResult {
@@ -25,6 +26,7 @@ export interface RecallInput {
   attribute?: string;
   branch?: string;
   k?: number;
+  asOfTx?: string;
 }
 
 export interface RecalledFact {
@@ -127,6 +129,7 @@ export function remember(db: Db, input: RememberInput): RememberResult {
   const branchName = input.branch ?? 'main';
   const agent = input.agent ?? 'mcp:remember';
   const evidenceFactIds = input.evidenceFactIds ?? [];
+  const op = input.op ?? 'assert';
 
   db.exec('BEGIN IMMEDIATE');
   try {
@@ -144,15 +147,15 @@ export function remember(db: Db, input: RememberInput): RememberResult {
       'INSERT OR IGNORE INTO transactions (id, parent_tx_id, branch_id, ts, agent, index_run_id) VALUES (?, ?, ?, ?, ?, NULL)'
     ).run(txId, branch.head_tx_id, branch.id, ts, agent);
 
-    const factId = contentHash(input.entity, input.attribute, finalValue, 'assert');
+    const factId = contentHash(input.entity, input.attribute, finalValue, op);
     db.prepare(
       'INSERT OR IGNORE INTO facts (id, entity_id, attribute, value_blob, op, tx_id, redacted) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    ).run(factId, input.entity, input.attribute, finalValue, 'assert', txId, isRedacted ? 1 : 0);
+    ).run(factId, input.entity, input.attribute, finalValue, op, txId, isRedacted ? 1 : 0);
 
-    // Redact-then-embed gate: only non-redacted facts get a vector. Redacted
-    // values would leak the secret into the embedding even though value_blob
-    // says [REDACTED]; skipping is the only safe policy.
-    if (!isRedacted) {
+    // Redact-then-embed gate: only non-redacted asserted facts get a vector.
+    // Retracts have no semantic value to retrieve; redacted values would
+    // leak secrets into embedding space even with [REDACTED] in value_blob.
+    if (!isRedacted && op === 'assert') {
       const embedding = computeEmbedding(`${input.entity}|${input.attribute}|${valueStr}`);
       db.prepare(
         'INSERT OR REPLACE INTO embeddings (fact_id, dim64_binary, dim768_int8) VALUES (?, ?, ?)'
@@ -182,27 +185,51 @@ export function recall(db: Db, input: RecallInput): RecallResult {
   const branch = loadBranch(db, branchName);
 
   const conditions: string[] = ['t.branch_id = ?'];
-  const params: Array<string | number | null> = [branch.id];
+  const whereParams: Array<string | number | null> = [branch.id];
 
   if (input.entity !== undefined) {
     conditions.push('f.entity_id = ?');
-    params.push(input.entity);
+    whereParams.push(input.entity);
   }
   if (input.attribute !== undefined) {
     conditions.push('f.attribute = ?');
-    params.push(input.attribute);
+    whereParams.push(input.attribute);
   }
-  params.push(k);
 
-  const sql = `
-    SELECT f.id, f.entity_id, f.attribute, f.value_blob, f.op, f.tx_id, f.redacted, t.ts
-    FROM facts f
-    INNER JOIN transactions t ON f.tx_id = t.id
-    WHERE ${conditions.join(' AND ')}
-    ORDER BY t.ts DESC, f.id ASC
-    LIMIT ?
-  `;
-  const rows = db.prepare(sql).all(...params) as unknown as FactRow[];
+  let sql: string;
+  let allParams: Array<string | number | null>;
+
+  if (input.asOfTx !== undefined) {
+    conditions.push('t.id IN (SELECT id FROM ancestor_txs)');
+    sql = `
+      WITH RECURSIVE ancestor_txs(id) AS (
+        SELECT ?
+        UNION
+        SELECT tt.parent_tx_id
+        FROM transactions tt, ancestor_txs a
+        WHERE tt.id = a.id AND tt.parent_tx_id IS NOT NULL
+      )
+      SELECT f.id, f.entity_id, f.attribute, f.value_blob, f.op, f.tx_id, f.redacted, t.ts
+      FROM facts f
+      INNER JOIN transactions t ON f.tx_id = t.id
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY t.ts DESC, f.id ASC
+      LIMIT ?
+    `;
+    allParams = [input.asOfTx, ...whereParams, k];
+  } else {
+    sql = `
+      SELECT f.id, f.entity_id, f.attribute, f.value_blob, f.op, f.tx_id, f.redacted, t.ts
+      FROM facts f
+      INNER JOIN transactions t ON f.tx_id = t.id
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY t.ts DESC, f.id ASC
+      LIMIT ?
+    `;
+    allParams = [...whereParams, k];
+  }
+
+  const rows = db.prepare(sql).all(...allParams) as unknown as FactRow[];
   return { facts: rows.map(rowToRecalledFact) };
 }
 

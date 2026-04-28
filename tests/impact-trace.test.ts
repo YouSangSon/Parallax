@@ -399,6 +399,66 @@ test('remember skips embedding when value triggers redaction (privacy gate)', as
   }
 });
 
+test('remember with op=retract stores a retract fact and skips embedding', async () => {
+  const repoRoot = await makeFixtureRepo();
+  await initProject({ repoRoot });
+
+  const { remember, withAgentMemoryDb } = await import('../src/index.js');
+  const { factId } = withAgentMemoryDb(repoRoot, false, (db) =>
+    remember(db, {
+      entity: 'file:src/auth.ts',
+      attribute: 'observed',
+      value: 'no longer compiles',
+      op: 'retract'
+    })
+  );
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const fact = db.prepare('SELECT op FROM facts WHERE id = ?').get(factId) as { op: string };
+    assert.equal(fact.op, 'retract');
+
+    const embedding = db.prepare('SELECT fact_id FROM embeddings WHERE fact_id = ?').get(factId);
+    assert.equal(embedding, undefined, 'retract facts must not be embedded');
+  } finally {
+    db.close();
+  }
+});
+
+test('recall with asOfTx returns only facts in the ancestor DAG of that tx', async () => {
+  const repoRoot = await makeFixtureRepo();
+  await initProject({ repoRoot });
+
+  const { remember, recall, withAgentMemoryDb } = await import('../src/index.js');
+
+  const earlier = withAgentMemoryDb(repoRoot, false, (db) =>
+    remember(db, { entity: 'file:src/x.ts', attribute: 'observed', value: 'first' })
+  );
+  const middle = withAgentMemoryDb(repoRoot, false, (db) =>
+    remember(db, { entity: 'file:src/x.ts', attribute: 'observed', value: 'second' })
+  );
+  withAgentMemoryDb(repoRoot, false, (db) =>
+    remember(db, { entity: 'file:src/x.ts', attribute: 'observed', value: 'third' })
+  );
+
+  const upToMiddle = withAgentMemoryDb(repoRoot, true, (db) =>
+    recall(db, { entity: 'file:src/x.ts', attribute: 'observed', asOfTx: middle.txId })
+  );
+  const values = upToMiddle.facts.map((fact) => fact.value).sort();
+  assert.deepEqual(values, ['first', 'second'], 'asOfTx should exclude facts after the tx');
+
+  const allRecall = withAgentMemoryDb(repoRoot, true, (db) =>
+    recall(db, { entity: 'file:src/x.ts', attribute: 'observed' })
+  );
+  assert.equal(allRecall.facts.length, 3, 'recall without asOfTx returns all facts');
+
+  // sanity: earlier tx alone still includes its own fact
+  const earlierOnly = withAgentMemoryDb(repoRoot, true, (db) =>
+    recall(db, { entity: 'file:src/x.ts', attribute: 'observed', asOfTx: earlier.txId })
+  );
+  assert.deepEqual(earlierOnly.facts.map((f) => f.value), ['first']);
+});
+
 test('CLI exposes remember/recall as round-trip subcommands', async () => {
   const repoRoot = await makeFixtureRepo();
   await initProject({ repoRoot });

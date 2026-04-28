@@ -69,7 +69,8 @@ export function createMcpServer(context: McpContext): McpServer {
         value: z.unknown(),
         evidenceFactIds: z.array(z.string()).optional(),
         branch: z.string().optional(),
-        agent: z.string().optional()
+        agent: z.string().optional(),
+        op: z.enum(['assert', 'retract']).optional()
       },
       annotations: {
         title: 'Remember a fact',
@@ -79,7 +80,7 @@ export function createMcpServer(context: McpContext): McpServer {
         openWorldHint: false
       }
     },
-    async ({ entity, attribute, value, evidenceFactIds, branch, agent }) => {
+    async ({ entity, attribute, value, evidenceFactIds, branch, agent, op }) => {
       const result = withWritableDb(context, (db) =>
         remember(db, {
           entity,
@@ -87,7 +88,8 @@ export function createMcpServer(context: McpContext): McpServer {
           value: value as RememberValue,
           ...(evidenceFactIds !== undefined ? { evidenceFactIds } : {}),
           ...(branch !== undefined ? { branch } : {}),
-          ...(agent !== undefined ? { agent } : {})
+          ...(agent !== undefined ? { agent } : {}),
+          ...(op !== undefined ? { op } : {})
         })
       );
       return { content: [{ type: 'text', text: JSON.stringify(result) }] };
@@ -105,7 +107,8 @@ export function createMcpServer(context: McpContext): McpServer {
         entity: z.string().optional(),
         attribute: z.string().optional(),
         branch: z.string().optional(),
-        k: z.number().int().min(1).max(100).optional()
+        k: z.number().int().min(1).max(100).optional(),
+        asOfTx: z.string().optional()
       },
       annotations: {
         title: 'Recall facts',
@@ -115,14 +118,15 @@ export function createMcpServer(context: McpContext): McpServer {
         openWorldHint: false
       }
     },
-    async ({ query, entity, attribute, branch, k }) => {
+    async ({ query, entity, attribute, branch, k, asOfTx }) => {
       const result = withReadOnlyDb(context, (db) =>
         recall(db, {
           ...(query !== undefined ? { query } : {}),
           ...(entity !== undefined ? { entity } : {}),
           ...(attribute !== undefined ? { attribute } : {}),
           ...(branch !== undefined ? { branch } : {}),
-          ...(k !== undefined ? { k } : {})
+          ...(k !== undefined ? { k } : {}),
+          ...(asOfTx !== undefined ? { asOfTx } : {})
         })
       );
       return { content: [{ type: 'text', text: JSON.stringify(result) }] };

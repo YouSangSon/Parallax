@@ -89,7 +89,7 @@ test('initProject creates config and SQLite database tables', async () => {
     assert.match(tables.names, /contracts/);
     assert.match(tables.names, /cross_repo_links/);
     assert.match(tables.names, /work_artifacts/);
-    assert.equal(schemaVersion.version, 5);
+    assert.equal(schemaVersion.version, 6);
   } finally {
     db.close();
   }
@@ -347,7 +347,7 @@ test('CLI analyze accepts --base and --head git merge-base diff input', async ()
   assert.ok(report.affectedFiles.some((file) => file.path === 'src/routes/private.ts'));
 });
 
-test('remember populates embeddings table for non-redacted facts', async () => {
+test('remember populates fact_embeddings (model, vector, dim) for non-redacted facts', async () => {
   const repoRoot = await makeFixtureRepo();
   await initProject({ repoRoot });
 
@@ -363,17 +363,18 @@ test('remember populates embeddings table for non-redacted facts', async () => {
   const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
   try {
     const row = db
-      .prepare('SELECT fact_id, length(dim64_binary) AS dim64_len, length(dim768_int8) AS dim768_len FROM embeddings WHERE fact_id = ?')
-      .get(factId) as { fact_id: string; dim64_len: number; dim768_len: number } | undefined;
-    assert.ok(row, 'expected embedding row for non-redacted fact');
-    assert.equal(row?.dim64_len, 8);
-    assert.equal(row?.dim768_len, 768);
+      .prepare('SELECT fact_id, model, length(vector) AS vec_len, dim FROM fact_embeddings WHERE fact_id = ?')
+      .get(factId) as { fact_id: string; model: string; vec_len: number; dim: number } | undefined;
+    assert.ok(row, 'expected fact_embeddings row for non-redacted fact');
+    assert.equal(row?.model, 'stub-sha256');
+    assert.equal(row?.dim, 768);
+    assert.equal(row?.vec_len, 768);
   } finally {
     db.close();
   }
 });
 
-test('remember skips embedding when value triggers redaction (privacy gate)', async () => {
+test('remember skips fact_embeddings when value triggers redaction (privacy gate)', async () => {
   const repoRoot = await makeFixtureRepo();
   await initProject({ repoRoot });
 
@@ -392,8 +393,8 @@ test('remember skips embedding when value triggers redaction (privacy gate)', as
     assert.equal(fact.redacted, 1, 'redaction flag should be set');
     assert.equal(fact.value_blob, '[REDACTED]');
 
-    const embedding = db.prepare('SELECT fact_id FROM embeddings WHERE fact_id = ?').get(factId);
-    assert.equal(embedding, undefined, 'redacted fact must not have an embedding row');
+    const embedding = db.prepare('SELECT fact_id FROM fact_embeddings WHERE fact_id = ?').get(factId);
+    assert.equal(embedding, undefined, 'redacted fact must not have a fact_embeddings row');
   } finally {
     db.close();
   }

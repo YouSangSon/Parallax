@@ -175,11 +175,13 @@ export function remember(db: Db, input: RememberInput): RememberResult {
     // Redact-then-embed gate: only non-redacted asserted facts get a vector.
     // Retracts have no semantic value to retrieve; redacted values would
     // leak secrets into embedding space even with [REDACTED] in value_blob.
+    // Writes go to fact_embeddings (schema v6) so the model is recorded
+    // alongside the vector and a fact can carry vectors from multiple models.
     if (!isRedacted && op === 'assert') {
       const embedding = computeEmbedding(`${input.entity}|${input.attribute}|${valueStr}`);
       db.prepare(
-        'INSERT OR REPLACE INTO embeddings (fact_id, dim64_binary, dim768_int8) VALUES (?, ?, ?)'
-      ).run(factId, embedding.dim64Binary, embedding.dim768Int8);
+        "INSERT OR REPLACE INTO fact_embeddings (fact_id, model, vector, dim, created_at) VALUES (?, ?, ?, ?, datetime('now'))"
+      ).run(factId, embedding.model, embedding.vector, embedding.dim);
     }
 
     for (const sourceFactId of evidenceFactIds) {

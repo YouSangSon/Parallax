@@ -21,19 +21,19 @@ function withTempDb<T>(callback: (db: Db) => T): T {
   }
 }
 
-test('migrate records schema_versions through v5', () => {
+test('migrate records schema_versions through v6', () => {
   withTempDb((db) => {
     const versions = db
       .prepare('SELECT version FROM schema_versions ORDER BY version')
       .all() as Array<{ version: number }>;
     assert.deepEqual(
       versions.map((row) => row.version),
-      [1, 2, 3, 4, 5]
+      [1, 2, 3, 4, 5, 6]
     );
   });
 });
 
-test('migrate creates the 6 agent memory tables', () => {
+test('migrate creates the agent memory tables (v4) plus v5/v6 extensions', () => {
   withTempDb((db) => {
     const expected = [
       'attribute_defs',
@@ -41,7 +41,9 @@ test('migrate creates the 6 agent memory tables', () => {
       'transactions',
       'facts',
       'embeddings',
-      'fact_provenance'
+      'fact_provenance',
+      'transaction_parents',
+      'fact_embeddings'
     ];
     for (const name of expected) {
       const row = db

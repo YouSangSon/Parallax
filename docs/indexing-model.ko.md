@@ -240,16 +240,19 @@ erDiagram
   TRANSACTIONS ||--o{ TRANSACTIONS : "parent_tx_id (DAG)"
   TRANSACTIONS ||--o{ FACTS : "produces"
   TRANSACTIONS }o--|| INDEX_RUNS : "indexer-originated tx"
-  FACTS ||--o| EMBEDDINGS : "vector (assert + non-redacted)"
+  FACTS ||--o{ FACT_EMBEDDINGS : "vectors (assert + non-redacted, multi-model)"
   FACTS ||--o{ FACT_PROVENANCE : "fact_id"
   FACTS ||--o{ FACT_PROVENANCE : "source_fact_id"
+  TRANSACTIONS ||--o{ TRANSACTION_PARENTS : "tx_id"
+  TRANSACTIONS ||--o{ TRANSACTION_PARENTS : "parent_tx_id"
   ATTRIBUTE_DEFS ||--o{ FACTS : "typed by"
   RELATIONS }o..o{ FACTS : "indexer dual-write"
 
   BRANCHES { TEXT id PK; TEXT name UK; TEXT head_tx_id FK; TEXT parent_branch_id FK; TEXT created_at }
   TRANSACTIONS { TEXT id PK; TEXT parent_tx_id FK; TEXT branch_id FK; TEXT ts; TEXT agent; INT index_run_id }
+  TRANSACTION_PARENTS { TEXT tx_id FK; TEXT parent_tx_id FK }
   FACTS { TEXT id PK; TEXT entity_id; TEXT attribute FK; TEXT value_blob; TEXT op; TEXT tx_id FK; INT redacted }
-  EMBEDDINGS { TEXT fact_id PK_FK; BLOB dim64_binary; BLOB dim768_int8 }
+  FACT_EMBEDDINGS { TEXT fact_id FK; TEXT model PK; BLOB vector; INT dim; TEXT created_at }
   FACT_PROVENANCE { TEXT id PK; TEXT fact_id FK; TEXT source_fact_id FK }
   ATTRIBUTE_DEFS { TEXT name PK; TEXT value_type; INT is_code_relation; TEXT description }
 ```

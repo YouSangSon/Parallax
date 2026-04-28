@@ -445,10 +445,29 @@ function migrate(db: Db): void {
     INSERT OR IGNORE INTO transaction_parents (tx_id, parent_tx_id)
     SELECT id, parent_tx_id FROM transactions WHERE parent_tx_id IS NOT NULL;
 
+    -- Schema v6: model-agnostic fact embeddings. The earlier embeddings
+    -- table hardcoded dim64_binary/dim768_int8 to a single retrieval
+    -- strategy and a single model. fact_embeddings stores int8 vectors
+    -- of arbitrary dim and tags them with a model identifier so the
+    -- same fact can carry vectors from multiple models during a swap.
+    CREATE TABLE IF NOT EXISTS fact_embeddings (
+      fact_id TEXT NOT NULL,
+      model TEXT NOT NULL,
+      vector BLOB NOT NULL,
+      dim INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (fact_id, model),
+      FOREIGN KEY(fact_id) REFERENCES facts(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_fact_embeddings_model ON fact_embeddings(model);
+
     INSERT OR IGNORE INTO schema_versions (version, applied_at)
     VALUES (4, datetime('now'));
     INSERT OR IGNORE INTO schema_versions (version, applied_at)
     VALUES (5, datetime('now'));
+    INSERT OR IGNORE INTO schema_versions (version, applied_at)
+    VALUES (6, datetime('now'));
 
     INSERT OR IGNORE INTO attribute_defs (name, value_type, is_code_relation, description) VALUES
       ('imports', 'entity_ref', 1, 'File or module import edge'),

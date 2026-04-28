@@ -306,9 +306,9 @@ impact-trace remember \
 impact-trace recall --entity file:src/config.ts
 # → {"facts":[{...,"value":"[REDACTED]"}]}
 
-# embeddings 테이블엔 row 없음 (검증)
+# fact_embeddings 테이블엔 row 없음 (검증)
 sqlite3 .impact-trace/impact.db \
-  'SELECT count(*) FROM embeddings WHERE fact_id = "<the-redacted-fact-id>"'
+  'SELECT count(*) FROM fact_embeddings WHERE fact_id = "<the-redacted-fact-id>"'
 # → 0
 ```
 
@@ -363,7 +363,7 @@ erDiagram
   BRANCHES ||--o{ BRANCHES : "parent_branch_id"
   TRANSACTIONS ||--o{ TRANSACTIONS : "parent_tx_id (DAG)"
   TRANSACTIONS ||--o{ FACTS : "produces"
-  FACTS ||--o| EMBEDDINGS : "vector (assert + non-redacted only)"
+  FACTS ||--o{ FACT_EMBEDDINGS : "vectors (assert + non-redacted, multi-model)"
   FACTS ||--o{ FACT_PROVENANCE : "fact_id (target)"
   FACTS ||--o{ FACT_PROVENANCE : "source_fact_id (cause)"
   ATTRIBUTE_DEFS ||--o{ FACTS : "typed by"
@@ -392,10 +392,12 @@ erDiagram
     TEXT tx_id FK
     INT redacted
   }
-  EMBEDDINGS {
+  FACT_EMBEDDINGS {
     TEXT fact_id PK_FK
-    BLOB dim64_binary "8 bytes"
-    BLOB dim768_int8 "768 bytes"
+    TEXT model PK "e.g. stub-sha256, multilingual-e5-base"
+    BLOB vector "int8, length = dim"
+    INT dim "768 / 384 / 1024 etc"
+    TEXT created_at
   }
   FACT_PROVENANCE {
     TEXT id PK
@@ -419,7 +421,7 @@ sequenceDiagram
   participant A as Agent / 개발자
   participant API as remember()
   participant Sec as redactSecrets()
-  participant Emb as computeEmbedding()
+  participant Emb as computeEmbedding()<br/>(returns model + vector + dim)
   participant DB as SQLite
 
   A->>API: entity, attribute, value, op
@@ -430,8 +432,8 @@ sequenceDiagram
   API->>DB: INSERT transactions
   API->>DB: INSERT OR IGNORE facts
   alt op=assert AND not redacted
-    API->>Emb: hash chain → 8B + 768B
-    API->>DB: INSERT OR REPLACE embeddings
+    API->>Emb: text → {model, vector, dim}
+    API->>DB: INSERT OR REPLACE fact_embeddings
   end
   loop evidenceFactIds
     API->>DB: INSERT OR IGNORE fact_provenance

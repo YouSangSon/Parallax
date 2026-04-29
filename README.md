@@ -112,6 +112,7 @@ graph LR
 | 3 | reflective consolidation (LLM 자동 요약), speculative branching GC | 후순위 |
 
 자세한 사용 예시는 [docs/agent-memory-cookbook.ko.md](docs/agent-memory-cookbook.ko.md).
+Phase 3(reflective consolidation + branch GC) 진입은 [docs/phase3-handoff.ko.md](docs/phase3-handoff.ko.md)에서.
 
 ## 요구 사항
 

@@ -19,9 +19,13 @@
 | Branch merge | schema v5 + `transaction_parents` multi-parent DAG + `impact_trace_merge` 툴 | `0289cc7` |
 | Schema v6 (model-agnostic embeddings) | `fact_embeddings(fact_id, model, vector, dim, created_at)` — 한 fact가 여러 모델 벡터 보유 가능, 모델 swap 자유 | `cb50bc3` |
 | Phase 2 임베딩 통합 | `@huggingface/transformers` ONNX in-process, default `Xenova/multilingual-e5-base`, env로 swap, async `rememberOnRepo` 래퍼 (embedding을 SQLite tx 바깥에서 계산) | `43418ec` |
-| Semantic recall query path | `recallOnRepo + recallSemantic` 추가, brute-force int8 dot product, `--semantic` CLI 플래그, MCP `semantic` 입력. Phase 2 cap | (이번 commit) |
+| Semantic recall query path | `recallOnRepo + recallSemantic` 추가, brute-force int8 dot product, `--semantic` CLI 플래그, MCP `semantic` 입력. Phase 2 cap | `7e86f83` |
+| reembed CLI (model swap) | `reembedFacts(repoRoot, {model?, all?})`, `impact-trace reembed` 명령. NOT EXISTS 기반 idempotent 갱신 | `a9c8a92` |
+| Phase 3 handoff doc | reflective consolidation + speculative branch GC 시작점, 새 세션 진입용 4개 질문 + 첫 commit 제안 4개 | (이번 commit) |
 
-테스트: 42/42 passing. Lint clean. 모두 origin/main에.
+테스트: 43/43 passing. Lint clean. 모두 origin/main에.
+
+**다음 세션 진입은 [phase3-handoff.ko.md](phase3-handoff.ko.md).**
 
 ```mermaid
 gantt

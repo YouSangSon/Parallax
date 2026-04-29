@@ -484,3 +484,82 @@ flowchart TD
 ```
 
 자세한 SQL DDL: [docs/agent-db-exploration.ko.md §6](agent-db-exploration.ko.md).
+
+---
+
+## C. Phase 3 명령 — reflect / abandon / gc-branches
+
+### C.1 `reflect` — 오래된 episodic facts를 LLM이 entity별로 요약
+
+```bash
+# 기본: ollama:gemma2:2b 모델 (사용자가 Ollama 실행 중이어야 함)
+impact-trace reflect
+
+# 30일 대신 14일 cutoff
+impact-trace reflect --older-than-days 14
+
+# Anthropic API 사용 (env로 키 설정)
+ANTHROPIC_API_KEY=sk-ant-... \
+IMPACT_TRACE_REFLECTION_MODEL=anthropic:claude-haiku-4-5 \
+impact-trace reflect --older-than-days 14
+
+# OpenAI
+OPENAI_API_KEY=sk-... \
+IMPACT_TRACE_REFLECTION_MODEL=openai:gpt-4o-mini \
+impact-trace reflect
+
+# 외부 호출 없이 dry-run으로 후보만 확인
+IMPACT_TRACE_REFLECTION_MODEL=stub \
+impact-trace reflect --dry-run
+
+# 특정 entity로만 좁히기
+impact-trace reflect --entity file:src/auth/session.ts
+
+# 실험 branch에서 reflect
+impact-trace reflect --branch experiment-1
+```
+
+**동작:** 30일+ 오래된 facts (redacted 제외) 를 entity별로 묶어 LLM에 보내고, 1-2 문장 요약을 받아 `attribute: 'reflection'` fact로 저장합니다. 원본 facts는 *보존*되며, `fact_provenance` 엣지에 `kind='summary'` 표시가 생깁니다. 매 reflect 패스는 `reflections` audit 테이블에 기록됩니다.
+
+**보안:** 모든 LLM input/output은 `redactSecrets()`를 거칩니다. redacted facts는 input set에 *행을 만들지 않음* (zero-row 정책, 참고 [D-004](decisions.ko.md#d-004-redact-then-embed-zero-row-policy)). API 키는 env에서만 읽고 error 메시지에 echo하지 않습니다. Anthropic/OpenAI는 https URL만 허용합니다. 모든 fetch는 30s timeout (env `IMPACT_TRACE_LLM_TIMEOUT_MS`로 조정 가능).
+
+### C.2 `branch --abandon` — 사변(speculative) branch 닫기
+
+```bash
+# 새 branch 만들기 (기존)
+impact-trace branch --name plan-A
+# → {"branchId":"br_...","headTxId":...}
+
+# branch 닫기
+impact-trace branch --abandon plan-A
+# → {"branchId":"br_...","name":"plan-A","state":"abandoned","alreadyAbandoned":false}
+
+# main은 보호됨
+impact-trace branch --abandon main
+# → Error: cannot abandon protected branch: main
+```
+
+### C.3 `gc-branches` — abandoned branch의 transactions soft-delete
+
+```bash
+# 미리보기 (실제 변경 없음)
+impact-trace gc-branches --dry-run
+# → {"scanned":3,"archivedTransactions":42,"branches":[...],"dryRun":true}
+
+# 실제 archive
+impact-trace gc-branches
+# → {"scanned":3,"archivedTransactions":42,"branches":[...],"dryRun":false}
+```
+
+**중요:** `gc-branches`는 facts를 *절대 삭제하지 않습니다*. abandoned branch에 속한 *transactions*만 `archived=1`로 표시하며, recall과 recallSemantic이 자동으로 `t.archived = 0` 필터로 가립니다. `trace()`도 archived txs를 따라가지 않습니다 (Phase 3 review에서 추가된 일관성, [D-011](decisions.ko.md#d-011-soft-delete-branch-gc-via-transactionsarchived)). content-addressable이라 다른 active branch에서 같은 (entity, attribute, value)를 remember한 적이 있으면 그 fact는 그대로 보입니다.
+
+### C.4 reflective + GC 권장 워크플로우
+
+```bash
+# 매월 1회 정도
+impact-trace reflect --older-than-days 30
+impact-trace gc-branches --dry-run
+impact-trace gc-branches  # dry-run 확인 후
+```
+
+자세한 설계 근거: [docs/phase3-design.ko.md](phase3-design.ko.md), 누적 결정 로그: [docs/decisions.ko.md](decisions.ko.md).

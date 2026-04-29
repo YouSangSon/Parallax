@@ -1,9 +1,10 @@
 # Impact Trace 진행상황
 
-업데이트: 2026-04-29
+업데이트: 2026-04-29 (Phase 3 완료)
 
 기준 계획서: [Impact Trace 계획서](impact-trace-plan.ko.md)
 사용 가이드: [agent memory cookbook](agent-memory-cookbook.ko.md) · [agent DB 탐색 노트](agent-db-exploration.ko.md)
+Phase 3 자료: [Phase 3 design](phase3-design.ko.md) · [Phase 3 handoff](phase3-handoff.ko.md) · [Architecture decisions log](decisions.ko.md)
 
 ## 현재 위치
 
@@ -41,6 +42,16 @@ remember·recall·branch·trace·retract 동작이 노출됐다. Phase 2 (실제
 | 2026-04-28 | Agent Memory M3+M4 | retract 동작 + as_of_tx 시간여행 (recursive CTE) (commit `4562024`) |
 | 2026-04-29 | Agent Memory polish | recall current-only mode (window function dedup) (commit `34d185c`) |
 | 2026-04-29 | 문서 polish | 전 docs에 mermaid 다이어그램 통합 — 시스템 도식, schema ER, 동작 흐름 (commit `4aadaf2`) |
+| 2026-04-29 | Phase 3 design | docs/phase3-design.ko.md 작성 — schema v7, LLM abstraction, reflection, branch GC, dual-voice consensus |
+| 2026-04-29 | Agent Memory Phase 3 | Schema v7 ADD-only — branches.state + transactions.archived + fact_provenance.kind + reflections 테이블 |
+| 2026-04-29 | Agent Memory Phase 3 | LLM 4-provider 추상화 (`src/llm.ts`) — stub / ollama / anthropic / openai (env IMPACT_TRACE_REFLECTION_MODEL) |
+| 2026-04-29 | Agent Memory Phase 3 | Reflective consolidation (`src/reflection.ts`) — entity별 LLM 요약 + summary fact 추가 + kind='summary' provenance |
+| 2026-04-29 | Agent Memory Phase 3 | Speculative branch GC (`src/branch_gc.ts`) — abandonBranch + gcBranches soft-delete via transactions.archived |
+| 2026-04-29 | Agent Memory Phase 3 | recall + recallSemantic + trace에 t.archived = 0 필터 추가 |
+| 2026-04-29 | 보안 polish | secret 패턴 확장 — Stripe / Google API / npm / JWT / DB URL |
+| 2026-04-29 | 보안 polish | LLM fetch에 30s timeout, Anthropic/OpenAI HTTPS 강제, fetch try/catch consistency |
+| 2026-04-29 | 결정 기록 | docs/decisions.ko.md (ADR-style 결정 로그) — D-001..D-012 12개 결정 정리 |
+| 2026-04-29 | 리뷰 | architect + security-reviewer + typescript-reviewer + tdd-guide 4-agent split-role 리뷰 (2 CRITICAL + 7 HIGH + 2 MEDIUM 발견 → 본 PR에서 모두 해결) |
 
 ## 진행 중
 
@@ -50,29 +61,40 @@ remember·recall·branch·trace·retract 동작이 노출됐다. Phase 2 (실제
 | P1 | workspace/cross-repo resolver | schema는 준비, 실제 catalog loading과 contract diff는 예정 |
 | P1 | 회사 업무 artifact adapter | schema와 entity kind는 준비, Google Drive/Obsidian/Markdown vault adapter는 예정 |
 | P2 | semantic adapter | regex MVP는 동작, Tree-sitter/LSP/CodeQL 정확도 개선 예정 |
-| Agent Memory Phase 2 | semantic recall | sqlite-vec 통합 + embedding 파이프라인 scaffolding 완료, 실제 모델(Ollama/OpenAI/Cohere) swap-in과 vec_search wiring 예정 |
-| Agent Memory Phase 2 | branch merge | 두 branch facts 합쳐 새 tx로 만들기 (multi-parent tx 스키마 결정 필요) |
-| Agent Memory Phase 3 | reflective consolidation | 오래된 episodic facts를 LLM이 자동 요약해 semantic 계층으로 승격 |
-| Agent Memory Phase 3 | speculative branch GC | abandoned branch의 fact 정리 (content-addressable이라 다른 branch에서 참조 안 되는 fact만) |
+| Agent Memory Phase 4 | reflection 확장 | topic 클러스터링, 시간 기반 자동 abandon, archived 복구, reflect-of-reflections, sqlite-vec ANN, 동시 reflect 락 |
+| Agent Memory Phase 4 | reembed cleanup | 구모델 vector 행 drop 옵션 |
+| Agent Memory Phase 4 | repair sweep | 중간 실패로 생긴 orphan summary fact를 reflections 테이블 기반으로 복원 (`reflect --repair`) |
 
 ## 최근 검증
 
 | 날짜 | 명령 | 결과 |
 |---|---|---|
-| 2026-04-29 | `npm run lint` | 통과 |
-| 2026-04-29 | `npm test` | 38개 테스트 통과 |
+| 2026-04-29 | `npm run lint` | 통과 (Phase 3 완료 후) |
+| 2026-04-29 | `npm test` | **76개 테스트 통과** (Phase 1+2: 43 → Phase 3: +33) |
 | 2026-04-29 | `npm run check` | 통과 |
 | 2026-04-29 | `git push origin main` | 통과 (10 새 커밋 push, `073637c..4aadaf2`) |
 | 2026-04-28 | `npm run test:install-smoke` | 통과 |
 
 ## 다음 작업
 
-### Agent Memory 트랙
+### Agent Memory 트랙 (완료)
 
-1. 실제 임베딩 모델 통합 — `src/embeddings.ts`의 stub을 Ollama / OpenAI / Cohere / Voyage 중 하나로 교체. 비용/지연/품질 trade-off 비교 + 로컬-우선 정책에 맞는 선택.
-2. Semantic recall 경로 활성화 — `recall(query: "...")`가 sqlite-vec virtual table로 실제 ANN 검색하도록 SQL 작성.
-3. Branch merge — multi-parent transaction 스키마 (transaction_parents 분리 테이블 또는 parent_tx_ids JSON 필드) + recall이 두 부모 모두 walk 하는 recursive CTE.
-4. Reflective consolidation — 오래된 facts를 LLM이 요약해 semantic 계층으로 승격하는 background 작업 정의.
+1. ✅ 실제 임베딩 모델 통합 — `@huggingface/transformers` ONNX (Phase 2, commit `43418ec`)
+2. ✅ Semantic recall 경로 활성화 — int8 dot product + multi-model embedding (Phase 2, commit `7e86f83`)
+3. ✅ Branch merge — multi-parent transactions DAG (Phase 2, commit `0289cc7`)
+4. ✅ Reflective consolidation — entity별 LLM 요약 + summary fact (Phase 3, multi-provider)
+5. ✅ Speculative branch GC — soft-delete via transactions.archived (Phase 3)
+
+### Agent Memory 트랙 (Phase 4 후보)
+
+- topic 클러스터링 reflection (entity별 → 의미 클러스터)
+- 시간 기반 자동 abandon 정책 (head_tx_id가 N일 미동작 시)
+- archived → unarchived 복구 명령 (`branch --restore`)
+- 다층 reflection (reflection-of-reflections로 long-term memory)
+- sqlite-vec ANN 인덱스 (10M+ facts)
+- 동시 reflect 락
+- `reflect --repair` (orphan summary fact 보정)
+- reembed cleanup (구모델 vector drop)
 
 ### 기존 트랙 (지속)
 

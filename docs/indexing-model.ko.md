@@ -248,22 +248,31 @@ erDiagram
   ATTRIBUTE_DEFS ||--o{ FACTS : "typed by"
   RELATIONS }o..o{ FACTS : "indexer dual-write"
 
-  BRANCHES { TEXT id PK; TEXT name UK; TEXT head_tx_id FK; TEXT parent_branch_id FK; TEXT created_at }
-  TRANSACTIONS { TEXT id PK; TEXT parent_tx_id FK; TEXT branch_id FK; TEXT ts; TEXT agent; INT index_run_id }
+  BRANCHES { TEXT id PK; TEXT name UK; TEXT head_tx_id FK; TEXT parent_branch_id FK; TEXT created_at; TEXT state }
+  TRANSACTIONS { TEXT id PK; TEXT parent_tx_id FK; TEXT branch_id FK; TEXT ts; TEXT agent; INT index_run_id; INT archived }
   TRANSACTION_PARENTS { TEXT tx_id FK; TEXT parent_tx_id FK }
   FACTS { TEXT id PK; TEXT entity_id; TEXT attribute FK; TEXT value_blob; TEXT op; TEXT tx_id FK; INT redacted }
   FACT_EMBEDDINGS { TEXT fact_id FK; TEXT model PK; BLOB vector; INT dim; TEXT created_at }
-  FACT_PROVENANCE { TEXT id PK; TEXT fact_id FK; TEXT source_fact_id FK }
+  FACT_PROVENANCE { TEXT id PK; TEXT fact_id FK; TEXT source_fact_id FK; TEXT kind }
   ATTRIBUTE_DEFS { TEXT name PK; TEXT value_type; INT is_code_relation; TEXT description }
+  REFLECTIONS { TEXT id PK; TEXT branch_id FK; TEXT model; TEXT summary_fact_id FK; INT source_fact_count; TEXT criteria_json; TEXT created_at }
 ```
+
+### Schema v7 추가 (Phase 3)
+
+- `branches.state` — `'active'` (기본) / `'abandoned'` / `'merged'`. abandon 정책의 1급 시민.
+- `transactions.archived` — `0` (기본) / `1`. soft-delete 플래그. recall, recallSemantic, trace는 모두 `archived = 0`만 surface.
+- `fact_provenance.kind` — `'evidence'` (기본, 인덱서/agent가 만든 source 링크) / `'summary'` (Phase 3 reflective consolidation에서 LLM 요약 fact가 원본을 참조).
+- `reflections` — reflective consolidation pass의 audit row. 어떤 모델이 어느 source 개수를 어떤 cutoff 기준으로 요약했는지 추적.
 
 ### 핵심 invariants
 
 - **Content-addressable fact id** = `SHA-256(entity_id, attribute, value_blob, op)`. 동일 (entity, attribute, value, op) 조합은 한 번만 저장.
-- **Immutable transaction DAG.** `transactions.parent_tx_id`로 단일-부모 체인을 만든다 (multi-parent merge는 Phase 2).
-- **Branch는 head pointer일 뿐.** 데이터 복사 없이 fork; `branches.head_tx_id`만 새 commit으로 advance.
-- **Redact-then-embed.** secret 패턴이 매치되면 `value_blob='[REDACTED]'`, `redacted=1`, 그리고 `embeddings`에 row가 *생성되지 않음*.
-- **Indexer가 만든 fact는 evidence_snippet fact를 자동으로 만들어 `fact_provenance`로 연결**한다 — `trace`로 한 줄 코드까지 도달 가능.
+- **Immutable transaction DAG.** `transactions.parent_tx_id`로 단일-부모 체인을 만든다 (multi-parent merge는 Phase 2 `transaction_parents`가 처리).
+- **Branch는 head pointer일 뿐.** 데이터 복사 없이 fork; `branches.head_tx_id`만 새 commit으로 advance. Phase 3에서 `branches.state`가 추가돼 active/abandoned/merged를 1급 시민으로 표현.
+- **Redact-then-embed.** secret 패턴이 매치되면 `value_blob='[REDACTED]'`, `redacted=1`, 그리고 `fact_embeddings`에 row가 *생성되지 않음*. Phase 3 LLM reflective consolidation도 같은 zero-row 정책을 input/output에 적용 (redact-then-prompt).
+- **Soft-delete only.** facts는 절대 삭제하지 않는다. abandoned branch GC는 `transactions.archived=1`만 표시하며 recall/recallSemantic/trace가 자동 필터링한다 (Phase 3).
+- **Indexer가 만든 fact는 evidence_snippet fact를 자동으로 만들어 `fact_provenance`로 연결**한다 — `trace`로 한 줄 코드까지 도달 가능. Phase 3 reflection은 같은 `fact_provenance` 테이블에 `kind='summary'` 엣지로 LLM 요약-원본 연결을 표현.
 
 ### 코드 관계의 1급 시민 attribute
 

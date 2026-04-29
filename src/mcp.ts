@@ -2,7 +2,7 @@ import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mc
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 
-import { createBranch, mergeBranches, recall, rememberOnRepo, trace } from './agent_memory.js';
+import { createBranch, mergeBranches, recallOnRepo, rememberOnRepo, trace } from './agent_memory.js';
 import type { RememberValue } from './agent_memory.js';
 import { normalizeRepoRoot } from './security.js';
 import { getRepoId, latestCompletedIndexRun, openDatabase } from './store.js';
@@ -107,7 +107,8 @@ export function createMcpServer(context: McpContext): McpServer {
         branch: z.string().optional(),
         k: z.number().int().min(1).max(100).optional(),
         asOfTx: z.string().optional(),
-        currentOnly: z.boolean().optional()
+        currentOnly: z.boolean().optional(),
+        semantic: z.boolean().optional()
       },
       annotations: {
         title: 'Recall facts',
@@ -117,18 +118,17 @@ export function createMcpServer(context: McpContext): McpServer {
         openWorldHint: false
       }
     },
-    async ({ query, entity, attribute, branch, k, asOfTx, currentOnly }) => {
-      const result = withReadOnlyDb(context, (db) =>
-        recall(db, {
-          ...(query !== undefined ? { query } : {}),
-          ...(entity !== undefined ? { entity } : {}),
-          ...(attribute !== undefined ? { attribute } : {}),
-          ...(branch !== undefined ? { branch } : {}),
-          ...(k !== undefined ? { k } : {}),
-          ...(asOfTx !== undefined ? { asOfTx } : {}),
-          ...(currentOnly !== undefined ? { currentOnly } : {})
-        })
-      );
+    async ({ query, entity, attribute, branch, k, asOfTx, currentOnly, semantic }) => {
+      const result = await recallOnRepo(context.repoRoot, {
+        ...(query !== undefined ? { query } : {}),
+        ...(entity !== undefined ? { entity } : {}),
+        ...(attribute !== undefined ? { attribute } : {}),
+        ...(branch !== undefined ? { branch } : {}),
+        ...(k !== undefined ? { k } : {}),
+        ...(asOfTx !== undefined ? { asOfTx } : {}),
+        ...(currentOnly !== undefined ? { currentOnly } : {}),
+        ...(semantic !== undefined ? { semantic } : {})
+      });
       return { content: [{ type: 'text', text: JSON.stringify(result) }] };
     }
   );

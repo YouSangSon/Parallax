@@ -29,6 +29,7 @@ export interface RecallInput {
   k?: number;
   asOfTx?: string;
   currentOnly?: boolean;
+  semantic?: boolean;
 }
 
 export interface RecalledFact {
@@ -311,6 +312,93 @@ export function createBranch(db: Db, input: BranchInput): BranchResult {
     db.exec('ROLLBACK');
     throw error;
   }
+}
+
+interface FactWithEmbeddingRow extends FactRow {
+  vector: Buffer;
+  dim: number;
+}
+
+function bufferToInt8(buf: Buffer): Int8Array {
+  return new Int8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+}
+
+function int8DotScore(a: Int8Array, b: Int8Array): number {
+  const len = Math.min(a.length, b.length);
+  let dot = 0;
+  for (let i = 0; i < len; i += 1) {
+    dot += (a[i] ?? 0) * (b[i] ?? 0);
+  }
+  return dot;
+}
+
+/**
+ * Sync semantic recall — caller pre-computes the query embedding async
+ * (expensive part), then this scores all matching candidates inside one
+ * SELECT and returns the top-k by int8 dot product (vectors are
+ * L2-normalized then int8-quantized so dot ≈ cosine similarity ranking).
+ *
+ * Filters apply BEFORE ranking: a candidate must (1) carry an embedding
+ * for the SAME model as the query, and (2) match any entity/attribute/
+ * branch filters supplied. asOfTx and currentOnly are not yet combined
+ * with semantic mode.
+ */
+export function recallSemantic(
+  db: Db,
+  queryEmbedding: EmbeddingResult,
+  input: RecallInput
+): RecallResult {
+  const k = Math.min(input.k ?? 20, MAX_RECALL_K);
+  const conditions: string[] = ['fe.model = ?'];
+  const params: Array<string | number | null> = [queryEmbedding.model];
+
+  if (input.entity !== undefined) {
+    conditions.push('f.entity_id = ?');
+    params.push(input.entity);
+  }
+  if (input.attribute !== undefined) {
+    conditions.push('f.attribute = ?');
+    params.push(input.attribute);
+  }
+  if (input.branch !== undefined) {
+    const branch = loadBranch(db, input.branch);
+    conditions.push('t.branch_id = ?');
+    params.push(branch.id);
+  }
+
+  const sql = `
+    SELECT f.id, f.entity_id, f.attribute, f.value_blob, f.op, f.tx_id, f.redacted, t.ts,
+           fe.vector, fe.dim
+    FROM facts f
+    INNER JOIN fact_embeddings fe ON f.id = fe.fact_id
+    INNER JOIN transactions t ON f.tx_id = t.id
+    WHERE ${conditions.join(' AND ')}
+  `;
+
+  const rows = db.prepare(sql).all(...params) as unknown as FactWithEmbeddingRow[];
+  const queryVec = bufferToInt8(queryEmbedding.vector);
+  const scored = rows
+    .map((row) => ({ row, score: int8DotScore(queryVec, bufferToInt8(row.vector)) }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, k);
+
+  return { facts: scored.map((entry) => rowToRecalledFact(entry.row)) };
+}
+
+/**
+ * Async wrapper for recall that activates semantic mode when both
+ * `semantic: true` and `query` are set. Otherwise falls through to the
+ * sync structured-filter recall.
+ */
+export async function recallOnRepo(
+  repoRoot: string,
+  input: RecallInput
+): Promise<RecallResult> {
+  if (input.semantic === true && input.query !== undefined) {
+    const queryEmbedding = await computeEmbedding(`query: ${input.query}`);
+    return withAgentMemoryDb(repoRoot, true, (db) => recallSemantic(db, queryEmbedding, input));
+  }
+  return withAgentMemoryDb(repoRoot, true, (db) => recall(db, input));
 }
 
 /**

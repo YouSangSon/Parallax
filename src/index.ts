@@ -1,4 +1,4 @@
-export { createBranch, mergeBranches, recall, remember, rememberOnRepo, trace, withAgentMemoryDb } from './agent_memory.js';
+export { createBranch, mergeBranches, recall, recallOnRepo, recallSemantic, remember, rememberOnRepo, trace, withAgentMemoryDb } from './agent_memory.js';
 export type {
   BranchInput,
   BranchResult,

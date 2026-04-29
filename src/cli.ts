@@ -93,23 +93,25 @@ async function main(): Promise<void> {
   }
 
   if (command === 'recall') {
-    const { recall, withAgentMemoryDb } = await import('./index.js');
+    const { recallOnRepo } = await import('./index.js');
+    const query = parseOptionalArg(args, '--query');
     const entity = parseOptionalArg(args, '--entity');
     const attribute = parseOptionalArg(args, '--attribute');
     const branch = parseOptionalArg(args, '--branch');
     const k = parseIntegerArg(args, '--k');
     const asOfTx = parseOptionalArg(args, '--as-of-tx');
     const currentOnly = args.includes('--current-only') ? true : undefined;
-    const result = withAgentMemoryDb(repoRoot, true, (db) =>
-      recall(db, {
-        ...(entity !== undefined ? { entity } : {}),
-        ...(attribute !== undefined ? { attribute } : {}),
-        ...(branch !== undefined ? { branch } : {}),
-        ...(k !== undefined ? { k } : {}),
-        ...(asOfTx !== undefined ? { asOfTx } : {}),
-        ...(currentOnly !== undefined ? { currentOnly } : {})
-      })
-    );
+    const semantic = args.includes('--semantic') ? true : undefined;
+    const result = await recallOnRepo(repoRoot, {
+      ...(query !== undefined ? { query } : {}),
+      ...(entity !== undefined ? { entity } : {}),
+      ...(attribute !== undefined ? { attribute } : {}),
+      ...(branch !== undefined ? { branch } : {}),
+      ...(k !== undefined ? { k } : {}),
+      ...(asOfTx !== undefined ? { asOfTx } : {}),
+      ...(currentOnly !== undefined ? { currentOnly } : {}),
+      ...(semantic !== undefined ? { semantic } : {})
+    });
     console.log(JSON.stringify(result, null, 2));
     return;
   }
@@ -211,7 +213,7 @@ function parsePositionals(args: string[]): string[] {
     '--report', '--format',
     '--entity', '--attribute', '--value', '--branch', '--agent', '--evidence-fact-ids',
     '--name', '--from', '--fact-id', '--k', '--op', '--as-of-tx',
-    '--target', '--source'
+    '--target', '--source', '--query'
   ]);
   const positionals: string[] = [];
   for (let index = 0; index < args.length; index++) {
@@ -251,8 +253,9 @@ Agent memory:
                         [--evidence-fact-ids id1,id2]
   impact-trace retract  --entity <id> --attribute <name> --value <json|string>
                         [--branch <name>] [--agent <id>]
-  impact-trace recall   [--entity <id>] [--attribute <name>] [--branch <name>]
-                        [--k 20] [--as-of-tx <tx-id>] [--current-only]
+  impact-trace recall   [--query <text>] [--semantic] [--entity <id>]
+                        [--attribute <name>] [--branch <name>] [--k 20]
+                        [--as-of-tx <tx-id>] [--current-only]
   impact-trace branch   --name <name> [--from <name>]
   impact-trace merge    --target <branch> --source <branch> [--agent <id>]
   impact-trace trace    --fact-id <id> [--depth 5]

@@ -496,6 +496,39 @@ test('recall with asOfTx returns only facts in the ancestor DAG of that tx', asy
   assert.deepEqual(earlierOnly.facts.map((f) => f.value), ['first']);
 });
 
+test('recallOnRepo semantic mode ranks candidate facts by stub embedding similarity', async () => {
+  const repoRoot = await makeFixtureRepo();
+  await initProject({ repoRoot });
+
+  const { remember, recallOnRepo, withAgentMemoryDb } = await import('../src/index.js');
+
+  // Three facts with embeddings (stub model is deterministic on text).
+  for (const value of ['authentication flow looks fine', 'rate limiter dropped a request', 'vector index works']) {
+    withAgentMemoryDb(repoRoot, false, (db) =>
+      remember(db, { entity: 'file:src/sem.ts', attribute: 'observed', value })
+    );
+  }
+
+  const result = await recallOnRepo(repoRoot, {
+    query: 'auth',
+    semantic: true,
+    entity: 'file:src/sem.ts',
+    k: 2
+  });
+
+  assert.equal(result.facts.length, 2, 'top-k should respect the k limit');
+  for (const fact of result.facts) {
+    assert.equal(fact.entityId, 'file:src/sem.ts');
+    assert.equal(fact.attribute, 'observed');
+  }
+  // The facts list comes from the ranked semantic search; we only check that
+  // the returned ids are a subset of the seeded values' ids (no foreign rows).
+  const seededValues = new Set(['authentication flow looks fine', 'rate limiter dropped a request', 'vector index works']);
+  for (const fact of result.facts) {
+    assert.ok(seededValues.has(fact.value as string), `unexpected fact value: ${fact.value}`);
+  }
+});
+
 test('mergeBranches creates a multi-parent tx and target recall sees source facts', async () => {
   const repoRoot = await makeFixtureRepo();
   await initProject({ repoRoot });

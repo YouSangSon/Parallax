@@ -130,6 +130,18 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === 'reembed') {
+    const { reembedFacts } = await import('./index.js');
+    const model = parseOptionalArg(args, '--model');
+    const all = args.includes('--all') ? true : undefined;
+    const result = await reembedFacts(repoRoot, {
+      ...(model !== undefined ? { model } : {}),
+      ...(all !== undefined ? { all } : {})
+    });
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
   if (command === 'merge') {
     const { mergeBranches, withAgentMemoryDb } = await import('./index.js');
     const target = parseRequiredArg(args, '--target');
@@ -213,7 +225,7 @@ function parsePositionals(args: string[]): string[] {
     '--report', '--format',
     '--entity', '--attribute', '--value', '--branch', '--agent', '--evidence-fact-ids',
     '--name', '--from', '--fact-id', '--k', '--op', '--as-of-tx',
-    '--target', '--source', '--query'
+    '--target', '--source', '--query', '--model'
   ]);
   const positionals: string[] = [];
   for (let index = 0; index < args.length; index++) {
@@ -258,6 +270,7 @@ Agent memory:
                         [--as-of-tx <tx-id>] [--current-only]
   impact-trace branch   --name <name> [--from <name>]
   impact-trace merge    --target <branch> --source <branch> [--agent <id>]
+  impact-trace reembed  [--model <hf-model>] [--all]
   impact-trace trace    --fact-id <id> [--depth 5]
 `);
 }

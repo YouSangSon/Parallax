@@ -385,6 +385,106 @@ export function recallSemantic(
   return { facts: scored.map((entry) => rowToRecalledFact(entry.row)) };
 }
 
+export interface ReembedOptions {
+  model?: string;
+  all?: boolean;
+}
+
+export interface ReembedResult {
+  model: string;
+  embedded: number;
+  candidates: number;
+}
+
+interface ReembedCandidate {
+  id: string;
+  entity_id: string;
+  attribute: string;
+  value_blob: string;
+}
+
+const DEFAULT_REEMBED_MODEL = 'Xenova/multilingual-e5-base';
+
+/**
+ * Bulk re-embed pass for a model swap. Default behaviour: only embed
+ * non-redacted asserted facts that *do not yet* have an embedding for
+ * the target model. Use { all: true } to redo every eligible fact even
+ * if a row already exists (overwritten via INSERT OR REPLACE).
+ *
+ * Target model resolution order: explicit options.model →
+ * IMPACT_TRACE_EMBEDDING_MODEL env → default Xenova/multilingual-e5-base.
+ *
+ * Embeddings are computed sequentially (the in-process model is
+ * single-threaded); large fact counts will take time proportional to
+ * count × per-text inference latency. Writes happen in one short
+ * transaction at the end.
+ */
+export async function reembedFacts(
+  repoRoot: string,
+  options: ReembedOptions = {}
+): Promise<ReembedResult> {
+  const targetModel =
+    options.model ?? process.env.IMPACT_TRACE_EMBEDDING_MODEL ?? DEFAULT_REEMBED_MODEL;
+
+  const candidates = withAgentMemoryDb(repoRoot, true, (db) => {
+    const baseSql =
+      "SELECT id, entity_id, attribute, value_blob FROM facts WHERE redacted = 0 AND op = 'assert'";
+    if (options.all === true) {
+      return db.prepare(baseSql).all() as unknown as ReembedCandidate[];
+    }
+    const sql = `${baseSql}
+      AND NOT EXISTS (
+        SELECT 1 FROM fact_embeddings fe
+        WHERE fe.fact_id = facts.id AND fe.model = ?
+      )`;
+    return db.prepare(sql).all(targetModel) as unknown as ReembedCandidate[];
+  });
+
+  if (candidates.length === 0) {
+    return { model: targetModel, embedded: 0, candidates: 0 };
+  }
+
+  // Force the requested model for this pass even if env points elsewhere.
+  const previousEnv = process.env.IMPACT_TRACE_EMBEDDING_MODEL;
+  process.env.IMPACT_TRACE_EMBEDDING_MODEL = targetModel;
+
+  const embeddings: Array<{ factId: string; result: EmbeddingResult }> = [];
+  try {
+    for (const candidate of candidates) {
+      const text = `${candidate.entity_id}|${candidate.attribute}|${candidate.value_blob}`;
+      const result = await computeEmbedding(text);
+      embeddings.push({ factId: candidate.id, result });
+    }
+  } finally {
+    if (previousEnv === undefined) {
+      delete process.env.IMPACT_TRACE_EMBEDDING_MODEL;
+    } else {
+      process.env.IMPACT_TRACE_EMBEDDING_MODEL = previousEnv;
+    }
+  }
+
+  const written = withAgentMemoryDb(repoRoot, false, (db) => {
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      const stmt = db.prepare(
+        "INSERT OR REPLACE INTO fact_embeddings (fact_id, model, vector, dim, created_at) VALUES (?, ?, ?, ?, datetime('now'))"
+      );
+      let count = 0;
+      for (const { factId, result } of embeddings) {
+        stmt.run(factId, result.model, result.vector, result.dim);
+        count += 1;
+      }
+      db.exec('COMMIT');
+      return count;
+    } catch (error: unknown) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+  });
+
+  return { model: targetModel, embedded: written, candidates: candidates.length };
+}
+
 /**
  * Async wrapper for recall that activates semantic mode when both
  * `semantic: true` and `query` are set. Otherwise falls through to the

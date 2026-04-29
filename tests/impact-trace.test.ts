@@ -496,6 +496,47 @@ test('recall with asOfTx returns only facts in the ancestor DAG of that tx', asy
   assert.deepEqual(earlierOnly.facts.map((f) => f.value), ['first']);
 });
 
+test('reembedFacts default fills only missing rows; --all overwrites everything', async () => {
+  const repoRoot = await makeFixtureRepo();
+  await initProject({ repoRoot });
+
+  const { remember, reembedFacts, withAgentMemoryDb } = await import('../src/index.js');
+
+  for (const value of ['alpha', 'beta', 'gamma']) {
+    withAgentMemoryDb(repoRoot, false, (db) =>
+      remember(db, { entity: 'file:src/r.ts', attribute: 'observed', value })
+    );
+  }
+
+  // Pretend one row was wiped (simulate a model swap that left one fact uncovered)
+  const dbBefore = new DatabaseSync(databasePath(repoRoot), { readOnly: false });
+  try {
+    dbBefore
+      .prepare('DELETE FROM fact_embeddings WHERE rowid IN (SELECT rowid FROM fact_embeddings LIMIT 1)')
+      .run();
+  } finally {
+    dbBefore.close();
+  }
+
+  const incremental = await reembedFacts(repoRoot, { model: 'stub-sha256' });
+  assert.equal(incremental.embedded, 1, 'default reembed only touches missing facts');
+  assert.equal(incremental.candidates, 1);
+
+  const full = await reembedFacts(repoRoot, { model: 'stub-sha256', all: true });
+  assert.equal(full.embedded, 3, '--all reembed touches every eligible fact');
+  assert.equal(full.candidates, 3);
+
+  const dbAfter = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const count = dbAfter
+      .prepare("SELECT count(*) AS n FROM fact_embeddings WHERE model = 'stub-sha256'")
+      .get() as { n: number };
+    assert.equal(count.n, 3);
+  } finally {
+    dbAfter.close();
+  }
+});
+
 test('recallOnRepo semantic mode ranks candidate facts by stub embedding similarity', async () => {
   const repoRoot = await makeFixtureRepo();
   await initProject({ repoRoot });

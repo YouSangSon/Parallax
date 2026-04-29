@@ -1,4 +1,5 @@
-import { computeEmbedding } from './embeddings.js';
+import { computeEmbedding, computeEmbeddingSync } from './embeddings.js';
+import type { EmbeddingResult } from './embeddings.js';
 import { contentHash, getRepoId, openDatabase } from './store.js';
 import type { Db } from './store.js';
 import { normalizeRepoRoot, redactSecrets } from './security.js';
@@ -140,7 +141,11 @@ function rowToRecalledFact(row: FactRow): RecalledFact {
   };
 }
 
-export function remember(db: Db, input: RememberInput): RememberResult {
+export function remember(
+  db: Db,
+  input: RememberInput,
+  providedEmbedding?: EmbeddingResult | null
+): RememberResult {
   const branchName = input.branch ?? 'main';
   const agent = input.agent ?? 'mcp:remember';
   const evidenceFactIds = input.evidenceFactIds ?? [];
@@ -177,11 +182,20 @@ export function remember(db: Db, input: RememberInput): RememberResult {
     // leak secrets into embedding space even with [REDACTED] in value_blob.
     // Writes go to fact_embeddings (schema v6) so the model is recorded
     // alongside the vector and a fact can carry vectors from multiple models.
+    //
+    // providedEmbedding === undefined → legacy sync stub (tests, indexer)
+    // providedEmbedding === null      → caller explicitly skips embedding
+    // providedEmbedding object        → caller pre-computed (e.g. real model)
     if (!isRedacted && op === 'assert') {
-      const embedding = computeEmbedding(`${input.entity}|${input.attribute}|${valueStr}`);
-      db.prepare(
-        "INSERT OR REPLACE INTO fact_embeddings (fact_id, model, vector, dim, created_at) VALUES (?, ?, ?, ?, datetime('now'))"
-      ).run(factId, embedding.model, embedding.vector, embedding.dim);
+      const embedding =
+        providedEmbedding === undefined
+          ? computeEmbeddingSync(`${input.entity}|${input.attribute}|${valueStr}`)
+          : providedEmbedding;
+      if (embedding) {
+        db.prepare(
+          "INSERT OR REPLACE INTO fact_embeddings (fact_id, model, vector, dim, created_at) VALUES (?, ?, ?, ?, datetime('now'))"
+        ).run(factId, embedding.model, embedding.vector, embedding.dim);
+      }
     }
 
     for (const sourceFactId of evidenceFactIds) {
@@ -297,6 +311,31 @@ export function createBranch(db: Db, input: BranchInput): BranchResult {
     db.exec('ROLLBACK');
     throw error;
   }
+}
+
+/**
+ * Async wrapper that pre-computes the embedding outside the SQLite
+ * transaction (slow async work — model inference can take 50–150ms),
+ * then performs the sync remember() inside its own short transaction.
+ * MCP / CLI handlers should prefer this over `remember()` so that
+ * production traffic uses the configured real embedding model.
+ */
+export async function rememberOnRepo(
+  repoRoot: string,
+  input: RememberInput
+): Promise<RememberResult> {
+  let providedEmbedding: EmbeddingResult | null = null;
+  const valueStr = JSON.stringify(input.value);
+  const isRedacted = redactSecrets(valueStr) !== valueStr;
+  const op = input.op ?? 'assert';
+  if (!isRedacted && op === 'assert') {
+    providedEmbedding = await computeEmbedding(
+      `${input.entity}|${input.attribute}|${valueStr}`
+    );
+  }
+  return withAgentMemoryDb(repoRoot, false, (db) =>
+    remember(db, input, providedEmbedding)
+  );
 }
 
 export function withAgentMemoryDb<T>(

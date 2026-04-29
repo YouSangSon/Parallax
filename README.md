@@ -108,7 +108,7 @@ graph LR
 | Phase | 무엇 | 상태 |
 |---|---|---|
 | 1 | facts/transactions/branches 스키마, 4 MCP 툴 + 4 CLI 명령 (`remember`, `recall`, `branch`, `trace`), 코드 관계 1급 시민 attribute 시드, 인덱서 듀얼 라이트 + evidence_snippet provenance, sqlite-vec 통합, embedding 파이프라인 (stub) + redact-then-embed 게이트 | ✅ 완료 |
-| 2 | 실제 임베딩 모델 (Ollama / OpenAI / Cohere) 통합, semantic recall — *as_of_tx 시간여행 ✅, branch merge ✅ 는 완료* | 진행 중 |
+| 2 | 실제 임베딩 모델 통합 (Transformers.js + multilingual-e5-base) ✅, schema v6 model-agnostic ✅, as_of_tx 시간여행 ✅, branch merge ✅ — semantic recall query path만 남음 | 거의 완료 |
 | 3 | reflective consolidation (LLM 자동 요약), speculative branching GC | 후순위 |
 
 자세한 사용 예시는 [docs/agent-memory-cookbook.ko.md](docs/agent-memory-cookbook.ko.md).

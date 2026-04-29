@@ -1,4 +1,4 @@
-export { createBranch, mergeBranches, recall, remember, trace, withAgentMemoryDb } from './agent_memory.js';
+export { createBranch, mergeBranches, recall, remember, rememberOnRepo, trace, withAgentMemoryDb } from './agent_memory.js';
 export type {
   BranchInput,
   BranchResult,
@@ -18,7 +18,7 @@ export { exportImpactGraph } from './graph.js';
 export { indexProject } from './indexer.js';
 export { initProject } from './init.js';
 export { createMcpServer, serveMcp } from './mcp.js';
-export { computeEmbedding } from './embeddings.js';
+export { computeEmbedding, computeEmbeddingSync, STUB_MODEL_NAME } from './embeddings.js';
 export type { EmbeddingResult } from './embeddings.js';
 export { redactSecrets, resolveInsideRoot } from './security.js';
 export { loadVectorExtension } from './store.js';

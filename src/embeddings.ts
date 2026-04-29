@@ -7,19 +7,85 @@ export interface EmbeddingResult {
 }
 
 export const STUB_MODEL_NAME = 'stub-sha256';
+const DEFAULT_REAL_MODEL = 'Xenova/multilingual-e5-base';
 const STUB_DIM = 768;
 
+interface FeatureExtractionPipeline {
+  (
+    text: string | string[],
+    options: { pooling: 'mean' | 'cls' | 'none'; normalize: boolean }
+  ): Promise<{ data: Float32Array | Int8Array | Uint8Array; dims: number[] }>;
+}
+
+let pipelinePromise: Promise<FeatureExtractionPipeline> | null = null;
+let cachedModelName: string | null = null;
+
+function selectedModel(): string {
+  return process.env.IMPACT_TRACE_EMBEDDING_MODEL ?? DEFAULT_REAL_MODEL;
+}
+
+async function getOrCreatePipeline(modelId: string): Promise<FeatureExtractionPipeline> {
+  if (!pipelinePromise || cachedModelName !== modelId) {
+    cachedModelName = modelId;
+    pipelinePromise = (async () => {
+      const transformers = await import('@huggingface/transformers');
+      const pipe = await transformers.pipeline('feature-extraction', modelId, {
+        dtype: 'q8'
+      });
+      return pipe as unknown as FeatureExtractionPipeline;
+    })();
+  }
+  return pipelinePromise;
+}
+
+function quantizeToInt8(values: Float32Array): Buffer {
+  const int8 = new Int8Array(values.length);
+  for (let i = 0; i < values.length; i += 1) {
+    const v = Math.max(-1, Math.min(1, values[i] ?? 0));
+    int8[i] = Math.round(v * 127);
+  }
+  return Buffer.from(int8.buffer, int8.byteOffset, int8.byteLength);
+}
+
 /**
- * Phase 1 stub: deterministic hash-based pseudo-embedding for pipeline testing.
- * Identical text yields identical vectors; different text yields different
- * vectors; there is NO semantic similarity.
+ * Async embedding via @huggingface/transformers (ONNX in-process).
  *
- * Replace with a real model (Ollama / OpenAI / Cohere / Voyage / Transformers.js)
- * in a Phase 2 follow-up. The signature stays the same so callers do not need
- * to change. The `model` field tags every row in fact_embeddings so multiple
- * models can coexist during a swap.
+ * Default model: Xenova/multilingual-e5-base (~278 MB, 768-dim,
+ * multilingual including Korean). Override via env:
+ *   IMPACT_TRACE_EMBEDDING_MODEL=stub-sha256       # deterministic stub
+ *   IMPACT_TRACE_EMBEDDING_MODEL=Xenova/bge-base-en-v1.5
+ *   IMPACT_TRACE_EMBEDDING_MODEL=Xenova/all-mpnet-base-v2
+ *
+ * The first call lazy-downloads the model into the user's HF cache.
+ * Subsequent calls are warm (~50–150ms on M-series CPU).
+ *
+ * Returns L2-normalized int8 vectors so that dot product on the bytes
+ * (after dividing by 127) approximates cosine similarity.
  */
-export function computeEmbedding(text: string): EmbeddingResult {
+export async function computeEmbedding(text: string): Promise<EmbeddingResult> {
+  const model = selectedModel();
+  if (model === STUB_MODEL_NAME) {
+    return computeEmbeddingSync(text);
+  }
+  const pipe = await getOrCreatePipeline(model);
+  const prefixed = model.toLowerCase().includes('e5') ? `passage: ${text}` : text;
+  const output = await pipe(prefixed, { pooling: 'mean', normalize: true });
+  const float32 = output.data instanceof Float32Array
+    ? output.data
+    : new Float32Array(Array.from(output.data, (v) => Number(v)));
+  return {
+    model,
+    vector: quantizeToInt8(float32),
+    dim: float32.length
+  };
+}
+
+/**
+ * Sync stub: deterministic hash-based pseudo-vector (no semantic meaning).
+ * Used by tests and by `computeEmbedding` when the model is set to
+ * the sentinel `stub-sha256`. Identical text yields identical vectors.
+ */
+export function computeEmbeddingSync(text: string): EmbeddingResult {
   const seed = createHash('sha256').update(text).digest();
   const bytes = new Int8Array(STUB_DIM);
   let chain = seed;

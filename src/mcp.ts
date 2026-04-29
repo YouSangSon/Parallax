@@ -2,7 +2,7 @@ import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mc
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 
-import { createBranch, mergeBranches, recall, remember, trace } from './agent_memory.js';
+import { createBranch, mergeBranches, recall, rememberOnRepo, trace } from './agent_memory.js';
 import type { RememberValue } from './agent_memory.js';
 import { normalizeRepoRoot } from './security.js';
 import { getRepoId, latestCompletedIndexRun, openDatabase } from './store.js';
@@ -81,17 +81,15 @@ export function createMcpServer(context: McpContext): McpServer {
       }
     },
     async ({ entity, attribute, value, evidenceFactIds, branch, agent, op }) => {
-      const result = withWritableDb(context, (db) =>
-        remember(db, {
-          entity,
-          attribute,
-          value: value as RememberValue,
-          ...(evidenceFactIds !== undefined ? { evidenceFactIds } : {}),
-          ...(branch !== undefined ? { branch } : {}),
-          ...(agent !== undefined ? { agent } : {}),
-          ...(op !== undefined ? { op } : {})
-        })
-      );
+      const result = await rememberOnRepo(context.repoRoot, {
+        entity,
+        attribute,
+        value: value as RememberValue,
+        ...(evidenceFactIds !== undefined ? { evidenceFactIds } : {}),
+        ...(branch !== undefined ? { branch } : {}),
+        ...(agent !== undefined ? { agent } : {}),
+        ...(op !== undefined ? { op } : {})
+      });
       return { content: [{ type: 'text', text: JSON.stringify(result) }] };
     }
   );

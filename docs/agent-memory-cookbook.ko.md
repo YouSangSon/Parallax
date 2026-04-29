@@ -328,13 +328,17 @@ sqlite3 .impact-trace/impact.db \
 | 지금 유효한 결정만 (retract dedup 자동) | `impact-trace recall --current-only` |
 | Branch 합치기 | `impact-trace merge --target main --source experiment-1` |
 | 합쳐진 후 양 branch facts 보기 | merge 결과의 `mergeTxId`로 `recall --as-of-tx <merge-tx>` |
+| 임베딩 모델 변경 | `IMPACT_TRACE_EMBEDDING_MODEL=Xenova/bge-base-en-v1.5 impact-trace remember ...` |
+| 임베딩 비활성 (CI/테스트) | `IMPACT_TRACE_EMBEDDING_MODEL=stub-sha256` |
+| 임베딩 모델 변경 | `IMPACT_TRACE_EMBEDDING_MODEL=Xenova/bge-base-en-v1.5 impact-trace remember ...` |
+| 임베딩 비활성 (CI/테스트) | `IMPACT_TRACE_EMBEDDING_MODEL=stub-sha256` |
 | MCP 통해 agent가 같은 동작 | tool call에 `impact_trace_*` 사용 |
 
 ---
 
-## 7. Phase 2 미리보기 — 곧 추가될 것들
+## 7. Phase 2 진행 상황
 
-코드는 *scaffolding이 이미 들어가 있고*, 실제 모델/기능 통합만 남은 상태:
+대부분 *완료*; semantic recall query path만 남음:
 
 - **실제 임베딩 모델 통합:** 현재 `src/embeddings.ts`의 stub은 SHA-256 chain 기반 deterministic pseudo-vector. 진짜 semantic 의미는 없음. 같은 함수 시그니처로 Ollama / OpenAI / Cohere / Voyage 모델 swap-in 예정.
 - **Semantic recall:** `recall(query: "비슷한 결정 찾아줘", k: 10)` — Matryoshka 64-dim binary 1차 + 768-int8 2차 검색.

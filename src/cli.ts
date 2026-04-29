@@ -67,7 +67,7 @@ async function main(): Promise<void> {
   }
 
   if (command === 'remember' || command === 'retract') {
-    const { remember, withAgentMemoryDb } = await import('./index.js');
+    const { rememberOnRepo } = await import('./index.js');
     const entity = parseRequiredArg(args, '--entity');
     const attribute = parseRequiredArg(args, '--attribute');
     const value = parseAgentMemoryValue(parseRequiredArg(args, '--value'));
@@ -79,17 +79,15 @@ async function main(): Promise<void> {
     const evidenceFactIds = evidenceRaw
       ? evidenceRaw.split(',').map((item) => item.trim()).filter(Boolean)
       : undefined;
-    const result = withAgentMemoryDb(repoRoot, false, (db) =>
-      remember(db, {
-        entity,
-        attribute,
-        value: value as never,
-        op,
-        ...(branch !== undefined ? { branch } : {}),
-        ...(agent !== undefined ? { agent } : {}),
-        ...(evidenceFactIds !== undefined ? { evidenceFactIds } : {})
-      })
-    );
+    const result = await rememberOnRepo(repoRoot, {
+      entity,
+      attribute,
+      value: value as never,
+      op,
+      ...(branch !== undefined ? { branch } : {}),
+      ...(agent !== undefined ? { agent } : {}),
+      ...(evidenceFactIds !== undefined ? { evidenceFactIds } : {})
+    });
     console.log(JSON.stringify(result, null, 2));
     return;
   }

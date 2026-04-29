@@ -11,6 +11,10 @@ import { test } from 'node:test';
 import { analyzeDiff, indexProject, initProject } from '../src/index.js';
 import { databasePath } from '../src/store.js';
 
+// Force the deterministic SHA-256 stub so spawned MCP subprocesses don't
+// download a real embedding model (~278 MB) during the test run.
+process.env.IMPACT_TRACE_EMBEDDING_MODEL = 'stub-sha256';
+
 const require = createRequire(import.meta.url);
 const tsxLoaderPath = require.resolve('tsx');
 

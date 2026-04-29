@@ -17,7 +17,8 @@
 | M3+M4 | retract 동작 + as_of_tx 시간여행 (recursive CTE) | `4562024` |
 | current-only | recall이 ROW_NUMBER 윈도우로 retract 자동 dedup | `34d185c` |
 | Branch merge | schema v5 + `transaction_parents` multi-parent DAG + `impact_trace_merge` 툴 | `0289cc7` |
-| Schema v6 (model-agnostic embeddings) | `fact_embeddings(fact_id, model, vector, dim, created_at)` — 한 fact가 여러 모델 벡터 보유 가능, 모델 swap 자유 | (이번 commit) |
+| Schema v6 (model-agnostic embeddings) | `fact_embeddings(fact_id, model, vector, dim, created_at)` — 한 fact가 여러 모델 벡터 보유 가능, 모델 swap 자유 | `cb50bc3` |
+| Phase 2 임베딩 통합 | `@huggingface/transformers` ONNX in-process, default `Xenova/multilingual-e5-base`, env로 swap, async `rememberOnRepo` 래퍼 (embedding을 SQLite tx 바깥에서 계산) | (이번 commit) |
 
 테스트: 41/41 passing. Lint clean. 모두 origin/main에.
 

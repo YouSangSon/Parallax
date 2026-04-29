@@ -10,6 +10,11 @@ import { test } from 'node:test';
 import { analyzeDiff, exportImpactGraph, indexProject, initProject } from '../src/index.js';
 import { databasePath } from '../src/store.js';
 
+// Force the deterministic SHA-256 stub so embedding tests don't download a
+// real model (~278 MB) and stay fast/offline. Spawned CLI subprocesses
+// inherit this env automatically.
+process.env.IMPACT_TRACE_EMBEDDING_MODEL = 'stub-sha256';
+
 const require = createRequire(import.meta.url);
 const tsxLoaderPath = require.resolve('tsx');
 

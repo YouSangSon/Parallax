@@ -32,10 +32,21 @@ export interface ReflectResult {
 const DEFAULT_OLDER_THAN_DAYS = 30;
 const REFLECTION_ATTRIBUTE = 'reflection';
 const MIN_FACTS_PER_ENTITY = 2;
+const DEFAULT_MAX_FACTS_PER_ENTITY = 50;
 const SYSTEM_PROMPT =
   'You summarize an entity\'s observed history into one or two sentences.\n' +
   'Describe only what was observed across the bullet list. Do not invent details.\n' +
   'If observations contradict each other, mention the contradiction.';
+
+function maxFactsPerEntity(): number {
+  const raw = process.env.IMPACT_TRACE_REFLECT_MAX_FACTS_PER_ENTITY;
+  if (!raw) return DEFAULT_MAX_FACTS_PER_ENTITY;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed < MIN_FACTS_PER_ENTITY) {
+    return DEFAULT_MAX_FACTS_PER_ENTITY;
+  }
+  return parsed;
+}
 
 interface FactRow {
   id: string;
@@ -43,6 +54,11 @@ interface FactRow {
   attribute: string;
   value_blob: string;
   ts: string;
+}
+
+interface EntityCandidates {
+  facts: FactRow[];
+  totalCount: number;
 }
 
 interface BranchRow {
@@ -72,6 +88,7 @@ export async function reflectFacts(
   const olderThanDays = options.olderThanDays ?? DEFAULT_OLDER_THAN_DAYS;
   const cutoff = new Date(Date.now() - olderThanDays * 24 * 60 * 60 * 1000).toISOString();
 
+  const factCap = maxFactsPerEntity();
   const collected = withAgentMemoryDb(repoRoot, true, (db) => {
     const branch = db
       .prepare('SELECT id, name FROM branches WHERE name = ?')
@@ -79,7 +96,7 @@ export async function reflectFacts(
     if (!branch) {
       throw new Error(`branch not found: ${branchName}`);
     }
-    return collectCandidates(db, branch.id, cutoff, options.entity);
+    return collectCandidates(db, branch.id, cutoff, options.entity, factCap);
   });
 
   if (collected.size === 0) {
@@ -88,12 +105,12 @@ export async function reflectFacts(
 
   let skippedEntities = 0;
   const drafts: ReflectionDraft[] = [];
-  for (const [entity, facts] of collected) {
-    if (facts.length < MIN_FACTS_PER_ENTITY) {
+  for (const [entity, candidates] of collected) {
+    if (candidates.totalCount < MIN_FACTS_PER_ENTITY) {
       skippedEntities += 1;
       continue;
     }
-    const userPrompt = renderUserPrompt(entity, facts);
+    const userPrompt = renderUserPrompt(entity, candidates);
     let summaryResult: ReflectionResult;
     try {
       summaryResult = await summarize({ systemPrompt: SYSTEM_PROMPT, userPrompt });
@@ -121,7 +138,7 @@ export async function reflectFacts(
     }
     drafts.push({
       entity,
-      sourceFactIds: facts.map((row) => row.id),
+      sourceFactIds: candidates.facts.map((row) => row.id),
       summary: safeSummary,
       model: summaryResult.model,
       embedding
@@ -169,8 +186,9 @@ function collectCandidates(
   db: Db,
   branchId: string,
   cutoff: string,
-  entityFilter?: string
-): Map<string, FactRow[]> {
+  entityFilter: string | undefined,
+  factCap: number
+): Map<string, EntityCandidates> {
   const conditions = [
     't.branch_id = ?',
     't.archived = 0',
@@ -184,6 +202,12 @@ function collectCandidates(
     conditions.push('f.entity_id = ?');
     params.push(entityFilter);
   }
+  // ORDER BY entity_id keeps a single entity's rows contiguous so each
+  // EntityCandidates entry can be filled without reshuffling. ts ASC
+  // means the kept slice is the OLDEST window — the common case where a
+  // long-lived entity has too many observations and we want the early
+  // history summarized while the recent activity stays as raw episodic
+  // facts. The footer carries a count of the omitted newer rows.
   const sql = `
     SELECT f.id, f.entity_id, f.attribute, f.value_blob, t.ts
     FROM facts f
@@ -191,24 +215,38 @@ function collectCandidates(
     WHERE ${conditions.join(' AND ')}
     ORDER BY f.entity_id, t.ts ASC
   `;
-  const rows = db.prepare(sql).all(...params) as unknown as FactRow[];
-  const grouped = new Map<string, FactRow[]>();
-  for (const row of rows) {
-    const list = grouped.get(row.entity_id);
-    if (list) {
-      list.push(row);
-    } else {
-      grouped.set(row.entity_id, [row]);
+  // iterate() streams rows one at a time so the SELECT result set is
+  // never fully materialised in memory. Per-entity arrays are bounded
+  // by factCap; remaining rows still bump totalCount so the prompt can
+  // disclose the truncation.
+  const stmt = db.prepare(sql);
+  const grouped = new Map<string, EntityCandidates>();
+  for (const raw of stmt.iterate(...params)) {
+    const row = raw as unknown as FactRow;
+    let entry = grouped.get(row.entity_id);
+    if (!entry) {
+      entry = { facts: [], totalCount: 0 };
+      grouped.set(row.entity_id, entry);
+    }
+    entry.totalCount += 1;
+    if (entry.facts.length < factCap) {
+      entry.facts.push(row);
     }
   }
   return grouped;
 }
 
-function renderUserPrompt(entity: string, facts: FactRow[]): string {
-  const lines = facts.map((row) => {
+function renderUserPrompt(entity: string, candidates: EntityCandidates): string {
+  const lines = candidates.facts.map((row) => {
     const compactValue = redactSecrets(row.value_blob, 200);
     return `- [${row.ts}] ${row.attribute}: ${compactValue}`;
   });
+  if (candidates.totalCount > candidates.facts.length) {
+    const omitted = candidates.totalCount - candidates.facts.length;
+    lines.push(
+      `(... and ${omitted} more newer observation${omitted === 1 ? '' : 's'} omitted from this summary)`
+    );
+  }
   return `Entity: ${entity}\nObservations:\n${lines.join('\n')}`;
 }
 

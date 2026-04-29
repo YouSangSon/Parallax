@@ -94,7 +94,7 @@ test('initProject creates config and SQLite database tables', async () => {
     assert.match(tables.names, /contracts/);
     assert.match(tables.names, /cross_repo_links/);
     assert.match(tables.names, /work_artifacts/);
-    assert.equal(schemaVersion.version, 6);
+    assert.equal(schemaVersion.version, 7);
   } finally {
     db.close();
   }
@@ -820,4 +820,103 @@ test('indexProject dual-writes relations to facts/transactions and advances main
   } finally {
     db.close();
   }
+});
+
+test('CLI reflect with stub provider summarizes older facts', async () => {
+  const repoRoot = await makeFixtureRepo();
+  await initProject({ repoRoot });
+
+  const remember1 = runCli(repoRoot, [
+    'remember',
+    '--entity', 'file:src/cli-reflect.ts',
+    '--attribute', 'observed',
+    '--value', '"first"'
+  ]);
+  assert.equal(remember1.status, 0, `remember1 failed: ${remember1.stderr}`);
+  const remember2 = runCli(repoRoot, [
+    'remember',
+    '--entity', 'file:src/cli-reflect.ts',
+    '--attribute', 'verified',
+    '--value', '"second"'
+  ]);
+  assert.equal(remember2.status, 0, `remember2 failed: ${remember2.stderr}`);
+
+  // Age the transactions so they qualify for reflection.
+  const { withAgentMemoryDb } = await import('../src/index.js');
+  withAgentMemoryDb(repoRoot, false, (db) => {
+    db.prepare("UPDATE transactions SET ts = '2020-01-01T00:00:00.000Z'").run();
+  });
+
+  const reflectRun = spawnSync(
+    process.execPath,
+    [
+      '--import',
+      tsxLoaderPath,
+      path.resolve('src/cli.ts'),
+      'reflect',
+      '--older-than-days',
+      '1',
+      '--model',
+      'stub'
+    ],
+    { cwd: repoRoot, encoding: 'utf8', env: { ...process.env, IMPACT_TRACE_REFLECTION_MODEL: 'stub' } }
+  );
+  assert.equal(reflectRun.status, 0, `reflect failed: ${reflectRun.stderr}`);
+  const payload = JSON.parse(reflectRun.stdout) as { summarized: number; model: string };
+  assert.equal(payload.summarized, 1);
+  assert.equal(payload.model, 'stub');
+});
+
+test('CLI branch --abandon and gc-branches round-trip', async () => {
+  const repoRoot = await makeFixtureRepo();
+  await initProject({ repoRoot });
+
+  const branchRun = runCli(repoRoot, ['branch', '--name', 'speculative-cli']);
+  assert.equal(branchRun.status, 0, `branch failed: ${branchRun.stderr}`);
+
+  const rememberRun = runCli(repoRoot, [
+    'remember',
+    '--branch', 'speculative-cli',
+    '--entity', 'file:src/cli-gc.ts',
+    '--attribute', 'observed',
+    '--value', '"to be archived"'
+  ]);
+  assert.equal(rememberRun.status, 0, `remember failed: ${rememberRun.stderr}`);
+
+  const abandonRun = runCli(repoRoot, ['branch', '--abandon', 'speculative-cli']);
+  assert.equal(abandonRun.status, 0, `abandon failed: ${abandonRun.stderr}`);
+  const abandonPayload = JSON.parse(abandonRun.stdout) as { state: string; alreadyAbandoned: boolean };
+  assert.equal(abandonPayload.state, 'abandoned');
+  assert.equal(abandonPayload.alreadyAbandoned, false);
+
+  const dryGcRun = runCli(repoRoot, ['gc-branches', '--dry-run']);
+  assert.equal(dryGcRun.status, 0, `dry-run gc failed: ${dryGcRun.stderr}`);
+  const dryPayload = JSON.parse(dryGcRun.stdout) as { dryRun: boolean; archivedTransactions: number };
+  assert.equal(dryPayload.dryRun, true);
+  assert.equal(dryPayload.archivedTransactions, 1);
+
+  const gcRun = runCli(repoRoot, ['gc-branches']);
+  assert.equal(gcRun.status, 0, `gc failed: ${gcRun.stderr}`);
+  const gcPayload = JSON.parse(gcRun.stdout) as { dryRun: boolean; archivedTransactions: number };
+  assert.equal(gcPayload.dryRun, false);
+  assert.equal(gcPayload.archivedTransactions, 1);
+
+  // recall on the speculative branch must now return zero facts.
+  const recallRun = runCli(repoRoot, [
+    'recall',
+    '--branch', 'speculative-cli',
+    '--entity', 'file:src/cli-gc.ts'
+  ]);
+  assert.equal(recallRun.status, 0, `recall failed: ${recallRun.stderr}`);
+  const recallPayload = JSON.parse(recallRun.stdout) as { facts: Array<unknown> };
+  assert.equal(recallPayload.facts.length, 0, 'archived branch facts must be hidden from recall');
+});
+
+test('CLI branch --abandon refuses to abandon main', async () => {
+  const repoRoot = await makeFixtureRepo();
+  await initProject({ repoRoot });
+
+  const run = runCli(repoRoot, ['branch', '--abandon', 'main']);
+  assert.notEqual(run.status, 0);
+  assert.match(run.stderr, /cannot abandon protected branch/);
 });

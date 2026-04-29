@@ -229,7 +229,9 @@ export function recall(db: Db, input: RecallInput): RecallResult {
   //   - with asOfTx: DAG walk from that tx is the source of truth,
   //     branch filter is dropped so merge txs can surface facts from
   //     both parent branches.
-  const conditions: string[] = [];
+  // Archived transactions (gc-branches sweep) are always excluded so
+  // soft-deleted speculative branches stop surfacing facts via recall.
+  const conditions: string[] = ['t.archived = 0'];
   const whereParams: Array<string | number | null> = [];
   if (!useAsOf) {
     conditions.push('t.branch_id = ?');
@@ -349,7 +351,9 @@ export function recallSemantic(
   input: RecallInput
 ): RecallResult {
   const k = Math.min(input.k ?? 20, MAX_RECALL_K);
-  const conditions: string[] = ['fe.model = ?'];
+  // Archived transactions are excluded so semantic recall mirrors the
+  // structured recall behavior after a gc-branches sweep.
+  const conditions: string[] = ['fe.model = ?', 't.archived = 0'];
   const params: Array<string | number | null> = [queryEmbedding.model];
 
   if (input.entity !== undefined) {
@@ -597,12 +601,15 @@ export function mergeBranches(db: Db, input: MergeBranchInput): MergeBranchResul
 export function trace(db: Db, input: TraceInput): TraceResult {
   const depth = Math.min(input.depth ?? 5, MAX_TRACE_DEPTH);
 
+  // Archived transactions (gc-branches sweep) are excluded so trace mirrors
+  // recall behaviour after a soft-delete. Forensic walks across abandoned
+  // branches require an explicit unarchive step (Phase 4).
   const startRow = db
     .prepare(
       `SELECT f.id, f.entity_id, f.attribute, f.value_blob, f.op, f.tx_id, f.redacted, t.ts
        FROM facts f
        INNER JOIN transactions t ON f.tx_id = t.id
-       WHERE f.id = ?`
+       WHERE f.id = ? AND t.archived = 0`
     )
     .get(input.factId) as FactRow | undefined;
   if (!startRow) {
@@ -621,7 +628,7 @@ export function trace(db: Db, input: TraceInput): TraceResult {
          FROM fact_provenance fp
          INNER JOIN facts f ON fp.source_fact_id = f.id
          INNER JOIN transactions t ON f.tx_id = t.id
-         WHERE fp.fact_id IN (${placeholders})`
+         WHERE fp.fact_id IN (${placeholders}) AND t.archived = 0`
       )
       .all(...frontier) as unknown as FactRow[];
 

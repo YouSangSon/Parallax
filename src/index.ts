@@ -22,6 +22,18 @@ export { initProject } from './init.js';
 export { createMcpServer, serveMcp } from './mcp.js';
 export { computeEmbedding, computeEmbeddingSync, STUB_MODEL_NAME } from './embeddings.js';
 export type { EmbeddingResult } from './embeddings.js';
+export { summarize, STUB_LLM_MODEL } from './llm.js';
+export type { ReflectionResult, SummarizeInput } from './llm.js';
+export { reflectFacts } from './reflection.js';
+export type { ReflectOptions, ReflectResult, ReflectedEntity } from './reflection.js';
+export { abandonBranch, gcBranches } from './branch_gc.js';
+export type {
+  AbandonBranchInput,
+  AbandonBranchResult,
+  GcBranchesOptions,
+  GcBranchesResult,
+  GcBranchSummary
+} from './branch_gc.js';
 export { redactSecrets, resolveInsideRoot } from './security.js';
 export { loadVectorExtension } from './store.js';
 export type {

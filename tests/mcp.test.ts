@@ -14,6 +14,9 @@ import { databasePath } from '../src/store.js';
 // Force the deterministic SHA-256 stub so spawned MCP subprocesses don't
 // download a real embedding model (~278 MB) during the test run.
 process.env.IMPACT_TRACE_EMBEDDING_MODEL = 'stub-sha256';
+// Stub reflection LLM so the MCP reflect round-trip never touches the
+// network and does not require ANTHROPIC_API_KEY / OPENAI_API_KEY / Ollama.
+process.env.IMPACT_TRACE_REFLECTION_MODEL = 'stub';
 
 const require = createRequire(import.meta.url);
 const tsxLoaderPath = require.resolve('tsx');
@@ -179,7 +182,10 @@ test('MCP stdio server initializes and exposes the full agent memory tool surfac
       'impact_trace_remember',
       'impact_trace_recall',
       'impact_trace_branch',
-      'impact_trace_trace'
+      'impact_trace_trace',
+      'impact_trace_reflect',
+      'impact_trace_abandon_branch',
+      'impact_trace_gc_branches'
     ]) {
       assert.ok(toolByName.has(expected), `expected MCP tool ${expected} to be advertised`);
     }
@@ -188,6 +194,9 @@ test('MCP stdio server initializes and exposes the full agent memory tool surfac
     assert.equal(toolByName.get('impact_trace_trace')!.annotations?.readOnlyHint, true);
     assert.equal(toolByName.get('impact_trace_remember')!.annotations?.readOnlyHint, false);
     assert.equal(toolByName.get('impact_trace_branch')!.annotations?.readOnlyHint, false);
+    assert.equal(toolByName.get('impact_trace_reflect')!.annotations?.readOnlyHint, false);
+    assert.equal(toolByName.get('impact_trace_abandon_branch')!.annotations?.readOnlyHint, false);
+    assert.equal(toolByName.get('impact_trace_gc_branches')!.annotations?.readOnlyHint, false);
     assert.equal(response.result.tools.some((tool: { name: string }) => tool.name.includes('obsidian')), false);
   } finally {
     await client.close();
@@ -466,6 +475,117 @@ test('MCP remember rejects unknown branches', async () => {
 
     assert.equal(response.result.isError, true);
     assert.match(response.result.content[0].text, /branch not found/);
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP abandon_branch + gc_branches round-trip', async () => {
+  const repoRoot = await makeRepo();
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+
+    const refuseMain = await client.request('tools/call', {
+      name: 'impact_trace_abandon_branch',
+      arguments: { name: 'main' }
+    });
+    assert.equal(refuseMain.result.isError, true);
+    assert.match(refuseMain.result.content[0].text, /cannot abandon protected branch/);
+
+    const branchResp = await client.request('tools/call', {
+      name: 'impact_trace_branch',
+      arguments: { name: 'mcp-spec' }
+    });
+    assert.equal(branchResp.result.isError, undefined);
+
+    const rememberResp = await client.request('tools/call', {
+      name: 'impact_trace_remember',
+      arguments: {
+        branch: 'mcp-spec',
+        entity: 'file:src/spec.ts',
+        attribute: 'observed',
+        value: 'spec-fact'
+      }
+    });
+    assert.equal(rememberResp.result.isError, undefined);
+
+    const abandonResp = await client.request('tools/call', {
+      name: 'impact_trace_abandon_branch',
+      arguments: { name: 'mcp-spec' }
+    });
+    const abandonPayload = JSON.parse(abandonResp.result.content[0].text) as {
+      state: string;
+      alreadyAbandoned: boolean;
+    };
+    assert.equal(abandonPayload.state, 'abandoned');
+    assert.equal(abandonPayload.alreadyAbandoned, false);
+
+    const dryGcResp = await client.request('tools/call', {
+      name: 'impact_trace_gc_branches',
+      arguments: { dryRun: true }
+    });
+    const dryGcPayload = JSON.parse(dryGcResp.result.content[0].text) as {
+      dryRun: boolean;
+      archivedTransactions: number;
+    };
+    assert.equal(dryGcPayload.dryRun, true);
+    assert.equal(dryGcPayload.archivedTransactions, 1);
+
+    const gcResp = await client.request('tools/call', {
+      name: 'impact_trace_gc_branches',
+      arguments: {}
+    });
+    const gcPayload = JSON.parse(gcResp.result.content[0].text) as {
+      archivedTransactions: number;
+    };
+    assert.equal(gcPayload.archivedTransactions, 1);
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP reflect summarizes via stub provider', async () => {
+  const repoRoot = await makeRepo();
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+
+    for (const value of ['"first"', '"second"']) {
+      const remembered = await client.request('tools/call', {
+        name: 'impact_trace_remember',
+        arguments: {
+          entity: 'file:src/mcp-reflect.ts',
+          attribute: 'observed',
+          value: JSON.parse(value) as unknown
+        }
+      });
+      assert.equal(remembered.result.isError, undefined);
+    }
+
+    // Age the transactions in-process so reflect picks them up. Spawned
+    // subprocess shares the on-disk DB.
+    const db = new DatabaseSync(databasePath(repoRoot), { readOnly: false });
+    try {
+      db.prepare("UPDATE transactions SET ts = '2020-01-01T00:00:00.000Z'").run();
+    } finally {
+      db.close();
+    }
+
+    const reflectResp = await client.request('tools/call', {
+      name: 'impact_trace_reflect',
+      arguments: { olderThanDays: 1, entity: 'file:src/mcp-reflect.ts' }
+    });
+    assert.equal(reflectResp.result.isError, undefined);
+    const payload = JSON.parse(reflectResp.result.content[0].text) as {
+      summarized: number;
+      model: string;
+      reflections: Array<{ entity: string; sourceCount: number }>;
+    };
+    assert.equal(payload.summarized, 1);
+    assert.equal(payload.reflections[0]!.entity, 'file:src/mcp-reflect.ts');
+    assert.equal(payload.reflections[0]!.sourceCount, 2);
+    assert.match(payload.model, /^stub|ollama:|anthropic:|openai:/);
   } finally {
     await client.close();
   }

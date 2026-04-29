@@ -4,6 +4,8 @@ import { z } from 'zod';
 
 import { createBranch, mergeBranches, recallOnRepo, rememberOnRepo, trace } from './agent_memory.js';
 import type { RememberValue } from './agent_memory.js';
+import { abandonBranch, gcBranches } from './branch_gc.js';
+import { reflectFacts } from './reflection.js';
 import { normalizeRepoRoot } from './security.js';
 import { getRepoId, latestCompletedIndexRun, openDatabase } from './store.js';
 import type { GraphExportFormat } from './types.js';
@@ -187,6 +189,87 @@ export function createMcpServer(context: McpContext): McpServer {
           source,
           ...(agent !== undefined ? { agent } : {})
         })
+      );
+      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+    }
+  );
+
+  server.registerTool(
+    'impact_trace_reflect',
+    {
+      title: 'Reflect facts into a summary',
+      description:
+        'Group older facts on a branch by entity and ask the configured LLM to summarize each group. Original facts are preserved; a new summary fact is added with provenance edges marked kind=summary.',
+      inputSchema: {
+        branch: z.string().optional(),
+        olderThanDays: z.number().int().min(1).max(3_650).optional(),
+        entity: z.string().optional(),
+        agent: z.string().optional(),
+        dryRun: z.boolean().optional()
+      },
+      annotations: {
+        title: 'Reflect facts into a summary',
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: true
+      }
+    },
+    async ({ branch, olderThanDays, entity, agent, dryRun }) => {
+      const result = await reflectFacts(context.repoRoot, {
+        ...(branch !== undefined ? { branch } : {}),
+        ...(olderThanDays !== undefined ? { olderThanDays } : {}),
+        ...(entity !== undefined ? { entity } : {}),
+        ...(agent !== undefined ? { agent } : {}),
+        ...(dryRun !== undefined ? { dryRun } : {})
+      });
+      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+    }
+  );
+
+  server.registerTool(
+    'impact_trace_abandon_branch',
+    {
+      title: 'Abandon a branch',
+      description:
+        'Mark a branch as abandoned. Subsequent gc-branches passes will archive its transactions. The main branch cannot be abandoned.',
+      inputSchema: {
+        name: z.string().min(1)
+      },
+      annotations: {
+        title: 'Abandon a branch',
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      }
+    },
+    async ({ name }) => {
+      const result = withWritableDb(context, (db) => abandonBranch(db, { name }));
+      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+    }
+  );
+
+  server.registerTool(
+    'impact_trace_gc_branches',
+    {
+      title: 'GC abandoned branches',
+      description:
+        'Archive transactions of all abandoned branches so recall and recallSemantic stop surfacing their facts. Facts themselves are never deleted (content-addressable). dryRun reports without writing.',
+      inputSchema: {
+        dryRun: z.boolean().optional()
+      },
+      annotations: {
+        title: 'GC abandoned branches',
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      }
+    },
+    async ({ dryRun }) => {
+      const result = withWritableDb(context, (db) =>
+        gcBranches(db, { ...(dryRun !== undefined ? { dryRun } : {}) })
       );
       return { content: [{ type: 'text', text: JSON.stringify(result) }] };
     }

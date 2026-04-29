@@ -117,6 +117,15 @@ async function main(): Promise<void> {
   }
 
   if (command === 'branch') {
+    const abandonName = parseOptionalArg(args, '--abandon');
+    if (abandonName !== undefined) {
+      const { abandonBranch, withAgentMemoryDb } = await import('./index.js');
+      const result = withAgentMemoryDb(repoRoot, false, (db) =>
+        abandonBranch(db, { name: abandonName })
+      );
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
     const { createBranch, withAgentMemoryDb } = await import('./index.js');
     const name = parseRequiredArg(args, '--name');
     const from = parseOptionalArg(args, '--from');
@@ -127,6 +136,49 @@ async function main(): Promise<void> {
       })
     );
     console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  if (command === 'gc-branches') {
+    const { gcBranches, withAgentMemoryDb } = await import('./index.js');
+    const dryRun = args.includes('--dry-run') ? true : undefined;
+    const result = withAgentMemoryDb(repoRoot, false, (db) =>
+      gcBranches(db, { ...(dryRun !== undefined ? { dryRun } : {}) })
+    );
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  if (command === 'reflect') {
+    const { reflectFacts } = await import('./index.js');
+    const branch = parseOptionalArg(args, '--branch');
+    const olderThanDays = parseIntegerArg(args, '--older-than-days');
+    const entity = parseOptionalArg(args, '--entity');
+    const agent = parseOptionalArg(args, '--agent');
+    const model = parseOptionalArg(args, '--model');
+    const dryRun = args.includes('--dry-run') ? true : undefined;
+    const previousEnv = process.env.IMPACT_TRACE_REFLECTION_MODEL;
+    if (model !== undefined) {
+      process.env.IMPACT_TRACE_REFLECTION_MODEL = model;
+    }
+    try {
+      const result = await reflectFacts(repoRoot, {
+        ...(branch !== undefined ? { branch } : {}),
+        ...(olderThanDays !== undefined ? { olderThanDays } : {}),
+        ...(entity !== undefined ? { entity } : {}),
+        ...(agent !== undefined ? { agent } : {}),
+        ...(dryRun !== undefined ? { dryRun } : {})
+      });
+      console.log(JSON.stringify(result, null, 2));
+    } finally {
+      if (model !== undefined) {
+        if (previousEnv === undefined) {
+          delete process.env.IMPACT_TRACE_REFLECTION_MODEL;
+        } else {
+          process.env.IMPACT_TRACE_REFLECTION_MODEL = previousEnv;
+        }
+      }
+    }
     return;
   }
 
@@ -225,7 +277,8 @@ function parsePositionals(args: string[]): string[] {
     '--report', '--format',
     '--entity', '--attribute', '--value', '--branch', '--agent', '--evidence-fact-ids',
     '--name', '--from', '--fact-id', '--k', '--op', '--as-of-tx',
-    '--target', '--source', '--query', '--model'
+    '--target', '--source', '--query', '--model',
+    '--older-than-days', '--abandon'
   ]);
   const positionals: string[] = [];
   for (let index = 0; index < args.length; index++) {
@@ -269,8 +322,12 @@ Agent memory:
                         [--attribute <name>] [--branch <name>] [--k 20]
                         [--as-of-tx <tx-id>] [--current-only]
   impact-trace branch   --name <name> [--from <name>]
+  impact-trace branch   --abandon <name>
   impact-trace merge    --target <branch> --source <branch> [--agent <id>]
   impact-trace reembed  [--model <hf-model>] [--all]
+  impact-trace reflect  [--branch <name>] [--older-than-days 30] [--entity <id>]
+                        [--model <provider:id>] [--agent <id>] [--dry-run]
+  impact-trace gc-branches [--dry-run]
   impact-trace trace    --fact-id <id> [--depth 5]
 `);
 }

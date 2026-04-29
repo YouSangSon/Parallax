@@ -478,6 +478,64 @@ function migrate(db: Db): void {
     INSERT OR IGNORE INTO branches (id, name, head_tx_id, parent_branch_id, created_at)
     VALUES ('br_main', 'main', NULL, NULL, datetime('now'));
   `);
+
+  // Schema v7: reflection consolidation + speculative branch GC.
+  // ALTER TABLE ADD COLUMN has no native IF NOT EXISTS in SQLite, so each
+  // column probe runs against pragma_table_info before issuing the ALTER.
+  // CREATE TABLE / INSERT continue to use IF NOT EXISTS / OR IGNORE.
+  tryAddColumn(db, 'branches', 'state', "TEXT NOT NULL DEFAULT 'active'");
+  tryAddColumn(db, 'transactions', 'archived', 'INTEGER NOT NULL DEFAULT 0');
+  tryAddColumn(db, 'fact_provenance', 'kind', "TEXT NOT NULL DEFAULT 'evidence'");
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS reflections (
+      id TEXT PRIMARY KEY NOT NULL,
+      branch_id TEXT NOT NULL,
+      model TEXT NOT NULL,
+      summary_fact_id TEXT NOT NULL,
+      source_fact_count INTEGER NOT NULL,
+      criteria_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      FOREIGN KEY(branch_id) REFERENCES branches(id),
+      FOREIGN KEY(summary_fact_id) REFERENCES facts(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_reflections_branch ON reflections(branch_id);
+    CREATE INDEX IF NOT EXISTS idx_transactions_archived ON transactions(archived);
+
+    INSERT OR IGNORE INTO attribute_defs (name, value_type, is_code_relation, description)
+    VALUES ('reflection', 'text', 0, 'LLM-generated semantic summary of an entity history');
+
+    INSERT OR IGNORE INTO schema_versions (version, applied_at)
+    VALUES (7, datetime('now'));
+  `);
+}
+
+// Identifier allowlists guard the only place in this codebase that
+// interpolates user-style strings into a DDL statement. SQLite has no
+// IF NOT EXISTS form for ADD COLUMN and does not bind identifiers in
+// ALTER TABLE, so we accept the interpolation but constrain it. Every
+// caller must pass a literal that appears in these sets.
+const ALLOWED_TABLES = new Set(['branches', 'transactions', 'fact_provenance']);
+const ALLOWED_COLUMNS = new Set(['state', 'archived', 'kind']);
+const ALLOWED_DEFINITIONS = /^(?:TEXT|INTEGER|REAL|BLOB|NUMERIC)\b[\sA-Za-z0-9_'-]*$/;
+
+function tryAddColumn(db: Db, table: string, column: string, definition: string): void {
+  if (!ALLOWED_TABLES.has(table)) {
+    throw new Error(`tryAddColumn: table not in allowlist: ${table}`);
+  }
+  if (!ALLOWED_COLUMNS.has(column)) {
+    throw new Error(`tryAddColumn: column not in allowlist: ${column}`);
+  }
+  if (!ALLOWED_DEFINITIONS.test(definition)) {
+    throw new Error(`tryAddColumn: definition shape rejected: ${definition}`);
+  }
+  const exists = db
+    .prepare('SELECT 1 FROM pragma_table_info(?) WHERE name = ?')
+    .get(table, column);
+  if (!exists) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
 }
 
 export function ensureRepo(db: Db, repoRoot: string): number {

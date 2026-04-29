@@ -21,19 +21,19 @@ function withTempDb<T>(callback: (db: Db) => T): T {
   }
 }
 
-test('migrate records schema_versions through v6', () => {
+test('migrate records schema_versions through v7', () => {
   withTempDb((db) => {
     const versions = db
       .prepare('SELECT version FROM schema_versions ORDER BY version')
       .all() as Array<{ version: number }>;
     assert.deepEqual(
       versions.map((row) => row.version),
-      [1, 2, 3, 4, 5, 6]
+      [1, 2, 3, 4, 5, 6, 7]
     );
   });
 });
 
-test('migrate creates the agent memory tables (v4) plus v5/v6 extensions', () => {
+test('migrate creates the agent memory tables (v4) plus v5/v6/v7 extensions', () => {
   withTempDb((db) => {
     const expected = [
       'attribute_defs',
@@ -43,7 +43,8 @@ test('migrate creates the agent memory tables (v4) plus v5/v6 extensions', () =>
       'embeddings',
       'fact_provenance',
       'transaction_parents',
-      'fact_embeddings'
+      'fact_embeddings',
+      'reflections'
     ];
     for (const name of expected) {
       const row = db
@@ -52,6 +53,110 @@ test('migrate creates the agent memory tables (v4) plus v5/v6 extensions', () =>
       assert.ok(row, `expected table ${name} to exist`);
     }
   });
+});
+
+test('migrate v7 adds branches.state, transactions.archived, fact_provenance.kind columns', () => {
+  withTempDb((db) => {
+    const branchState = db
+      .prepare("SELECT name FROM pragma_table_info('branches') WHERE name = 'state'")
+      .get();
+    assert.ok(branchState, 'branches.state column should exist');
+
+    const txArchived = db
+      .prepare("SELECT name FROM pragma_table_info('transactions') WHERE name = 'archived'")
+      .get();
+    assert.ok(txArchived, 'transactions.archived column should exist');
+
+    const provKind = db
+      .prepare("SELECT name FROM pragma_table_info('fact_provenance') WHERE name = 'kind'")
+      .get();
+    assert.ok(provKind, 'fact_provenance.kind column should exist');
+
+    const seededMain = db
+      .prepare("SELECT state FROM branches WHERE name = 'main'")
+      .get() as { state: string };
+    assert.equal(seededMain.state, 'active');
+  });
+});
+
+test('migrate is idempotent across re-runs', () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'impact-trace-store-idem-'));
+  try {
+    const first = openDatabase(dir);
+    first.close();
+    const second = openDatabase(dir);
+    try {
+      const versions = second
+        .prepare('SELECT version FROM schema_versions ORDER BY version')
+        .all() as Array<{ version: number }>;
+      assert.deepEqual(
+        versions.map((row) => row.version),
+        [1, 2, 3, 4, 5, 6, 7]
+      );
+    } finally {
+      second.close();
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('migrate upgrades a synthetic v6 schema by adding v7 columns and tables', () => {
+  // Build a stripped-down v6-equivalent schema (the columns we know v7
+  // will ADD), then re-open to trigger migrate(). This is the path that
+  // executes tryAddColumn in the real upgrade scenario; the fresh-DB
+  // tests above run against a single combined migration.
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'impact-trace-store-v6-'));
+  try {
+    const seed = openDatabase(dir);
+    try {
+      // Drop the v7-added columns and table to simulate an older DB.
+      seed.prepare('DELETE FROM schema_versions WHERE version = 7').run();
+      seed.prepare('DROP TABLE IF EXISTS reflections').run();
+      seed.prepare('CREATE TABLE branches_v6_only AS SELECT id, name, head_tx_id, parent_branch_id, created_at FROM branches').run();
+      seed.prepare('DROP TABLE branches').run();
+      seed
+        .prepare(
+          `CREATE TABLE branches (
+             id TEXT PRIMARY KEY NOT NULL,
+             name TEXT NOT NULL UNIQUE,
+             head_tx_id TEXT,
+             parent_branch_id TEXT,
+             created_at TEXT NOT NULL,
+             FOREIGN KEY(parent_branch_id) REFERENCES branches(id)
+           )`
+        )
+        .run();
+      seed
+        .prepare(
+          'INSERT INTO branches (id, name, head_tx_id, parent_branch_id, created_at) SELECT id, name, head_tx_id, parent_branch_id, created_at FROM branches_v6_only'
+        )
+        .run();
+      seed.prepare('DROP TABLE branches_v6_only').run();
+    } finally {
+      seed.close();
+    }
+
+    const upgraded = openDatabase(dir);
+    try {
+      const stateColumn = upgraded
+        .prepare("SELECT name FROM pragma_table_info('branches') WHERE name = 'state'")
+        .get();
+      assert.ok(stateColumn, 'tryAddColumn must add branches.state on real upgrade');
+      const reflections = upgraded
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'reflections'")
+        .get();
+      assert.ok(reflections, 'reflections table must exist after upgrade');
+      const versions = upgraded
+        .prepare('SELECT max(version) AS v FROM schema_versions')
+        .get() as { v: number };
+      assert.equal(versions.v, 7);
+    } finally {
+      upgraded.close();
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('migrate seeds the four code-relation attribute_defs', () => {

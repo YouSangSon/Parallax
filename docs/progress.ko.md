@@ -53,6 +53,8 @@ remember·recall·branch·trace·retract 동작이 노출됐다. Phase 2 (실제
 | 2026-04-29 | 보안 polish | LLM fetch에 30s timeout, Anthropic/OpenAI HTTPS 강제, fetch try/catch consistency |
 | 2026-04-29 | 결정 기록 | docs/decisions.ko.md (ADR-style 결정 로그) — D-001..D-012 12개 결정 정리 |
 | 2026-04-29 | 리뷰 | architect + security-reviewer + typescript-reviewer + tdd-guide 4-agent split-role 리뷰 (2 CRITICAL + 7 HIGH + 2 MEDIUM 발견 → 본 PR에서 모두 해결) |
+| 2026-04-29 | Phase 4 핸드오프 | docs/phase4-handoff.ko.md 작성 — 9개 후보 우선순위 + D-013..D-016 결정 + file:line landmarks |
+| 2026-04-29 | Phase 4 P1 | reflectFacts scaling cap — collectCandidates iterate streaming + entity당 50 fact cap (env IMPACT_TRACE_REFLECT_MAX_FACTS_PER_ENTITY) + prompt footer omitted-count |
 
 ## 진행 중
 
@@ -71,7 +73,7 @@ remember·recall·branch·trace·retract 동작이 노출됐다. Phase 2 (실제
 | 날짜 | 명령 | 결과 |
 |---|---|---|
 | 2026-04-29 | `npm run lint` | 통과 (Phase 3 완료 후) |
-| 2026-04-29 | `npm test` | **76개 테스트 통과** (Phase 1+2: 43 → Phase 3: +33) |
+| 2026-04-29 | `npm test` | **78개 테스트 통과** (Phase 1+2: 43 → Phase 3: +33 → Phase 4 P1: +2) |
 | 2026-04-29 | `npm run check` | 통과 |
 | 2026-04-29 | `git push origin main` | 통과 (10 새 커밋 push, `073637c..4aadaf2`) |
 | 2026-04-28 | `npm run test:install-smoke` | 통과 |

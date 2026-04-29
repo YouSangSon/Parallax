@@ -188,3 +188,81 @@ test('reflect throws on unknown branch', async () => {
     /branch not found/
   );
 });
+
+test('reflect caps per-entity facts and links exactly cap many provenance edges', async () => {
+  // Phase 4 P1: a hot entity with 12 facts under a cap of 5 should still
+  // produce one summary fact, but only 5 source_fact_ids should be linked
+  // (the OLDEST 5 by ts ASC). totalCount-cap newer observations are
+  // disclosed in the prompt footer; provenance and audit row record the
+  // bounded count, not the total.
+  const repoRoot = await makeRepo();
+  const previousCap = process.env.IMPACT_TRACE_REFLECT_MAX_FACTS_PER_ENTITY;
+  process.env.IMPACT_TRACE_REFLECT_MAX_FACTS_PER_ENTITY = '5';
+  try {
+    withAgentMemoryDb(repoRoot, false, (db) => {
+      for (let i = 0; i < 12; i += 1) {
+        remember(db, {
+          entity: 'file:src/hot.ts',
+          attribute: 'observed',
+          value: `iteration ${i}`
+        });
+      }
+      db.prepare("UPDATE transactions SET ts = '2020-01-01T00:00:00.000Z'").run();
+    });
+
+    const result = await reflectFacts(repoRoot, { olderThanDays: 1 });
+    assert.equal(result.summarized, 1);
+    const reflection = result.reflections[0]!;
+    assert.equal(reflection.entity, 'file:src/hot.ts');
+    assert.equal(
+      reflection.sourceCount,
+      5,
+      'sourceCount must equal the cap, not the total'
+    );
+
+    withAgentMemoryDb(repoRoot, true, (db) => {
+      const provenanceRows = db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM fact_provenance WHERE fact_id = ? AND kind = 'summary'`
+        )
+        .get(reflection.summaryFactId) as { n: number };
+      assert.equal(
+        provenanceRows.n,
+        5,
+        'fact_provenance must record exactly cap many summary edges'
+      );
+      const audit = db
+        .prepare('SELECT source_fact_count FROM reflections WHERE summary_fact_id = ?')
+        .get(reflection.summaryFactId) as { source_fact_count: number };
+      assert.equal(audit.source_fact_count, 5);
+    });
+  } finally {
+    if (previousCap === undefined) {
+      delete process.env.IMPACT_TRACE_REFLECT_MAX_FACTS_PER_ENTITY;
+    } else {
+      process.env.IMPACT_TRACE_REFLECT_MAX_FACTS_PER_ENTITY = previousCap;
+    }
+  }
+});
+
+test('reflect cap env var falls back to default when invalid', async () => {
+  const repoRoot = await makeRepo();
+  const previous = process.env.IMPACT_TRACE_REFLECT_MAX_FACTS_PER_ENTITY;
+  process.env.IMPACT_TRACE_REFLECT_MAX_FACTS_PER_ENTITY = 'not-a-number';
+  try {
+    withAgentMemoryDb(repoRoot, false, (db) => {
+      remember(db, { entity: 'file:src/cap.ts', attribute: 'observed', value: 'a' });
+      remember(db, { entity: 'file:src/cap.ts', attribute: 'observed', value: 'b' });
+      db.prepare("UPDATE transactions SET ts = '2020-01-01T00:00:00.000Z'").run();
+    });
+    const result = await reflectFacts(repoRoot, { olderThanDays: 1 });
+    assert.equal(result.summarized, 1);
+    assert.equal(result.reflections[0]!.sourceCount, 2);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.IMPACT_TRACE_REFLECT_MAX_FACTS_PER_ENTITY;
+    } else {
+      process.env.IMPACT_TRACE_REFLECT_MAX_FACTS_PER_ENTITY = previous;
+    }
+  }
+});

@@ -461,6 +461,7 @@ npm audit --audit-level=high
 
 - [Phase 3 설계 문서](docs/phase3-design.ko.md)
 - [Phase 3 핸드오프 (이전 세션)](docs/phase3-handoff.ko.md)
+- [Phase 4 핸드오프 (다음 세션 진입점)](docs/phase4-handoff.ko.md)
 - [Architecture decisions log (D-001..D-012)](docs/decisions.ko.md)
 - [Agent DB 탐색 노트](docs/agent-db-exploration.ko.md)
 - [Agent memory cookbook](docs/agent-memory-cookbook.ko.md)

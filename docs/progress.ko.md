@@ -5,6 +5,7 @@
 기준 계획서: [Impact Trace 계획서](impact-trace-plan.ko.md)
 사용 가이드: [agent memory cookbook](agent-memory-cookbook.ko.md) · [agent DB 탐색 노트](agent-db-exploration.ko.md)
 Phase 3 자료: [Phase 3 design](phase3-design.ko.md) · [Phase 3 handoff](phase3-handoff.ko.md) · [Architecture decisions log](decisions.ko.md)
+Phase 4 진입: [Phase 4 handoff](phase4-handoff.ko.md) (D-013..D-016 결정 + 7가지 후보 우선순위)
 
 ## 현재 위치
 

@@ -55,6 +55,11 @@ remember·recall·branch·trace·retract 동작이 노출됐다. Phase 2 (실제
 | 2026-04-29 | 리뷰 | architect + security-reviewer + typescript-reviewer + tdd-guide 4-agent split-role 리뷰 (2 CRITICAL + 7 HIGH + 2 MEDIUM 발견 → 본 PR에서 모두 해결) |
 | 2026-04-29 | Phase 4 핸드오프 | docs/phase4-handoff.ko.md 작성 — 9개 후보 우선순위 + D-013..D-016 결정 + file:line landmarks |
 | 2026-04-29 | Phase 4 P1 | reflectFacts scaling cap — collectCandidates iterate streaming + entity당 50 fact cap (env IMPACT_TRACE_REFLECT_MAX_FACTS_PER_ENTITY) + prompt footer omitted-count |
+| 2026-04-30 | supermemory 분석 | supermemoryai/supermemory의 6개 패턴 후보 평가 (Architect + TypeScript + Code-explorer + 보안 직접 review). docs/supermemory-adoption.ko.md 작성 |
+| 2026-04-30 | P3-EXPOSE | Lifecycle 타입 + factLifecycle 헬퍼 추가 — attribute_defs.is_code_relation을 'static' \| 'dynamic'으로 expose. 새 컬럼 X (D-013) |
+| 2026-04-30 | P2 Profile API | src/profile.ts — profileEntity()가 entity별 static/dynamic/summary 3-bucket view 반환. CLI `profile` + MCP impact_trace_profile (D-014) |
+| 2026-04-30 | P6 Skills 패키징 | skills/impact-trace/SKILL.md + references/architecture.md — `npx skills add` 한 줄 install path |
+| 2026-04-30 | 결정 기록 | docs/decisions.ko.md에 D-013, D-014 추가 |
 
 ## 진행 중
 

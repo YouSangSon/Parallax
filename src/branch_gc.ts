@@ -15,6 +15,18 @@ export interface GcBranchesOptions {
   dryRun?: boolean;
 }
 
+export interface RestoreBranchInput {
+  name: string;
+}
+
+export interface RestoreBranchResult {
+  branchId: string;
+  name: string;
+  state: 'active';
+  unarchivedTransactions: number;
+  alreadyActive: boolean;
+}
+
 export interface GcBranchSummary {
   name: string;
   branchId: string;
@@ -143,4 +155,67 @@ export function gcBranches(db: Db, options: GcBranchesOptions = {}): GcBranchesR
     throw error;
   }
   return result;
+}
+
+/**
+ * Restore an abandoned branch. The reverse path of `abandonBranch` +
+ * `gcBranches`: the branch state moves from 'abandoned' back to
+ * 'active', and any transactions previously archived by gcBranches are
+ * un-archived (transactions.archived = 0). Recall, recallSemantic,
+ * and trace will then surface the branch's facts again automatically
+ * because their archived = 0 filter starts matching once more.
+ *
+ * Idempotent: calling restore on an already-active branch returns
+ * alreadyActive=true with unarchivedTransactions=0 and writes nothing.
+ *
+ * Decision rationale: D-016 (i) was rejected because mental model
+ * "I restored the branch but I still cannot see the facts" violates
+ * least-surprise; (iii) was rejected because two-step restoration
+ * doubles user error surface. (ii) — state plus tx unarchive in a
+ * single call — is what this function implements.
+ */
+export function restoreBranch(db: Db, input: RestoreBranchInput): RestoreBranchResult {
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const branch = db
+      .prepare('SELECT id, name, state FROM branches WHERE name = ?')
+      .get(input.name) as BranchRow | undefined;
+    if (!branch) {
+      throw new Error(`branch not found: ${input.name}`);
+    }
+    if (branch.state !== 'abandoned') {
+      db.exec('COMMIT');
+      return {
+        branchId: branch.id,
+        name: branch.name,
+        state: 'active',
+        unarchivedTransactions: 0,
+        alreadyActive: true
+      };
+    }
+
+    db.prepare("UPDATE branches SET state = 'active' WHERE id = ?").run(branch.id);
+    const unarchiveStmt = db.prepare(
+      'UPDATE transactions SET archived = 0 WHERE branch_id = ? AND archived = 1'
+    );
+    const archivedCount = (
+      db
+        .prepare('SELECT COUNT(*) AS n FROM transactions WHERE branch_id = ? AND archived = 1')
+        .get(branch.id) as { n: number }
+    ).n;
+    if (archivedCount > 0) {
+      unarchiveStmt.run(branch.id);
+    }
+    db.exec('COMMIT');
+    return {
+      branchId: branch.id,
+      name: branch.name,
+      state: 'active',
+      unarchivedTransactions: archivedCount,
+      alreadyActive: false
+    };
+  } catch (error: unknown) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
 }

@@ -4,7 +4,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { abandonBranch, gcBranches } from '../src/branch_gc.js';
+import { abandonBranch, gcBranches, restoreBranch } from '../src/branch_gc.js';
 import { createBranch, recall, remember, trace, withAgentMemoryDb } from '../src/agent_memory.js';
 import { initProject } from '../src/init.js';
 
@@ -204,4 +204,71 @@ test('gc with zero abandoned branches returns scanned=0', async () => {
   assert.equal(result.archivedTransactions, 0);
   assert.equal(result.dryRun, false);
   assert.equal(result.branches.length, 0);
+});
+
+test('restore moves abandoned branch back to active and unarchives txs', async () => {
+  // The abandon → gc → restore cycle. After restore, recall surfaces
+  // the branch's facts again because transactions.archived = 0 once
+  // more. This exercises the full Phase 4 P3 reverse path.
+  const repoRoot = await makeRepo();
+  withAgentMemoryDb(repoRoot, false, (db) => {
+    createBranch(db, { name: 'revivable' });
+    remember(db, {
+      branch: 'revivable',
+      entity: 'file:revive.ts',
+      attribute: 'observed',
+      value: 'pre-abandon-fact'
+    });
+    abandonBranch(db, { name: 'revivable' });
+    gcBranches(db);
+  });
+
+  const restored = withAgentMemoryDb(repoRoot, false, (db) =>
+    restoreBranch(db, { name: 'revivable' })
+  );
+  assert.equal(restored.alreadyActive, false);
+  assert.equal(restored.state, 'active');
+  assert.equal(restored.unarchivedTransactions, 1);
+
+  withAgentMemoryDb(repoRoot, true, (db) => {
+    const branchRow = db
+      .prepare("SELECT state FROM branches WHERE name = 'revivable'")
+      .get() as { state: string };
+    assert.equal(branchRow.state, 'active');
+    const txArchived = (
+      db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM transactions t INNER JOIN branches b ON t.branch_id = b.id
+           WHERE b.name = ? AND t.archived = 1`
+        )
+        .get('revivable') as { n: number }
+    ).n;
+    assert.equal(txArchived, 0, 'all archived txs must be un-archived');
+    const recallResult = recall(db, { branch: 'revivable', entity: 'file:revive.ts' });
+    assert.equal(
+      recallResult.facts.length,
+      1,
+      'recall must surface the restored branch facts again'
+    );
+  });
+});
+
+test('restore is idempotent on an already-active branch', async () => {
+  const repoRoot = await makeRepo();
+  withAgentMemoryDb(repoRoot, false, (db) => {
+    createBranch(db, { name: 'already-active' });
+  });
+  const result = withAgentMemoryDb(repoRoot, false, (db) =>
+    restoreBranch(db, { name: 'already-active' })
+  );
+  assert.equal(result.alreadyActive, true);
+  assert.equal(result.unarchivedTransactions, 0);
+  assert.equal(result.state, 'active');
+});
+
+test('restore throws on non-existent branch', async () => {
+  const repoRoot = await makeRepo();
+  withAgentMemoryDb(repoRoot, false, (db) => {
+    assert.throws(() => restoreBranch(db, { name: 'never-existed' }), /branch not found/);
+  });
 });

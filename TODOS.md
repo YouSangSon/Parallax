@@ -1,4 +1,18 @@
-# TODOS
+# TODOS — Original Code-Indexer Product Roadmap
+
+> **Status (2026-04-30):** This is the *original* P0/P1/P2/P3/P4 product roadmap for the code-indexer side of Impact-Trace (entities, relations, adapters, contracts). It predates the agent memory layer.
+>
+> The agent memory layer has its own *Phase*-based progression (Phase 1+1.5+2+3+4 done) tracked in:
+> - [`docs/progress.ko.md`](docs/progress.ko.md) — daily developer log
+> - [`/CHANGELOG.md`](CHANGELOG.md) — Phase-grouped highlights
+> - [`docs/decisions.ko.md`](docs/decisions.ko.md) — cumulative ADR log (D-001..D-014)
+> - [`docs/phase4-handoff.ko.md`](docs/phase4-handoff.ko.md) — current next-session entry point
+>
+> Many P0 items below are already shipped (canonical entities/relations, snapshot isolation, git diff input, graph export, recursive traversal, oversized file skip). P1/P2 adapter pack is partially done: TS/JS/Markdown/Python/Go/Rust/Java/Kotlin/C#/C/C++/shell/YAML/JSON/TOML/Dockerfile/Makefile/Terraform/protobuf/GraphQL/CODEOWNERS adapters all have regex-MVP coverage. *Semantic adapter accuracy* (Tree-sitter / LSP / CodeQL) is still a gap.
+>
+> See [README.md](README.md) "현재 상태" section for a current-state snapshot.
+
+---
 
 ## P0: Entity Graph Core
 

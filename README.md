@@ -110,9 +110,12 @@ graph LR
 | 1 | facts/transactions/branches 스키마, 4 MCP 툴 + 4 CLI 명령 (`remember`, `recall`, `branch`, `trace`), 코드 관계 1급 시민 attribute 시드, 인덱서 듀얼 라이트 + evidence_snippet provenance, sqlite-vec 통합, embedding 파이프라인 (stub) + redact-then-embed 게이트 | ✅ 완료 |
 | 2 | Transformers.js + multilingual-e5-base ✅, schema v6 model-agnostic ✅, as_of_tx ✅, branch merge ✅, semantic recall (brute-force int8 cosine) ✅ | ✅ 완료 |
 | 3 | reflective consolidation (entity별 LLM 자동 요약, multi-provider stub/ollama/anthropic/openai), speculative branch GC (soft-delete via `transactions.archived`), schema v7, redact-then-prompt 게이트 + secret 패턴 확장 | ✅ 완료 |
+| 4 | reflect scaling cap (streaming iterate + per-entity bound), Profile API (`profileEntity` 3-bucket view), `factLifecycle` helper, supermemory selective adoption (P1/P4 거부, P2/P3-Expose/P6 채택), Skill packaging (`npx skills add`) | ✅ 완료 |
 
 자세한 사용 예시는 [docs/agent-memory-cookbook.ko.md](docs/agent-memory-cookbook.ko.md).
-Phase 3 설계 근거는 [docs/phase3-design.ko.md](docs/phase3-design.ko.md), 누적 결정 로그는 [docs/decisions.ko.md](docs/decisions.ko.md).
+Phase별 설계 근거: [Phase 3](docs/phase3-design.ko.md) · [Phase 4 핸드오프](docs/phase4-handoff.ko.md) · [supermemory adoption](docs/supermemory-adoption.ko.md).
+누적 결정 로그: [decisions.ko.md (D-001..D-014)](docs/decisions.ko.md).
+문서 navigation: [docs/README.md](docs/README.md).
 
 ## 요구 사항
 
@@ -187,7 +190,17 @@ impact-trace reflect       [--branch <name>] [--older-than-days 30] [--entity <i
                            [--model <provider:id>] [--agent <id>] [--dry-run]
 impact-trace branch        --abandon <name>
 impact-trace gc-branches   [--dry-run]
+
+# agent memory (Phase 4)
+impact-trace profile       --entity <id> [--branch <name>] [--k 50] [--as-of-tx <tx-id>]
 ```
+
+`profile` 명령은 한 entity의 정보를 *세 가지 분류*로 한 번에 반환합니다:
+- `staticFacts` — 인덱서가 만든 코드 구조 (imports, calls, depends_on, ...)
+- `dynamicFacts` — agent의 결정/관찰 (observed, verified, concern, ...)
+- `summaryFacts` — Phase 3 reflective consolidation 결과 (LLM 요약)
+
+이걸 *agent system prompt에 inject*하면 "이 엔티티에 대해 시스템이 알고 있는 것" 한 번에 전달됨. 자세한 패턴: [docs/agent-memory-cookbook.ko.md](docs/agent-memory-cookbook.ko.md).
 
 ### `init`
 
@@ -299,6 +312,7 @@ MVP에서 노출하는 tool은 하나입니다.
 | `impact_trace_reflect` | 오래된 facts를 entity별로 LLM이 요약해 summary fact로 승격합니다 (Phase 3). |
 | `impact_trace_abandon_branch` | branch state를 `abandoned`로 변경합니다 (Phase 3). main은 보호. |
 | `impact_trace_gc_branches` | abandoned branch의 transactions를 soft-delete archive 처리합니다 (Phase 3). |
+| `impact_trace_profile` | 한 entity의 facts를 staticFacts/dynamicFacts/summaryFacts 3-bucket으로 한 번에 반환합니다 (Phase 4). |
 
 agent memory 툴(`remember`/`branch`)은 DB에 쓰지만 모두 *현재 저장소의*
 `.impact-trace/impact.db` 안에서만 동작합니다. Obsidian export 같은 외부 시스템
@@ -457,14 +471,25 @@ npm audit --audit-level=high
 - [진행상황 index](docs/progress.md)
 - [한국어 진행상황](docs/progress.ko.md)
 
-설계 결정:
+**문서 인덱스:**
 
-- [Phase 3 설계 문서](docs/phase3-design.ko.md)
+- 📚 [docs/README.md](docs/README.md) — *모든 문서 navigation guide*. 어떤 문서를 언제 읽을지 우선순위.
+- 📜 [CHANGELOG.md](CHANGELOG.md) — Phase별 highlights 한눈에.
+
+**설계 결정 + Phase docs:**
+
+- [Phase 3 설계 문서](docs/phase3-design.ko.md) — schema v7, LLM provider abstraction, reflection, branch GC
 - [Phase 3 핸드오프 (이전 세션)](docs/phase3-handoff.ko.md)
-- [Phase 4 핸드오프 (다음 세션 진입점)](docs/phase4-handoff.ko.md)
-- [Architecture decisions log (D-001..D-012)](docs/decisions.ko.md)
+- [Phase 4 핸드오프 (다음 세션 진입점)](docs/phase4-handoff.ko.md) — 9개 후보 + D-013/D-014
+- [supermemory selective adoption](docs/supermemory-adoption.ko.md) — supermemoryai/supermemory에서 채택/거부 근거
+- [Architecture decisions log (D-001..D-014)](docs/decisions.ko.md) — 누적 ADR 로그
 - [Agent DB 탐색 노트](docs/agent-db-exploration.ko.md)
 - [Agent memory cookbook](docs/agent-memory-cookbook.ko.md)
+
+**Skill 패키징 (Phase 4):**
+
+- [skills/impact-trace/SKILL.md](skills/impact-trace/SKILL.md) — Claude Code 스킬 매니페스트
+- [skills/impact-trace/references/architecture.md](skills/impact-trace/references/architecture.md) — 깊은 architecture reference
 
 ## 기여
 

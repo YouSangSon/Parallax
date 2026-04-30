@@ -563,3 +563,65 @@ impact-trace gc-branches  # dry-run 확인 후
 ```
 
 자세한 설계 근거: [docs/phase3-design.ko.md](phase3-design.ko.md), 누적 결정 로그: [docs/decisions.ko.md](decisions.ko.md).
+
+### C.5 `profile` — 한 entity의 컨텍스트를 한 번에 (Phase 4)
+
+agent의 system prompt에 *"이 entity에 대해 시스템이 알고 있는 것"* 을 한 번에 inject할 때 사용.
+
+```bash
+# 기본 — main branch, k=50
+impact-trace profile --entity file:src/auth/session.ts
+
+# 응답:
+# {
+#   "entity": "file:src/auth/session.ts",
+#   "branch": "main",
+#   "staticFacts":  [{ attribute: "imports",   value: "file:src/db.ts", ... }, ...],
+#   "dynamicFacts": [{ attribute: "observed",  value: "compiled",       ... }, ...],
+#   "summaryFacts": [{ attribute: "reflection", value: "...LLM 요약...", ... }, ...]
+# }
+
+# 다른 branch에서 조회
+impact-trace profile --entity file:src/auth.ts --branch experiment-1
+
+# 시간여행 — 특정 tx 시점의 profile
+impact-trace profile --entity file:src/auth.ts --as-of-tx <tx-hex>
+
+# bucket 크기 제한
+impact-trace profile --entity file:src/auth.ts --k 10
+```
+
+**3-bucket 분류 규칙:**
+
+| Bucket | 조건 | 예시 |
+|---|---|---|
+| `staticFacts` | `attribute_defs.is_code_relation = 1` | `imports`, `calls`, `affects`, `depends_on` |
+| `dynamicFacts` | `is_code_relation = 0` AND `attribute != 'reflection'` | `observed`, `verified`, `concern`, ... |
+| `summaryFacts` | `attribute = 'reflection'` (Phase 3 reflective consolidation 결과) | LLM이 만든 요약 facts |
+
+**왜 3-bucket인가?** supermemory는 2-bucket (`static` + `dynamic`)이지만 우리 시스템은 *Phase 3에서 reflection을 1급 시민으로 갖고 있음*. agent가 "raw observation은 dynamic에서 보고, LLM 요약은 summary에서 본다"로 명확히 구분 가능.
+
+**성능 가이드:**
+- 한 entity의 facts 수가 cap (`--k`, default 50) 이내면 bucket별로 모두 채워짐.
+- cap 초과 시 *최신순 (ts DESC)* 으로 자르고 나머지는 노출되지 않음 (응답에 omitted count 표기 없음 — 필요하면 별도 follow-up).
+- archived transactions (Phase 3 GC된 것) 자동 제외.
+- redacted facts는 `'[REDACTED]'` 그대로 surface (privacy 일관성).
+
+**MCP에서의 사용:**
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "impact_trace_profile",
+    "arguments": {
+      "entity": "file:src/auth/session.ts",
+      "branch": "main",
+      "k": 30
+    }
+  }
+}
+```
+
+자세한 설계 근거: [docs/supermemory-adoption.ko.md](supermemory-adoption.ko.md) §2.B, [docs/decisions.ko.md](decisions.ko.md) D-013, D-014.

@@ -126,6 +126,15 @@ async function main(): Promise<void> {
       console.log(JSON.stringify(result, null, 2));
       return;
     }
+    const restoreName = parseOptionalArg(args, '--restore');
+    if (restoreName !== undefined) {
+      const { restoreBranch, withAgentMemoryDb } = await import('./index.js');
+      const result = withAgentMemoryDb(repoRoot, false, (db) =>
+        restoreBranch(db, { name: restoreName })
+      );
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
     const { createBranch, withAgentMemoryDb } = await import('./index.js');
     const name = parseRequiredArg(args, '--name');
     const from = parseOptionalArg(args, '--from');
@@ -166,6 +175,17 @@ async function main(): Promise<void> {
   }
 
   if (command === 'reflect') {
+    if (args.includes('--repair')) {
+      const { repairReflections } = await import('./index.js');
+      const branch = parseOptionalArg(args, '--branch');
+      const dryRun = args.includes('--dry-run') ? true : undefined;
+      const result = await repairReflections(repoRoot, {
+        ...(branch !== undefined ? { branch } : {}),
+        ...(dryRun !== undefined ? { dryRun } : {})
+      });
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
     const { reflectFacts } = await import('./index.js');
     const branch = parseOptionalArg(args, '--branch');
     const olderThanDays = parseIntegerArg(args, '--older-than-days');
@@ -294,7 +314,7 @@ function parsePositionals(args: string[]): string[] {
     '--entity', '--attribute', '--value', '--branch', '--agent', '--evidence-fact-ids',
     '--name', '--from', '--fact-id', '--k', '--op', '--as-of-tx',
     '--target', '--source', '--query', '--model',
-    '--older-than-days', '--abandon'
+    '--older-than-days', '--abandon', '--restore'
   ]);
   const positionals: string[] = [];
   for (let index = 0; index < args.length; index++) {
@@ -339,10 +359,12 @@ Agent memory:
                         [--as-of-tx <tx-id>] [--current-only]
   impact-trace branch   --name <name> [--from <name>]
   impact-trace branch   --abandon <name>
+  impact-trace branch   --restore <name>
   impact-trace merge    --target <branch> --source <branch> [--agent <id>]
   impact-trace reembed  [--model <hf-model>] [--all]
   impact-trace reflect  [--branch <name>] [--older-than-days 30] [--entity <id>]
                         [--model <provider:id>] [--agent <id>] [--dry-run]
+  impact-trace reflect  --repair [--branch <name>] [--dry-run]
   impact-trace gc-branches [--dry-run]
   impact-trace profile  --entity <id> [--branch <name>] [--k 50] [--as-of-tx <tx-id>]
   impact-trace trace    --fact-id <id> [--depth 5]

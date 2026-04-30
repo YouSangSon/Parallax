@@ -3,6 +3,7 @@
 > **상태:** 2026-04-30 작성 · branch `feat/supermemory-best-practices`
 > **선행:** [phase4-handoff.ko.md](phase4-handoff.ko.md), [decisions.ko.md](decisions.ko.md), [phase3-design.ko.md](phase3-design.ko.md) (ADR-disciplined design template)
 > **이 문서의 목적:** [supermemoryai/supermemory](https://github.com/supermemoryai/supermemory) 분석 후 *우리에게 가져올 만한* 패턴을 4-perspective 합의로 골라낸 결과 + 구현 design.
+> **English pair:** [supermemory-adoption.en.md](supermemory-adoption.en.md).
 
 ---
 

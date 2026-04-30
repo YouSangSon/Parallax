@@ -69,8 +69,11 @@
 | `impact-trace-plan.ko.md` | [`impact-trace-plan.en.md`](impact-trace-plan.en.md) |
 | `impact-trace-test-plan.ko.md` | [`impact-trace-test-plan.en.md`](impact-trace-test-plan.en.md) |
 | `indexing-model.ko.md` | [`indexing-model.en.md`](indexing-model.en.md) |
+| `decisions.ko.md` | [`decisions.en.md`](decisions.en.md) — *international audience priority* |
+| `phase4-handoff.ko.md` | [`phase4-handoff.en.md`](phase4-handoff.en.md) — *next-session entry point* |
+| `supermemory-adoption.ko.md` | [`supermemory-adoption.en.md`](supermemory-adoption.en.md) — *4-perspective consensus pattern reference* |
 
-Phase 3+4 신규 문서 (`phase3-design`, `phase3-handoff`, `phase4-handoff`, `decisions`, `agent-db-exploration`, `agent-memory-cookbook`, `supermemory-adoption`) 는 *현재 한국어 우선*. 영문 페어가 필요하면 follow-up. `/skills/impact-trace/SKILL.md`와 `references/architecture.md`는 영문 (Claude Code skill 표준).
+Phase 3 docs (`phase3-design`, `phase3-handoff`)와 `agent-db-exploration`, `agent-memory-cookbook`, `progress`는 *Korean only* — 영문 페어가 필요하면 follow-up. `/skills/impact-trace/SKILL.md`와 `references/architecture.md`는 영문 (Claude Code skill 표준). `/CHANGELOG.md`도 영문 (사용자 관점 release notes).
 
 ---
 

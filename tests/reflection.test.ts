@@ -417,3 +417,32 @@ test('repair throws on unknown branch', async () => {
     /branch not found/
   );
 });
+
+test('repair is idempotent — second call sees no orphan and writes nothing', async () => {
+  // F6: the repair contract claims INSERT OR IGNORE makes a second pass
+  // safe. The existing 'no-op on healthy reflections' test proves the
+  // detection-side path (zero orphans). This test proves the write-side
+  // path (post-repair state is also undetectable as orphan, so the
+  // INSERT OR IGNORE branch is actually exercised). Regression to plain
+  // INSERT would surface as a UNIQUE constraint crash on the second
+  // repair call.
+  const repoRoot = await makeRepo();
+  const { summaryFactId } = await buildOrphanReflection(repoRoot);
+
+  const first = await repairReflections(repoRoot);
+  assert.equal(first.scanned, 1);
+  assert.equal(first.repaired, 1);
+
+  const second = await repairReflections(repoRoot);
+  assert.equal(second.scanned, 0, 'second repair must find zero orphans');
+  assert.equal(second.repaired, 0);
+
+  withAgentMemoryDb(repoRoot, true, (db) => {
+    const auditCount = (
+      db
+        .prepare('SELECT COUNT(*) AS n FROM reflections WHERE summary_fact_id = ?')
+        .get(summaryFactId) as { n: number }
+    ).n;
+    assert.equal(auditCount, 1, 'audit row count must remain 1 after two repair calls');
+  });
+});

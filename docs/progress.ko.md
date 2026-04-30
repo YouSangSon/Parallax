@@ -64,6 +64,9 @@ remember·recall·branch·trace·retract 동작이 노출됐다. Phase 2 (실제
 | 2026-04-30 | Phase 4 P2 | reflect --repair — orphan summary fact 보정 sweep (`repairReflections`) + CLI/MCP wiring + 4 tests |
 | 2026-04-30 | Phase 4 P3 | branch --restore — abandoned → active + tx unarchive (`restoreBranch`) + CLI/MCP wiring + 3 tests |
 | 2026-04-30 | 결정 기록 | docs/decisions.ko.md에 D-015 (reflect --repair) + D-016 (branch --restore) 추가 |
+| 2026-04-30 | PR #1·#2 외부-시점 review | architect/security/typescript/code-reviewer 4-agent 병렬 review — invariant 0 위반, F1·F2·F3·F4·F6 (1 MEDIUM type + 4 HIGH 테스트 갭) fix-now, F5 (prompt footer) follow-up issue #3로 이동. main 76→97 tests로 진척, PR #1·#2 모두 rebase merge |
+| 2026-05-01 | Phase 4 P4 | gc-branches에 `--max-age N` flag — `branches.head_tx_id`의 `transactions.ts` (NULL일 시 `branches.created_at`)이 `now − N일` 이전인 active non-main branch를 *동일 패스에서* abandoned로 자동 전환 후 archive sweep까지 진행. 기본값 없음 (D-017 explicit-only). +7 tests = 104 total |
+| 2026-05-01 | 결정 기록 | docs/decisions.ko.md에 D-017 (auto-abandon piggybacks on gc-branches --max-age) 추가 |
 
 ## 진행 중
 

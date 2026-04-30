@@ -13,6 +13,15 @@ export interface AbandonBranchResult {
 
 export interface GcBranchesOptions {
   dryRun?: boolean;
+  /**
+   * When set, the gc pass first auto-abandons every active non-main
+   * branch whose most recent activity is older than `maxAgeDays` days.
+   * "Most recent activity" is `transactions.ts` of `branches.head_tx_id`,
+   * falling back to `branches.created_at` for branches that never
+   * received a commit. Required to be a non-negative integer when
+   * provided; no default — auto-abandon is opt-in per ADR D-017.
+   */
+  maxAgeDays?: number;
 }
 
 export interface RestoreBranchInput {
@@ -31,11 +40,22 @@ export interface GcBranchSummary {
   name: string;
   branchId: string;
   archivedTransactions: number;
+  /**
+   * True when this branch was auto-abandoned by the same gc pass
+   * (active → abandoned because of `maxAgeDays`). False when the
+   * branch was already abandoned before the pass started.
+   */
+  autoAbandoned: boolean;
 }
 
 export interface GcBranchesResult {
   scanned: number;
   archivedTransactions: number;
+  /**
+   * Count of branches that were auto-abandoned in this pass.
+   * Always 0 when `maxAgeDays` was not provided.
+   */
+  autoAbandoned: number;
   branches: GcBranchSummary[];
   dryRun: boolean;
 }
@@ -101,20 +121,63 @@ export function abandonBranch(db: Db, input: AbandonBranchInput): AbandonBranchR
  * referenced by other (active) branches. Setting transactions.archived
  * to 1 is what hides them from recall().
  *
- * dryRun reports what would be archived without writing. Useful for
- * estimating impact before committing.
+ * Phase 4 P4: when `maxAgeDays` is provided, the pass first
+ * auto-abandons every active non-main branch whose most-recent activity
+ * timestamp (head_tx_id's transactions.ts, or branches.created_at when
+ * head_tx_id is NULL) is older than the cutoff `now - maxAgeDays days`.
+ * Auto-abandoned branches then participate in the same archive sweep,
+ * so a single call atomically performs `active → abandoned → archived`
+ * for the qualifying branches. The original behaviour without
+ * `maxAgeDays` is unchanged (backward compatible).
+ *
+ * dryRun reports what would be auto-abandoned and archived without
+ * writing. Useful for estimating impact before committing.
+ *
+ * Decision rationale: D-017 (auto-abandon piggybacks on gc; explicit
+ * `maxAgeDays` flag with no default; main is always protected;
+ * non-active non-abandoned branches are silently skipped).
  */
 export function gcBranches(db: Db, options: GcBranchesOptions = {}): GcBranchesResult {
   const dryRun = options.dryRun === true;
-  const branches = db
-    .prepare(
-      "SELECT id, name, state FROM branches WHERE state = 'abandoned' AND name != ?"
-    )
+  const { maxAgeDays } = options;
+  if (maxAgeDays !== undefined && (!Number.isInteger(maxAgeDays) || maxAgeDays < 0)) {
+    throw new Error(
+      `gcBranches: maxAgeDays must be a non-negative integer; got ${String(maxAgeDays)}`
+    );
+  }
+
+  const autoAbandonedIds = new Set<string>();
+  let autoAbandonCandidates: BranchRow[] = [];
+  if (maxAgeDays !== undefined) {
+    const cutoff = new Date(Date.now() - maxAgeDays * MS_PER_DAY).toISOString();
+    autoAbandonCandidates = db
+      .prepare(
+        `SELECT b.id, b.name, b.state
+         FROM branches b
+         LEFT JOIN transactions t ON b.head_tx_id = t.id
+         WHERE b.state = 'active'
+           AND b.name != ?
+           AND COALESCE(t.ts, b.created_at) < ?`
+      )
+      .all(PROTECTED_BRANCH, cutoff) as unknown as BranchRow[];
+    for (const candidate of autoAbandonCandidates) {
+      autoAbandonedIds.add(candidate.id);
+    }
+  }
+
+  const realAbandoned = db
+    .prepare("SELECT id, name, state FROM branches WHERE state = 'abandoned' AND name != ?")
     .all(PROTECTED_BRANCH) as unknown as BranchRow[];
+
+  const branchById = new Map<string, BranchRow>();
+  for (const branch of realAbandoned) branchById.set(branch.id, branch);
+  for (const candidate of autoAbandonCandidates) branchById.set(candidate.id, candidate);
+  const branches = Array.from(branchById.values());
 
   const result: GcBranchesResult = {
     scanned: branches.length,
     archivedTransactions: 0,
+    autoAbandoned: autoAbandonCandidates.length,
     branches: [],
     dryRun
   };
@@ -126,6 +189,13 @@ export function gcBranches(db: Db, options: GcBranchesOptions = {}): GcBranchesR
     db.exec('BEGIN IMMEDIATE');
   }
   try {
+    if (!dryRun && autoAbandonCandidates.length > 0) {
+      const promote = db.prepare("UPDATE branches SET state = 'abandoned' WHERE id = ?");
+      for (const candidate of autoAbandonCandidates) {
+        promote.run(candidate.id);
+      }
+    }
+
     const countStmt = db.prepare(
       'SELECT COUNT(*) AS n FROM transactions WHERE branch_id = ? AND archived = 0'
     );
@@ -142,7 +212,8 @@ export function gcBranches(db: Db, options: GcBranchesOptions = {}): GcBranchesR
       result.branches.push({
         name: branch.name,
         branchId: branch.id,
-        archivedTransactions
+        archivedTransactions,
+        autoAbandoned: autoAbandonedIds.has(branch.id)
       });
     }
     if (!dryRun) {
@@ -156,6 +227,8 @@ export function gcBranches(db: Db, options: GcBranchesOptions = {}): GcBranchesR
   }
   return result;
 }
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /**
  * Restore an abandoned branch. The reverse path of `abandonBranch` +

@@ -25,6 +25,8 @@
 | [D-012](#d-012-no-llm-or-embedding-sdks-fetch-only) | no LLM or embedding SDKs (fetch only) | P3 | 2026-04-29 |
 | [D-013](#d-013-lifecycle-binary-derives-from-is_code_relation-no-new-column) | lifecycle binary derives from is_code_relation; no new column | P4 | 2026-04-30 |
 | [D-014](#d-014-profile-api-is-built-on-top-of-recall-not-merged-into-it) | profile API is built on top of recall, not merged into it | P4 | 2026-04-30 |
+| [D-015](#d-015-reflect---repair-as-a-separate-trigger) | `reflect --repair` as a separate trigger | P4 | 2026-04-30 |
+| [D-016](#d-016-branch---restore-restores-state-and-un-archives-transactions) | `branch --restore` restores state and un-archives transactions | P4 | 2026-04-30 |
 
 ---
 
@@ -260,6 +262,38 @@
 **결과/위험:** profile은 자체 SQL을 갖되 *recall과 같은 invariants*를 적용 — `t.archived = 0` 필터, branch scope, redacted facts surface as `[REDACTED]`. 만약 recall에 새 invariant이 추가되면 profile도 함께 갱신해야 함 (코드베이스 검색 시 두 곳 모두 손봐야 함).
 
 **관련 commit:** Phase 4 supermemory-best-practices branch (`src/profile.ts`).
+
+---
+
+## D-015: `reflect --repair` as a separate trigger
+
+**결정:** orphan summary fact (Phase 3 SAVEPOINT atomicity 갭으로 audit row 또는 provenance kind가 누락된 reflection fact)를 보정하는 sweep을 *별도 명령*으로 분리. `impact-trace reflect --repair` (CLI) + `impact_trace_repair_reflections` (MCP).
+
+**맥락:** Phase 3 architect review가 발견한 갭 — `remember()`가 자기 BEGIN/COMMIT으로 commit한 후 SAVEPOINT 안에서 provenance UPDATE + reflections INSERT. 그 사이 crash 시 summary fact만 남고 audit/edge가 없는 *orphan*이 됨. 회복 path 필요.
+
+**대안:**
+- (b) 매 reflect 호출 시 자동 repair — 시작마다 추가 비용. 일반 reflect와 격리 안 됨.
+- (c) 별도 `repair-reflections` 명령 — CLI 표면 분산.
+
+**결과/위험:** 사용자가 repair를 안 부르면 orphan 누적. 대응: cookbook에 권장 주기 명시 (월 1회 또는 reflect 직후). 동시 두 repair 프로세스: SAVEPOINT가 row-level contention만 처리하므로 정책 결정 필요 — 첫 버전은 *idempotent INSERT OR IGNORE*로 무해.
+
+**관련 commit:** Phase 4 P2 `feat/phase4-p2-p3-repair-restore` branch.
+
+---
+
+## D-016: `branch --restore` restores state and un-archives transactions
+
+**결정:** abandoned branch를 복구하면 *동시에* `branches.state = 'active'`로 변경하고 `transactions.archived = 0` 회수. 한 명령으로 mental model "복구하면 보인다"를 만족.
+
+**맥락:** soft-delete 정책 D-011은 *되돌릴 수 있다*가 핵심 가치인데 Phase 3에선 abandon→archive 한 방향만 있었음. branch state만 active로 되돌리고 archived tx는 그대로면 *recall이 facts를 surface 안 함* — 사용자에게는 "복구가 복구가 아닌" 상태.
+
+**대안:**
+- (i) state만 — 위 mental model 위반.
+- (iii) 별도 `gc-branches --un` 명령 — 두 단계라 사용자 실수 surface 늘어남.
+
+**결과/위험:** restore 후 facts가 즉시 다시 surface — abandoned 동안 발생한 다른 branch의 활동과 *content-hash로* 같은 fact가 있다면 dedup된 채로 그대로. retire의 "사라짐"은 logical만이고 *fact 자체는 항상 살아있음* (D-011 재확인).
+
+**관련 commit:** Phase 4 P3 `feat/phase4-p2-p3-repair-restore` branch.
 
 ---
 

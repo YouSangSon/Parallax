@@ -3,6 +3,7 @@
 > **목적:** *새 세션*에서 Phase 4를 시작하는 Claude/Codex/사람이 *지금까지 무엇이 있고 어디서 시작할지* 5분 만에 파악할 수 있게 한다.
 > **작성:** 2026-04-29 — Phase 3 완료 + push 직후
 > **참고:** [phase3-design.ko.md](phase3-design.ko.md) (Phase 3 설계) · [decisions.ko.md](decisions.ko.md) (D-001..D-012 누적 결정) · [agent-memory-cookbook.ko.md](agent-memory-cookbook.ko.md) (사용 가이드)
+> **English pair:** [phase4-handoff.en.md](phase4-handoff.en.md).
 
 ---
 

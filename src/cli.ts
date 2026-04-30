@@ -139,6 +139,22 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === 'profile') {
+    const { profileEntity } = await import('./index.js');
+    const entity = parseRequiredArg(args, '--entity');
+    const branch = parseOptionalArg(args, '--branch');
+    const k = parseIntegerArg(args, '--k');
+    const asOfTx = parseOptionalArg(args, '--as-of-tx');
+    const result = await profileEntity(repoRoot, {
+      entity,
+      ...(branch !== undefined ? { branch } : {}),
+      ...(k !== undefined ? { k } : {}),
+      ...(asOfTx !== undefined ? { asOfTx } : {})
+    });
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
   if (command === 'gc-branches') {
     const { gcBranches, withAgentMemoryDb } = await import('./index.js');
     const dryRun = args.includes('--dry-run') ? true : undefined;
@@ -328,6 +344,7 @@ Agent memory:
   impact-trace reflect  [--branch <name>] [--older-than-days 30] [--entity <id>]
                         [--model <provider:id>] [--agent <id>] [--dry-run]
   impact-trace gc-branches [--dry-run]
+  impact-trace profile  --entity <id> [--branch <name>] [--k 50] [--as-of-tx <tx-id>]
   impact-trace trace    --fact-id <id> [--depth 5]
 `);
 }

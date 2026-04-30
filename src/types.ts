@@ -177,6 +177,20 @@ export type GraphExport = {
 
 export type AttributeValueType = 'text' | 'entity_ref' | 'json' | 'int' | 'float';
 
+/**
+ * Lifecycle of a fact derived from its attribute. Static facts come from
+ * the indexer (code relations like imports, calls, depends_on, affects)
+ * and persist as long as the underlying code does. Dynamic facts come
+ * from agent activity (observed, verified, concern, ...) and may be
+ * superseded, retracted, or summarised over time.
+ *
+ * The split is recorded in attribute_defs.is_code_relation; this type
+ * is the symbolic surface for that binary so downstream code (Profile
+ * API, CLI output) can group facts without re-deriving the rule. See
+ * D-013 in docs/decisions.ko.md for the design rationale.
+ */
+export type Lifecycle = 'static' | 'dynamic';
+
 export interface AttributeDef {
   name: string;
   valueType: AttributeValueType;

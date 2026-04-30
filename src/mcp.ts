@@ -6,6 +6,7 @@ import { createBranch, mergeBranches, recallOnRepo, rememberOnRepo, trace } from
 import type { RememberValue } from './agent_memory.js';
 import { abandonBranch, gcBranches } from './branch_gc.js';
 import { reflectFacts } from './reflection.js';
+import { profileEntity } from './profile.js';
 import { normalizeRepoRoot } from './security.js';
 import { getRepoId, latestCompletedIndexRun, openDatabase } from './store.js';
 import type { GraphExportFormat } from './types.js';
@@ -271,6 +272,37 @@ export function createMcpServer(context: McpContext): McpServer {
       const result = withWritableDb(context, (db) =>
         gcBranches(db, { ...(dryRun !== undefined ? { dryRun } : {}) })
       );
+      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+    }
+  );
+
+  server.registerTool(
+    'impact_trace_profile',
+    {
+      title: 'Profile an entity',
+      description:
+        'Aggregate facts about an entity into a three-bucket profile (staticFacts from indexer code relations, dynamicFacts from agent activity, summaryFacts from Phase 3 reflective consolidation). Branch-scoped (default main); archived transactions excluded. Use as an agent prompt-context primer to inject "what does the system know about X" in one call.',
+      inputSchema: {
+        entity: z.string().min(1),
+        branch: z.string().optional(),
+        k: z.number().int().min(1).max(200).optional(),
+        asOfTx: z.string().optional()
+      },
+      annotations: {
+        title: 'Profile an entity',
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      }
+    },
+    async ({ entity, branch, k, asOfTx }) => {
+      const result = await profileEntity(context.repoRoot, {
+        entity,
+        ...(branch !== undefined ? { branch } : {}),
+        ...(k !== undefined ? { k } : {}),
+        ...(asOfTx !== undefined ? { asOfTx } : {})
+      });
       return { content: [{ type: 'text', text: JSON.stringify(result) }] };
     }
   );

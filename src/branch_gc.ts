@@ -183,7 +183,7 @@ export function restoreBranch(db: Db, input: RestoreBranchInput): RestoreBranchR
     if (!branch) {
       throw new Error(`branch not found: ${input.name}`);
     }
-    if (branch.state !== 'abandoned') {
+    if (branch.state === 'active') {
       db.exec('COMMIT');
       return {
         branchId: branch.id,
@@ -192,6 +192,16 @@ export function restoreBranch(db: Db, input: RestoreBranchInput): RestoreBranchR
         unarchivedTransactions: 0,
         alreadyActive: true
       };
+    }
+    if (branch.state !== 'abandoned') {
+      // Future-proof: only 'active' (no-op) and 'abandoned' (restore)
+      // are valid restore inputs. Any other state — currently only
+      // reachable if a future change introduces e.g. 'merged' — must
+      // surface an explicit error rather than have RestoreBranchResult
+      // lie that state is now 'active'.
+      throw new Error(
+        `cannot restore branch '${input.name}' from state '${branch.state}' — only 'abandoned' or already-'active' branches are restorable`
+      );
     }
 
     db.prepare("UPDATE branches SET state = 'active' WHERE id = ?").run(branch.id);

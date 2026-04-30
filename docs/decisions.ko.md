@@ -27,6 +27,7 @@
 | [D-014](#d-014-profile-api-is-built-on-top-of-recall-not-merged-into-it) | profile API is built on top of recall, not merged into it | P4 | 2026-04-30 |
 | [D-015](#d-015-reflect---repair-as-a-separate-trigger) | `reflect --repair` as a separate trigger | P4 | 2026-04-30 |
 | [D-016](#d-016-branch---restore-restores-state-and-un-archives-transactions) | `branch --restore` restores state and un-archives transactions | P4 | 2026-04-30 |
+| [D-017](#d-017-time-based-auto-abandon-piggybacks-on-gc-branches---max-age) | time-based auto-abandon piggybacks on `gc-branches --max-age` | P4 | 2026-05-01 |
 
 ---
 
@@ -294,6 +295,24 @@
 **결과/위험:** restore 후 facts가 즉시 다시 surface — abandoned 동안 발생한 다른 branch의 활동과 *content-hash로* 같은 fact가 있다면 dedup된 채로 그대로. retire의 "사라짐"은 logical만이고 *fact 자체는 항상 살아있음* (D-011 재확인).
 
 **관련 commit:** Phase 4 P3 `feat/phase4-p2-p3-repair-restore` branch.
+
+---
+
+## D-017: time-based auto-abandon piggybacks on `gc-branches --max-age`
+
+**결정:** 시간 기반 자동 abandon은 *별도 명령*이 아닌 기존 `gc-branches`의 *opt-in flag* `--max-age N`으로 구현. flag 없으면 기존 archive-only sweep과 동일 (backward compat). flag가 있으면 1-패스로 active→abandoned→archived까지 진행. 기준값은 `branches.head_tx_id`의 `transactions.ts`, NULL일 때 `branches.created_at`로 fallback. `main`은 항상 보호. `'merged'` 같은 미래의 다른 상태는 *silently skip* (auto-abandon 후보에서 제외하되 throw하지 않음).
+
+**맥락:** D-011 soft-delete의 핵심 가치는 *오래된 speculative branch가 누적되지 않도록 정리*. 사용자가 `branch --abandon`을 매번 명시적으로 부르는 비용을 줄이려면 시간 기반 자동화가 필요. 그러나 D-009 (no daemon) 정체성을 지키려면 자동 백그라운드 실행은 거부 — 사용자가 *명시 명령*으로 trigger해야 함. `gc-branches`가 이미 해당 의도("정리"이니까)를 갖는 trigger이므로 `--max-age` opt-in이 자연스러움.
+
+**대안:**
+- (B) 새 `auto-abandon` 명령 + 별도 `gc-branches` — 두 단계 분리되어 사용자가 둘을 chain해야 함. 명확하지만 호출 비용 ×2.
+- (C) `branch --auto-abandon` — 기존 single-name 명령군에 sweep semantics 끼움. 어색.
+- (β) `--max-age` 기본값 60일 — UX 편의지만 사용자가 의도하지 않은 큰 sweep 위험.
+- (γ) env var 기본값 — 다른 reembed/reflect와 일관성 있으나 *암묵적 정책*은 destructive op에 부적절.
+
+**결과/위험:** 사용자가 30일/60일/90일 같은 자체 정책을 `--max-age`로 명시 — 잘못된 기본 정책으로 의도치 않게 abandon하는 사고 방지. flag 없는 기존 `gc-branches` 호출자는 0 영향. `branches.created_at` fallback이 `'main'`의 SQLite-format ts와 ISO 8601이 섞여있을 수 있으나 main은 PROTECTED_BRANCH로 항상 제외되므로 비교 안전. 미래에 `'merged'` 상태가 도입되면 silent skip — 별도 ADR이 그 처리를 결정.
+
+**관련 commit:** Phase 4 P4 `feat/phase4-p4-auto-abandon` branch.
 
 ---
 

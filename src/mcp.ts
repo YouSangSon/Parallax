@@ -256,9 +256,10 @@ export function createMcpServer(context: McpContext): McpServer {
     {
       title: 'GC abandoned branches',
       description:
-        'Archive transactions of all abandoned branches so recall and recallSemantic stop surfacing their facts. Facts themselves are never deleted (content-addressable). dryRun reports without writing.',
+        'Archive transactions of all abandoned branches so recall and recallSemantic stop surfacing their facts. Facts themselves are never deleted (content-addressable). dryRun reports without writing. When maxAgeDays is set, the pass first auto-abandons every active non-main branch with no activity newer than now − maxAgeDays days (Phase 4 P4 / ADR D-017).',
       inputSchema: {
-        dryRun: z.boolean().optional()
+        dryRun: z.boolean().optional(),
+        maxAgeDays: z.number().int().min(0).optional()
       },
       annotations: {
         title: 'GC abandoned branches',
@@ -268,9 +269,12 @@ export function createMcpServer(context: McpContext): McpServer {
         openWorldHint: false
       }
     },
-    async ({ dryRun }) => {
+    async ({ dryRun, maxAgeDays }) => {
       const result = withWritableDb(context, (db) =>
-        gcBranches(db, { ...(dryRun !== undefined ? { dryRun } : {}) })
+        gcBranches(db, {
+          ...(dryRun !== undefined ? { dryRun } : {}),
+          ...(maxAgeDays !== undefined ? { maxAgeDays } : {})
+        })
       );
       return { content: [{ type: 'text', text: JSON.stringify(result) }] };
     }

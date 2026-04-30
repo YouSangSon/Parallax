@@ -167,8 +167,20 @@ async function main(): Promise<void> {
   if (command === 'gc-branches') {
     const { gcBranches, withAgentMemoryDb } = await import('./index.js');
     const dryRun = args.includes('--dry-run') ? true : undefined;
+    const maxAgeRaw = parseOptionalArg(args, '--max-age');
+    let maxAgeDays: number | undefined;
+    if (maxAgeRaw !== undefined) {
+      const parsed = Number.parseInt(maxAgeRaw, 10);
+      if (!Number.isInteger(parsed) || parsed < 0 || String(parsed) !== maxAgeRaw) {
+        throw new Error(`gc-branches --max-age must be a non-negative integer; got '${maxAgeRaw}'`);
+      }
+      maxAgeDays = parsed;
+    }
     const result = withAgentMemoryDb(repoRoot, false, (db) =>
-      gcBranches(db, { ...(dryRun !== undefined ? { dryRun } : {}) })
+      gcBranches(db, {
+        ...(dryRun !== undefined ? { dryRun } : {}),
+        ...(maxAgeDays !== undefined ? { maxAgeDays } : {})
+      })
     );
     console.log(JSON.stringify(result, null, 2));
     return;
@@ -314,7 +326,7 @@ function parsePositionals(args: string[]): string[] {
     '--entity', '--attribute', '--value', '--branch', '--agent', '--evidence-fact-ids',
     '--name', '--from', '--fact-id', '--k', '--op', '--as-of-tx',
     '--target', '--source', '--query', '--model',
-    '--older-than-days', '--abandon', '--restore'
+    '--older-than-days', '--abandon', '--restore', '--max-age'
   ]);
   const positionals: string[] = [];
   for (let index = 0; index < args.length; index++) {
@@ -365,7 +377,7 @@ Agent memory:
   impact-trace reflect  [--branch <name>] [--older-than-days 30] [--entity <id>]
                         [--model <provider:id>] [--agent <id>] [--dry-run]
   impact-trace reflect  --repair [--branch <name>] [--dry-run]
-  impact-trace gc-branches [--dry-run]
+  impact-trace gc-branches [--dry-run] [--max-age <days>]
   impact-trace profile  --entity <id> [--branch <name>] [--k 50] [--as-of-tx <tx-id>]
   impact-trace trace    --fact-id <id> [--depth 5]
 `);

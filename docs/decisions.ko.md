@@ -28,6 +28,7 @@
 | [D-015](#d-015-reflect---repair-as-a-separate-trigger) | `reflect --repair` as a separate trigger | P4 | 2026-04-30 |
 | [D-016](#d-016-branch---restore-restores-state-and-un-archives-transactions) | `branch --restore` restores state and un-archives transactions | P4 | 2026-04-30 |
 | [D-017](#d-017-time-based-auto-abandon-piggybacks-on-gc-branches---max-age) | time-based auto-abandon piggybacks on `gc-branches --max-age` | P4 | 2026-05-01 |
+| [D-018](#d-018-sqlite-vec-ann-with-per-model-vec0-tables-lazy-create-and-brute-force-fallback) | sqlite-vec ANN with per-model vec0 tables, lazy create, brute-force fallback | P4 | 2026-05-01 |
 
 ---
 
@@ -313,6 +314,26 @@
 **결과/위험:** 사용자가 30일/60일/90일 같은 자체 정책을 `--max-age`로 명시 — 잘못된 기본 정책으로 의도치 않게 abandon하는 사고 방지. flag 없는 기존 `gc-branches` 호출자는 0 영향. `branches.created_at` fallback이 `'main'`의 SQLite-format ts와 ISO 8601이 섞여있을 수 있으나 main은 PROTECTED_BRANCH로 항상 제외되므로 비교 안전. 미래에 `'merged'` 상태가 도입되면 silent skip — 별도 ADR이 그 처리를 결정.
 
 **관련 commit:** Phase 4 P4 `feat/phase4-p4-auto-abandon` branch.
+
+---
+
+## D-018: sqlite-vec ANN with per-model vec0 tables, lazy create, brute-force fallback
+
+**결정:** 의미 검색(`recallSemantic`)을 sqlite-vec virtual table로 가속. (a) **per-model vec0 테이블** `vec_facts_<model_slug>(fact_id TEXT PK, embedding int8[<dim>])` — 모델마다 dim이 다르므로 single virtual table에 max-dim padding은 storage 낭비. (b) **lazy 생성** — 첫 write 시점에 `CREATE VIRTUAL TABLE IF NOT EXISTS`. (c) **manual backfill + automatic fallback hybrid** — 사용자가 `reindex-vec` CLI로 전체 백필; 그러나 vec table이 없거나 sqlite-vec 확장 로드에 실패하면 *조용히* JS-side brute-force int8 dot product로 fallback. (d) **int8[N]** 형식 유지 (기존 `fact_embeddings.vector` 와 storage parity). (e) **silent fallback on extension load failure** — 기존 caller 회귀 0.
+
+**맥락:** D-007 multi-model + D-001 local-first가 ANN 설계 공간을 좁힘. sqlite-vec dep는 이미 in (`^0.1.9`); 그러나 한 번도 wiring되지 않아 `loadVectorExtension` 함수가 export되었으나 호출 사이트가 0이었음 (`recallSemantic`은 모든 행을 SELECT 후 JS dot product). 1만 행 이상에서 brute-force는 O(N) latency가 사용자 인지 가능 수준. `recallSemantic` 시그니처 호환성 + multi-model 격리가 동시 만족되어야 함.
+
+**대안:**
+- (b1) v8 마이그레이션에서 *기존 모델별로* vec table 사전 생성 — 알려진 model이 없으면 의미 없음, lazy가 자연스러움.
+- (b2) 첫 db open 시 모든 (model, dim) 그룹 자동 backfill — *blocking first open* 발생 (수만 row × insert latency).
+- (c1) explicit reindex만, fallback 없음 — 기존 caller가 성능 회귀 또는 깨짐.
+- (1) single virtual table + model 컬럼 + max-dim padding — 768 dim + 64 dim 혼재 시 12배 storage 낭비.
+- (2) float[N] — 정확도 약간 ↑, storage 4배.
+- (3) bit[N] — 속도 ↑↑, 정확도 약간 ↓ (binary quantization). 추후 별도 optimization.
+
+**결과/위험:** `vec0`는 `INSERT OR REPLACE`를 지원 *안 함* — `DELETE WHERE fact_id = ? + INSERT` 패턴으로 idempotent upsert 구현. raw 768-byte buffer가 vec0에 의해 자동으로 float32 (768/4=192) 인식되는 함정 — `vec_int8(?)` 명시 cast 필수. ANN과 archived/branch 필터 조합: vec0 MATCH는 *전체 인덱스에서 top-k*만 — post-filter로 archived row가 drop되면 결과 부족 가능 → `k * 5` over-fetch (min 20)로 보완. 충분한 k가 안 나오면 LIMIT k 미달이지만 false-positive는 0. 향후 sqlite-vec API 변경 또는 native binary 호환성 issue → silent fallback이 차단막.
+
+**관련 commit:** Phase 4 P5 `feat/phase4-p5-sqlite-vec-ann` branch.
 
 ---
 

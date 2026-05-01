@@ -1,4 +1,5 @@
-export { createBranch, factLifecycle, mergeBranches, recall, recallOnRepo, recallSemantic, reembedFacts, remember, rememberOnRepo, trace, withAgentMemoryDb } from './agent_memory.js';
+export { createBranch, factLifecycle, mergeBranches, recall, recallOnRepo, recallSemantic, reembedFacts, reindexVec, reindexVecOnRepo, remember, rememberOnRepo, trace, withAgentMemoryDb } from './agent_memory.js';
+export type { ReindexVecOptions, ReindexVecResult } from './agent_memory.js';
 export type {
   BranchInput,
   BranchResult,
@@ -46,7 +47,13 @@ export type {
   RestoreBranchResult
 } from './branch_gc.js';
 export { redactSecrets, resolveInsideRoot } from './security.js';
-export { loadVectorExtension } from './store.js';
+export {
+  ensureVecTable,
+  hasVecTable,
+  isVectorExtensionLoaded,
+  loadVectorExtension,
+  vecTableName
+} from './store.js';
 export type {
   AffectedFile,
   AdapterUsage,

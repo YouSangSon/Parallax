@@ -48,7 +48,70 @@ export function openDatabase(repoRoot: string, options: OpenDatabaseOptions = {}
     db.exec('PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;');
     migrate(db);
   }
+  // Phase 4 P5 / ADR D-018: try to load sqlite-vec for ANN-accelerated
+  // semantic recall. On failure (extension missing / arch mismatch),
+  // recallSemantic silently falls back to the brute-force int8 path so
+  // existing callers are unaffected.
+  vectorExtensionState.set(db, loadVectorExtension(db));
   return db;
+}
+
+// Track per-handle whether sqlite-vec successfully loaded. WeakMap so
+// the entry is GCed alongside the db handle.
+const vectorExtensionState = new WeakMap<Db, boolean>();
+
+export function isVectorExtensionLoaded(db: Db): boolean {
+  return vectorExtensionState.get(db) === true;
+}
+
+const VEC_TABLE_PREFIX = 'vec_facts_';
+
+/**
+ * Map a model identifier (e.g. 'Xenova/multilingual-e5-base') to a
+ * SQL-safe per-model vec0 table name. Lower-cased and non-alphanumeric
+ * characters become underscores so the result is a valid identifier.
+ */
+export function vecTableName(model: string): string {
+  return VEC_TABLE_PREFIX + model.toLowerCase().replace(/[^a-z0-9]/g, '_');
+}
+
+/**
+ * Lazily create a per-model vec0 virtual table. Called the first time
+ * we write an embedding for a given model on a given db handle. Returns
+ * false when the sqlite-vec extension is not available, when the model
+ * name fails the safe-identifier guard, or when CREATE itself errors —
+ * dual-write skips the vec INSERT and recallSemantic stays in
+ * brute-force mode for that model. ADR D-018 (D2 lazy creation).
+ */
+export function ensureVecTable(db: Db, model: string, dim: number): boolean {
+  if (!isVectorExtensionLoaded(db)) return false;
+  if (!Number.isInteger(dim) || dim <= 0 || dim > 4096) return false;
+  const tableName = vecTableName(model);
+  if (tableName === VEC_TABLE_PREFIX) return false;
+  try {
+    db.exec(
+      `CREATE VIRTUAL TABLE IF NOT EXISTS ${tableName} USING vec0(
+         fact_id TEXT PRIMARY KEY,
+         embedding int8[${dim}]
+       )`
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Probe whether a vec0 table exists for the given model on this db.
+ * Used by recallSemantic to choose the ANN path vs the brute-force
+ * fallback for a given query. Cheap (single sqlite_master lookup).
+ */
+export function hasVecTable(db: Db, model: string): boolean {
+  if (!isVectorExtensionLoaded(db)) return false;
+  const row = db
+    .prepare("SELECT 1 AS one FROM sqlite_master WHERE type = 'table' AND name = ?")
+    .get(vecTableName(model)) as { one: number } | undefined;
+  return row !== undefined;
 }
 
 function pathExists(targetPath: string): boolean {

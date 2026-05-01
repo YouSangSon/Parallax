@@ -1,8 +1,8 @@
 # Agent Memory Cookbook
 
-> **상태:** Phase 1 + 1.5 완성, Phase 2 scaffolding 준비 완료
+> **상태:** Phase 1 + 1.5 + 2 + 3 + 4 (P1..P5) 모두 완성 — 2026-05-01, ADR D-001..D-018, 112 tests on main `33c49f0`
 > **대상:** Impact Trace의 agent memory 레이어를 *지금 바로* 써보고 싶은 사용자
-> **선수 지식:** [README.md](../README.md), 선택적으로 [docs/agent-db-exploration.ko.md](agent-db-exploration.ko.md)
+> **선수 지식:** [README.md](../README.md), [vision.ko.md](vision.ko.md) (한 페이지 비전), 선택적으로 [docs/agent-db-exploration.ko.md](agent-db-exploration.ko.md) · [docs/glossary.md](glossary.md)
 
 이 문서는 *실전 흐름*만 모았습니다. 설계 배경은 exploration 문서, 스키마는 [indexing-model.ko.md](indexing-model.ko.md), 큰 그림은 README를 참고하세요.
 

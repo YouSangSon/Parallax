@@ -6,37 +6,63 @@ For day-by-day developer log see [docs/progress.ko.md](docs/progress.ko.md). For
 
 ---
 
-## Unreleased — Phase 4 + supermemory adoption (2026-04-29 ~ 2026-04-30)
+## Phase 4 — Five sub-phases shipped (2026-04-29 ~ 2026-05-01)
 
-### Added
+main `33c49f0`. **112 tests passing.** ADR D-001..D-018. MCP 12 tools. CLI 16 commands.
 
-- **Profile API** — `impact-trace profile --entity X` (CLI) and `impact_trace_profile` (MCP tool, readOnly) return a per-entity three-bucket view: `staticFacts` (indexer-emitted code relations), `dynamicFacts` (agent activity), `summaryFacts` (Phase 3 reflection outputs). Designed for one-call agent prompt-context injection. Implementation in `src/profile.ts`.
-- **`factLifecycle()` helper** — exposes the existing `attribute_defs.is_code_relation` binary as a typed `Lifecycle = 'static' | 'dynamic'` union. No new database column. Used internally by Profile API.
-- **`Lifecycle` type** in `src/types.ts`, re-exported from `src/index.ts`.
-- **Reflect scaling cap** — `collectCandidates` now uses `StatementSync.iterate()` for streaming, and per-entity facts are bounded by `MAX_FACTS_PER_ENTITY` (default 50, override via env `IMPACT_TRACE_REFLECT_MAX_FACTS_PER_ENTITY`). The prompt footer discloses how many newer observations were elided. Memory complexity drops from O(total_old_facts) to O(unique_entities × cap).
-- **Skill packaging** — new `skills/impact-trace/SKILL.md` and `skills/impact-trace/references/architecture.md` so Claude Code users can run `npx skills add YouSangSon/Impact-trace`. Frontmatter follows the supermemoryai/supermemory convention.
-- **Documentation index** — new `docs/README.md` aggregates all 18 documents with fast-lookup tables.
-- **CHANGELOG** — this file.
-- **`docs/supermemory-adoption.ko.md`** — 4-perspective review (architect / typescript-reviewer / code-explorer / security) of supermemoryai/supermemory patterns. Captures which patterns were adopted, which were rejected, and the ADR-anchored reasoning behind each rejection.
-- **Two new ADRs (D-013, D-014)** in `docs/decisions.ko.md`:
-  - D-013: lifecycle binary derives from `is_code_relation`; no new column.
-  - D-014: Profile API is built on top of recall, not merged into it.
-- **Phase 4 entry-point handoff** — `docs/phase4-handoff.ko.md` with 9 deferred candidates ranked by priority and 4 design decisions (D-013..D-016) for the next session.
+### Added (P1 — scaling cap + Profile API + supermemory adoption)
+
+- **Profile API** — `impact-trace profile --entity X` (CLI) and `impact_trace_profile` (MCP tool, readOnly) return a per-entity three-bucket view: `staticFacts` (indexer-emitted code relations), `dynamicFacts` (agent activity), `summaryFacts` (Phase 3 reflection outputs). Implementation in `src/profile.ts`.
+- **`factLifecycle()` helper** — exposes the existing `attribute_defs.is_code_relation` binary as a typed `Lifecycle = 'static' | 'dynamic'` union. No new database column.
+- **Reflect scaling cap** — `collectCandidates` now uses `StatementSync.iterate()` for streaming, and per-entity facts are bounded by `MAX_FACTS_PER_ENTITY` (default 50, override via env `IMPACT_TRACE_REFLECT_MAX_FACTS_PER_ENTITY`). Memory complexity drops from O(total_old_facts) to O(unique_entities × cap).
+- **Skill packaging** — new `skills/impact-trace/SKILL.md` + `references/architecture.md` so Claude Code users can `npx skills add YouSangSon/Impact-trace`.
+
+### Added (P2 — `reflect --repair`)
+
+- **`repairReflections()`** + CLI `reflect --repair` + MCP `impact_trace_repair_reflections`. Sweep that reconciles orphan summary facts left by the Phase 3 SAVEPOINT atomicity gap. Idempotent via `INSERT OR IGNORE` audit row.
+
+### Added (P3 — `branch --restore`)
+
+- **`restoreBranch()`** + CLI `branch --restore <name>` + MCP `impact_trace_restore_branch`. Reverses `abandon` + `gc-branches`: `branches.state='active'` AND `transactions.archived=0` in one atomic call. Throws on non-active non-abandoned states (future-proof against `'merged'`).
+
+### Added (P4 — time-based auto-abandon)
+
+- **`gc-branches --max-age N`** flag — opt-in. Auto-abandons every active non-main branch with no activity newer than `now − N days` (head_tx_id's `transactions.ts`, fallback to `branches.created_at`), then archive-sweeps both newly auto-abandoned and pre-existing abandoned in one atomic call. Backward-compat: without the flag, `gc-branches` is byte-identical to before.
+- **`GcBranchSummary.autoAbandoned: boolean`** + `GcBranchesResult.autoAbandoned: number`.
+
+### Added (P5 — sqlite-vec ANN)
+
+- **Per-model `vec_facts_<model_slug>` virtual tables** (sqlite-vec vec0, `int8[<dim>]`) — lazy-created at first dual-write.
+- **Dual-write in `remember()` and `reembedFacts()`** — mirrors `fact_embeddings` writes via `DELETE + INSERT` (vec0 disallows `OR REPLACE`). `vec_int8(?)` cast prevents 768-byte buffers from being auto-detected as float32.
+- **`recallSemantic()` ANN path** — vec0 MATCH with k×5 over-fetch + post-JOIN filters. Silent fallback to brute-force int8 path when extension absent or SQL error.
+- **`reindexVec()` + CLI `reindex-vec [--model <id>]`** — manual backfill from `fact_embeddings`.
+- **Four new exports in `src/store.ts`** — `isVectorExtensionLoaded`, `vecTableName`, `ensureVecTable`, `hasVecTable`.
+
+### New ADRs (six total in Phase 4)
+
+- D-013: lifecycle binary derives from `is_code_relation`; no new column. (P1)
+- D-014: Profile API is built on top of recall, not merged into it. (P1)
+- D-015: `reflect --repair` is a separate trigger (not auto-on-reflect). (P2)
+- D-016: `branch --restore` flips state AND clears `transactions.archived` in one atomic call. (P3)
+- D-017: time-based auto-abandon piggybacks on `gc-branches --max-age`. (P4)
+- D-018: sqlite-vec ANN with per-model vec0 tables, lazy create, brute-force fallback. (P5)
 
 ### Changed
 
-- README's MCP tools table now lists 10 tools (added `impact_trace_profile`).
-- README's Phase status table marks Phase 4 complete.
-- `agent-memory-cookbook.ko.md` plus the indexing model docs reference the v7 schema deltas.
+- README's MCP tools table now lists **12 tools** (added `impact_trace_profile`, `impact_trace_repair_reflections`, `impact_trace_restore_branch`).
+- README's CLI list now has **16 commands** (added `profile`, `reindex-vec` — plus `branch --restore`, `reflect --repair`, `gc-branches --max-age` flags).
+- README's Phase status table marks Phase 4 complete (P1..P5 all shipped) and adds a Phase 5 candidate row.
+- New top-level docs: `vision.{ko,md}`, `roadmap.md`, `glossary.md`, `phase4-p2-p3-design.ko.md`, `phase4-p4-p5-design.ko.md`, `phase5-handoff.ko.md`.
+- `decisions.en.md` synced to D-001..D-018.
 
 ### Rejected (recorded in `supermemory-adoption.ko.md` for future reference)
 
-- **`fact_provenance.kind` enum expansion** to add `'updates' / 'extends' / 'derives'`. Conflicts with D-002 (content-addressable id makes "Updates" already expressible via retract+assert) and D-010 (one `'summary'` kind covers derived/extended). Future need would warrant a new ADR with the discriminating query stated upfront.
-- **Pipeline state machine** on `index_runs.stage`. Wrong table — that pipeline is the codebase indexer, not memory ingestion. Memory ingestion is intentionally stateless per D-005.
+- **`fact_provenance.kind` enum expansion** to add `'updates' / 'extends' / 'derives'`. Conflicts with D-002 + D-010.
+- **Pipeline state machine** on `index_runs.stage`. Wrong table — D-005 keeps memory ingestion stateless.
 
 ### Tests
 
-- 87 tests total (78 → +9 profile tests). 9 new tests cover lifecycle partitioning, branch isolation, archived exclusion, redacted surface, reflection bucket, missing-entity error path, unknown-branch error path, `factLifecycle` mapping, and the per-bucket k cap.
+- **76 → 112 tests** across the five sub-phases. P1 added 9 (profile + factLifecycle + reflect cap), P2 added 4 (repair), P3 added 3 (restore), P4 added 7 (auto-abandon), P5 added 8 (vec.test.ts). External 4-perspective review on P1+P2+P3 PRs surfaced 4 HIGH test gaps + 1 MEDIUM type precision gap; all closed before merge.
 
 ---
 

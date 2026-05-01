@@ -73,19 +73,21 @@ Or via the Claude Code CLI:
 claude mcp add --transport stdio impact-trace -- impact-trace mcp serve
 ```
 
-## MCP tools surfaced (9)
+## MCP tools surfaced (12)
 
 | Tool | Read-only? | What it does |
 |---|---|---|
 | `impact_trace_analyze_diff` | ✅ | Run impact analysis for a list of changed files |
 | `impact_trace_remember` | ❌ | Persist an agent fact (entity, attribute, value) on a branch |
-| `impact_trace_recall` | ✅ | Retrieve facts by branch / entity / attribute / semantic query |
-| `impact_trace_profile` | ✅ | Three-bucket per-entity view (static / dynamic / summary) |
+| `impact_trace_recall` | ✅ | Retrieve facts by branch / entity / attribute / semantic query (sqlite-vec ANN with brute-force fallback) |
+| `impact_trace_profile` | ✅ | Three-bucket per-entity view (static / dynamic / summary) — Phase 4 P1 |
 | `impact_trace_branch` | ❌ | Fork a new branch from an existing branch (no data copy) |
 | `impact_trace_merge` | ❌ | Multi-parent merge transaction joining two branch heads |
 | `impact_trace_abandon_branch` | ❌ | Mark a branch state='abandoned' (idempotent, main protected) |
-| `impact_trace_gc_branches` | ❌ | Archive transactions of abandoned branches (soft-delete) |
+| `impact_trace_restore_branch` | ❌ | Reverse abandon+gc — `state='active'` AND `archived=0` in one atomic call (Phase 4 P3) |
+| `impact_trace_gc_branches` | ❌ | Archive transactions of abandoned branches (soft-delete). `maxAgeDays` opt-in for time-based auto-abandon (Phase 4 P4) |
 | `impact_trace_reflect` | ❌ | LLM-summarize older facts per-entity into summary facts |
+| `impact_trace_repair_reflections` | ❌ | Reconcile orphan summary facts left by SAVEPOINT atomicity gap (Phase 4 P2) |
 | `impact_trace_trace` | ✅ | Walk fact_provenance edges back to evidence sources |
 
 Read-only resources: `impact-trace://reports/{id}`, `impact-trace://entities/{id}`, `impact-trace://reports/{id}/graph/{format}`, `impact-trace://coverage/latest`.
@@ -120,7 +122,11 @@ The `profile` tool partitions facts along this axis. See decision D-013 in `docs
 For deep architecture details, see `references/architecture.md`.
 
 For the full design rationale and decision log, see:
-- `docs/decisions.ko.md` — D-001..D-014 cumulative ADRs
+- `docs/vision.md` / `docs/vision.ko.md` — one-page thesis (start here)
+- `docs/roadmap.md` — unified roadmap across both axes (impact analysis + agent memory)
+- `docs/glossary.md` — disambiguates branch/entity/transaction across the two axes
+- `docs/decisions.ko.md` — **D-001..D-018** cumulative ADRs (six new in Phase 4)
 - `docs/phase3-design.ko.md` — schema v7, LLM provider abstraction, reflection, branch GC
-- `docs/phase4-handoff.ko.md` — Phase 4 priorities and pitfalls
+- `docs/phase4-p2-p3-design.ko.md` + `docs/phase4-p4-p5-design.ko.md` — Phase 4 sub-phase design / retrospective
+- `docs/phase5-handoff.ko.md` — Phase 5 entry point (5 candidates, 4 design decisions)
 - `docs/supermemory-adoption.ko.md` — patterns we adopted from supermemory and why we rejected others

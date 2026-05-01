@@ -1,11 +1,13 @@
 # Impact Trace 진행상황
 
-업데이트: 2026-04-29 (Phase 3 완료)
+업데이트: 2026-05-01 (Phase 4 P1+P2+P3+P4+P5 모두 완료, ADR D-001..D-018, 112 tests on main `33c49f0`)
 
-기준 계획서: [Impact Trace 계획서](impact-trace-plan.ko.md)
+비전 / 로드맵 / 용어집: [vision.ko.md](vision.ko.md) · [roadmap.md](roadmap.md) · [glossary.md](glossary.md)
+기준 계획서: [Impact Trace 계획서](impact-trace-plan.ko.md) (영향 분석 축의 원본 P0..P4)
 사용 가이드: [agent memory cookbook](agent-memory-cookbook.ko.md) · [agent DB 탐색 노트](agent-db-exploration.ko.md)
 Phase 3 자료: [Phase 3 design](phase3-design.ko.md) · [Phase 3 handoff](phase3-handoff.ko.md) · [Architecture decisions log](decisions.ko.md)
-Phase 4 진입: [Phase 4 handoff](phase4-handoff.ko.md) (D-013..D-016 결정 + 7가지 후보 우선순위)
+Phase 4 자료: [Phase 4 handoff (frozen)](phase4-handoff.ko.md) · [P2/P3 design](phase4-p2-p3-design.ko.md) · [P4/P5 design (회고)](phase4-p4-p5-design.ko.md)
+Phase 5 진입: [Phase 5 handoff](phase5-handoff.ko.md) (5개 후보 ranked + D-019..D-022 design 공간)
 
 ## 현재 위치
 

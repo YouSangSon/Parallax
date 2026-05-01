@@ -1,12 +1,14 @@
 # TODOS — Original Code-Indexer Product Roadmap
 
-> **Status (2026-04-30):** This is the *original* P0/P1/P2/P3/P4 product roadmap for the code-indexer side of Impact-Trace (entities, relations, adapters, contracts). It predates the agent memory layer.
+> **Status (2026-05-01):** This is the *original* P0/P1/P2/P3/P4 product roadmap for the code-indexer / impact-analysis axis of Impact-Trace (entities, relations, adapters, contracts). It predates the agent memory layer.
 >
-> The agent memory layer has its own *Phase*-based progression (Phase 1+1.5+2+3+4 done) tracked in:
+> The agent memory axis has its own *Phase*-based progression (Phase 1+1.5+2+3+4 P1..P5 all shipped, **112 tests, main `33c49f0`**) tracked in:
+> - [`docs/vision.ko.md`](docs/vision.ko.md) / [`docs/vision.md`](docs/vision.md) — **one-page thesis spanning both axes** (start here)
+> - [`docs/roadmap.md`](docs/roadmap.md) — **unified roadmap** (this document's items + agent memory axis)
 > - [`docs/progress.ko.md`](docs/progress.ko.md) — daily developer log
 > - [`/CHANGELOG.md`](CHANGELOG.md) — Phase-grouped highlights
-> - [`docs/decisions.ko.md`](docs/decisions.ko.md) — cumulative ADR log (D-001..D-014)
-> - [`docs/phase4-handoff.ko.md`](docs/phase4-handoff.ko.md) — current next-session entry point
+> - [`docs/decisions.ko.md`](docs/decisions.ko.md) — cumulative ADR log (D-001..D-018)
+> - [`docs/phase5-handoff.ko.md`](docs/phase5-handoff.ko.md) — current next-session entry point (Phase 4 handoff is now frozen)
 >
 > Many P0 items below are already shipped (canonical entities/relations, snapshot isolation, git diff input, graph export, recursive traversal, oversized file skip). P1/P2 adapter pack is partially done: TS/JS/Markdown/Python/Go/Rust/Java/Kotlin/C#/C/C++/shell/YAML/JSON/TOML/Dockerfile/Makefile/Terraform/protobuf/GraphQL/CODEOWNERS adapters all have regex-MVP coverage. *Semantic adapter accuracy* (Tree-sitter / LSP / CodeQL) is still a gap.
 >

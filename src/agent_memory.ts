@@ -1,6 +1,14 @@
 import { computeEmbedding, computeEmbeddingSync } from './embeddings.js';
 import type { EmbeddingResult } from './embeddings.js';
-import { contentHash, getRepoId, openDatabase } from './store.js';
+import {
+  contentHash,
+  ensureVecTable,
+  getRepoId,
+  hasVecTable,
+  isVectorExtensionLoaded,
+  openDatabase,
+  vecTableName
+} from './store.js';
 import type { Db } from './store.js';
 import { normalizeRepoRoot, redactSecrets } from './security.js';
 import type { Lifecycle } from './types.js';
@@ -197,6 +205,21 @@ export function remember(
         db.prepare(
           "INSERT OR REPLACE INTO fact_embeddings (fact_id, model, vector, dim, created_at) VALUES (?, ?, ?, ?, datetime('now'))"
         ).run(factId, embedding.model, embedding.vector, embedding.dim);
+        // Phase 4 P5 / D-018: dual-write to per-model vec0 table when
+        // the extension is loaded. Silent skip otherwise — fact_embeddings
+        // remains the canonical source of truth for the brute-force path.
+        // vec_int8(?) is an explicit cast: a raw 768-byte buffer would
+        // otherwise be auto-detected as float32 since 768 is divisible
+        // by 4. Our embeddings are always int8-quantized (per D-007).
+        // vec0 does not support INSERT OR REPLACE, so DELETE first to
+        // make the upsert idempotent.
+        if (ensureVecTable(db, embedding.model, embedding.dim)) {
+          const tableName = vecTableName(embedding.model);
+          db.prepare(`DELETE FROM ${tableName} WHERE fact_id = ?`).run(factId);
+          db.prepare(
+            `INSERT INTO ${tableName} (fact_id, embedding) VALUES (?, vec_int8(?))`
+          ).run(factId, embedding.vector);
+        }
       }
     }
 
@@ -352,8 +375,80 @@ export function recallSemantic(
   input: RecallInput
 ): RecallResult {
   const k = Math.min(input.k ?? 20, MAX_RECALL_K);
-  // Archived transactions are excluded so semantic recall mirrors the
-  // structured recall behavior after a gc-branches sweep.
+  // Phase 4 P5 / D-018: try the sqlite-vec ANN path first; fall back
+  // to brute-force int8 dot product when the extension is unavailable
+  // or no vec table has been built for this model yet.
+  if (isVectorExtensionLoaded(db) && hasVecTable(db, queryEmbedding.model)) {
+    const result = recallSemanticAnn(db, queryEmbedding, input, k);
+    if (result !== null) return result;
+  }
+  return recallSemanticBruteForce(db, queryEmbedding, input, k);
+}
+
+/**
+ * ANN path: query the per-model vec0 table for top-K nearest fact_ids,
+ * then JOIN to apply the same archived/entity/attribute/branch filters
+ * recall has always applied. We over-fetch by `ANN_OVER_FETCH_FACTOR`
+ * to compensate for rows dropped by the post-JOIN filters; if even
+ * after over-fetch we get fewer than k results, that's still correct
+ * (returns whatever is left). Returns null when the vec table is empty
+ * or a SQL error surfaces — the caller will fall back to brute force.
+ */
+function recallSemanticAnn(
+  db: Db,
+  queryEmbedding: EmbeddingResult,
+  input: RecallInput,
+  k: number
+): RecallResult | null {
+  const tableName = vecTableName(queryEmbedding.model);
+  const overFetch = Math.max(k * ANN_OVER_FETCH_FACTOR, ANN_OVER_FETCH_MIN);
+
+  const conditions: string[] = ['t.archived = 0'];
+  const filterParams: Array<string | number | null> = [];
+  if (input.entity !== undefined) {
+    conditions.push('f.entity_id = ?');
+    filterParams.push(input.entity);
+  }
+  if (input.attribute !== undefined) {
+    conditions.push('f.attribute = ?');
+    filterParams.push(input.attribute);
+  }
+  if (input.branch !== undefined) {
+    const branch = loadBranch(db, input.branch);
+    conditions.push('t.branch_id = ?');
+    filterParams.push(branch.id);
+  }
+
+  const sql = `
+    WITH ranked AS (
+      SELECT fact_id, distance
+      FROM ${tableName}
+      WHERE embedding MATCH vec_int8(?) AND k = ?
+    )
+    SELECT f.id, f.entity_id, f.attribute, f.value_blob, f.op, f.tx_id, f.redacted, t.ts
+    FROM ranked r
+    INNER JOIN facts f ON f.id = r.fact_id
+    INNER JOIN transactions t ON f.tx_id = t.id
+    WHERE ${conditions.join(' AND ')}
+    ORDER BY r.distance ASC
+    LIMIT ?
+  `;
+  try {
+    const rows = db
+      .prepare(sql)
+      .all(queryEmbedding.vector, overFetch, ...filterParams, k) as unknown as FactRow[];
+    return { facts: rows.map(rowToRecalledFact) };
+  } catch {
+    return null;
+  }
+}
+
+function recallSemanticBruteForce(
+  db: Db,
+  queryEmbedding: EmbeddingResult,
+  input: RecallInput,
+  k: number
+): RecallResult {
   const conditions: string[] = ['fe.model = ?', 't.archived = 0'];
   const params: Array<string | number | null> = [queryEmbedding.model];
 
@@ -388,6 +483,80 @@ export function recallSemantic(
     .slice(0, k);
 
   return { facts: scored.map((entry) => rowToRecalledFact(entry.row)) };
+}
+
+const ANN_OVER_FETCH_FACTOR = 5;
+const ANN_OVER_FETCH_MIN = 20;
+
+export interface ReindexVecOptions {
+  model?: string;
+}
+
+export interface ReindexVecResult {
+  extensionLoaded: boolean;
+  models: Array<{ model: string; dim: number; written: number }>;
+}
+
+/**
+ * Phase 4 P5 / D-018: backfill vec0 tables from the canonical
+ * fact_embeddings rows. Useful after upgrading an existing repo
+ * (which has int8 vectors in fact_embeddings but no vec0 tables yet)
+ * or after a reembed run on a fresh model. Idempotent: each model is
+ * fully rewritten (DELETE + INSERT).
+ */
+export function reindexVecOnRepo(
+  repoRoot: string,
+  options: ReindexVecOptions = {}
+): ReindexVecResult {
+  return withAgentMemoryDb(repoRoot, false, (db) => reindexVec(db, options));
+}
+
+export function reindexVec(db: Db, options: ReindexVecOptions = {}): ReindexVecResult {
+  if (!isVectorExtensionLoaded(db)) {
+    return { extensionLoaded: false, models: [] };
+  }
+  const filterParams: string[] = [];
+  let modelFilter = '';
+  if (options.model !== undefined) {
+    modelFilter = ' WHERE model = ?';
+    filterParams.push(options.model);
+  }
+  const groups = db
+    .prepare(
+      `SELECT model, dim, COUNT(*) AS n
+       FROM fact_embeddings${modelFilter}
+       GROUP BY model, dim`
+    )
+    .all(...filterParams) as Array<{ model: string; dim: number; n: number }>;
+
+  const result: ReindexVecResult = { extensionLoaded: true, models: [] };
+  for (const group of groups) {
+    if (!ensureVecTable(db, group.model, group.dim)) continue;
+    const tableName = vecTableName(group.model);
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      db.exec(`DELETE FROM ${tableName}`);
+      const insert = db.prepare(
+        `INSERT INTO ${tableName} (fact_id, embedding) VALUES (?, vec_int8(?))`
+      );
+      const rows = db
+        .prepare(
+          'SELECT fact_id, vector FROM fact_embeddings WHERE model = ? AND dim = ?'
+        )
+        .all(group.model, group.dim) as Array<{ fact_id: string; vector: Buffer }>;
+      let written = 0;
+      for (const row of rows) {
+        insert.run(row.fact_id, row.vector);
+        written += 1;
+      }
+      db.exec('COMMIT');
+      result.models.push({ model: group.model, dim: group.dim, written });
+    } catch (error: unknown) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+  return result;
 }
 
 export interface ReembedOptions {
@@ -474,9 +643,42 @@ export async function reembedFacts(
       const stmt = db.prepare(
         "INSERT OR REPLACE INTO fact_embeddings (fact_id, model, vector, dim, created_at) VALUES (?, ?, ?, ?, datetime('now'))"
       );
+      // Phase 4 P5 / D-018: dual-write to vec0 if available. Prepare
+      // per-model vec delete+insert pair lazily so we only pay the
+      // CREATE/PREPARE cost once per distinct model in the batch.
+      const vecStmtCachePair = new Map<
+        string,
+        { delete: ReturnType<typeof db.prepare>; insert: ReturnType<typeof db.prepare> } | null
+      >();
+      const vecStmtFor = (
+        model: string,
+        dim: number
+      ): { delete: ReturnType<typeof db.prepare>; insert: ReturnType<typeof db.prepare> } | null => {
+        const cached = vecStmtCachePair.get(model);
+        if (cached !== undefined) return cached;
+        const ready = ensureVecTable(db, model, dim);
+        if (!ready) {
+          vecStmtCachePair.set(model, null);
+          return null;
+        }
+        const tableName = vecTableName(model);
+        const pair = {
+          delete: db.prepare(`DELETE FROM ${tableName} WHERE fact_id = ?`),
+          insert: db.prepare(
+            `INSERT INTO ${tableName} (fact_id, embedding) VALUES (?, vec_int8(?))`
+          )
+        };
+        vecStmtCachePair.set(model, pair);
+        return pair;
+      };
       let count = 0;
       for (const { factId, result } of embeddings) {
         stmt.run(factId, result.model, result.vector, result.dim);
+        const vecStmts = vecStmtFor(result.model, result.dim);
+        if (vecStmts) {
+          vecStmts.delete.run(factId);
+          vecStmts.insert.run(factId, result.vector);
+        }
         count += 1;
       }
       db.exec('COMMIT');

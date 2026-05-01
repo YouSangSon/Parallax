@@ -164,6 +164,16 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === 'reindex-vec') {
+    const { reindexVecOnRepo } = await import('./index.js');
+    const model = parseOptionalArg(args, '--model');
+    const result = reindexVecOnRepo(repoRoot, {
+      ...(model !== undefined ? { model } : {})
+    });
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
   if (command === 'gc-branches') {
     const { gcBranches, withAgentMemoryDb } = await import('./index.js');
     const dryRun = args.includes('--dry-run') ? true : undefined;
@@ -378,6 +388,7 @@ Agent memory:
                         [--model <provider:id>] [--agent <id>] [--dry-run]
   impact-trace reflect  --repair [--branch <name>] [--dry-run]
   impact-trace gc-branches [--dry-run] [--max-age <days>]
+  impact-trace reindex-vec [--model <hf-model>]
   impact-trace profile  --entity <id> [--branch <name>] [--k 50] [--as-of-tx <tx-id>]
   impact-trace trace    --fact-id <id> [--depth 5]
 `);

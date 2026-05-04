@@ -1320,6 +1320,115 @@ test('indexProject preserves per-adapter terminal status when a later adapter fa
   }
 });
 
+test('indexProject preserves completed same-adapter file coverage after later file failure', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-adapter-partial-fail-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/a-ok.ts'), 'export const ok = 1;\n');
+  await writeFile(path.join(repoRoot, 'src/z-fail.ts'), 'export const fail = 1;\n');
+  await initProject({ repoRoot });
+
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'typescript-partial-failing-adapter',
+    version: '1',
+    capabilities: ['references'],
+    supports: (file) => file.language === 'typescript',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+      async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
+        if (file.relativePath === 'src/z-fail.ts') {
+          throw new Error('typescript adapter failed midway');
+        }
+        yield {
+          kind: 'relation',
+          relation: {
+            source: { kind: 'file', path: file.relativePath, languageId: file.language },
+            target: { kind: 'file', path: file.relativePath, languageId: file.language },
+            kind: 'REFERENCES',
+            metadata: {
+              confidence: 'proven',
+              provenance: `typescript-partial-failing-adapter:${file.relativePath}`
+            },
+            evidence: [
+              {
+                file: file.relativePath,
+                snippet: file.content,
+                confidence: 'proven'
+              }
+            ]
+          }
+        };
+      }
+    })
+  });
+
+  await assert.rejects(
+    indexProjectWithRegistryForTest({ repoRoot }, registry),
+    /typescript adapter failed midway/
+  );
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const indexRun = db
+      .prepare('SELECT id, status FROM index_runs ORDER BY id DESC LIMIT 1')
+      .get() as { id: number; status: string };
+    assert.equal(indexRun.status, 'failed');
+
+    const coverageRows = db
+      .prepare(
+        `SELECT path, status, reason
+         FROM index_coverage
+         WHERE index_run_id = ? AND adapter_id = ?
+         ORDER BY path`
+      )
+      .all(indexRun.id, 'typescript-partial-failing-adapter') as Array<{
+      path: string;
+      status: string;
+      reason: string;
+    }>;
+    assert.deepEqual(
+      coverageRows.map((row) => ({
+        path: row.path,
+        status: row.status,
+        reason: row.reason
+      })),
+      [
+        {
+          path: 'src/a-ok.ts',
+          status: 'indexed',
+          reason: 'matched source extension'
+        },
+        {
+          path: 'src/z-fail.ts',
+          status: 'skipped',
+          reason: 'adapter failed: typescript adapter failed midway'
+        }
+      ]
+    );
+
+    const relationRows = db
+      .prepare(
+        `SELECT source_entity_id, target_entity_id, provenance
+         FROM relations
+         WHERE index_run_id = ?
+         ORDER BY provenance`
+      )
+      .all(indexRun.id) as Array<{
+      source_entity_id: string;
+      target_entity_id: string;
+      provenance: string;
+    }>;
+    assert.deepEqual(relationRows, [
+      {
+        source_entity_id: 'file:src/a-ok.ts',
+        target_entity_id: 'file:src/a-ok.ts',
+        provenance: 'typescript-partial-failing-adapter:src/a-ok.ts'
+      }
+    ]);
+  } finally {
+    db.close();
+  }
+});
+
 test('exportImpactGraph renders report graph from SQLite relations without graph DB', async () => {
   const repoRoot = await makeFixtureRepo();
   await initProject({ repoRoot });

@@ -93,6 +93,7 @@ interface PreparedStatements {
   selectFile: Statement;
   upsertEntity: Statement;
   insertEntityIfMissing: Statement;
+  updateEntityFreshness: Statement;
   insertEntityVersion: Statement;
   insertEntityVersionIfMissing: Statement;
   insertCoverage: Statement;
@@ -1060,6 +1061,11 @@ function prepareStatements(db: Db): PreparedStatements {
       )
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `),
+    updateEntityFreshness: db.prepare(`
+      UPDATE entities
+      SET updated_index_run_id = ?
+      WHERE id = ?
+    `),
     insertEntityVersion: db.prepare(`
       INSERT OR REPLACE INTO entity_versions (entity_id, index_run_id, content_hash, location_json, state)
       VALUES (?, ?, ?, ?, ?)
@@ -1214,6 +1220,7 @@ function persistEntityDescriptor(
 
   if (mode === 'placeholder') {
     ctx.stmts.insertEntityIfMissing.run(...entityValues);
+    ctx.stmts.updateEntityFreshness.run(ctx.indexRunId, entityId);
     ctx.stmts.insertEntityVersionIfMissing.run(...versionValues);
   } else {
     ctx.stmts.upsertEntity.run(...entityValues);

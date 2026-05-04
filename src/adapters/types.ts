@@ -8,11 +8,10 @@ export interface EntityDescriptor {
   readonly symbolKind?: string;
   readonly languageId?: string;
   readonly displayName?: string;
-}
-
-export interface PendingEntity extends EntityDescriptor {
   readonly metadata?: Readonly<Record<string, unknown>>;
 }
+
+export interface PendingEntity extends EntityDescriptor {}
 
 export interface PendingEvidence {
   readonly file: string;

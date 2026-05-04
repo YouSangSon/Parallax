@@ -348,8 +348,17 @@ async function indexProjectInternal(
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         updateAdapterRun(db, adapterRunId, 'failed', message);
+        markAdapterCoverageSkipped(
+          stmts.insertCoverage,
+          indexRunId,
+          adapter,
+          adapterFiles,
+          `adapter failed: ${redactSecrets(message)}`
+        );
         markUnstartedAdapterRunsSkipped(
           db,
+          stmts.insertCoverage,
+          indexRunId,
           adapterGroups.slice(groupIndex + 1),
           adapterRunIds,
           adapter.id
@@ -453,15 +462,31 @@ function updateAdapterRun(
 
 function markUnstartedAdapterRunsSkipped(
   db: Db,
+  insertCoverage: Statement,
+  indexRunId: number,
   groups: readonly AdapterGroup[],
   adapterRunIds: ReadonlyMap<SemanticAdapter, number>,
   failedAdapterId: string
 ): void {
+  const reason = `not run because ${failedAdapterId} failed`;
   for (const group of groups) {
     const adapterRunId = adapterRunIds.get(group.adapter);
     if (adapterRunId !== undefined) {
-      updateAdapterRun(db, adapterRunId, 'skipped', `not run because ${failedAdapterId} failed`);
+      updateAdapterRun(db, adapterRunId, 'skipped', reason);
     }
+    markAdapterCoverageSkipped(insertCoverage, indexRunId, group.adapter, group.files, reason);
+  }
+}
+
+function markAdapterCoverageSkipped(
+  insertCoverage: Statement,
+  indexRunId: number,
+  adapter: SemanticAdapter,
+  files: readonly ScannedFile[],
+  reason: string
+): void {
+  for (const file of files) {
+    insertCoverage.run(indexRunId, adapter.id, file.relativePath, file.language, 'skipped', reason);
   }
 }
 

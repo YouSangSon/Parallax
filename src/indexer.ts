@@ -116,19 +116,27 @@ type AdapterGroup = {
   languageIds: string[];
 };
 
-type IndexProjectInternals = {
-  registry?: AdapterRegistry;
-};
+type AdapterRunStatus = 'completed' | 'failed' | 'skipped';
 
-export async function indexProject(
+export async function indexProject(options: IndexOptions): Promise<IndexResult> {
+  return indexProjectInternal(options, createDefaultRegistry());
+}
+
+export async function indexProjectWithRegistryForTest(
   options: IndexOptions,
-  internals: IndexProjectInternals = {}
+  registry: AdapterRegistry
+): Promise<IndexResult> {
+  return indexProjectInternal(options, registry);
+}
+
+async function indexProjectInternal(
+  options: IndexOptions,
+  registry: AdapterRegistry
 ): Promise<IndexResult> {
   const repoRoot = normalizeRepoRoot(options.repoRoot);
   const db = openDatabase(repoRoot);
   const repoId = ensureRepo(db, repoRoot);
 
-  const registry = internals.registry ?? createDefaultRegistry();
   const registeredAdapters = registry.list();
   if (registeredAdapters.length === 0) {
     db.close();
@@ -272,40 +280,50 @@ export async function indexProject(
       persistCtx.canonicalEntityIds.add(fileEntId);
     }
 
-    for (const { adapter, files: adapterFiles } of adapterGroups) {
+    for (let groupIndex = 0; groupIndex < adapterGroups.length; groupIndex++) {
+      const { adapter, files: adapterFiles } = adapterGroups[groupIndex]!;
       const adapterRunId = adapterRunIds.get(adapter);
       if (adapterRunId === undefined) {
         throw new Error(`adapter run missing for ${adapter.id}`);
       }
       const ctx: ExtractCtx = { repoRoot, indexRunId, adapterRunId };
       const adapterPersistCtx: PersistContext = { ...persistCtx, adapterRunId };
-      const run = await adapter.start(ctx, adapterFiles);
       try {
-        for (const file of adapterFiles) {
-          for await (const event of run.process(file)) {
-            handleEvent(event, file, adapterPersistCtx);
+        const run = await adapter.start(ctx, adapterFiles);
+        try {
+          for (const file of adapterFiles) {
+            for await (const event of run.process(file)) {
+              handleEvent(event, file, adapterPersistCtx);
+            }
+            stmts.insertEvidence.run(
+              evidenceId(file.relativePath, 'scan'),
+              repoId,
+              file.relativePath,
+              'scan',
+              redactSecrets(file.content),
+              'proven',
+              indexRunId
+            );
           }
-          stmts.insertEvidence.run(
-            evidenceId(file.relativePath, 'scan'),
-            repoId,
-            file.relativePath,
-            'scan',
-            redactSecrets(file.content),
-            'proven',
-            indexRunId
-          );
+        } finally {
+          if (run.dispose) {
+            await run.dispose();
+          }
         }
-      } finally {
-        if (run.dispose) {
-          await run.dispose();
-        }
+        updateAdapterRun(db, adapterRunId, 'completed');
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        updateAdapterRun(db, adapterRunId, 'failed', message);
+        markUnstartedAdapterRunsSkipped(
+          db,
+          adapterGroups.slice(groupIndex + 1),
+          adapterRunIds,
+          adapter.id
+        );
+        throw error;
       }
     }
 
-    db.prepare("UPDATE adapter_runs SET status = ?, finished_at = datetime('now') WHERE index_run_id = ?").run(
-      'completed',
-      indexRunId
-    );
     db.prepare("UPDATE index_runs SET status = ?, finished_at = datetime('now') WHERE id = ?").run(
       'completed',
       indexRunId
@@ -346,9 +364,7 @@ export async function indexProject(
       }
     };
   } catch (error) {
-    db.prepare(
-      "UPDATE adapter_runs SET status = ?, finished_at = datetime('now'), error_summary = ? WHERE index_run_id = ?"
-    ).run('failed', error instanceof Error ? error.message : String(error), indexRunId);
+    failRunningAdapterRuns(db, indexRunId, error instanceof Error ? error.message : String(error));
     db.prepare("UPDATE index_runs SET status = ?, finished_at = datetime('now') WHERE id = ?").run(
       'failed',
       indexRunId
@@ -362,6 +378,39 @@ function createDefaultRegistry(): AdapterRegistry {
   const registry = new AdapterRegistry();
   registry.register(new MultiLanguageRegexAdapter());
   return registry;
+}
+
+function updateAdapterRun(
+  db: Db,
+  adapterRunId: number,
+  status: AdapterRunStatus,
+  errorSummary: string | null = null
+): void {
+  db.prepare(
+    "UPDATE adapter_runs SET status = ?, finished_at = datetime('now'), error_summary = ? WHERE id = ?"
+  ).run(status, errorSummary, adapterRunId);
+}
+
+function markUnstartedAdapterRunsSkipped(
+  db: Db,
+  groups: readonly AdapterGroup[],
+  adapterRunIds: ReadonlyMap<SemanticAdapter, number>,
+  failedAdapterId: string
+): void {
+  for (const group of groups) {
+    const adapterRunId = adapterRunIds.get(group.adapter);
+    if (adapterRunId !== undefined) {
+      updateAdapterRun(db, adapterRunId, 'skipped', `not run because ${failedAdapterId} failed`);
+    }
+  }
+}
+
+function failRunningAdapterRuns(db: Db, indexRunId: number, errorSummary: string): void {
+  db.prepare(
+    `UPDATE adapter_runs
+     SET status = ?, finished_at = datetime('now'), error_summary = ?
+     WHERE index_run_id = ? AND status = ?`
+  ).run('failed', errorSummary, indexRunId, 'running');
 }
 
 function adapterGroupsInRegistryOrder(

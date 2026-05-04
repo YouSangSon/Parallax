@@ -10,6 +10,7 @@ import { test } from 'node:test';
 import { AdapterRegistry } from '../src/adapters/registry.js';
 import type { AdapterRun, ExtractCtx, IndexEvent, SemanticAdapter } from '../src/adapters/types.js';
 import { analyzeDiff, exportImpactGraph, indexProject, initProject } from '../src/index.js';
+import { indexProjectWithRegistryForTest } from '../src/indexer.js';
 import { databasePath } from '../src/store.js';
 import type { ScannedFile } from '../src/types.js';
 
@@ -20,6 +21,12 @@ process.env.IMPACT_TRACE_EMBEDDING_MODEL = 'stub-sha256';
 
 const require = createRequire(import.meta.url);
 const tsxLoaderPath = require.resolve('tsx');
+
+if (false) {
+  const registry = new AdapterRegistry();
+  // @ts-expect-error registry injection is intentionally not part of the public indexProject API
+  void indexProject({ repoRoot: '' }, { registry });
+}
 
 async function makeFixtureRepo(): Promise<string> {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-'));
@@ -106,6 +113,20 @@ function makeAttributionAdapter(id: string, language: string): SemanticAdapter {
             ]
           }
         };
+      }
+    })
+  };
+}
+
+function makeFailingAdapter(id: string, language: string, message: string): SemanticAdapter {
+  return {
+    id,
+    version: '1',
+    capabilities: ['references'],
+    supports: (file) => file.language === language,
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+      async *process(_file: ScannedFile): AsyncIterable<IndexEvent> {
+        throw new Error(message);
       }
     })
   };
@@ -228,7 +249,7 @@ test('indexProject attributes adapter runs, relations, coverage, and usage per c
   registry.register(makeAttributionAdapter('typescript-test-adapter', 'typescript'));
   registry.register(makeAttributionAdapter('python-test-adapter', 'python'));
 
-  const index = await indexProject({ repoRoot, maxFileBytes: 80 }, { registry });
+  const index = await indexProjectWithRegistryForTest({ repoRoot, maxFileBytes: 80 }, registry);
 
   assert.deepEqual(
     index.adaptersUsed?.map((adapter) => ({
@@ -310,6 +331,74 @@ test('indexProject attributes adapter runs, relations, coverage, and usage per c
         { path: 'scripts/large.py', adapter_id: 'python-test-adapter', status: 'skipped' },
         { path: 'scripts/tool.py', adapter_id: 'python-test-adapter', status: 'indexed' },
         { path: 'src/app.ts', adapter_id: 'typescript-test-adapter', status: 'indexed' }
+      ]
+    );
+  } finally {
+    db.close();
+  }
+});
+
+test('indexProject preserves per-adapter terminal status when a later adapter fails', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-adapter-fail-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await mkdir(path.join(repoRoot, 'scripts'), { recursive: true });
+  await mkdir(path.join(repoRoot, 'docs'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const app = 1;\n');
+  await writeFile(path.join(repoRoot, 'scripts/tool.py'), 'def tool():\n    return 1\n');
+  await writeFile(path.join(repoRoot, 'docs/notes.md'), 'notes for adapter failure test\n');
+  await initProject({ repoRoot });
+
+  const registry = new AdapterRegistry();
+  registry.register(makeAttributionAdapter('typescript-success-adapter', 'typescript'));
+  registry.register(makeFailingAdapter('python-failing-adapter', 'python', 'python adapter failed'));
+  registry.register(makeAttributionAdapter('markdown-not-run-adapter', 'markdown'));
+
+  await assert.rejects(
+    indexProjectWithRegistryForTest({ repoRoot }, registry),
+    /python adapter failed/
+  );
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const indexRun = db
+      .prepare('SELECT id, status FROM index_runs ORDER BY id DESC LIMIT 1')
+      .get() as { id: number; status: string };
+    assert.equal(indexRun.status, 'failed');
+
+    const adapterRuns = db
+      .prepare(
+        `SELECT adapter_id, status, error_summary
+         FROM adapter_runs
+         WHERE index_run_id = ?
+         ORDER BY id`
+      )
+      .all(indexRun.id) as Array<{
+        adapter_id: string;
+        status: string;
+        error_summary: string | null;
+      }>;
+    assert.deepEqual(
+      adapterRuns.map((run) => ({
+        adapterId: run.adapter_id,
+        status: run.status,
+        errorSummary: run.error_summary
+      })),
+      [
+        {
+          adapterId: 'typescript-success-adapter',
+          status: 'completed',
+          errorSummary: null
+        },
+        {
+          adapterId: 'python-failing-adapter',
+          status: 'failed',
+          errorSummary: 'python adapter failed'
+        },
+        {
+          adapterId: 'markdown-not-run-adapter',
+          status: 'skipped',
+          errorSummary: 'not run because python-failing-adapter failed'
+        }
       ]
     );
   } finally {

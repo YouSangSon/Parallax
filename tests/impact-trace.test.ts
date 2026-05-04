@@ -1273,6 +1273,48 @@ test('indexProject preserves per-adapter terminal status when a later adapter fa
         }
       ]
     );
+
+    const coverageRows = db
+      .prepare(
+        `SELECT adapter_id, path, status, reason
+         FROM index_coverage
+         WHERE index_run_id = ?
+         ORDER BY path`
+      )
+      .all(indexRun.id) as Array<{
+      adapter_id: string;
+      path: string;
+      status: string;
+      reason: string;
+    }>;
+    assert.deepEqual(
+      coverageRows.map((row) => ({
+        adapterId: row.adapter_id,
+        path: row.path,
+        status: row.status,
+        reason: row.reason
+      })),
+      [
+        {
+          adapterId: 'markdown-not-run-adapter',
+          path: 'docs/notes.md',
+          status: 'skipped',
+          reason: 'not run because python-failing-adapter failed'
+        },
+        {
+          adapterId: 'python-failing-adapter',
+          path: 'scripts/tool.py',
+          status: 'skipped',
+          reason: 'adapter failed: python adapter failed'
+        },
+        {
+          adapterId: 'typescript-success-adapter',
+          path: 'src/app.ts',
+          status: 'indexed',
+          reason: 'matched source extension'
+        }
+      ]
+    );
   } finally {
     db.close();
   }

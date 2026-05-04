@@ -159,7 +159,7 @@ test('migrate upgrades a synthetic v6 schema by adding v7 columns and tables', (
   }
 });
 
-test('migrate seeds the four code-relation attribute_defs', () => {
+test('migrate seeds static relation attribute_defs', () => {
   withTempDb((db) => {
     const rows = db
       .prepare(
@@ -168,7 +168,27 @@ test('migrate seeds the four code-relation attribute_defs', () => {
       .all() as Array<{ name: string; value_type: string; is_code_relation: number }>;
     assert.deepEqual(
       rows.map((row) => row.name),
-      ['affects', 'calls', 'depends_on', 'imports']
+      [
+        'affects',
+        'breaks_compat',
+        'calls',
+        'configures',
+        'declares',
+        'depends_on',
+        'documents',
+        'exports',
+        'extends',
+        'governs',
+        'handles',
+        'implements',
+        'imports',
+        'owns',
+        'raises',
+        'reads',
+        'references',
+        'tests',
+        'writes'
+      ]
     );
     for (const row of rows) {
       assert.equal(row.value_type, 'entity_ref');

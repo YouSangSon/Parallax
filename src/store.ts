@@ -535,6 +535,21 @@ function migrate(db: Db): void {
     INSERT OR IGNORE INTO attribute_defs (name, value_type, is_code_relation, description) VALUES
       ('imports', 'entity_ref', 1, 'File or module import edge'),
       ('calls', 'entity_ref', 1, 'Function or method call edge'),
+      ('exports', 'entity_ref', 1, 'File, module, or symbol export edge'),
+      ('implements', 'entity_ref', 1, 'Type implementation edge'),
+      ('extends', 'entity_ref', 1, 'Inheritance or extension edge'),
+      ('reads', 'entity_ref', 1, 'Read access edge'),
+      ('writes', 'entity_ref', 1, 'Write access edge'),
+      ('raises', 'entity_ref', 1, 'Raised error or event edge'),
+      ('handles', 'entity_ref', 1, 'Handled error or event edge'),
+      ('owns', 'entity_ref', 1, 'Ownership edge'),
+      ('tests', 'entity_ref', 1, 'Test or verification edge'),
+      ('documents', 'entity_ref', 1, 'Documentation edge'),
+      ('configures', 'entity_ref', 1, 'Configuration edge'),
+      ('breaks_compat', 'entity_ref', 1, 'Breaking compatibility edge'),
+      ('references', 'entity_ref', 1, 'Reference edge'),
+      ('declares', 'entity_ref', 1, 'Declaration edge'),
+      ('governs', 'entity_ref', 1, 'Governance edge'),
       ('affects', 'entity_ref', 1, 'Inferred side-effect dependency'),
       ('depends_on', 'entity_ref', 1, 'Declared package or module dependency');
 

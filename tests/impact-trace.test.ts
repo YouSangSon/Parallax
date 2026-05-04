@@ -9,10 +9,10 @@ import { test } from 'node:test';
 
 import { AdapterRegistry } from '../src/adapters/registry.js';
 import type { AdapterRun, ExtractCtx, IndexEvent, SemanticAdapter } from '../src/adapters/types.js';
-import { analyzeDiff, exportImpactGraph, indexProject, initProject } from '../src/index.js';
+import { analyzeDiff, exportImpactGraph, indexProject, initProject, profileEntity } from '../src/index.js';
 import { indexProjectWithRegistryForTest } from '../src/indexer.js';
 import { databasePath } from '../src/store.js';
-import type { ScannedFile } from '../src/types.js';
+import type { RelationKind, ScannedFile } from '../src/types.js';
 
 // Force the deterministic SHA-256 stub so embedding tests don't download a
 // real model (~278 MB) and stay fast/offline. Spawned CLI subprocesses
@@ -1663,6 +1663,130 @@ test('indexProject dual-writes relations to facts/transactions and advances main
   } finally {
     db.close();
   }
+});
+
+test('indexProject maps adapter relation kinds to static memory attributes', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-relation-kind-memory-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+
+  const sourcePath = 'src/source.ts';
+  const cases: Array<{ kind: RelationKind; target: string; expectedAttribute: string }> = [
+    { kind: 'CALLS', target: 'src/callee.ts', expectedAttribute: 'calls' },
+    { kind: 'VERIFIES', target: 'src/verified.ts', expectedAttribute: 'tests' },
+    { kind: 'REFERENCES', target: 'src/referenced.ts', expectedAttribute: 'references' },
+    {
+      kind: 'BREAKS_COMPATIBILITY_WITH',
+      target: 'src/legacy-api.ts',
+      expectedAttribute: 'breaks_compat'
+    }
+  ];
+
+  await writeFile(path.join(repoRoot, sourcePath), 'export const source = 1;\n');
+  for (const testCase of cases) {
+    await writeFile(
+      path.join(repoRoot, testCase.target),
+      `export const ${testCase.kind.toLowerCase()} = 1;\n`
+    );
+  }
+  await initProject({ repoRoot });
+
+  const seedDb = new DatabaseSync(databasePath(repoRoot));
+  try {
+    for (const attribute of cases.map((testCase) => testCase.expectedAttribute)) {
+      seedDb
+        .prepare(
+          `INSERT INTO attribute_defs (name, value_type, is_code_relation, description)
+           VALUES (?, 'entity_ref', 0, 'stale dynamic test row')
+           ON CONFLICT(name) DO UPDATE SET is_code_relation = 0`
+        )
+        .run(attribute);
+    }
+  } finally {
+    seedDb.close();
+  }
+
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'relation-kind-memory-test-adapter',
+    version: '1',
+    capabilities: ['calls', 'references', 'tests'],
+    supports: (file) => file.language === 'typescript',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+      async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
+        if (file.relativePath !== sourcePath) {
+          return;
+        }
+        for (const testCase of cases) {
+          yield {
+            kind: 'relation',
+            relation: {
+              source: { kind: 'file', path: sourcePath, languageId: file.language },
+              target: { kind: 'file', path: testCase.target, languageId: file.language },
+              kind: testCase.kind,
+              metadata: {
+                confidence: 'proven',
+                provenance: `relation-kind-memory-test-adapter:${testCase.kind}`
+              },
+              evidence: [
+                {
+                  file: `adapter/${testCase.kind}.evidence`,
+                  snippet: `${testCase.kind} evidence`,
+                  confidence: 'proven'
+                }
+              ]
+            }
+          };
+        }
+      }
+    })
+  });
+
+  await indexProjectWithRegistryForTest({ repoRoot }, registry);
+
+  const expectedRows = cases
+    .map((testCase) => ({
+      attribute: testCase.expectedAttribute,
+      target: `file:${testCase.target}`,
+      isCodeRelation: 1
+    }))
+    .sort((a, b) => a.attribute.localeCompare(b.attribute));
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const factRows = db
+      .prepare(
+        `SELECT f.attribute, f.value_blob, ad.is_code_relation
+         FROM facts f
+         INNER JOIN transactions t ON f.tx_id = t.id
+         INNER JOIN attribute_defs ad ON ad.name = f.attribute
+         WHERE t.agent = 'indexer' AND f.entity_id = ?
+         ORDER BY f.attribute`
+      )
+      .all(`file:${sourcePath}`) as Array<{
+        attribute: string;
+        value_blob: string;
+        is_code_relation: number;
+      }>;
+
+    assert.deepEqual(
+      factRows.map((row) => ({
+        attribute: row.attribute,
+        target: JSON.parse(row.value_blob) as string,
+        isCodeRelation: row.is_code_relation
+      })),
+      expectedRows
+    );
+  } finally {
+    db.close();
+  }
+
+  const profile = await profileEntity(repoRoot, { entity: `file:${sourcePath}` });
+  assert.deepEqual(
+    profile.staticFacts
+      .map((fact) => ({ attribute: fact.attribute, target: fact.value }))
+      .sort((a, b) => a.attribute.localeCompare(b.attribute)),
+    expectedRows.map((row) => ({ attribute: row.attribute, target: row.target }))
+  );
+  assert.deepEqual(profile.dynamicFacts, []);
 });
 
 test('CLI reflect with stub provider summarizes older facts', async () => {

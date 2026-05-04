@@ -280,10 +280,9 @@ test('indexProject persists adapter symbol entities without displayName using a 
       | { id: string; display_name: string }
       | undefined;
 
-    assert.deepEqual(symbol, {
-      id: 'symbol:typescript:src/app.ts#function:run',
-      display_name: 'run'
-    });
+    assert.ok(symbol, 'expected symbol entity to be persisted');
+    assert.equal(symbol.id, 'symbol:typescript:src/app.ts#function:run');
+    assert.equal(symbol.display_name, 'run');
   } finally {
     db.close();
   }
@@ -441,10 +440,8 @@ test('indexProject upserts relation endpoint entities before relation persistenc
       count: number;
       display_name: string;
     };
-    assert.deepEqual(symbol, {
-      count: 1,
-      display_name: 'run'
-    });
+    assert.equal(symbol.count, 1);
+    assert.equal(symbol.display_name, 'run');
 
     const versions = db
       .prepare(

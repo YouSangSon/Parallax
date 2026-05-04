@@ -457,6 +457,181 @@ test('indexProject upserts relation endpoint entities before relation persistenc
   }
 });
 
+test('indexProject promotes relation-only existing endpoint entities into rerun freshness', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-relation-rerun-freshness-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/app.ts'), 'export function run() { return 1; }\n');
+  await initProject({ repoRoot });
+
+  let emitExplicitEntity = true;
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'relation-only-rerun-freshness-test-adapter',
+    version: '1',
+    capabilities: ['calls', 'symbols'],
+    supports: (file) => file.language === 'typescript',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+      async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
+        const runSymbol = {
+          kind: 'symbol',
+          path: file.relativePath,
+          symbol: 'run',
+          symbolKind: 'function',
+          languageId: file.language
+        } as const;
+        if (emitExplicitEntity) {
+          yield {
+            kind: 'entity',
+            entity: {
+              ...runSymbol,
+              displayName: 'run'
+            }
+          };
+          return;
+        }
+        yield {
+          kind: 'relation',
+          relation: {
+            source: { kind: 'file', path: file.relativePath, languageId: file.language },
+            target: runSymbol,
+            kind: 'CALLS',
+            metadata: {
+              confidence: 'proven',
+              provenance: 'relation-only-rerun-freshness-test-adapter:call'
+            },
+            evidence: [
+              {
+                file: file.relativePath,
+                snippet: 'run();',
+                confidence: 'proven'
+              }
+            ]
+          }
+        };
+      }
+    })
+  });
+
+  await indexProjectWithRegistryForTest({ repoRoot }, registry);
+  emitExplicitEntity = false;
+  const secondIndex = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const symbol = db
+      .prepare(
+        `SELECT id, updated_index_run_id
+         FROM entities
+         WHERE id = ?`
+      )
+      .get('symbol:typescript:src/app.ts#function:run') as
+      | { id: string; updated_index_run_id: number }
+      | undefined;
+    assert.ok(symbol, 'expected symbol entity to remain canonical');
+    assert.equal(symbol.updated_index_run_id, secondIndex.indexRunId);
+
+    const relation = db
+      .prepare(
+        `SELECT target_entity_id
+         FROM relations
+         WHERE index_run_id = ?
+           AND kind = ?
+           AND source_entity_id = ?`
+      )
+      .get(secondIndex.indexRunId, 'CALLS', 'file:src/app.ts') as
+      | { target_entity_id: string }
+      | undefined;
+    assert.ok(relation, 'expected run-2 relation to be persisted');
+    assert.equal(relation.target_entity_id, symbol.id);
+  } finally {
+    db.close();
+  }
+});
+
+test('indexProject uses relation endpoint metadata for external entity identity before explicit entity', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-external-endpoint-identity-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/app.ts'), 'import React from "react";\n');
+  await initProject({ repoRoot });
+
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'external-endpoint-identity-test-adapter',
+    version: '1',
+    capabilities: ['imports', 'symbols'],
+    supports: (file) => file.language === 'typescript',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+      async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
+        yield {
+          kind: 'relation',
+          relation: {
+            source: { kind: 'file', path: file.relativePath, languageId: file.language },
+            target: {
+              kind: 'external_entity',
+              languageId: file.language,
+              metadata: { specifier: 'react' }
+            },
+            kind: 'DEPENDS_ON',
+            metadata: {
+              confidence: 'proven',
+              provenance: 'external-endpoint-identity-test-adapter:react'
+            },
+            evidence: [
+              {
+                file: file.relativePath,
+                snippet: 'import React from "react";',
+                confidence: 'proven'
+              }
+            ]
+          }
+        };
+        yield {
+          kind: 'entity',
+          entity: {
+            kind: 'external_entity',
+            languageId: file.language,
+            metadata: { specifier: 'react' }
+          }
+        };
+      }
+    })
+  });
+
+  const index = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const externalRows = db
+      .prepare(
+        `SELECT id
+         FROM entities
+         WHERE kind = ?
+         ORDER BY id`
+      )
+      .all('external_entity') as Array<{ id: string }>;
+    assert.deepEqual(
+      externalRows.map((row) => row.id),
+      ['external:typescript:react']
+    );
+
+    const relation = db
+      .prepare(
+        `SELECT target_entity_id
+         FROM relations
+         WHERE index_run_id = ?
+           AND kind = ?
+           AND source_entity_id = ?`
+      )
+      .get(index.indexRunId, 'DEPENDS_ON', 'file:src/app.ts') as
+      | { target_entity_id: string }
+      | undefined;
+    assert.ok(relation, 'expected relation to external endpoint');
+    assert.equal(relation.target_entity_id, 'external:typescript:react');
+  } finally {
+    db.close();
+  }
+});
+
 test('indexProject makes symbol entity version content hash track containing file changes', async () => {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-symbol-version-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });

@@ -56,7 +56,7 @@ export interface ExtractCtx {
   readonly repoRoot: string;
   readonly indexRunId: number;
   readonly adapterRunId: number;
-  readonly indexedFiles: readonly ScannedFile[];
+  readonly indexedFiles: readonly Readonly<ScannedFile>[];
 }
 
 // AdapterRun: returned once per index run by adapter.start(); process() yields events per file.

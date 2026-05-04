@@ -311,7 +311,12 @@ async function indexProjectInternal(
         updateAdapterRun(db, adapterRunId, 'skipped');
         continue;
       }
-      const ctx: ExtractCtx = { repoRoot, indexRunId, adapterRunId, indexedFiles };
+      const ctx: ExtractCtx = {
+        repoRoot,
+        indexRunId,
+        adapterRunId,
+        indexedFiles: immutableIndexedFilesSnapshot(indexedFiles)
+      };
       const adapterPersistCtx: PersistContext = {
         ...persistCtx,
         adapterRunId,
@@ -407,6 +412,13 @@ function createDefaultRegistry(): AdapterRegistry {
   const registry = new AdapterRegistry();
   registry.register(new MultiLanguageRegexAdapter());
   return registry;
+}
+
+function immutableIndexedFilesSnapshot(
+  files: readonly ScannedFile[]
+): readonly Readonly<ScannedFile>[] {
+  const snapshot = files.map((file) => Object.freeze({ ...file }));
+  return Object.freeze(snapshot);
 }
 
 function updateAdapterRun(

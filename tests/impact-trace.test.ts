@@ -573,6 +573,79 @@ test('indexProject lets adapter relation extraction resolve against all indexed 
   }
 });
 
+test('indexProject gives each adapter an immutable indexedFiles snapshot', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-indexed-files-snapshot-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const app = 1;\n');
+  await writeFile(path.join(repoRoot, 'README.md'), 'The public entrypoint lives in src/app.ts.\n');
+  await initProject({ repoRoot });
+
+  let ctxArrayFrozen: boolean | undefined;
+  let ctxMarkdownFileFrozen: boolean | undefined;
+  const regexAdapter = new MultiLanguageRegexAdapter();
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'typescript-mutating-start-adapter',
+    version: '1',
+    capabilities: ['references'],
+    supports: (file) => file.language === 'typescript',
+    start: (ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => {
+      ctxArrayFrozen = Object.isFrozen(ctx.indexedFiles);
+      const markdownFile = ctx.indexedFiles.find((file) => file.language === 'markdown');
+      ctxMarkdownFileFrozen =
+        markdownFile === undefined ? undefined : Object.isFrozen(markdownFile);
+      try {
+        (markdownFile as ScannedFile | undefined)!.content =
+          'Adapter mutation removed the source mention.\n';
+      } catch {
+        // Frozen snapshots reject the mutation; the adapter keeps running.
+      }
+      return {
+        async *process(_file: ScannedFile): AsyncIterable<IndexEvent> {}
+      };
+    }
+  });
+  registry.register({
+    id: 'markdown-regex-adapter',
+    version: regexAdapter.version,
+    capabilities: regexAdapter.capabilities,
+    supports: (file) => file.language === 'markdown',
+    start: (ctx: ExtractCtx, files: readonly ScannedFile[]): AdapterRun => regexAdapter.start(ctx, files)
+  });
+
+  const index = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const relation = db
+      .prepare(
+        `SELECT count(*) AS count
+         FROM relations
+         WHERE index_run_id = ?
+           AND kind = ?
+           AND source_entity_id = ?
+           AND target_entity_id = ?`
+      )
+      .get(index.indexRunId, 'DOCUMENTS', 'file:README.md', 'file:src/app.ts') as {
+      count: number;
+    };
+    assert.deepEqual(
+      {
+        relationCount: relation.count,
+        ctxArrayFrozen,
+        ctxMarkdownFileFrozen
+      },
+      {
+        relationCount: 1,
+        ctxArrayFrozen: true,
+        ctxMarkdownFileFrozen: true
+      }
+    );
+  } finally {
+    db.close();
+  }
+});
+
 test('indexProject records a failed index run when adapter support routing throws', async () => {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-support-routing-fail-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });

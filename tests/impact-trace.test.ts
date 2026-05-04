@@ -1320,6 +1320,157 @@ test('indexProject preserves per-adapter terminal status when a later adapter fa
   }
 });
 
+test('failed reruns preserve last completed current-state snapshot for analyzeDiff', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-failed-rerun-snapshot-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(
+    path.join(repoRoot, 'src/a-importer.ts'),
+    [
+      'import { core } from "./core";',
+      'export const importer = core;',
+      ''
+    ].join('\n')
+  );
+  await writeFile(path.join(repoRoot, 'src/core.ts'), 'export const core = 1;\n');
+  await initProject({ repoRoot });
+
+  const makeImportAdapter = (failOnCore: boolean): SemanticAdapter => ({
+    id: 'snapshot-preservation-test-adapter',
+    version: '1',
+    capabilities: ['imports'],
+    supports: (file) => file.language === 'typescript',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+      async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
+        if (file.relativePath === 'src/a-importer.ts') {
+          yield {
+            kind: 'relation',
+            relation: {
+              source: { kind: 'file', path: 'src/a-importer.ts', languageId: file.language },
+              target: { kind: 'file', path: 'src/core.ts', languageId: file.language },
+              kind: 'DEPENDS_ON',
+              metadata: {
+                confidence: 'proven',
+                provenance: 'snapshot-preservation-test-adapter:import'
+              },
+              evidence: [
+                {
+                  file: file.relativePath,
+                  snippet: file.content,
+                  confidence: 'proven'
+                }
+              ]
+            }
+          };
+        }
+        if (failOnCore && file.relativePath === 'src/core.ts') {
+          throw new Error('snapshot preservation adapter failed');
+        }
+      }
+    })
+  });
+
+  const successfulRegistry = new AdapterRegistry();
+  successfulRegistry.register(makeImportAdapter(false));
+  const firstIndex = await indexProjectWithRegistryForTest({ repoRoot }, successfulRegistry);
+
+  const firstReport = await analyzeDiff({ repoRoot, changedFiles: ['src/core.ts'] });
+  assert.equal(firstReport.indexRunId, firstIndex.indexRunId);
+  assert.ok(firstReport.affectedFiles.some((file) => file.path === 'src/a-importer.ts'));
+  assert.equal(firstReport.warnings?.some((warning) => warning.includes('coverage gap')), undefined);
+
+  const failingRegistry = new AdapterRegistry();
+  failingRegistry.register(makeImportAdapter(true));
+  await assert.rejects(
+    indexProjectWithRegistryForTest({ repoRoot }, failingRegistry),
+    /snapshot preservation adapter failed/
+  );
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const failedRun = db
+      .prepare('SELECT id, status FROM index_runs ORDER BY id DESC LIMIT 1')
+      .get() as { id: number; status: string };
+    assert.equal(failedRun.status, 'failed');
+    assert.notEqual(failedRun.id, firstIndex.indexRunId);
+
+    const currentFiles = db
+      .prepare(
+        `SELECT path, index_run_id
+         FROM files
+         WHERE path IN ('src/a-importer.ts', 'src/core.ts')
+         ORDER BY path`
+      )
+      .all() as Array<{ path: string; index_run_id: number }>;
+    assert.deepEqual(
+      currentFiles.map((row) => ({ path: row.path, indexRunId: row.index_run_id })),
+      [
+        { path: 'src/a-importer.ts', indexRunId: firstIndex.indexRunId },
+        { path: 'src/core.ts', indexRunId: firstIndex.indexRunId }
+      ]
+    );
+
+    const relation = db
+      .prepare(
+        `SELECT index_run_id
+         FROM relations
+         WHERE source_entity_id = ? AND target_entity_id = ? AND kind = ?`
+      )
+      .get('file:src/a-importer.ts', 'file:src/core.ts', 'DEPENDS_ON') as {
+      index_run_id: number;
+    };
+    assert.equal(relation.index_run_id, firstIndex.indexRunId);
+
+    const mainHead = db
+      .prepare(
+        `SELECT t.index_run_id
+         FROM branches b
+         INNER JOIN transactions t ON t.id = b.head_tx_id
+         WHERE b.name = 'main'`
+      )
+      .get() as { index_run_id: number };
+    assert.equal(mainHead.index_run_id, firstIndex.indexRunId);
+
+    const failedCoverage = db
+      .prepare(
+        `SELECT path, status, reason
+         FROM index_coverage
+         WHERE index_run_id = ? AND adapter_id = ?
+         ORDER BY path`
+      )
+      .all(failedRun.id, 'snapshot-preservation-test-adapter') as Array<{
+      path: string;
+      status: string;
+      reason: string;
+    }>;
+    assert.deepEqual(
+      failedCoverage.map((row) => ({
+        path: row.path,
+        status: row.status,
+        reason: row.reason
+      })),
+      [
+        {
+          path: 'src/a-importer.ts',
+          status: 'indexed',
+          reason: 'matched source extension'
+        },
+        {
+          path: 'src/core.ts',
+          status: 'skipped',
+          reason: 'adapter failed: snapshot preservation adapter failed'
+        }
+      ]
+    );
+  } finally {
+    db.close();
+  }
+
+  const rerunReport = await analyzeDiff({ repoRoot, changedFiles: ['src/core.ts'] });
+  assert.equal(rerunReport.indexRunId, firstIndex.indexRunId);
+  assert.ok(rerunReport.affectedFiles.some((file) => file.path === 'src/a-importer.ts'));
+  assert.equal(rerunReport.warnings?.some((warning) => warning.includes('coverage gap')), undefined);
+});
+
 test('indexProject preserves completed same-adapter file coverage after later file failure', async () => {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-adapter-partial-fail-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });

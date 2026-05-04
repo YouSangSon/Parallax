@@ -2840,6 +2840,64 @@ test('indexProject dual-writes relations to facts/transactions and advances main
   }
 });
 
+test('indexProject infers VERIFIES and tests fact from default TypeScript test imports', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-default-test-target-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await mkdir(path.join(repoRoot, 'tests'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/core.ts'), 'export function core() { return 1; }\n');
+  await writeFile(
+    path.join(repoRoot, 'tests/core.test.ts'),
+    [
+      'import { core } from "../src/core";',
+      'test("core", () => {',
+      '  expect(core()).toBe(1);',
+      '});',
+      ''
+    ].join('\n')
+  );
+  await initProject({ repoRoot });
+
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const relationRows = db
+      .prepare(
+        `SELECT kind
+         FROM relations
+         WHERE index_run_id = ?
+           AND source_entity_id = ?
+           AND target_entity_id = ?
+         ORDER BY kind`
+      )
+      .all(index.indexRunId, 'file:tests/core.test.ts', 'file:src/core.ts') as Array<{ kind: RelationKind }>;
+
+    assert.deepEqual(
+      relationRows.map((row) => row.kind),
+      ['DEPENDS_ON', 'VERIFIES']
+    );
+
+    const testsFacts = db
+      .prepare(
+        `SELECT f.value_blob
+         FROM facts f
+         INNER JOIN transactions t ON f.tx_id = t.id
+         WHERE t.agent = 'indexer'
+           AND f.entity_id = ?
+           AND f.attribute = ?
+         ORDER BY f.value_blob`
+      )
+      .all('file:tests/core.test.ts', 'tests') as Array<{ value_blob: string }>;
+
+    assert.deepEqual(
+      testsFacts.map((row) => JSON.parse(row.value_blob) as string),
+      ['file:src/core.ts']
+    );
+  } finally {
+    db.close();
+  }
+});
+
 test('indexProject maps adapter relation kinds to static memory attributes', async () => {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-relation-kind-memory-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });

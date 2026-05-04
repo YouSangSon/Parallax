@@ -1417,13 +1417,20 @@ test('indexProject preserves completed same-adapter file coverage after later fi
       target_entity_id: string;
       provenance: string;
     }>;
-    assert.deepEqual(relationRows, [
-      {
-        source_entity_id: 'file:src/a-ok.ts',
-        target_entity_id: 'file:src/a-ok.ts',
-        provenance: 'typescript-partial-failing-adapter:src/a-ok.ts'
-      }
-    ]);
+    assert.deepEqual(
+      relationRows.map((row) => ({
+        sourceEntityId: row.source_entity_id,
+        targetEntityId: row.target_entity_id,
+        provenance: row.provenance
+      })),
+      [
+        {
+          sourceEntityId: 'file:src/a-ok.ts',
+          targetEntityId: 'file:src/a-ok.ts',
+          provenance: 'typescript-partial-failing-adapter:src/a-ok.ts'
+        }
+      ]
+    );
   } finally {
     db.close();
   }

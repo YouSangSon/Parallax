@@ -322,6 +322,7 @@ async function indexProjectInternal(
         adapterRunId,
         adapterId: adapter.id
       };
+      const completedFilePaths = new Set<string>();
       try {
         const run = await adapter.start(ctx, adapterFiles);
         try {
@@ -338,6 +339,7 @@ async function indexProjectInternal(
               'proven',
               indexRunId
             );
+            completedFilePaths.add(file.relativePath);
           }
         } finally {
           if (run.dispose) {
@@ -352,7 +354,7 @@ async function indexProjectInternal(
           stmts.insertCoverage,
           indexRunId,
           adapter,
-          adapterFiles,
+          adapterFiles.filter((file) => !completedFilePaths.has(file.relativePath)),
           `adapter failed: ${redactSecrets(message)}`
         );
         markUnstartedAdapterRunsSkipped(

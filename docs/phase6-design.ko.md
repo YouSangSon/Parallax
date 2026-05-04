@@ -166,12 +166,12 @@
 
 | 항목 | 테스트 수 (예상) |
 |---|---|
-| 6.1/6.7 foundation regression | 2026-05-04 branch 검증: 130 passing |
+| 6.1/6.7 foundation regression | 2026-05-04 branch 검증: 132 passing |
 | 6.2 TS Compiler API parity + advanced cases | +12 (re-export, path alias, type-only, namespace import, generic call, JSX call, `import.meta`) |
 | 6.3 source span | +5 (basic span, multi-line range, regex heuristic span, NULL backward-compat, MCP serialization) |
 | 6.4 commit SHA + dirty | +4 (clean repo, dirty repo, non-git repo, stale-index detection) |
 | 6.6 workspace loader | +5 (init, add-repo, idempotent, list, CLI integration) |
-| **남은 예상** | **~26** (현재 branch 130 passing에서 추가 예정) |
+| **남은 예상** | **~26** (현재 branch 132 passing에서 추가 예정) |
 
 ---
 
@@ -264,7 +264,7 @@ Foundation subset (`feature/phase6-adapter-foundations`):
 
 Remaining Phase 6 scope:
 
-- [x] 2026-05-04 branch verification: `npm test` 130 passing, `npm run check`, `npm run docs:lint`, `npm audit --audit-level=high`
+- [x] 2026-05-04 branch verification: `npm test` 132 passing, `npm run check`, `npm run docs:lint`, `npm audit --audit-level=high`
 - [ ] TS adapter parity tests에서 regex-MVP가 *놓치는* 케이스 5종 이상이 TS adapter로 잡힘 (re-export, path alias, type-only import, namespace import, generic call)
 - [ ] 새 evidence 행에 span(line/col/range/confidence) 100% 채워짐
 - [ ] dirty repo 상태에서 indexing 시 `index_runs.git_is_dirty=1` 기록 + analyzer 경고 출력

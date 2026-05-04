@@ -159,31 +159,6 @@ async function indexProjectInternal(
     throw new Error('no adapter registered');
   }
 
-  const scan = scanFiles(repoRoot, options.maxFileBytes ?? defaultMaxFileBytes);
-  const files = scan.files;
-  const classified = registry.classify(files);
-  const skippedCoverage = scan.skipped.map((file) => ({
-    file,
-    adapterId: adapterIdForSkippedFile(registry, repoRoot, file)
-  }));
-  const adapterGroups = adapterGroupsInRegistryOrder(
-    registeredAdapters,
-    classified,
-    skippedCoverage
-  );
-  const fileAdapterByPath = new Map<string, SemanticAdapter>();
-  for (const group of adapterGroups) {
-    for (const file of group.files) {
-      fileAdapterByPath.set(file.relativePath, group.adapter);
-    }
-  }
-  const indexedFiles = files.filter((file) => fileAdapterByPath.has(file.relativePath));
-  const unsupportedFiles = files.filter((file) => !fileAdapterByPath.has(file.relativePath));
-  const unsupportedLanguageIds = languageIdsForSkippedAndUnsupported(
-    skippedCoverage,
-    unsupportedFiles
-  );
-
   const indexRunResult = db
     .prepare(
       "INSERT INTO index_runs (repo_id, status, started_at, extractor_version) VALUES (?, ?, datetime('now'), ?)"
@@ -192,6 +167,31 @@ async function indexProjectInternal(
   const indexRunId = Number(indexRunResult.lastInsertRowid);
 
   try {
+    const scan = scanFiles(repoRoot, options.maxFileBytes ?? defaultMaxFileBytes);
+    const files = scan.files;
+    const classified = registry.classify(files);
+    const skippedCoverage = scan.skipped.map((file) => ({
+      file,
+      adapterId: adapterIdForSkippedFile(registry, repoRoot, file)
+    }));
+    const adapterGroups = adapterGroupsInRegistryOrder(
+      registeredAdapters,
+      classified,
+      skippedCoverage
+    );
+    const fileAdapterByPath = new Map<string, SemanticAdapter>();
+    for (const group of adapterGroups) {
+      for (const file of group.files) {
+        fileAdapterByPath.set(file.relativePath, group.adapter);
+      }
+    }
+    const indexedFiles = files.filter((file) => fileAdapterByPath.has(file.relativePath));
+    const unsupportedFiles = files.filter((file) => !fileAdapterByPath.has(file.relativePath));
+    const unsupportedLanguageIds = languageIdsForSkippedAndUnsupported(
+      skippedCoverage,
+      unsupportedFiles
+    );
+
     const adapterRunIds = new Map<SemanticAdapter, number>();
     const insertAdapterRun = db.prepare(`
         INSERT INTO adapter_runs (index_run_id, adapter_id, adapter_version, language_ids, status, started_at)
@@ -311,7 +311,7 @@ async function indexProjectInternal(
         updateAdapterRun(db, adapterRunId, 'skipped');
         continue;
       }
-      const ctx: ExtractCtx = { repoRoot, indexRunId, adapterRunId };
+      const ctx: ExtractCtx = { repoRoot, indexRunId, adapterRunId, indexedFiles };
       const adapterPersistCtx: PersistContext = {
         ...persistCtx,
         adapterRunId,

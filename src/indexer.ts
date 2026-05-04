@@ -824,12 +824,12 @@ function relationId(
 
 function relationEvidenceId(
   relationIdValue: string,
-  sourcePath: string,
+  evidenceFile: string,
   snippet: string,
-  index: number
+  confidence: string
 ): string {
   return createHash('sha1')
-    .update(`${relationIdValue}:${index}:${sourcePath}:${snippet}`)
+    .update(JSON.stringify([relationIdValue, evidenceFile, snippet, confidence]))
     .digest('hex')
     .slice(0, 20);
 }
@@ -883,11 +883,11 @@ function insertCanonicalRelation(input: {
   );
 
   input.upsertTextAttribute.run('evidence_snippet');
-  input.evidence.forEach((evidence, index) => {
+  input.evidence.forEach((evidence) => {
     const redactedSnippet = redactSecrets(evidence.snippet);
     const isSnippetRedacted = redactedSnippet !== evidence.snippet;
     input.insertRelationEvidence.run(
-      relationEvidenceId(id, evidence.file, redactedSnippet, index),
+      relationEvidenceId(id, evidence.file, redactedSnippet, evidence.confidence),
       id,
       input.repoId,
       evidence.file,

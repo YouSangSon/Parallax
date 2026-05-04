@@ -351,6 +351,7 @@ test('indexProject persists adapter-provided relation evidence entries', async (
 
   const firstSnippet = 'adapter short evidence: source references target';
   const secondSnippet = 'adapter secret evidence: sk-test-secret-1234567890';
+  let reverseEvidenceOrder = false;
   const registry = new AdapterRegistry();
   registry.register({
     id: 'relation-evidence-test-adapter',
@@ -359,6 +360,18 @@ test('indexProject persists adapter-provided relation evidence entries', async (
     supports: (file) => file.language === 'typescript',
     start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
       async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
+        const evidence = [
+          {
+            file: 'adapter/evidence-one.ts',
+            snippet: firstSnippet,
+            confidence: 'proven'
+          },
+          {
+            file: 'adapter/evidence-two.ts',
+            snippet: secondSnippet,
+            confidence: 'inferred'
+          }
+        ] as const;
         yield {
           kind: 'relation',
           relation: {
@@ -369,18 +382,7 @@ test('indexProject persists adapter-provided relation evidence entries', async (
               confidence: 'proven',
               provenance: `relation-evidence-test-adapter:${file.relativePath}`
             },
-            evidence: [
-              {
-                file: 'adapter/evidence-one.ts',
-                snippet: firstSnippet,
-                confidence: 'proven'
-              },
-              {
-                file: 'adapter/evidence-two.ts',
-                snippet: secondSnippet,
-                confidence: 'inferred'
-              }
-            ]
+            evidence: reverseEvidenceOrder ? [...evidence].reverse() : [...evidence]
           }
         };
       }
@@ -454,19 +456,35 @@ test('indexProject persists adapter-provided relation evidence entries', async (
       ]
     );
 
+    const firstEvidenceIdsByIdentity = new Map(
+      firstEvidenceRows.map((row) => [
+        `${row.file_path}\0${row.snippet}\0${row.confidence}`,
+        row.id
+      ])
+    );
+
+    reverseEvidenceOrder = true;
     const secondIndex = await indexProjectWithRegistryForTest({ repoRoot }, registry);
     const secondEvidenceRows = db
       .prepare(
-        `SELECT id
+        `SELECT id, file_path, snippet, confidence
          FROM relation_evidence
          WHERE index_run_id = ?
          ORDER BY file_path`
       )
-      .all(secondIndex.indexRunId) as Array<{ id: string }>;
-    assert.deepEqual(
-      secondEvidenceRows.map((row) => row.id),
-      firstEvidenceRows.map((row) => row.id)
+      .all(secondIndex.indexRunId) as Array<{
+        id: string;
+        file_path: string;
+        snippet: string;
+        confidence: string;
+      }>;
+    const secondEvidenceIdsByIdentity = new Map(
+      secondEvidenceRows.map((row) => [
+        `${row.file_path}\0${row.snippet}\0${row.confidence}`,
+        row.id
+      ])
     );
+    assert.deepEqual(secondEvidenceIdsByIdentity, firstEvidenceIdsByIdentity);
   } finally {
     db.close();
   }

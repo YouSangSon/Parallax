@@ -114,6 +114,10 @@ type RelationEvidenceInput = {
   file: string;
   snippet: string;
   confidence: Confidence;
+  startLine?: number;
+  endLine?: number;
+  startCol?: number;
+  endCol?: number;
 };
 
 type AdapterGroup = {
@@ -705,7 +709,11 @@ function relationEvidenceForPersistence(
     return relation.evidence.map((evidence) => ({
       file: evidence.file,
       snippet: evidence.snippet ?? '',
-      confidence: evidence.confidence
+      confidence: evidence.confidence,
+      ...(evidence.startLine !== undefined ? { startLine: evidence.startLine } : {}),
+      ...(evidence.endLine !== undefined ? { endLine: evidence.endLine } : {}),
+      ...(evidence.startCol !== undefined ? { startCol: evidence.startCol } : {}),
+      ...(evidence.endCol !== undefined ? { endCol: evidence.endCol } : {})
     }));
   }
   return [
@@ -824,14 +832,31 @@ function relationId(
 
 function relationEvidenceId(
   relationIdValue: string,
-  evidenceFile: string,
+  evidence: RelationEvidenceInput,
   snippet: string,
-  confidence: string
 ): string {
+  const identity: unknown[] = [relationIdValue, evidence.file, snippet, evidence.confidence];
+  if (hasEvidenceSpan(evidence)) {
+    identity.push({
+      startLine: evidence.startLine ?? null,
+      endLine: evidence.endLine ?? null,
+      startCol: evidence.startCol ?? null,
+      endCol: evidence.endCol ?? null
+    });
+  }
   return createHash('sha1')
-    .update(JSON.stringify([relationIdValue, evidenceFile, snippet, confidence]))
+    .update(JSON.stringify(identity))
     .digest('hex')
     .slice(0, 20);
+}
+
+function hasEvidenceSpan(evidence: RelationEvidenceInput): boolean {
+  return (
+    evidence.startLine !== undefined ||
+    evidence.endLine !== undefined ||
+    evidence.startCol !== undefined ||
+    evidence.endCol !== undefined
+  );
 }
 
 function insertCanonicalRelation(input: {
@@ -887,7 +912,7 @@ function insertCanonicalRelation(input: {
     const redactedSnippet = redactSecrets(evidence.snippet);
     const isSnippetRedacted = redactedSnippet !== evidence.snippet;
     input.insertRelationEvidence.run(
-      relationEvidenceId(id, evidence.file, redactedSnippet, evidence.confidence),
+      relationEvidenceId(id, evidence, redactedSnippet),
       id,
       input.repoId,
       evidence.file,

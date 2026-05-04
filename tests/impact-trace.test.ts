@@ -490,6 +490,111 @@ test('indexProject persists adapter-provided relation evidence entries', async (
   }
 });
 
+test('indexProject keeps relation evidence identities distinct for different spans', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-relation-evidence-span-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const target = 1;\n');
+  await initProject({ repoRoot });
+
+  const snippet = 'same evidence snippet';
+  let reverseEvidenceOrder = false;
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'relation-evidence-span-test-adapter',
+    version: '1',
+    capabilities: ['references'],
+    supports: (file) => file.language === 'typescript',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+      async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
+        const evidence = [
+          {
+            file: 'src/app.ts',
+            snippet,
+            confidence: 'proven',
+            startLine: 1
+          },
+          {
+            file: 'src/app.ts',
+            snippet,
+            confidence: 'proven',
+            startLine: 2
+          }
+        ] as const;
+        yield {
+          kind: 'relation',
+          relation: {
+            source: { kind: 'file', path: file.relativePath, languageId: file.language },
+            target: { kind: 'file', path: file.relativePath, languageId: file.language },
+            kind: 'REFERENCES',
+            metadata: {
+              confidence: 'proven',
+              provenance: `relation-evidence-span-test-adapter:${file.relativePath}`
+            },
+            evidence: reverseEvidenceOrder ? [...evidence].reverse() : [...evidence]
+          }
+        };
+      }
+    })
+  });
+
+  const firstIndex = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const firstEvidenceRows = db
+      .prepare(
+        `SELECT id, file_path, snippet, confidence
+         FROM relation_evidence
+         WHERE index_run_id = ?
+         ORDER BY id`
+      )
+      .all(firstIndex.indexRunId) as Array<{
+        id: string;
+        file_path: string;
+        snippet: string;
+        confidence: string;
+      }>;
+    assert.deepEqual(
+      firstEvidenceRows.map((row) => ({
+        filePath: row.file_path,
+        snippet: row.snippet,
+        confidence: row.confidence
+      })),
+      [
+        {
+          filePath: 'src/app.ts',
+          snippet,
+          confidence: 'proven'
+        },
+        {
+          filePath: 'src/app.ts',
+          snippet,
+          confidence: 'proven'
+        }
+      ]
+    );
+    const firstIdSet = new Set(firstEvidenceRows.map((row) => row.id));
+    assert.equal(firstEvidenceRows.length, 2);
+    assert.equal(firstIdSet.size, 2);
+
+    reverseEvidenceOrder = true;
+    const secondIndex = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+    const secondEvidenceRows = db
+      .prepare(
+        `SELECT id
+         FROM relation_evidence
+         WHERE index_run_id = ?
+         ORDER BY id`
+      )
+      .all(secondIndex.indexRunId) as Array<{ id: string }>;
+    assert.deepEqual(
+      new Set(secondEvidenceRows.map((row) => row.id)),
+      firstIdSet
+    );
+  } finally {
+    db.close();
+  }
+});
+
 test('indexProject preserves per-adapter terminal status when a later adapter fails', async () => {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-adapter-fail-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });

@@ -1350,6 +1350,48 @@ test('indexProject preserves diagnostics when an adapter fails after emitting th
   }
 });
 
+test('indexProject redacts adapter failure summaries before persisting adapter runs', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-adapter-fail-redaction-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const app = 1;\n');
+  await initProject({ repoRoot });
+
+  const rawSecret = 'sk_live_111111111111111111111111';
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'secret-failing-adapter',
+    version: '1',
+    capabilities: ['references'],
+    supports: (file) => file.language === 'typescript',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+      async *process(_file: ScannedFile): AsyncIterable<IndexEvent> {
+        throw new Error(`adapter failed with ${rawSecret}`);
+      }
+    })
+  });
+
+  await assert.rejects(indexProjectWithRegistryForTest({ repoRoot }, registry), /adapter failed/);
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const adapterRun = db
+      .prepare(
+        `SELECT status, error_summary
+         FROM adapter_runs
+         WHERE adapter_id = ?`
+      )
+      .get('secret-failing-adapter') as {
+      status: string;
+      error_summary: string | null;
+    };
+    assert.equal(adapterRun.status, 'failed');
+    assert.doesNotMatch(adapterRun.error_summary ?? '', new RegExp(rawSecret));
+    assert.match(adapterRun.error_summary ?? '', /\[REDACTED_STRIPE_KEY\]/);
+  } finally {
+    db.close();
+  }
+});
+
 test('indexProject persists adapter-provided relation evidence entries', async () => {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-relation-evidence-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
@@ -1497,6 +1539,97 @@ test('indexProject persists adapter-provided relation evidence entries', async (
       ])
     );
     assert.deepEqual(secondEvidenceIdsByIdentity, firstEvidenceIdsByIdentity);
+  } finally {
+    db.close();
+  }
+});
+
+test('indexProject keeps redacted no-span relation evidence identities distinct', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-relation-evidence-redacted-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const target = 1;\n');
+  await initProject({ repoRoot });
+
+  const firstSecret = 'sk_live_111111111111111111111111';
+  const secondSecret = 'sk_live_222222222222222222222222';
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'relation-evidence-redaction-test-adapter',
+    version: '1',
+    capabilities: ['references'],
+    supports: (file) => file.language === 'typescript',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+      async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
+        yield {
+          kind: 'relation',
+          relation: {
+            source: { kind: 'file', path: file.relativePath, languageId: file.language },
+            target: { kind: 'file', path: file.relativePath, languageId: file.language },
+            kind: 'REFERENCES',
+            metadata: {
+              confidence: 'proven',
+              provenance: `relation-evidence-redaction-test-adapter:${file.relativePath}`
+            },
+            evidence: [
+              {
+                file: 'src/app.ts',
+                snippet: `token ${firstSecret}`,
+                confidence: 'proven'
+              },
+              {
+                file: 'src/app.ts',
+                snippet: `token ${secondSecret}`,
+                confidence: 'proven'
+              }
+            ]
+          }
+        };
+      }
+    })
+  });
+
+  const index = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const evidenceRows = db
+      .prepare(
+        `SELECT id, relation_id, file_path, snippet, confidence
+         FROM relation_evidence
+         WHERE index_run_id = ?
+         ORDER BY id`
+      )
+      .all(index.indexRunId) as Array<{
+      id: string;
+      relation_id: string;
+      file_path: string;
+      snippet: string;
+      confidence: string;
+    }>;
+    assert.equal(evidenceRows.length, 2);
+    assert.equal(new Set(evidenceRows.map((row) => row.id)).size, 2);
+    assert.equal(new Set(evidenceRows.map((row) => row.relation_id)).size, 1);
+    assert.deepEqual(
+      evidenceRows.map((row) => ({
+        filePath: row.file_path,
+        snippet: row.snippet,
+        confidence: row.confidence
+      })),
+      [
+        {
+          filePath: 'src/app.ts',
+          snippet: 'token [REDACTED_STRIPE_KEY]',
+          confidence: 'proven'
+        },
+        {
+          filePath: 'src/app.ts',
+          snippet: 'token [REDACTED_STRIPE_KEY]',
+          confidence: 'proven'
+        }
+      ]
+    );
+    assert.equal(evidenceRows.some((row) => row.snippet.includes(firstSecret)), false);
+    assert.equal(evidenceRows.some((row) => row.snippet.includes(secondSecret)), false);
   } finally {
     db.close();
   }

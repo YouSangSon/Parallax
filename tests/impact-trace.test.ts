@@ -8,6 +8,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
 
 import { AdapterRegistry } from '../src/adapters/registry.js';
+import { MultiLanguageRegexAdapter } from '../src/adapters/multi-language-regex.js';
 import type { AdapterRun, ExtractCtx, IndexEvent, SemanticAdapter } from '../src/adapters/types.js';
 import { analyzeDiff, exportImpactGraph, indexProject, initProject, profileEntity } from '../src/index.js';
 import { indexProjectWithRegistryForTest } from '../src/indexer.js';
@@ -519,6 +520,98 @@ test('indexProject uses readable skipped file content for skipped-file adapter a
       .prepare('SELECT count(*) AS count FROM relations WHERE index_run_id = ?')
       .get(index.indexRunId) as { count: number };
     assert.equal(relationCount.count, 0);
+  } finally {
+    db.close();
+  }
+});
+
+test('indexProject lets adapter relation extraction resolve against all indexed files', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-global-file-view-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const app = 1;\n');
+  await writeFile(path.join(repoRoot, 'README.md'), 'The public entrypoint lives in src/app.ts.\n');
+  await initProject({ repoRoot });
+
+  const regexAdapter = new MultiLanguageRegexAdapter();
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'typescript-noop-adapter',
+    version: '1',
+    capabilities: ['references'],
+    supports: (file) => file.language === 'typescript',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+      async *process(_file: ScannedFile): AsyncIterable<IndexEvent> {}
+    })
+  });
+  registry.register({
+    id: 'markdown-regex-adapter',
+    version: regexAdapter.version,
+    capabilities: regexAdapter.capabilities,
+    supports: (file) => file.language === 'markdown',
+    start: (ctx: ExtractCtx, files: readonly ScannedFile[]): AdapterRun => regexAdapter.start(ctx, files)
+  });
+
+  const index = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const relation = db
+      .prepare(
+        `SELECT count(*) AS count
+         FROM relations
+         WHERE index_run_id = ?
+           AND kind = ?
+           AND source_entity_id = ?
+           AND target_entity_id = ?`
+      )
+      .get(index.indexRunId, 'DOCUMENTS', 'file:README.md', 'file:src/app.ts') as {
+      count: number;
+    };
+    assert.equal(relation.count, 1);
+  } finally {
+    db.close();
+  }
+});
+
+test('indexProject records a failed index run when adapter support routing throws', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-support-routing-fail-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const app = 1;\n');
+  await initProject({ repoRoot });
+
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'throwing-support-adapter',
+    version: '1',
+    capabilities: ['references'],
+    supports: (_file) => {
+      throw new Error('supports routing exploded');
+    },
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+      async *process(_file: ScannedFile): AsyncIterable<IndexEvent> {}
+    })
+  });
+
+  await assert.rejects(
+    indexProjectWithRegistryForTest({ repoRoot }, registry),
+    /supports routing exploded/
+  );
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const indexRuns = db.prepare('SELECT id, status FROM index_runs ORDER BY id').all() as Array<{
+      id: number;
+      status: string;
+    }>;
+    assert.deepEqual(
+      indexRuns.map((run) => run.status),
+      ['failed']
+    );
+
+    const adapterRuns = db.prepare('SELECT count(*) AS count FROM adapter_runs').get() as {
+      count: number;
+    };
+    assert.equal(adapterRuns.count, 0);
   } finally {
     db.close();
   }

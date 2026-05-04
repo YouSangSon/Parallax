@@ -1,8 +1,8 @@
 # Impact-Trace 문서 인덱스
 
-> *Updated 2026-05-01, end-of-Phase-4 (P1+P2+P3+P4+P5 모두 ship)*
+> *Updated 2026-05-04, Phase 6 adapter foundations active on branch `feature/phase6-adapter-foundations`*
 
-이 폴더에는 28개 문서가 있습니다 (영문 페어 + stub redirect 포함). *어떤 문서를 언제 읽을지* 한눈에 정리한 navigation guide입니다.
+이 폴더에는 30개 문서가 있습니다 (영문 페어 + stub redirect 포함). *어떤 문서를 언제 읽을지* 한눈에 정리한 navigation guide입니다.
 
 ---
 
@@ -53,9 +53,13 @@
 - 📐 [`phase4-p4-p5-design.ko.md`](phase4-p4-p5-design.ko.md) — P4 (`gc-branches --max-age`) + P5 (sqlite-vec ANN) 회고 design doc. ADR D-017 / D-018.
 - 🧪 [`supermemory-adoption.ko.md`](supermemory-adoption.ko.md) — Phase 4 P1에서 supermemoryai/supermemory의 *어떤 것을 채택하고 어떤 것을 거부했는지* 4-perspective 평가.
 
-### Phase 5 — Candidates (시작 전)
+### Phase 5 — Agent Memory candidates (deferred)
 
-- 🤝 [`phase5-handoff.ko.md`](phase5-handoff.ko.md) — **현재 next-session 진입점**. 5개 후보 ranked priority (B1 MemoryBench → B5 reembed cleanup), D-019..D-022 design 공간.
+- 🤝 [`phase5-handoff.ko.md`](phase5-handoff.ko.md) — Agent Memory 후보 5개 ranked priority (B1 MemoryBench → B5 reembed cleanup). 현재 활성 작업은 아님.
+
+### Phase 6 — Adapter foundations (현재 branch)
+
+- 📐 [`phase6-design.ko.md`](phase6-design.ko.md) — **현재 live work 진입점**. `feature/phase6-adapter-foundations`에서 adapter interface/registry, regex adapter extraction, multi-adapter run attribution, adapter evidence/diagnostics observability, content-sensitive symbol hashes, relation-kind attribute mapping을 진행 중. TS Compiler API adapter, source span persistence, snapshot metadata, workspace loader는 아직 남아 있음.
 
 ---
 
@@ -88,7 +92,7 @@
 | `phase4-handoff.ko.md` | [`phase4-handoff.en.md`](phase4-handoff.en.md) (frozen) |
 | `supermemory-adoption.ko.md` | [`supermemory-adoption.en.md`](supermemory-adoption.en.md) — *4-perspective consensus pattern reference* |
 
-Phase 3 docs (`phase3-design`, `phase3-handoff`), `phase4-p2-p3-design`, `phase4-p4-p5-design`, `phase5-handoff`, `roadmap`, `glossary`, `agent-db-exploration`, `agent-memory-cookbook`, `progress`는 *Korean only* — 영문 페어가 필요하면 follow-up. `/skills/impact-trace/SKILL.md`와 `references/architecture.md`는 영문 (Claude Code skill 표준). `/CHANGELOG.md`도 영문 (사용자 관점 release notes).
+Phase 3 docs (`phase3-design`, `phase3-handoff`), `phase4-p2-p3-design`, `phase4-p4-p5-design`, `phase5-handoff`, `phase6-design`, `roadmap`, `glossary`, `agent-db-exploration`, `agent-memory-cookbook`, `progress`는 *Korean only* — 영문 페어가 필요하면 follow-up. `/skills/impact-trace/SKILL.md`와 `references/architecture.md`는 영문 (Claude Code skill 표준). `/CHANGELOG.md`도 영문 (사용자 관점 release notes).
 
 ---
 
@@ -97,10 +101,10 @@ Phase 3 docs (`phase3-design`, `phase3-handoff`), `phase4-p2-p3-design`, `phase4
 | 무엇을 하려고 하나? | 우선 읽을 것 |
 |---|---|
 | **이 프로젝트가 뭔지 5분 안에** | `vision.ko.md` |
-| **다음 작업이 뭔지** | `roadmap.md` → `phase5-handoff.ko.md` |
+| **다음 작업이 뭔지** | `roadmap.md` → `phase6-design.ko.md` |
 | **두 축의 어휘 헷갈림** | `glossary.md` |
 | 처음 사용해본다 | `/README.md` → `agent-memory-cookbook.ko.md` 섹션 A |
-| 다음 Phase 시작 (Phase 5) | `phase5-handoff.ko.md` |
+| 현재 Phase 진행 (Phase 6) | `phase6-design.ko.md` |
 | Phase 4가 어떻게 끝났는지 | `phase4-p4-p5-design.ko.md` (회고) + `phase4-p2-p3-design.ko.md` (사전) |
 | 결정의 *왜*가 궁금하다 | `decisions.ko.md` |
 | 코드 확장한다 | `/skills/impact-trace/references/architecture.md` 마지막 섹션 |
@@ -125,4 +129,4 @@ Phase 3 docs (`phase3-design`, `phase3-handoff`), `phase4-p2-p3-design`, `phase4
 
 ---
 
-**문서 갯수가 28개 → 35+로 늘면 본 인덱스를 그룹별 sub-index로 분할 검토. 현재 규모는 single page로 충분.**
+**문서 갯수가 30개 → 35+로 늘면 본 인덱스를 그룹별 sub-index로 분할 검토. 현재 규모는 single page로 충분.**

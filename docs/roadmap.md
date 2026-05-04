@@ -2,7 +2,7 @@
 
 > 이 문서는 *두 축* (영향 분석 + 에이전트 메모리)의 진척과 다음 작업을 한 페이지로 정리한다.
 > *왜* 이 방향인지는 [vision.md](vision.md) / [vision.ko.md](vision.ko.md), *왜* 각 결정인지는 [decisions.ko.md](decisions.ko.md), *날짜별 로그*는 [progress.ko.md](progress.ko.md).
-> 마지막 업데이트: 2026-05-01 (Phase 4 P5 머지 직후)
+> 마지막 업데이트: 2026-05-04 (`feature/phase6-adapter-foundations` branch 진행 반영; main 머지 전)
 
 ## 한 눈에 보기
 
@@ -11,13 +11,14 @@
 ────────────────              ────────────────
 P0 (file/edge core)  ✅       Phase 1 (스키마 + MCP 8개)        ✅
 P0 (workspace/contract) ⏳    Phase 1.5 (인덱서 dual-write)     ✅
-P1 (TS Compiler API) ⏳       Phase 2 (real embed + semantic) ✅
-P1 (Python/Go/Rust)  ⏳       Phase 3 (reflect + branch GC)    ✅
-P1 (config/CI/infra) ⏳       Phase 4 P1..P5 (cap/repair/restore/auto-abandon/ANN) ✅
+P1 (adapter foundations) 🟡   Phase 2 (real embed + semantic) ✅
+P1 (TS Compiler API) ⏳       Phase 3 (reflect + branch GC)    ✅
+P1 (Python/Go/Rust)  ⏳       Phase 4 P1..P5 (cap/repair/restore/auto-abandon/ANN) ✅
+P1 (config/CI/infra) ⏳       Phase 5 (5 candidates)            ⏳
 P2 (JVM/.NET/native) ⏳
-P3 (agent-ready MCP) ⏳       Phase 5 (5 candidates)            ⏳
+P3 (agent-ready MCP) ⏳
 
-✅ shipped to main · ⏳ deferred / not started
+✅ shipped to main · 🟡 shipped on feature branch, not merged to main · ⏳ deferred / not started
 ```
 
 ## 영향 분석 축 (`impact-trace-plan.ko.md`의 P0..P4)
@@ -26,9 +27,23 @@ P3 (agent-ready MCP) ⏳       Phase 5 (5 candidates)            ⏳
 
 ### P1 — Mixed Repo Adapter Pack (next track)
 
+현재 live work는 `feature/phase6-adapter-foundations`의 **Phase 6 adapter foundations**다. 이 branch에는 다음 기반 작업이 들어갔다:
+
+- adapter interface + priority registry scaffold, regex MVP의 adapter 추출
+- `indexProject()`의 per-adapter run 생성, coverage attribution, relation `adapter_run_id`
+- 실패한 adapter가 있어도 앞선 completed run 상태를 보존하고 이후 adapter는 skipped로 남김
+- adapter-provided relation evidence 보존, stable redacted evidence ID, fanout 분석의 multi-evidence join dedupe
+- adapter diagnostic을 `index_coverage` diagnostic row와 `adapter_runs.error_summary`로 관측 가능하게 저장
+- symbol `entity_versions.content_hash`가 containing file content hash까지 반영
+- relation-kind → memory attribute mapping 명시화, static relation `attribute_defs.is_code_relation = 1` seed/promote
+- package public exports fence
+
+아직 완료로 표시하지 않는 항목: TypeScript Compiler API adapter, persisted source span/range, `index_runs` snapshot metadata(commit/dirty/branch), workspace loader/resolver.
+
 | 우선순위 | 작업 | 이유 / 시작 트리거 |
 |---|---|---|
-| **A1** | TypeScript Compiler API 어댑터 | regex 추출이 re-export / path alias / type-only import 놓침. 첫 high-confidence lane. |
+| **A0** | Adapter foundations | `feature/phase6-adapter-foundations`에서 진행 중. TS/Workspace adapter series의 prerequisite. |
+| **A1** | TypeScript Compiler API 어댑터 | 아직 미완료. regex 추출이 re-export / path alias / type-only import 놓침. 첫 high-confidence lane. |
 | A2 | Python / Go / Rust 어댑터 (모듈/심볼/import) | 다중 언어 fixture 검증을 위한 최소 cover. |
 | A3 | npm/pnpm/yarn workspace 어댑터 | monorepo 첫 진입점. |
 | A4 | YAML / GitHub Actions / Docker / Terraform 어댑터 | enterprise repo의 실제 영향 경로. |
@@ -86,7 +101,7 @@ P3 (agent-ready MCP) ⏳       Phase 5 (5 candidates)            ⏳
 
 main은 `33c49f0`, **112 tests passing**, ADR D-001..D-018, MCP 12개, CLI 16개.
 
-### Phase 5 후보 (ranked)
+### Phase 5 후보 (ranked, deferred)
 
 자세한 우선순위와 design 공간은 [phase5-handoff.ko.md](phase5-handoff.ko.md).
 
@@ -117,7 +132,7 @@ main은 `33c49f0`, **112 tests passing**, ADR D-001..D-018, MCP 12개, CLI 16개
 
 ## 사용 가이드
 
-- **다음 작업이 뭔지 알고 싶다** → 이 문서의 "Phase 5 후보 ranked" / "P1 next track" 섹션
+- **다음 작업이 뭔지 알고 싶다** → 이 문서의 "P1 next track" / "Phase 5 후보 ranked" 섹션
 - **왜 이 결정인지 알고 싶다** → [decisions.ko.md](decisions.ko.md) (D-001..D-018)
 - **언제 무엇이 들어왔는지 알고 싶다** → [progress.ko.md](progress.ko.md) (chronological log) / [CHANGELOG.md](../CHANGELOG.md) (Phase별 grouping)
 - **새 contributor / agent에게 한 페이지로 설명** → [vision.ko.md](vision.ko.md)
@@ -125,7 +140,7 @@ main은 `33c49f0`, **112 tests passing**, ADR D-001..D-018, MCP 12개, CLI 16개
 
 ## 이 문서를 갱신할 때
 
-1. Phase가 ship될 때 — "완료" 표에 행 추가, "Phase 5 후보"에서 해당 행 제거.
+1. Phase가 main에 ship될 때 — "완료" 표에 행 추가, 후보/진행 중 섹션에서 해당 행 제거.
 2. 새 ADR이 추가될 때 — 해당 Phase 행의 ADR 컬럼 갱신.
 3. P1/P2/P3/P4 영향 분석 축 작업이 시작될 때 — "next track" 표의 우선순위 재정렬.
 4. *큰 방향 전환*이 있을 때 — [vision.md](vision.md) 먼저 갱신, 이 문서는 그 다음.

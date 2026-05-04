@@ -111,11 +111,12 @@ graph LR
 | 2 | Transformers.js + multilingual-e5-base ✅, schema v6 model-agnostic ✅, as_of_tx ✅, branch merge ✅, semantic recall (brute-force int8 cosine) ✅ | ✅ 완료 |
 | 3 | reflective consolidation (entity별 LLM 자동 요약, multi-provider stub/ollama/anthropic/openai), speculative branch GC (soft-delete via `transactions.archived`), schema v7, redact-then-prompt 게이트 + secret 패턴 확장 | ✅ 완료 |
 | 4 | reflect scaling cap (streaming iterate + per-entity bound), Profile API (`profileEntity` 3-bucket view), `factLifecycle` helper, supermemory selective adoption (P1/P4 거부, P2/P3-Expose/P6 채택), Skill packaging (`npx skills add`), `reflect --repair` (orphan 보정), `branch --restore` (역방향 복구), `gc-branches --max-age` (시간 기반 자동 abandon), sqlite-vec ANN (per-model vec0 + brute-force fallback) + `reindex-vec` CLI | ✅ 완료 |
-| 5 | MemoryBench harness · topic clustering · multi-layer reflection · concurrent reflect lock · reembed cleanup | ⏳ 후보 ([phase5-handoff.ko.md](docs/phase5-handoff.ko.md)) |
+| 5 | MemoryBench harness · topic clustering · multi-layer reflection · concurrent reflect lock · reembed cleanup | ⏳ 후보/deferred ([phase5-handoff.ko.md](docs/phase5-handoff.ko.md)) |
+| 6 | adapter interface/registry, `MultiLanguageRegexAdapter`, multi-adapter run attribution, adapter evidence/diagnostic observability, symbol hash sensitivity, relation-kind memory attribute mapping | 🟡 `feature/phase6-adapter-foundations` branch 진행 중; main 머지 전 ([phase6-design.ko.md](docs/phase6-design.ko.md)) |
 
 **비전 한 페이지:** [docs/vision.ko.md](docs/vision.ko.md). **통합 로드맵:** [docs/roadmap.md](docs/roadmap.md). **두 축 어휘:** [docs/glossary.md](docs/glossary.md).
 자세한 사용 예시는 [docs/agent-memory-cookbook.ko.md](docs/agent-memory-cookbook.ko.md).
-Phase별 설계 근거: [Phase 3](docs/phase3-design.ko.md) · [Phase 4 P2/P3](docs/phase4-p2-p3-design.ko.md) · [Phase 4 P4/P5](docs/phase4-p4-p5-design.ko.md) · [Phase 4 핸드오프 (frozen)](docs/phase4-handoff.ko.md) · [Phase 5 핸드오프](docs/phase5-handoff.ko.md) · [supermemory adoption](docs/supermemory-adoption.ko.md).
+Phase별 설계 근거: [Phase 3](docs/phase3-design.ko.md) · [Phase 4 P2/P3](docs/phase4-p2-p3-design.ko.md) · [Phase 4 P4/P5](docs/phase4-p4-p5-design.ko.md) · [Phase 4 핸드오프 (frozen)](docs/phase4-handoff.ko.md) · [Phase 5 핸드오프](docs/phase5-handoff.ko.md) · [Phase 6 설계/진행](docs/phase6-design.ko.md) · [supermemory adoption](docs/supermemory-adoption.ko.md).
 누적 결정 로그: [decisions.ko.md (D-001..D-018)](docs/decisions.ko.md).
 문서 navigation: [docs/README.md](docs/README.md).
 
@@ -488,7 +489,8 @@ npm audit --audit-level=high
 - [Phase 3 설계 문서](docs/phase3-design.ko.md) — schema v7, LLM provider abstraction, reflection, branch GC
 - [Phase 3 핸드오프 (이전 세션)](docs/phase3-handoff.ko.md)
 - [Phase 4 핸드오프 (frozen, 시작 시점 snapshot)](docs/phase4-handoff.ko.md) — 9개 후보 + D-013..D-016 design 공간
-- [Phase 5 핸드오프 (다음 세션 진입점)](docs/phase5-handoff.ko.md) — 5개 후보 + D-019..D-022 design 공간
+- [Phase 5 핸드오프 (Agent Memory 후보/deferred)](docs/phase5-handoff.ko.md) — 5개 후보 + D-019..D-022 design 공간
+- [Phase 6 설계/진행 문서](docs/phase6-design.ko.md) — 현재 `feature/phase6-adapter-foundations` branch의 adapter foundation 작업
 - [supermemory selective adoption](docs/supermemory-adoption.ko.md) — supermemoryai/supermemory에서 채택/거부 근거
 - [Architecture decisions log (D-001..D-018)](docs/decisions.ko.md) — 누적 ADR 로그
 - [Agent DB 탐색 노트](docs/agent-db-exploration.ko.md)

@@ -6,6 +6,31 @@ For day-by-day developer log see [docs/progress.ko.md](docs/progress.ko.md). For
 
 ---
 
+## Phase 6 — Adapter foundations branch (2026-05-04)
+
+Branch `feature/phase6-adapter-foundations`. Not merged to `main` yet.
+
+### Added
+
+- **Adapter foundation scaffold** — `SemanticAdapter`/`AdapterRun` streaming interface, priority `AdapterRegistry`, and `MultiLanguageRegexAdapter` extraction give future TS Compiler API, LSP, CodeQL, and workspace adapters a stable dispatch point.
+- **Multi-adapter attribution** — `indexProject()` now creates per-adapter runs, attributes coverage per adapter, writes relation `adapter_run_id`, and reports adapters used by language.
+- **Adapter diagnostics observability** — diagnostics are persisted as coverage diagnostic entries and summarized on adapter runs, including diagnostics emitted before a later adapter failure.
+- **Public exports fence** — package exports are fenced so consumers import through the intended public package surface.
+
+### Changed
+
+- **Failure handling keeps completed adapter runs intact** — a later adapter failure no longer erases or rewrites earlier completed adapter run status; unstarted later adapters are marked skipped.
+- **Relation evidence preservation** — adapter-provided relation evidence is stored as first-class relation evidence, redacted before persistence, and assigned stable IDs that do not change with evidence order.
+- **Fanout accounting** — impact fanout limits now dedupe relation joins with multiple evidence rows so evidence count does not inflate relation fanout.
+- **Symbol version hashes** — symbol `entity_versions.content_hash` now includes the containing file content hash, so symbol versions change when the file body changes.
+- **Relation-kind memory mapping** — relation-kind to memory attribute mapping is explicit, and static code-relation attributes are seeded/promoted with `is_code_relation = 1`.
+
+### Still pending in Phase 6
+
+- TypeScript Compiler API adapter, persisted source spans/ranges, `index_runs` commit/dirty/branch snapshot metadata, and workspace catalog loader/resolver.
+
+---
+
 ## Phase 4 — Five sub-phases shipped (2026-04-29 ~ 2026-05-01)
 
 main `33c49f0`. **112 tests passing.** ADR D-001..D-018. MCP 12 tools. CLI 16 commands.

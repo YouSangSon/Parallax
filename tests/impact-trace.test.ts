@@ -487,11 +487,20 @@ test('indexProject exposes adapter diagnostics while completing the adapter run'
       reason: string;
     }>;
     const normalCoverage = coverageRows.find((row) => row.path === 'src/app.ts');
-    assert.deepEqual(normalCoverage, {
-      path: 'src/app.ts',
-      status: 'indexed',
-      reason: 'matched source extension'
-    });
+    assert.deepEqual(
+      normalCoverage
+        ? {
+            path: normalCoverage.path,
+            status: normalCoverage.status,
+            reason: normalCoverage.reason
+          }
+        : undefined,
+      {
+        path: 'src/app.ts',
+        status: 'indexed',
+        reason: 'matched source extension'
+      }
+    );
 
     const diagnosticCoverage = coverageRows
       .filter((row) => row.path.startsWith('src/app.ts#diagnostic:'))

@@ -96,6 +96,7 @@ interface PreparedStatements {
   insertSymbol: Statement;
   insertEdge: Statement;
   insertEvidence: Statement;
+  appendAdapterRunErrorSummary: Statement;
 }
 
 interface PersistContext {
@@ -103,6 +104,7 @@ interface PersistContext {
   repoId: number;
   indexRunId: number;
   adapterRunId: number;
+  adapterId: string;
   memoryTxId: string;
   fileIdByPath: Map<string, number>;
   fileContentHashByPath: Map<string, string>;
@@ -222,7 +224,7 @@ async function indexProjectInternal(
     }
 
     const stmts = prepareStatements(db);
-    const persistCtx: Omit<PersistContext, 'adapterRunId'> = {
+    const persistCtx: Omit<PersistContext, 'adapterRunId' | 'adapterId'> = {
       stmts,
       repoId,
       indexRunId,
@@ -299,7 +301,11 @@ async function indexProjectInternal(
         throw new Error(`adapter run missing for ${adapter.id}`);
       }
       const ctx: ExtractCtx = { repoRoot, indexRunId, adapterRunId };
-      const adapterPersistCtx: PersistContext = { ...persistCtx, adapterRunId };
+      const adapterPersistCtx: PersistContext = {
+        ...persistCtx,
+        adapterRunId,
+        adapterId: adapter.id
+      };
       try {
         const run = await adapter.start(ctx, adapterFiles);
         try {
@@ -396,8 +402,14 @@ function updateAdapterRun(
   db: Db,
   adapterRunId: number,
   status: AdapterRunStatus,
-  errorSummary: string | null = null
+  errorSummary?: string | null
 ): void {
+  if (errorSummary === undefined) {
+    db.prepare(
+      "UPDATE adapter_runs SET status = ?, finished_at = datetime('now') WHERE id = ?"
+    ).run(status, adapterRunId);
+    return;
+  }
   db.prepare(
     "UPDATE adapter_runs SET status = ?, finished_at = datetime('now'), error_summary = ? WHERE id = ?"
   ).run(status, errorSummary, adapterRunId);
@@ -555,6 +567,14 @@ function prepareStatements(db: Db): PreparedStatements {
     insertEvidence: db.prepare(`
       INSERT OR REPLACE INTO evidence (id, repo_id, file_path, kind, snippet, confidence, index_run_id)
       VALUES (?, ?, ?, ?, ?, ?, ?)
+    `),
+    appendAdapterRunErrorSummary: db.prepare(`
+      UPDATE adapter_runs
+      SET error_summary = CASE
+        WHEN error_summary IS NULL OR error_summary = '' THEN ?
+        ELSE error_summary || char(10) || ?
+      END
+      WHERE id = ?
     `)
   };
 }
@@ -564,7 +584,49 @@ function handleEvent(event: IndexEvent, file: ScannedFile, ctx: PersistContext):
     persistEntity(event.entity, ctx);
   } else if (event.kind === 'relation') {
     persistRelation(event.relation, file, ctx);
+  } else {
+    persistDiagnostic(event, file, ctx);
   }
+}
+
+function persistDiagnostic(
+  event: Extract<IndexEvent, { kind: 'diagnostic' }>,
+  file: ScannedFile,
+  ctx: PersistContext
+): void {
+  const reason = diagnosticReason(event.level, event.message);
+  if (event.file) {
+    ctx.stmts.insertCoverage.run(
+      ctx.indexRunId,
+      ctx.adapterId,
+      diagnosticCoveragePath(event.file, event.level, reason),
+      diagnosticLanguageId(event.file, file),
+      'skipped',
+      reason
+    );
+    return;
+  }
+  ctx.stmts.appendAdapterRunErrorSummary.run(reason, reason, ctx.adapterRunId);
+}
+
+function diagnosticReason(level: 'warn' | 'error', message: string): string {
+  const label = level === 'warn' ? 'warning' : 'error';
+  return `diagnostic ${label}: ${redactSecrets(message)}`;
+}
+
+function diagnosticCoveragePath(
+  filePath: string,
+  level: 'warn' | 'error',
+  reason: string
+): string {
+  return `${filePath}#diagnostic:${level}:${contentHash(level, reason).slice(0, 12)}`;
+}
+
+function diagnosticLanguageId(filePath: string, currentFile: ScannedFile): string | null {
+  if (filePath === currentFile.relativePath) {
+    return currentFile.language;
+  }
+  return languageForPath(filePath) ?? null;
 }
 
 function persistEntity(entity: PendingEntity, ctx: PersistContext): void {

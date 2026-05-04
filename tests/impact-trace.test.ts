@@ -235,6 +235,231 @@ test('indexProject writes canonical entity graph and broad language file entitie
   }
 });
 
+test('indexProject persists adapter symbol entities without displayName using a fallback', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-symbol-display-fallback-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/app.ts'), 'export function run() { return 1; }\n');
+  await initProject({ repoRoot });
+
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'symbol-display-fallback-test-adapter',
+    version: '1',
+    capabilities: ['symbols'],
+    supports: (file) => file.language === 'typescript',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+      async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
+        yield {
+          kind: 'entity',
+          entity: {
+            kind: 'symbol',
+            path: file.relativePath,
+            symbol: 'run',
+            symbolKind: 'function',
+            languageId: file.language
+          }
+        };
+      }
+    })
+  });
+
+  const index = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const symbol = db
+      .prepare(
+         `SELECT id, display_name
+         FROM entities
+         WHERE updated_index_run_id = ?
+           AND kind = ?
+           AND path = ?
+           AND symbol = ?`
+      )
+      .get(index.indexRunId, 'symbol', 'src/app.ts', 'run') as
+      | { id: string; display_name: string }
+      | undefined;
+
+    assert.deepEqual(symbol, {
+      id: 'symbol:typescript:src/app.ts#function:run',
+      display_name: 'run'
+    });
+  } finally {
+    db.close();
+  }
+});
+
+test('indexProject persists adapter module entities without collapsing them to file ids', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-module-entity-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const app = 1;\n');
+  await initProject({ repoRoot });
+
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'module-entity-test-adapter',
+    version: '1',
+    capabilities: ['symbols'],
+    supports: (file) => file.language === 'typescript',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+      async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
+        yield {
+          kind: 'entity',
+          entity: {
+            kind: 'module',
+            path: file.relativePath,
+            languageId: file.language,
+            displayName: 'app module'
+          }
+        };
+      }
+    })
+  });
+
+  const index = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const moduleEntity = db
+      .prepare(
+         `SELECT id, kind, path, language_id, display_name
+         FROM entities
+         WHERE updated_index_run_id = ?
+           AND kind = ?`
+      )
+      .get(index.indexRunId, 'module') as
+      | {
+          id: string;
+          kind: string;
+          path: string;
+          language_id: string;
+          display_name: string;
+        }
+      | undefined;
+
+    assert.ok(moduleEntity, 'expected module entity to be persisted');
+    assert.notEqual(moduleEntity.id, 'file:src/app.ts');
+    assert.deepEqual(
+      {
+        kind: moduleEntity.kind,
+        path: moduleEntity.path,
+        languageId: moduleEntity.language_id,
+        displayName: moduleEntity.display_name
+      },
+      {
+        kind: 'module',
+        path: 'src/app.ts',
+        languageId: 'typescript',
+        displayName: 'app module'
+      }
+    );
+  } finally {
+    db.close();
+  }
+});
+
+test('indexProject upserts relation endpoint entities before relation persistence', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-relation-endpoint-upsert-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/app.ts'), 'export function run() { return 1; }\n');
+  await initProject({ repoRoot });
+
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'relation-before-entity-test-adapter',
+    version: '1',
+    capabilities: ['calls', 'symbols'],
+    supports: (file) => file.language === 'typescript',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+      async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
+        const runSymbol = {
+          kind: 'symbol',
+          path: file.relativePath,
+          symbol: 'run',
+          symbolKind: 'function',
+          languageId: file.language
+        } as const;
+        yield {
+          kind: 'relation',
+          relation: {
+            source: { kind: 'file', path: file.relativePath, languageId: file.language },
+            target: runSymbol,
+            kind: 'CALLS',
+            metadata: {
+              confidence: 'proven',
+              provenance: 'relation-before-entity-test-adapter:call'
+            },
+            evidence: [
+              {
+                file: file.relativePath,
+                snippet: 'run();',
+                confidence: 'proven'
+              }
+            ]
+          }
+        };
+        yield {
+          kind: 'entity',
+          entity: {
+            ...runSymbol,
+            displayName: 'run'
+          }
+        };
+      }
+    })
+  });
+
+  const index = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const relation = db
+      .prepare(
+        `SELECT count(*) AS count
+         FROM relations
+         WHERE index_run_id = ?
+           AND kind = ?
+           AND source_entity_id = ?
+           AND target_entity_id = ?`
+      )
+      .get(
+        index.indexRunId,
+        'CALLS',
+        'file:src/app.ts',
+        'symbol:typescript:src/app.ts#function:run'
+      ) as { count: number };
+    assert.equal(relation.count, 1);
+
+    const symbol = db
+      .prepare(
+        `SELECT count(*) AS count, display_name
+         FROM entities
+         WHERE id = ?
+           AND kind = ?`
+      )
+      .get('symbol:typescript:src/app.ts#function:run', 'symbol') as {
+      count: number;
+      display_name: string;
+    };
+    assert.deepEqual(symbol, {
+      count: 1,
+      display_name: 'run'
+    });
+
+    const versions = db
+      .prepare(
+        `SELECT count(*) AS count
+         FROM entity_versions
+         WHERE entity_id = ?
+           AND index_run_id = ?`
+      )
+      .get('symbol:typescript:src/app.ts#function:run', index.indexRunId) as { count: number };
+    assert.equal(versions.count, 1);
+  } finally {
+    db.close();
+  }
+});
+
 test('indexProject makes symbol entity version content hash track containing file changes', async () => {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-symbol-version-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });

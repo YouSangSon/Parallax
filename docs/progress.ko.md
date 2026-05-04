@@ -93,7 +93,7 @@ relation-kind memory attribute mapping을 먼저 닫는 foundation 작업이다.
 
 | 날짜 | 명령 | 결과 |
 |---|---|---|
-| 2026-05-04 | `npm test` | **133개 테스트 통과** (`feature/phase6-adapter-foundations` branch, main 머지 전) |
+| 2026-05-04 | `npm test` | **134개 테스트 통과** (`feature/phase6-adapter-foundations` branch, main 머지 전) |
 | 2026-05-04 | `npm run check` | 통과 |
 | 2026-05-04 | `npm audit --audit-level=high` | 취약점 0개 |
 | 2026-04-29 | `npm run lint` | 통과 (Phase 3 완료 후) |

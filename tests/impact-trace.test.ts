@@ -524,6 +524,47 @@ test('indexProject uses readable skipped file content for skipped-file adapter a
   }
 });
 
+test('indexProject routes oversized skipped files using a bounded content sample', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-skipped-bounded-router-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  const generatedPrefix = '// @generated\n';
+  const fullReadSentinel = '__FULL_OVERSIZED_CONTENT_READ__';
+  await writeFile(
+    path.join(repoRoot, 'src/generated.ts'),
+    `${generatedPrefix}${'x'.repeat(5_000)}${fullReadSentinel}\n`
+  );
+  await initProject({ repoRoot });
+
+  const contentLengthsSeen: number[] = [];
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'bounded-sample-content-adapter',
+    version: '1',
+    capabilities: ['references'],
+    supports: (file) => {
+      contentLengthsSeen.push(file.content.length);
+      assert.ok(file.content.length <= 4_096);
+      assert.equal(file.content.includes(fullReadSentinel), false);
+      return file.language === 'typescript' && file.content.startsWith(generatedPrefix);
+    },
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+      async *process(_file: ScannedFile): AsyncIterable<IndexEvent> {}
+    })
+  });
+
+  const index = await indexProjectWithRegistryForTest({ repoRoot, maxFileBytes: 64 }, registry);
+
+  assert.equal(index.filesIndexed, 0);
+  assert.deepEqual(contentLengthsSeen, [4_096]);
+  assert.deepEqual(
+    index.adaptersUsed?.map((adapter) => ({
+      id: adapter.id,
+      languageIds: adapter.languageIds
+    })),
+    [{ id: 'bounded-sample-content-adapter', languageIds: ['typescript'] }]
+  );
+});
+
 test('indexProject exposes adapter diagnostics while completing the adapter run', async () => {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-adapter-diagnostics-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });

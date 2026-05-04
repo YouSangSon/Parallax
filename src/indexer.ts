@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { closeSync, openSync, readFileSync, readdirSync, readSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import { AdapterRegistry } from './adapters/registry.js';
@@ -66,12 +66,15 @@ const languageByFileName = new Map<string, string>([
   ['CODEOWNERS', 'policy']
 ]);
 const defaultMaxFileBytes = 1_000_000;
+const skippedFileContentSampleBytes = 4_096;
 const unsupportedAdapterId = 'unsupported';
 
 type SkippedFile = {
   relativePath: string;
   language?: string;
   reason: string;
+  contentSample?: string;
+  contentSampleHash?: string;
 };
 
 type ScanResult = {
@@ -508,17 +511,12 @@ function adapterIdForSkippedFile(
     return unsupportedAdapterId;
   }
   const absolutePath = path.join(repoRoot, file.relativePath);
-  let content: string;
-  try {
-    content = readFileSync(absolutePath, 'utf8');
-  } catch {
-    return unsupportedAdapterId;
-  }
+  const content = file.contentSample ?? '';
   const adapter = registry.pickAdapter({
     absolutePath,
     relativePath: file.relativePath,
     content,
-    hash: createHash('sha256').update(content).digest('hex'),
+    hash: file.contentSampleHash ?? createHash('sha256').update(content).digest('hex'),
     language: file.language
   });
   return adapter?.id ?? unsupportedAdapterId;
@@ -886,10 +884,17 @@ function scanFiles(repoRoot: string, maxFileBytes: number): ScanResult {
       if (!language) continue;
       const size = statSync(absolutePath).size;
       if (size > maxFileBytes) {
+        const contentSample = readContentSample(absolutePath, size);
         skipped.push({
           relativePath,
           language,
-          reason: `file exceeds maxFileBytes (${size} > ${maxFileBytes})`
+          reason: `file exceeds maxFileBytes (${size} > ${maxFileBytes})`,
+          ...(contentSample
+            ? {
+                contentSample: contentSample.content,
+                contentSampleHash: contentSample.hash
+              }
+            : {})
         });
         continue;
       }
@@ -908,6 +913,30 @@ function scanFiles(repoRoot: string, maxFileBytes: number): ScanResult {
     files: out.sort((a, b) => a.relativePath.localeCompare(b.relativePath)),
     skipped: skipped.sort((a, b) => a.relativePath.localeCompare(b.relativePath))
   };
+}
+
+function readContentSample(
+  absolutePath: string,
+  fileSize: number
+): { content: string; hash: string } | undefined {
+  const length = Math.min(fileSize, skippedFileContentSampleBytes);
+  const buffer = Buffer.allocUnsafe(length);
+  let fd: number | undefined;
+  try {
+    fd = openSync(absolutePath, 'r');
+    const bytesRead = readSync(fd, buffer, 0, length, 0);
+    const content = buffer.subarray(0, bytesRead).toString('utf8');
+    return {
+      content,
+      hash: createHash('sha256').update(content).digest('hex')
+    };
+  } catch {
+    return undefined;
+  } finally {
+    if (fd !== undefined) {
+      closeSync(fd);
+    }
+  }
 }
 
 function evidenceId(filePath: string, kind: string): string {

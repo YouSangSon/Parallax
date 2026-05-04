@@ -403,18 +403,25 @@ test('indexProject gives adapter module entities distinct ids when paths share d
       display_name: string;
     }>;
 
-    assert.deepEqual(moduleRows, [
-      {
-        id: 'module:typescript:src/a.ts',
-        path: 'src/a.ts',
-        display_name: 'shared module'
-      },
-      {
-        id: 'module:typescript:src/b.ts',
-        path: 'src/b.ts',
-        display_name: 'shared module'
-      }
-    ]);
+    assert.deepEqual(
+      moduleRows.map((row) => ({
+        id: row.id,
+        path: row.path,
+        display_name: row.display_name
+      })),
+      [
+        {
+          id: 'module:typescript:src/a.ts',
+          path: 'src/a.ts',
+          display_name: 'shared module'
+        },
+        {
+          id: 'module:typescript:src/b.ts',
+          path: 'src/b.ts',
+          display_name: 'shared module'
+        }
+      ]
+    );
   } finally {
     db.close();
   }
@@ -673,12 +680,15 @@ test('indexProject uses relation endpoint metadata for external entity identity 
          ORDER BY id`
       )
       .all('external_entity') as Array<{ id: string; display_name: string }>;
-    assert.deepEqual(externalRows, [
-      {
-        id: 'external:typescript:react',
-        display_name: 'React'
-      }
-    ]);
+    assert.deepEqual(
+      externalRows.map((row) => ({ id: row.id, display_name: row.display_name })),
+      [
+        {
+          id: 'external:typescript:react',
+          display_name: 'React'
+        }
+      ]
+    );
 
     const relation = db
       .prepare(

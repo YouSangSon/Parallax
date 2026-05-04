@@ -1397,16 +1397,17 @@ function entityIdFromDescriptor(
   d: EntityDescriptor,
   metadata?: Readonly<Record<string, unknown>>
 ): string {
+  const descriptorMetadata = metadata ?? d.metadata;
   if (d.kind === 'symbol') {
     return `symbol:${d.languageId ?? ''}:${d.path ?? ''}#${d.symbolKind ?? ''}:${d.symbol ?? ''}`;
   }
   if (d.kind === 'external_entity') {
-    return `external:${d.languageId ?? ''}:${descriptorIdentity(d, metadata)}`;
+    return `external:${d.languageId ?? ''}:${externalEntityIdentityForId(d, descriptorMetadata)}`;
   }
   if (fileEntityIdKinds.has(d.kind)) {
-    return fileEntityId(d.path ?? descriptorIdentity(d, metadata));
+    return fileEntityId(d.path ?? descriptorIdentityForId(d, descriptorMetadata));
   }
-  return `${d.kind}:${d.languageId ?? ''}:${descriptorIdentity(d, metadata)}`;
+  return `${d.kind}:${d.languageId ?? ''}:${descriptorIdentityForId(d, descriptorMetadata)}`;
 }
 
 function displayNameForEntityDescriptor(
@@ -1414,24 +1415,38 @@ function displayNameForEntityDescriptor(
   entityId: string = entityIdFromDescriptor(d),
   metadata?: Readonly<Record<string, unknown>>
 ): string {
+  const descriptorMetadata = metadata ?? d.metadata;
   return firstNonEmpty(
     d.displayName,
     d.symbol,
     d.path,
-    externalSpecifier(metadata),
+    externalSpecifier(descriptorMetadata),
     entityId
   );
 }
 
-function descriptorIdentity(
+function externalEntityIdentityForId(
   d: EntityDescriptor,
   metadata?: Readonly<Record<string, unknown>>
 ): string {
   return firstNonEmpty(
+    externalSpecifier(metadata),
+    d.path,
+    d.symbol,
     d.displayName,
+    d.kind
+  );
+}
+
+function descriptorIdentityForId(
+  d: EntityDescriptor,
+  metadata?: Readonly<Record<string, unknown>>
+): string {
+  return firstNonEmpty(
     d.path,
     d.symbol,
     externalSpecifier(metadata),
+    d.displayName,
     d.kind
   );
 }

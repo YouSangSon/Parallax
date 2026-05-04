@@ -110,6 +110,12 @@ interface PersistContext {
   counters: { symbolsIndexed: number; edgesIndexed: number };
 }
 
+type RelationEvidenceInput = {
+  file: string;
+  snippet: string;
+  confidence: Confidence;
+};
+
 type AdapterGroup = {
   adapter: SemanticAdapter;
   files: ScannedFile[];
@@ -678,8 +684,7 @@ function persistRelation(
     provenance,
     adapterRunId: ctx.adapterRunId,
     indexRunId: ctx.indexRunId,
-    sourcePath: file.relativePath,
-    snippet: file.content,
+    evidence: relationEvidenceForPersistence(relation, file, confidence),
     insertRelation: ctx.stmts.insertRelation,
     insertRelationEvidence: ctx.stmts.insertRelationEvidence,
     canonicalRelationIds: ctx.canonicalRelationIds,
@@ -689,6 +694,27 @@ function persistRelation(
     upsertTextAttribute: ctx.stmts.upsertTextAttribute,
     insertFactProvenance: ctx.stmts.insertFactProvenance
   });
+}
+
+function relationEvidenceForPersistence(
+  relation: PendingRelation,
+  file: ScannedFile,
+  fallbackConfidence: Confidence
+): RelationEvidenceInput[] {
+  if (relation.evidence && relation.evidence.length > 0) {
+    return relation.evidence.map((evidence) => ({
+      file: evidence.file,
+      snippet: evidence.snippet ?? '',
+      confidence: evidence.confidence
+    }));
+  }
+  return [
+    {
+      file: file.relativePath,
+      snippet: file.content,
+      confidence: fallbackConfidence
+    }
+  ];
 }
 
 function entityIdFromDescriptor(d: EntityDescriptor): string {
@@ -796,8 +822,16 @@ function relationId(
     .slice(0, 20);
 }
 
-function relationEvidenceId(relationIdValue: string, sourcePath: string): string {
-  return createHash('sha1').update(`${relationIdValue}:${sourcePath}`).digest('hex').slice(0, 20);
+function relationEvidenceId(
+  relationIdValue: string,
+  sourcePath: string,
+  snippet: string,
+  index: number
+): string {
+  return createHash('sha1')
+    .update(`${relationIdValue}:${index}:${sourcePath}:${snippet}`)
+    .digest('hex')
+    .slice(0, 20);
 }
 
 function insertCanonicalRelation(input: {
@@ -809,8 +843,7 @@ function insertCanonicalRelation(input: {
   provenance: string;
   adapterRunId: number;
   indexRunId: number;
-  sourcePath: string;
-  snippet: string;
+  evidence: readonly RelationEvidenceInput[];
   insertRelation: Statement;
   insertRelationEvidence: Statement;
   canonicalRelationIds: Set<string>;
@@ -821,8 +854,6 @@ function insertCanonicalRelation(input: {
   insertFactProvenance: Statement;
 }): void {
   const id = relationId(input.kind, input.sourceEntityId, input.targetEntityId, input.provenance);
-  const redactedSnippet = redactSecrets(input.snippet);
-  const isSnippetRedacted = redactedSnippet !== input.snippet;
 
   input.insertRelation.run(
     id,
@@ -834,16 +865,6 @@ function insertCanonicalRelation(input: {
     input.adapterRunId,
     input.indexRunId,
     input.provenance
-  );
-  input.insertRelationEvidence.run(
-    relationEvidenceId(id, input.sourcePath),
-    id,
-    input.repoId,
-    input.sourcePath,
-    input.kind,
-    redactedSnippet,
-    input.confidence,
-    input.indexRunId
   );
   input.canonicalRelationIds.add(id);
 
@@ -862,25 +883,40 @@ function insertCanonicalRelation(input: {
   );
 
   input.upsertTextAttribute.run('evidence_snippet');
-  const evidenceEntity = `file:${input.sourcePath}`;
-  const evidenceValueBlob = JSON.stringify(redactedSnippet);
-  const evidenceFactId = contentHash(
-    evidenceEntity,
-    'evidence_snippet',
-    evidenceValueBlob,
-    'assert'
-  );
-  input.insertFact.run(
-    evidenceFactId,
-    evidenceEntity,
-    'evidence_snippet',
-    evidenceValueBlob,
-    'assert',
-    input.memoryTxId,
-    isSnippetRedacted ? 1 : 0
-  );
-  const provenanceId = contentHash(factId, evidenceFactId);
-  input.insertFactProvenance.run(provenanceId, factId, evidenceFactId);
+  input.evidence.forEach((evidence, index) => {
+    const redactedSnippet = redactSecrets(evidence.snippet);
+    const isSnippetRedacted = redactedSnippet !== evidence.snippet;
+    input.insertRelationEvidence.run(
+      relationEvidenceId(id, evidence.file, redactedSnippet, index),
+      id,
+      input.repoId,
+      evidence.file,
+      input.kind,
+      redactedSnippet,
+      evidence.confidence,
+      input.indexRunId
+    );
+
+    const evidenceEntity = `file:${evidence.file}`;
+    const evidenceValueBlob = JSON.stringify(redactedSnippet);
+    const evidenceFactId = contentHash(
+      evidenceEntity,
+      'evidence_snippet',
+      evidenceValueBlob,
+      'assert'
+    );
+    input.insertFact.run(
+      evidenceFactId,
+      evidenceEntity,
+      'evidence_snippet',
+      evidenceValueBlob,
+      'assert',
+      input.memoryTxId,
+      isSnippetRedacted ? 1 : 0
+    );
+    const provenanceId = contentHash(factId, evidenceFactId);
+    input.insertFactProvenance.run(provenanceId, factId, evidenceFactId);
+  });
 }
 
 function relationKindToAttribute(kind: string): string {

@@ -526,6 +526,97 @@ test('indexProject exposes adapter diagnostics while completing the adapter run'
   }
 });
 
+test('indexProject preserves diagnostics when an adapter fails after emitting them', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-adapter-diagnostic-fail-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const app = 1;\n');
+  await initProject({ repoRoot });
+
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'diagnostic-then-failing-adapter',
+    version: '1',
+    capabilities: ['references'],
+    supports: (file) => file.language === 'typescript',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+      async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
+        yield {
+          kind: 'diagnostic',
+          level: 'warn',
+          message: 'adapter cache unavailable'
+        };
+        yield {
+          kind: 'diagnostic',
+          level: 'error',
+          message: 'file parse recovered before crash',
+          file: file.relativePath
+        };
+        throw new Error('adapter crashed after diagnostics');
+      }
+    })
+  });
+
+  await assert.rejects(
+    indexProjectWithRegistryForTest({ repoRoot }, registry),
+    /adapter crashed after diagnostics/
+  );
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const indexRun = db
+      .prepare('SELECT id, status FROM index_runs ORDER BY id DESC LIMIT 1')
+      .get() as { id: number; status: string };
+    assert.equal(indexRun.status, 'failed');
+
+    const adapterRun = db
+      .prepare(
+        `SELECT status, error_summary
+         FROM adapter_runs
+         WHERE index_run_id = ? AND adapter_id = ?`
+      )
+      .get(indexRun.id, 'diagnostic-then-failing-adapter') as {
+      status: string;
+      error_summary: string | null;
+    };
+    assert.equal(adapterRun.status, 'failed');
+    assert.match(
+      adapterRun.error_summary ?? '',
+      /diagnostic warning: adapter cache unavailable[\s\S]+adapter crashed after diagnostics/
+    );
+
+    const diagnosticCoverage = db
+      .prepare(
+        `SELECT path, status, reason
+         FROM index_coverage
+         WHERE index_run_id = ?
+           AND adapter_id = ?
+           AND path LIKE ?
+         ORDER BY path`
+      )
+      .all(indexRun.id, 'diagnostic-then-failing-adapter', 'src/app.ts#diagnostic:%') as Array<{
+      path: string;
+      status: string;
+      reason: string;
+    }>;
+    assert.deepEqual(
+      diagnosticCoverage.map((row) => ({
+        pathPrefix: row.path.replace(/:[^:]+$/, ':<stable>'),
+        status: row.status,
+        reason: row.reason
+      })),
+      [
+        {
+          pathPrefix: 'src/app.ts#diagnostic:error:<stable>',
+          status: 'skipped',
+          reason: 'diagnostic error: file parse recovered before crash'
+        }
+      ]
+    );
+  } finally {
+    db.close();
+  }
+});
+
 test('indexProject persists adapter-provided relation evidence entries', async () => {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-relation-evidence-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });

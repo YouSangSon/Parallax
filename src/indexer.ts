@@ -410,6 +410,19 @@ function updateAdapterRun(
     ).run(status, adapterRunId);
     return;
   }
+  if (status === 'failed' && errorSummary !== null) {
+    db.prepare(
+      `UPDATE adapter_runs
+       SET status = ?,
+           finished_at = datetime('now'),
+           error_summary = CASE
+             WHEN error_summary IS NULL OR error_summary = '' THEN ?
+             ELSE error_summary || char(10) || ?
+           END
+       WHERE id = ?`
+    ).run(status, errorSummary, errorSummary, adapterRunId);
+    return;
+  }
   db.prepare(
     "UPDATE adapter_runs SET status = ?, finished_at = datetime('now'), error_summary = ? WHERE id = ?"
   ).run(status, errorSummary, adapterRunId);

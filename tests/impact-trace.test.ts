@@ -395,6 +395,125 @@ test('indexProject attributes adapter runs, relations, coverage, and usage per c
   }
 });
 
+test('indexProject preserves skipped-file adapter attribution for skipped-only adapters', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-skipped-only-adapter-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/big.ts'), `export const big = "${'x'.repeat(200)}";\n`);
+  await initProject({ repoRoot });
+
+  const registry = new AdapterRegistry();
+  registry.register(makeAttributionAdapter('typescript-skipped-adapter', 'typescript'));
+
+  const index = await indexProjectWithRegistryForTest({ repoRoot, maxFileBytes: 1 }, registry);
+
+  assert.equal(index.filesIndexed, 0);
+  assert.deepEqual(
+    index.adaptersUsed?.map((adapter) => ({
+      id: adapter.id,
+      languageIds: adapter.languageIds
+    })),
+    [{ id: 'typescript-skipped-adapter', languageIds: ['typescript'] }]
+  );
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const adapterRuns = db
+      .prepare(
+        'SELECT adapter_id, language_ids, status FROM adapter_runs WHERE index_run_id = ? ORDER BY id'
+      )
+      .all(index.indexRunId) as Array<{
+        adapter_id: string;
+        language_ids: string;
+        status: string;
+      }>;
+    assert.deepEqual(
+      adapterRuns.map((run) => ({
+        adapterId: run.adapter_id,
+        languageIds: JSON.parse(run.language_ids) as string[],
+        status: run.status
+      })),
+      [{ adapterId: 'typescript-skipped-adapter', languageIds: ['typescript'], status: 'skipped' }]
+    );
+
+    const joinableCoverage = db
+      .prepare(
+        `SELECT ic.path, ic.adapter_id, ic.status
+         FROM index_coverage ic
+         JOIN adapter_runs ar
+           ON ar.index_run_id = ic.index_run_id
+          AND ar.adapter_id = ic.adapter_id
+         WHERE ic.index_run_id = ?
+         ORDER BY ic.path`
+      )
+      .all(index.indexRunId) as Array<{ path: string; adapter_id: string; status: string }>;
+    assert.deepEqual(joinableCoverage, [
+      { path: 'src/big.ts', adapter_id: 'typescript-skipped-adapter', status: 'skipped' }
+    ]);
+  } finally {
+    db.close();
+  }
+});
+
+test('indexProject uses readable skipped file content for skipped-file adapter attribution', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-skipped-content-router-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(
+    path.join(repoRoot, 'src/generated.ts'),
+    `// @generated\nexport const generated = "${'x'.repeat(200)}";\n`
+  );
+  await initProject({ repoRoot });
+
+  let startCalls = 0;
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'generated-content-adapter',
+    version: '1',
+    capabilities: ['references'],
+    supports: (file) => file.language === 'typescript' && file.content.startsWith('// @generated'),
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => {
+      startCalls++;
+      return {
+        async *process(_file: ScannedFile): AsyncIterable<IndexEvent> {}
+      };
+    }
+  });
+
+  const index = await indexProjectWithRegistryForTest({ repoRoot, maxFileBytes: 1 }, registry);
+
+  assert.equal(index.filesIndexed, 0);
+  assert.equal(index.relationsIndexed, 0);
+  assert.equal(startCalls, 0);
+  assert.deepEqual(
+    index.adaptersUsed?.map((adapter) => ({
+      id: adapter.id,
+      languageIds: adapter.languageIds
+    })),
+    [{ id: 'generated-content-adapter', languageIds: ['typescript'] }]
+  );
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const coverage = db
+      .prepare(
+        `SELECT path, adapter_id, status
+         FROM index_coverage
+         WHERE index_run_id = ?
+         ORDER BY path`
+      )
+      .all(index.indexRunId) as Array<{ path: string; adapter_id: string; status: string }>;
+    assert.deepEqual(coverage, [
+      { path: 'src/generated.ts', adapter_id: 'generated-content-adapter', status: 'skipped' }
+    ]);
+
+    const relationCount = db
+      .prepare('SELECT count(*) AS count FROM relations WHERE index_run_id = ?')
+      .get(index.indexRunId) as { count: number };
+    assert.equal(relationCount.count, 0);
+  } finally {
+    db.close();
+  }
+});
+
 test('indexProject exposes adapter diagnostics while completing the adapter run', async () => {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-adapter-diagnostics-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });

@@ -357,6 +357,69 @@ test('indexProject persists adapter module entities without collapsing them to f
   }
 });
 
+test('indexProject gives adapter module entities distinct ids when paths share displayName', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-module-display-collision-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/a.ts'), 'export const a = 1;\n');
+  await writeFile(path.join(repoRoot, 'src/b.ts'), 'export const b = 1;\n');
+  await initProject({ repoRoot });
+
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'module-display-collision-test-adapter',
+    version: '1',
+    capabilities: ['symbols'],
+    supports: (file) => file.language === 'typescript',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+      async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
+        yield {
+          kind: 'entity',
+          entity: {
+            kind: 'module',
+            path: file.relativePath,
+            languageId: file.language,
+            displayName: 'shared module'
+          }
+        };
+      }
+    })
+  });
+
+  const index = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const moduleRows = db
+      .prepare(
+        `SELECT id, path, display_name
+         FROM entities
+         WHERE updated_index_run_id = ?
+           AND kind = ?
+         ORDER BY id`
+      )
+      .all(index.indexRunId, 'module') as Array<{
+      id: string;
+      path: string;
+      display_name: string;
+    }>;
+
+    assert.deepEqual(moduleRows, [
+      {
+        id: 'module:typescript:src/a.ts',
+        path: 'src/a.ts',
+        display_name: 'shared module'
+      },
+      {
+        id: 'module:typescript:src/b.ts',
+        path: 'src/b.ts',
+        display_name: 'shared module'
+      }
+    ]);
+  } finally {
+    db.close();
+  }
+});
+
 test('indexProject upserts relation endpoint entities before relation persistence', async () => {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-relation-endpoint-upsert-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
@@ -590,6 +653,7 @@ test('indexProject uses relation endpoint metadata for external entity identity 
           entity: {
             kind: 'external_entity',
             languageId: file.language,
+            displayName: 'React',
             metadata: { specifier: 'react' }
           }
         };
@@ -603,16 +667,18 @@ test('indexProject uses relation endpoint metadata for external entity identity 
   try {
     const externalRows = db
       .prepare(
-        `SELECT id
+        `SELECT id, display_name
          FROM entities
          WHERE kind = ?
          ORDER BY id`
       )
-      .all('external_entity') as Array<{ id: string }>;
-    assert.deepEqual(
-      externalRows.map((row) => row.id),
-      ['external:typescript:react']
-    );
+      .all('external_entity') as Array<{ id: string; display_name: string }>;
+    assert.deepEqual(externalRows, [
+      {
+        id: 'external:typescript:react',
+        display_name: 'React'
+      }
+    ]);
 
     const relation = db
       .prepare(

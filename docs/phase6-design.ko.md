@@ -1,7 +1,7 @@
 # Phase 6 — Adapter Foundations + TS Accuracy Lane Design Doc
 
 > **목적:** Phase 1~4(agent-memory 축)가 완료된 시점에서, 원래 P0/P1 (Entity Graph Core, "code graph project") 중 미수입 high-confidence 레인을 닫는다. 본 phase는 **TypeScript 정확도 + workspace catalog + evidence 정밀도**에 집중.
-> **작성:** 2026-05-03 (사전 design doc, 사용자 결정 일부 미해결)
+> **작성:** 2026-05-03 (사전 design doc), 2026-05-04 branch 진행 상태 반영
 > **상태:** 2026-05-04 기준 `feature/phase6-adapter-foundations` branch에서 foundation subset 구현됨. main 머지 전.
 > **참고:** [decisions.ko.md](decisions.ko.md) (D-001 local-first, D-019..D-021 ADR 승격은 아직 pending) · [impact-trace-plan.ko.md](impact-trace-plan.ko.md) (원래 P0/P1 ledger) · [roadmap.md](roadmap.md) (A1/A5 row) · [progress.ko.md](progress.ko.md) · [phase4-p2-p3-design.ko.md](phase4-p2-p3-design.ko.md) (사전 design doc 형식 reference)
 
@@ -157,7 +157,7 @@
 
 - 스키마 변화는 **모두 ADD-only** (D-002 정신). 기존 행/컬럼 변경 없음.
 - regex-MVP adapter는 **영구 유지** — Python/Go/Rust 등 미래에도 fallback. Phase 8의 더 정확한 adapter들이 등록되면 priority로 자동 밀려남.
-- 기존 `evidence` 행은 span = NULL로 남음 (backward-compat). 새 indexing run부터 span 채워짐. 점진적 reindex 가능.
+- 기존 `evidence` 행은 span = NULL로 남음 (backward-compat). Persisted span/range는 아직 남은 Phase 6 작업이며, 도입 후 점진적 reindex 가능.
 - `indexer.ts`는 "scan + persist orchestrator"로 축소 — 호출자(`src/cli.ts:index`, `src/mcp.ts:analyze`)는 변경 0.
 
 ---
@@ -166,19 +166,18 @@
 
 | 항목 | 테스트 수 (예상) |
 |---|---|
-| 6.1/6.7 refactor regression | 0 (기존 테스트 전부 pass — 의도된 no-op) |
+| 6.1/6.7 foundation regression | 2026-05-04 branch 검증: 127 passing |
 | 6.2 TS Compiler API parity + advanced cases | +12 (re-export, path alias, type-only, namespace import, generic call, JSX call, `import.meta`) |
 | 6.3 source span | +5 (basic span, multi-line range, regex heuristic span, NULL backward-compat, MCP serialization) |
 | 6.4 commit SHA + dirty | +4 (clean repo, dirty repo, non-git repo, stale-index detection) |
-| 6.5 relation mapping | +4 (16종 round-trip, attribute_defs additive, recall by attribute, profile bucket parity) |
 | 6.6 workspace loader | +5 (init, add-repo, idempotent, list, CLI integration) |
-| **합계** | **~30** (112 → ~142) |
+| **남은 예상** | **~26** (현재 branch 127 passing에서 추가 예정) |
 
 ---
 
-## 6. Adapter interface 후보 시그니처 *(USER 결정 필요)*
+## 6. Adapter interface 후보와 결정 기록
 
-> 코드 5–10줄. 다음 PR scope를 정의하는 가장 비싼 결정 지점.
+> 초기 후보 비교와 2026-05-03 최종 결정 기록. 다음 PR scope는 TS Compiler API adapter, source span persistence, snapshot metadata, workspace loader다.
 
 ### 후보 A — minimal sync
 
@@ -244,7 +243,7 @@ export interface SemanticAdapter {
 
 - `src/adapters/types.ts` — `SemanticAdapter`, `AdapterRun`, `IndexEvent`, `PendingEntity|Relation|Evidence`, `EntityDescriptor`, `ExtractCtx`, `AdapterCapability`
 - `src/adapters/registry.ts` — `AdapterRegistry` (FIFO, first-match-wins)
-- `tests/adapter_registry.test.ts` — 5 tests (priority order, no-match, dedup, classify, list); 112 → 117 tests
+- `tests/adapter_registry.test.ts` — priority order, no-match, dedup, classify, list coverage 포함
 - `src/types.ts` — `RelationKind` (16-element union) + `ScannedFile` 공용 승격
 
 **Trade-off 회고:** A는 LSP/CodeQL이 등장할 Phase 8에서 시그니처를 깨야 했고, B는 streaming 사례 (huge file, LSP push)에서 다시 wrap이 필요했음. C는 향후 모든 케이스를 흡수 — 비용은 orchestrator-side persist batching이 더 복잡해짐 (#3 regex MVP refactor에서 그 비용을 처음으로 짊어짐).

@@ -7,8 +7,11 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
 
+import { AdapterRegistry } from '../src/adapters/registry.js';
+import type { AdapterRun, ExtractCtx, IndexEvent, SemanticAdapter } from '../src/adapters/types.js';
 import { analyzeDiff, exportImpactGraph, indexProject, initProject } from '../src/index.js';
 import { databasePath } from '../src/store.js';
+import type { ScannedFile } from '../src/types.js';
 
 // Force the deterministic SHA-256 stub so embedding tests don't download a
 // real model (~278 MB) and stay fast/offline. Spawned CLI subprocesses
@@ -74,6 +77,38 @@ async function makeFixtureRepo(): Promise<string> {
   );
 
   return repoRoot;
+}
+
+function makeAttributionAdapter(id: string, language: string): SemanticAdapter {
+  return {
+    id,
+    version: '1',
+    capabilities: ['references'],
+    supports: (file) => file.language === language,
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+      async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
+        yield {
+          kind: 'relation',
+          relation: {
+            source: { kind: 'file', path: file.relativePath, languageId: file.language },
+            target: { kind: 'file', path: file.relativePath, languageId: file.language },
+            kind: 'REFERENCES',
+            metadata: {
+              confidence: 'proven',
+              provenance: `${id}:${file.relativePath}`
+            },
+            evidence: [
+              {
+                file: file.relativePath,
+                snippet: file.content,
+                confidence: 'proven'
+              }
+            ]
+          }
+        };
+      }
+    })
+  };
 }
 
 test('initProject creates config and SQLite database tables', async () => {
@@ -173,6 +208,110 @@ test('indexProject writes canonical entity graph and broad language file entitie
     assert.match(indexedLanguages.languages, /dockerfile/);
     assert.match(indexedLanguages.languages, /protobuf/);
     assert.equal(adapterRuns.count, 1);
+  } finally {
+    db.close();
+  }
+});
+
+test('indexProject attributes adapter runs, relations, coverage, and usage per classified adapter', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-adapters-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await mkdir(path.join(repoRoot, 'scripts'), { recursive: true });
+  await mkdir(path.join(repoRoot, 'docs'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const app = 1;\n');
+  await writeFile(path.join(repoRoot, 'scripts/tool.py'), 'def tool():\n    return 1\n');
+  await writeFile(path.join(repoRoot, 'scripts/large.py'), `value = "${'x'.repeat(160)}"\n`);
+  await writeFile(path.join(repoRoot, 'docs/large.md'), `${'oversized docs\n'.repeat(20)}`);
+  await initProject({ repoRoot });
+
+  const registry = new AdapterRegistry();
+  registry.register(makeAttributionAdapter('typescript-test-adapter', 'typescript'));
+  registry.register(makeAttributionAdapter('python-test-adapter', 'python'));
+
+  const index = await indexProject({ repoRoot, maxFileBytes: 80 }, { registry });
+
+  assert.deepEqual(
+    index.adaptersUsed?.map((adapter) => ({
+      id: adapter.id,
+      languageIds: adapter.languageIds
+    })),
+    [
+      { id: 'typescript-test-adapter', languageIds: ['typescript'] },
+      { id: 'python-test-adapter', languageIds: ['python'] }
+    ]
+  );
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const adapterRuns = db
+      .prepare(
+        'SELECT id, adapter_id, language_ids, status FROM adapter_runs WHERE index_run_id = ? ORDER BY id'
+      )
+      .all(index.indexRunId) as Array<{
+        id: number;
+        adapter_id: string;
+        language_ids: string;
+        status: string;
+      }>;
+    assert.deepEqual(
+      adapterRuns.map((run) => ({
+        adapterId: run.adapter_id,
+        languageIds: JSON.parse(run.language_ids) as string[],
+        status: run.status
+      })),
+      [
+        { adapterId: 'typescript-test-adapter', languageIds: ['typescript'], status: 'completed' },
+        { adapterId: 'python-test-adapter', languageIds: ['python'], status: 'completed' }
+      ]
+    );
+
+    const relationRows = db
+      .prepare(
+        `SELECT r.provenance, ar.adapter_id
+         FROM relations r
+         JOIN adapter_runs ar ON ar.id = r.adapter_run_id
+         WHERE r.index_run_id = ?
+         ORDER BY r.provenance`
+      )
+      .all(index.indexRunId) as Array<{ provenance: string; adapter_id: string }>;
+    assert.deepEqual(
+      relationRows.map((row) => ({
+        provenance: row.provenance,
+        adapter_id: row.adapter_id
+      })),
+      [
+        {
+          provenance: 'python-test-adapter:scripts/tool.py',
+          adapter_id: 'python-test-adapter'
+        },
+        {
+          provenance: 'typescript-test-adapter:src/app.ts',
+          adapter_id: 'typescript-test-adapter'
+        }
+      ]
+    );
+
+    const coverageRows = db
+      .prepare(
+        `SELECT path, adapter_id, status
+         FROM index_coverage
+         WHERE index_run_id = ?
+         ORDER BY path`
+      )
+      .all(index.indexRunId) as Array<{ path: string; adapter_id: string; status: string }>;
+    assert.deepEqual(
+      coverageRows.map((row) => ({
+        path: row.path,
+        adapter_id: row.adapter_id,
+        status: row.status
+      })),
+      [
+        { path: 'docs/large.md', adapter_id: 'unsupported', status: 'skipped' },
+        { path: 'scripts/large.py', adapter_id: 'python-test-adapter', status: 'skipped' },
+        { path: 'scripts/tool.py', adapter_id: 'python-test-adapter', status: 'indexed' },
+        { path: 'src/app.ts', adapter_id: 'typescript-test-adapter', status: 'indexed' }
+      ]
+    );
   } finally {
     db.close();
   }

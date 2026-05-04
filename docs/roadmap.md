@@ -99,7 +99,7 @@ P3 (agent-ready MCP) ⏳
 | **4 P4** | `gc-branches --max-age N` time-based auto-abandon | D-017 |
 | **4 P5** | sqlite-vec ANN, per-model `vec_facts_<model_slug>` lazy create, brute-force fallback, `reindex-vec` CLI | D-018 |
 
-main은 `33c49f0`, **112 tests passing**, ADR D-001..D-018, MCP 12개, CLI 16개.
+Phase 4 code baseline은 `33c49f0`에서 **112 tests passing**, ADR D-001..D-018, MCP 12개, CLI 16개였다. 현재 `main` head는 그 뒤 docs sweep commit `b41b340`이다.
 
 ### Phase 5 후보 (ranked, deferred)
 

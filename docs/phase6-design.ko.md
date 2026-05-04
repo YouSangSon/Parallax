@@ -273,15 +273,15 @@ Remaining Phase 6 scope:
 
 ---
 
-## 8. Phase 5 병렬 트랙 (충돌 없음)
+## 8. Phase 5 후보 backlog (deferred)
 
-`docs/phase5-handoff.ko.md` 기준 — Phase 6와 파일 충돌 0:
+`docs/phase5-handoff.ko.md` 기준의 Agent Memory 후보. 현재 live work는 Phase 6 adapter foundations이며, 아래 항목은 이번 branch의 active scope가 아니다:
 
 - **B1 MemoryBench** — `tests/bench/` + 새 CLI command
 - **B2 reembed cleanup** — `src/agent_memory.ts:reembedFacts` orphan 정리
 - **B3 reflect-lock** — concurrent reflection 충돌 방지
 
-병렬로 한 PR씩 진행. Phase 6와 같은 `src/store.ts` 수정 시점만 rebase 주의.
+Phase 6 완료 또는 별도 우선순위 변경 후 독립 PR로 재개한다. `src/store.ts`를 만지는 항목은 Phase 6 snapshot/workspace 작업과 충돌 가능성이 있으므로 시작 전에 rebase 범위를 확인한다.
 
 ---
 

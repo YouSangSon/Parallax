@@ -33,7 +33,7 @@ Branch `feature/phase6-adapter-foundations`. Not merged to `main` yet.
 
 ## Phase 4 — Five sub-phases shipped (2026-04-29 ~ 2026-05-01)
 
-main `33c49f0`. **112 tests passing.** ADR D-001..D-018. MCP 12 tools. CLI 16 commands.
+Phase 4 code baseline `33c49f0`. **112 tests passing.** ADR D-001..D-018. MCP 12 tools. CLI 16 commands.
 
 ### Added (P1 — scaling cap + Profile API + supermemory adoption)
 

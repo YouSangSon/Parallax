@@ -265,13 +265,12 @@ Foundation subset (`feature/phase6-adapter-foundations`):
 
 Remaining Phase 6 scope:
 
-- [ ] 기존 112 tests **0 회귀** (6.1/6.7 refactor 직후)
+- [x] 2026-05-04 branch verification: `npm test` 127 passing, `npm run check`, `npm run docs:lint`, `npm audit --audit-level=high`
 - [ ] TS adapter parity tests에서 regex-MVP가 *놓치는* 케이스 5종 이상이 TS adapter로 잡힘 (re-export, path alias, type-only import, namespace import, generic call)
 - [ ] 새 evidence 행에 span(line/col/range/confidence) 100% 채워짐
 - [ ] dirty repo 상태에서 indexing 시 `index_runs.git_is_dirty=1` 기록 + analyzer 경고 출력
-- [ ] 16종 relation kind 모두 `attribute_defs`에 매핑 — recall by `attribute=*` 모두 성공
 - [ ] `workspace init` + `workspace add-repo` 라운드트립 — `workspaces` 테이블에 row 존재
-- [ ] ADR D-019/D-020/D-021 + Phase 6 progress ledger 추가
+- [ ] ADR D-019/D-020/D-021 정식 승격 (`decisions.ko.md`/`decisions.en.md`)
 
 ---
 

@@ -744,6 +744,85 @@ test('analyzeDiff report IDs include fanout options that change impact scope', a
   assert.ok(fanoutTwo.affectedFiles.length >= fanoutOne.affectedFiles.length);
 });
 
+test('analyzeDiff fanout limits distinct relations rather than evidence rows', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-fanout-evidence-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/core.ts'), 'export const core = 1;\n');
+  await writeFile(path.join(repoRoot, 'src/a.ts'), 'import { core } from "./core"; export const a = core;\n');
+  await writeFile(path.join(repoRoot, 'src/b.ts'), 'import { core } from "./core"; export const b = core;\n');
+  await initProject({ repoRoot });
+
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'fanout-evidence-test-adapter',
+    version: '1',
+    capabilities: ['references'],
+    supports: (file) => file.language === 'typescript',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+      async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
+        if (file.relativePath !== 'src/a.ts' && file.relativePath !== 'src/b.ts') {
+          return;
+        }
+        yield {
+          kind: 'relation',
+          relation: {
+            source: { kind: 'file', path: file.relativePath, languageId: file.language },
+            target: { kind: 'file', path: 'src/core.ts', languageId: 'typescript' },
+            kind: 'DEPENDS_ON',
+            metadata: {
+              confidence: 'proven',
+              provenance: `fanout-evidence-test-adapter:${file.relativePath}`
+            },
+            evidence: file.relativePath === 'src/a.ts'
+              ? [
+                  {
+                    file: 'evidence/a-one.ts',
+                    snippet: 'a depends on core, first evidence',
+                    confidence: 'proven'
+                  },
+                  {
+                    file: 'evidence/a-two.ts',
+                    snippet: 'a depends on core, second evidence',
+                    confidence: 'proven'
+                  }
+                ]
+              : [
+                  {
+                    file: 'evidence/b-one.ts',
+                    snippet: 'b depends on core',
+                    confidence: 'proven'
+                  }
+                ]
+          }
+        };
+      }
+    })
+  });
+  await indexProjectWithRegistryForTest({ repoRoot }, registry);
+
+  const report = await analyzeDiff({
+    repoRoot,
+    changedFiles: ['src/core.ts'],
+    maxFanout: 2
+  });
+
+  assert.deepEqual(
+    report.affectedFiles.map((file) => file.path),
+    ['src/a.ts', 'src/b.ts']
+  );
+  assert.equal(
+    report.warnings?.some((warning) => warning.includes('fanout limit')) ?? false,
+    false
+  );
+  assert.deepEqual(
+    report.evidence
+      .filter((item) => item.extractorId === 'canonical-entity-graph')
+      .map((item) => item.file)
+      .sort(),
+    ['evidence/a-one.ts', 'evidence/b-one.ts']
+  );
+});
+
 test('indexProject records skipped files when resource limits are exceeded', async () => {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-limits-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });

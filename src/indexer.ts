@@ -159,7 +159,15 @@ async function indexProjectInternal(
   const scan = scanFiles(repoRoot, options.maxFileBytes ?? defaultMaxFileBytes);
   const files = scan.files;
   const classified = registry.classify(files);
-  const adapterGroups = adapterGroupsInRegistryOrder(registeredAdapters, classified);
+  const skippedCoverage = scan.skipped.map((file) => ({
+    file,
+    adapterId: adapterIdForSkippedFile(registry, repoRoot, file)
+  }));
+  const adapterGroups = adapterGroupsInRegistryOrder(
+    registeredAdapters,
+    classified,
+    skippedCoverage
+  );
   const fileAdapterByPath = new Map<string, SemanticAdapter>();
   for (const group of adapterGroups) {
     for (const file of group.files) {
@@ -168,10 +176,6 @@ async function indexProjectInternal(
   }
   const indexedFiles = files.filter((file) => fileAdapterByPath.has(file.relativePath));
   const unsupportedFiles = files.filter((file) => !fileAdapterByPath.has(file.relativePath));
-  const skippedCoverage = scan.skipped.map((file) => ({
-    file,
-    adapterId: adapterIdForSkippedFile(registry, repoRoot, file)
-  }));
   const unsupportedLanguageIds = languageIdsForSkippedAndUnsupported(
     skippedCoverage,
     unsupportedFiles
@@ -299,6 +303,10 @@ async function indexProjectInternal(
       const adapterRunId = adapterRunIds.get(adapter);
       if (adapterRunId === undefined) {
         throw new Error(`adapter run missing for ${adapter.id}`);
+      }
+      if (adapterFiles.length === 0) {
+        updateAdapterRun(db, adapterRunId, 'skipped');
+        continue;
       }
       const ctx: ExtractCtx = { repoRoot, indexRunId, adapterRunId };
       const adapterPersistCtx: PersistContext = {
@@ -452,18 +460,36 @@ function failRunningAdapterRuns(db: Db, indexRunId: number, errorSummary: string
 
 function adapterGroupsInRegistryOrder(
   adapters: readonly SemanticAdapter[],
-  classified: ReadonlyMap<SemanticAdapter, ScannedFile[]>
+  classified: ReadonlyMap<SemanticAdapter, ScannedFile[]>,
+  skippedCoverage: ReadonlyArray<{ file: SkippedFile; adapterId: string }> = []
 ): AdapterGroup[] {
+  const skippedLanguageIdsByAdapter = new Map<string, Set<string>>();
+  for (const { file, adapterId } of skippedCoverage) {
+    if (adapterId === unsupportedAdapterId || !file.language) {
+      continue;
+    }
+    let languageIds = skippedLanguageIdsByAdapter.get(adapterId);
+    if (!languageIds) {
+      languageIds = new Set<string>();
+      skippedLanguageIdsByAdapter.set(adapterId, languageIds);
+    }
+    languageIds.add(file.language);
+  }
+
   return adapters.flatMap((adapter) => {
-    const files = classified.get(adapter);
-    if (!files || files.length === 0) {
+    const files = classified.get(adapter) ?? [];
+    const languageIds = new Set(languageIdsForFiles(files));
+    for (const languageId of skippedLanguageIdsByAdapter.get(adapter.id) ?? []) {
+      languageIds.add(languageId);
+    }
+    if (files.length === 0 && languageIds.size === 0) {
       return [];
     }
     return [
       {
         adapter,
         files,
-        languageIds: languageIdsForFiles(files)
+        languageIds: [...languageIds].sort()
       }
     ];
   });
@@ -481,11 +507,18 @@ function adapterIdForSkippedFile(
   if (!file.language) {
     return unsupportedAdapterId;
   }
+  const absolutePath = path.join(repoRoot, file.relativePath);
+  let content: string;
+  try {
+    content = readFileSync(absolutePath, 'utf8');
+  } catch {
+    return unsupportedAdapterId;
+  }
   const adapter = registry.pickAdapter({
-    absolutePath: path.join(repoRoot, file.relativePath),
+    absolutePath,
     relativePath: file.relativePath,
-    content: '',
-    hash: '',
+    content,
+    hash: createHash('sha256').update(content).digest('hex'),
     language: file.language
   });
   return adapter?.id ?? unsupportedAdapterId;

@@ -446,9 +446,14 @@ test('indexProject preserves skipped-file adapter attribution for skipped-only a
          ORDER BY ic.path`
       )
       .all(index.indexRunId) as Array<{ path: string; adapter_id: string; status: string }>;
-    assert.deepEqual(joinableCoverage, [
-      { path: 'src/big.ts', adapter_id: 'typescript-skipped-adapter', status: 'skipped' }
-    ]);
+    assert.deepEqual(
+      joinableCoverage.map((row) => ({
+        path: row.path,
+        adapter_id: row.adapter_id,
+        status: row.status
+      })),
+      [{ path: 'src/big.ts', adapter_id: 'typescript-skipped-adapter', status: 'skipped' }]
+    );
   } finally {
     db.close();
   }
@@ -501,9 +506,14 @@ test('indexProject uses readable skipped file content for skipped-file adapter a
          ORDER BY path`
       )
       .all(index.indexRunId) as Array<{ path: string; adapter_id: string; status: string }>;
-    assert.deepEqual(coverage, [
-      { path: 'src/generated.ts', adapter_id: 'generated-content-adapter', status: 'skipped' }
-    ]);
+    assert.deepEqual(
+      coverage.map((row) => ({
+        path: row.path,
+        adapter_id: row.adapter_id,
+        status: row.status
+      })),
+      [{ path: 'src/generated.ts', adapter_id: 'generated-content-adapter', status: 'skipped' }]
+    );
 
     const relationCount = db
       .prepare('SELECT count(*) AS count FROM relations WHERE index_run_id = ?')

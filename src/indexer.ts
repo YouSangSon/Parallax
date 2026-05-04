@@ -876,6 +876,7 @@ function updateAdapterRun(
     ).run(status, adapterRunId);
     return;
   }
+  const storedErrorSummary = redactAdapterErrorSummary(errorSummary);
   if (status === 'failed' && errorSummary !== null) {
     db.prepare(
       `UPDATE adapter_runs
@@ -886,12 +887,16 @@ function updateAdapterRun(
              ELSE error_summary || char(10) || ?
            END
        WHERE id = ?`
-    ).run(status, errorSummary, errorSummary, adapterRunId);
+    ).run(status, storedErrorSummary, storedErrorSummary, adapterRunId);
     return;
   }
   db.prepare(
     "UPDATE adapter_runs SET status = ?, finished_at = datetime('now'), error_summary = ? WHERE id = ?"
-  ).run(status, errorSummary, adapterRunId);
+  ).run(status, storedErrorSummary, adapterRunId);
+}
+
+function redactAdapterErrorSummary(errorSummary: string | null): string | null {
+  return errorSummary === null ? null : redactSecrets(errorSummary);
 }
 
 function markUnstartedAdapterRunsSkipped(
@@ -929,7 +934,7 @@ function failRunningAdapterRuns(db: Db, indexRunId: number, errorSummary: string
     `UPDATE adapter_runs
      SET status = ?, finished_at = datetime('now'), error_summary = ?
      WHERE index_run_id = ? AND status = ?`
-  ).run('failed', errorSummary, indexRunId, 'running');
+  ).run('failed', redactSecrets(errorSummary), indexRunId, 'running');
 }
 
 function adapterGroupsInRegistryOrder(
@@ -1592,9 +1597,12 @@ function relationId(
 function relationEvidenceId(
   relationIdValue: string,
   evidence: RelationEvidenceInput,
-  snippet: string,
+  snippet: string
 ): string {
   const identity: unknown[] = [relationIdValue, evidence.file, snippet, evidence.confidence];
+  if (snippet !== evidence.snippet) {
+    identity.push({ rawSnippetHash: contentHash(evidence.snippet).slice(0, 20) });
+  }
   if (hasEvidenceSpan(evidence)) {
     identity.push({
       startLine: evidence.startLine ?? null,

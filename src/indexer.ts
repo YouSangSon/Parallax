@@ -105,6 +105,7 @@ interface PersistContext {
   adapterRunId: number;
   memoryTxId: string;
   fileIdByPath: Map<string, number>;
+  fileContentHashByPath: Map<string, string>;
   canonicalEntityIds: Set<string>;
   canonicalRelationIds: Set<string>;
   counters: { symbolsIndexed: number; edgesIndexed: number };
@@ -227,6 +228,7 @@ async function indexProjectInternal(
       indexRunId,
       memoryTxId,
       fileIdByPath: new Map<string, number>(),
+      fileContentHashByPath: new Map(indexedFiles.map((file) => [file.relativePath, file.hash])),
       canonicalEntityIds: new Set<string>(),
       canonicalRelationIds: new Set<string>(),
       counters: { symbolsIndexed: 0, edgesIndexed: 0 }
@@ -569,6 +571,9 @@ function persistEntity(entity: PendingEntity, ctx: PersistContext): void {
   if (entity.kind === 'symbol') {
     const symbolId = entityIdFromDescriptor(entity);
     const meta = entity.metadata as { exported?: boolean } | undefined;
+    const containingFileContentHash = entity.path
+      ? ctx.fileContentHashByPath.get(entity.path) ?? ''
+      : '';
     ctx.stmts.upsertEntity.run(
       symbolId,
       ctx.repoId,
@@ -583,9 +588,7 @@ function persistEntity(entity: PendingEntity, ctx: PersistContext): void {
     ctx.stmts.insertEntityVersion.run(
       symbolId,
       ctx.indexRunId,
-      createHash('sha256')
-        .update(`${entity.path ?? ''}:${entity.symbolKind ?? ''}:${entity.symbol ?? ''}`)
-        .digest('hex'),
+      symbolEntityVersionContentHash(entity, containingFileContentHash),
       JSON.stringify({
         path: entity.path,
         symbol: entity.symbol,
@@ -634,6 +637,18 @@ function persistEntity(entity: PendingEntity, ctx: PersistContext): void {
     );
     ctx.canonicalEntityIds.add(externalId);
   }
+}
+
+function symbolEntityVersionContentHash(
+  entity: PendingEntity,
+  containingFileContentHash: string
+): string {
+  return contentHash(
+    entity.path ?? '',
+    entity.symbolKind ?? '',
+    entity.symbol ?? '',
+    containingFileContentHash
+  );
 }
 
 function persistRelation(

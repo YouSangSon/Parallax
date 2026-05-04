@@ -234,6 +234,63 @@ test('indexProject writes canonical entity graph and broad language file entitie
   }
 });
 
+test('indexProject makes symbol entity version content hash track containing file changes', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-symbol-version-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  const sourcePath = path.join(repoRoot, 'src/calc.ts');
+  await writeFile(
+    sourcePath,
+    [
+      'export function calculate(input: number) {',
+      '  return input + 1;',
+      '}',
+      ''
+    ].join('\n')
+  );
+  await initProject({ repoRoot });
+
+  const symbolVersionHash = (indexRunId: number): string => {
+    const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+    try {
+      const row = db
+        .prepare(
+          `SELECT ev.content_hash
+           FROM entity_versions ev
+           INNER JOIN entities e ON e.id = ev.entity_id
+           WHERE ev.index_run_id = ?
+             AND e.kind = 'symbol'
+             AND e.path = ?
+             AND e.symbol = ?`
+        )
+        .get(indexRunId, 'src/calc.ts', 'calculate') as { content_hash: string } | undefined;
+      assert.ok(row, 'expected symbol entity version row for calculate');
+      return row.content_hash;
+    } finally {
+      db.close();
+    }
+  };
+
+  const firstIndex = await indexProject({ repoRoot });
+  const firstHash = symbolVersionHash(firstIndex.indexRunId);
+
+  const sameContentIndex = await indexProject({ repoRoot });
+  assert.equal(symbolVersionHash(sameContentIndex.indexRunId), firstHash);
+
+  await writeFile(
+    sourcePath,
+    [
+      'export function calculate(input: number) {',
+      '  const doubled = input * 2;',
+      '  return doubled + 1;',
+      '}',
+      ''
+    ].join('\n')
+  );
+  const changedContentIndex = await indexProject({ repoRoot });
+
+  assert.notEqual(symbolVersionHash(changedContentIndex.indexRunId), firstHash);
+});
+
 test('indexProject attributes adapter runs, relations, coverage, and usage per classified adapter', async () => {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-adapters-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });

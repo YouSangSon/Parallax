@@ -86,6 +86,35 @@ export type EntityKind =
   | 'task'
   | 'external_entity';
 
+export type RelationKind =
+  | 'DEPENDS_ON'
+  | 'CALLS'
+  | 'IMPORTS'
+  | 'EXPORTS'
+  | 'IMPLEMENTS'
+  | 'EXTENDS'
+  | 'READS'
+  | 'WRITES'
+  | 'RAISES'
+  | 'HANDLES'
+  | 'OWNS'
+  | 'TESTS'
+  | 'DOCUMENTS'
+  | 'CONFIGURES'
+  | 'BREAKS_COMPATIBILITY_WITH'
+  | 'REFERENCES'
+  | 'DECLARES'
+  | 'VERIFIES'
+  | 'GOVERNS';
+
+export type ScannedFile = {
+  absolutePath: string;
+  relativePath: string;
+  content: string;
+  hash: string;
+  language: string;
+};
+
 export type EntityRef = {
   id: string;
   kind: EntityKind;

@@ -1,0 +1,275 @@
+# Phase 6 — TS Accuracy Lane Design Doc
+
+> **목적:** Phase 1~4(agent-memory 축)가 완료된 시점에서, 원래 P0/P1 (Entity Graph Core, "code graph project") 중 미수입 high-confidence 레인을 닫는다. 본 phase는 **TypeScript 정확도 + workspace catalog + evidence 정밀도**에 집중.
+> **작성:** 2026-05-03 (사전 design doc, 사용자 결정 일부 미해결)
+> **참고:** [decisions.ko.md](decisions.ko.md) (D-001 local-first, D-019..D-021 신규 예정) · [impact-trace-plan.ko.md](impact-trace-plan.ko.md) (원래 P0/P1 ledger) · [roadmap.md](roadmap.md) (A1/A5 row) · [progress.ko.md](progress.ko.md) · [phase4-p2-p3-design.ko.md](phase4-p2-p3-design.ko.md) (사전 design doc 형식 reference)
+
+---
+
+## 0. 컨텍스트
+
+원래 plan(`impact-trace-plan.ko.md`)의 P0/P1 "Entity Graph Core" 중 main에 ship된 부분:
+
+- ✅ `entities` / `relations` / `relation_evidence` / `adapter_runs` / `index_coverage` 정규 스키마 (`src/store.ts:187-242`)
+- ✅ Multi-hop bounded traversal + cycle protection (`src/analyzer.ts:189-257`)
+- ✅ Mermaid/DOT/JSON graph export (`src/graph.ts:81-118`)
+- ✅ MCP report/graph/entity 리소스 (`src/mcp.ts:392-464`)
+- ✅ 정규 테이블의 attribute 4종 (`imports` / `calls` / `affects` / `depends_on`) 일부 dual-write
+
+미수입 (Phase 6 scope):
+
+- ❌ TypeScript Compiler API adapter — `src/indexer.ts:51` `'multi-language-regex-mvp'` only
+- ❌ Pluggable adapter interface — single 823-line `indexProject()`
+- ❌ Source span (file:line:col + range) on evidence — file-level snippet만
+- ❌ Commit SHA / dirty state on `index_runs` — snapshot-safe indexing 미흡
+- ❌ 16-relation-kind ↔ attribute 매핑 — 1/16만 (`src/indexer.ts:812-815`)
+- 🟡 Workspace catalog — DDL은 있으나 writer 0건 (loader는 Phase 6, resolver는 Phase 7)
+
+미수입 (Phase 6 scope **외** — Phase 7 이후):
+
+- Phase 7: contract baseline + breaking-change classifier · cross-repo resolver · MCP `impact://entity|evidence|workspace|contract` block · `explain` CLI · Python/Go/Rust adapters
+- Phase 8: JVM/.NET/native, LSP/CodeQL enrichment
+- Phase 9: work-artifacts (Markdown vault → external connectors)
+- DROP (이유: D-001/local-first 위반 또는 demand 부재): 별도 graph DB · web explorer · supermemory `fact_provenance.kind` 확장 · Notion/Gmail 커넥터
+
+---
+
+## 1. Scope (Phase 6에 포함)
+
+| ID | 항목 | 약속 위치 | 효과 |
+|---|---|---|---|
+| **6.1** | Pluggable adapter interface + registry | `impact-trace-plan.ko.md` P1 전제 | Phase 6/7/8 모든 adapter 작업의 토대 |
+| **6.2** | TypeScript Compiler API adapter | `impact-trace-plan.ko.md:438` | TS/JS 정확도 → re-export, path alias, type-only import, call/reference 정확하게 |
+| **6.3** | Source span on `relation_evidence` | `progress.ko.md:124` item #9 | line/col + range — agent가 evidence를 코드 위치로 직접 점프 |
+| **6.4** | Commit SHA + dirty state on `index_runs` | `progress.ko.md:79` | stale index 경고 정밀화 (현재는 mtime heuristic) |
+| **6.5** | 16-relation-kind ↔ attribute mapping 완성 | `src/indexer.ts:812-815` | recall/profile에서 의미 정보 보존 |
+| **6.6** | Workspace catalog loader (`workspace init`, writer) | `impact-trace-plan.ko.md:444` | Phase 7 cross-repo resolver의 prerequisite |
+| **6.7** | regex-MVP를 `MultiLanguageRegexAdapter`로 추출 | 6.1 종속 | backward-compat 유지 + adapter pattern 검증 |
+
+**6.1이 모든 다른 항목의 prerequisite.** 6.7은 6.1 직후 단일 PR로 진행 (regression 0 보장).
+
+---
+
+## 2. 결정 공간
+
+### D-019: Adapter Interface 모양 *(USER DECISION 미해결)*
+
+| ID | 후보 | 시그니처 핵심 | 적합 |
+|---|---|---|---|
+| **A** | minimal sync | `extract(file, ctx) → ExtractedFile` (sync) | 현재 코드 1:1 매핑, 마이그레이션 risk 최저 |
+| **B** | capability-typed async | A + `capabilities: AdapterCapability[]` + `Promise<ExtractedFile>` | LSP/CodeQL/CompilerAPI(`ts.createProgram`)이 자연스럽게 들어옴, agent surface(P3)가 capabilities 노출 가능 |
+| **C** | streaming events | `process(file, ctx) → AsyncIterable<IndexEvent>` | huge file/LSP push 친화, but transactional batching 복잡 |
+
+**Planner 추천:** **B**. 이유: TS Compiler API는 `ts.createProgram`이 동기적이라 sync 시그니처도 가능하지만, Phase 8의 LSP/CodeQL은 비동기 외부 프로세스가 필수 — 인터페이스가 sync이면 그 시점에 깨야 함. capabilities는 약 1줄 추가지만 P3 agent surface에서 "이 adapter는 imports/exports만 안다"를 노출 가능. 스트리밍은 YAGNI.
+
+**대안 시그니처 후보 (5–10줄, 사용자 picks):** §6 참조.
+
+### D-020: Adapter Run 단위
+
+| ID | 후보 | 채택 후보 | 이유 |
+|---|---|---|---|
+| (a) | per-language adapter row in `adapter_runs` | ✅ default | 이미 `adapter_runs.language_ids` 컬럼이 JSON — 1 adapter당 1 row, 다중 adapter 가능. 마이그레이션 0. |
+| (b) | per-file row | ❌ | row explosion (수만 행 / index run) |
+| (c) | single global row | ❌ | 정확도 추적 못 함 |
+
+### D-021: Migration 정책
+
+| ID | 후보 | 채택 후보 | 이유 |
+|---|---|---|---|
+| (i) | regex-MVP를 즉시 제거 | ❌ | 다른 언어(현재 25개 확장자) regression 위험 |
+| (ii) | regex-MVP를 `MultiLanguageRegexAdapter`로 *별도 adapter*로 보존, TS만 Compiler API로 promote | ✅ default | regex MVP는 Python/Go/Rust 등 fallback으로 영구 유지 가능. TS만 더 정확한 adapter가 우선권. |
+| (iii) | dual-write (regex + Compiler API 둘 다 emit) | ❌ | 의미 충돌 시 어느 게 truth? — 결정 비용 ↑ |
+
+**채택:** (a) + (ii) + 6.1의 인터페이스(D-019 결정 후) + adapter priority 룰 (`registry.first(file => adapter.supports(file))`로 첫 매치 — TS Compiler API가 regex 앞에 등록).
+
+---
+
+## 3. 작업 분해
+
+### 3.1 prerequisite
+
+- [ ] **6.1.0** — D-019 인터페이스 시그니처 픽 (A/B/C) **(USER)**
+- [ ] **6.1.1** — `src/adapters/types.ts` 신규: 인터페이스 + 보조 타입 (`PendingEntity`, `PendingRelation`, `PendingEvidence`, `ExtractCtx`)
+- [ ] **6.1.2** — `src/adapters/registry.ts` 신규: priority-ordered registry + `pickAdapter(file)` 헬퍼
+
+### 3.2 regex MVP 격리 (no-op refactor)
+
+- [ ] **6.7.1** — `src/indexer.ts:82-...` `indexProject()`에서 per-file extract 부분을 `src/adapters/multi-language-regex.ts`로 이동, `MultiLanguageRegexAdapter` 클래스/객체로 export
+- [ ] **6.7.2** — `indexProject()`는 scan → registry.dispatch(file) → persist만 담당. **테스트 0개 깨져야 함** (regression-free check).
+
+### 3.3 TypeScript Compiler API adapter
+
+- [ ] **6.2.1** — `package.json` 의존성: `typescript ^5.x` (peerDep 가능성도 검토)
+- [ ] **6.2.2** — `src/adapters/typescript.ts` `TypeScriptCompilerAdapter`. `ts.createProgram` 1회 / index run, `program.getSourceFile(absPath)` 재사용으로 N파일 cost amortize
+- [ ] **6.2.3** — extract: imports (re-export, type-only, namespace import 포함), call/reference (`ts.SymbolFlags.Function`/`Method`), exports, type aliases, declarations
+- [ ] **6.2.4** — registry priority: TS adapter가 regex 앞 (`'typescript'`/`'javascript'` 언어에 대해서만)
+- [ ] **6.2.5** — Tests: parity tests vs regex MVP (re-export, path alias, type-only import 케이스에서 TS adapter가 더 많이/정확히 잡는 걸 assertion)
+
+### 3.4 Source span
+
+- [ ] **6.3.1** — `relation_evidence` 스키마 확장: `start_line`/`end_line`/`start_col`/`end_col`/`confidence` 컬럼 추가 (D-002 ADD-only). `confidence` `'exact'|'heuristic'|'inferred'`
+- [ ] **6.3.2** — `PendingEvidence` 타입에 span 추가, regex MVP는 `confidence='heuristic'` + line만, TS adapter는 `'exact'` + range 채움
+- [ ] **6.3.3** — MCP graph resource + analyze report의 evidence 직렬화에 span 노출
+- [ ] **6.3.4** — Tests: span 검증, 기존 evidence는 NULL span으로 backward-compat
+
+### 3.5 Snapshot-safe indexing
+
+- [ ] **6.4.1** — `index_runs` 스키마 확장: `git_commit_sha`, `git_is_dirty BOOLEAN`, `git_branch_name TEXT` (D-002 ADD-only)
+- [ ] **6.4.2** — `indexProject()` 시작 시 `git rev-parse HEAD` + `git status --porcelain` (둘 다 fail-tolerant; non-git repo에서는 NULL)
+- [ ] **6.4.3** — `analyzer.ts` stale-index 경고를 commit SHA 기반으로 정밀화 ("현재 HEAD가 index 시점과 다름")
+- [ ] **6.4.4** — Tests: dirty state 감지, non-git repo no-op
+
+### 3.6 Relation-kind mapping 완성
+
+- [ ] **6.5.1** — `src/indexer.ts:812-815` `relationKindToAttribute` 16종 매핑 정의 (`DEPENDS_ON→imports`, `CALLS→calls`, `IMPORTS→imports`, `EXPORTS→exports`, `IMPLEMENTS→implements`, `EXTENDS→extends`, `READS→reads`, `WRITES→writes`, `RAISES→raises`, `HANDLES→handles`, `OWNS→owns`, `TESTS→tests`, `DOCUMENTS→documents`, `CONFIGURES→configures`, `BREAKS_COMPATIBILITY_WITH→breaks_compat`, `REFERENCES→references`)
+- [ ] **6.5.2** — 신규 attribute 정의를 `attribute_defs` migration으로 추가 (D-002 ADD-only — 기존 4개는 그대로)
+- [ ] **6.5.3** — Tests: 각 relation kind dual-write 후 recall에서 surface 확인
+
+### 3.7 Workspace catalog loader
+
+- [ ] **6.6.1** — `src/workspace.ts` 신규: `initWorkspace(root, options)`, `addRepo(workspaceId, repoRoot)`, `listWorkspaces()` — `workspaces` + `workspace_repos` writer
+- [ ] **6.6.2** — `workspace init [name]` CLI command (`src/cli.ts`)
+- [ ] **6.6.3** — `workspace add-repo <path>` CLI command
+- [ ] **6.6.4** — Tests: empty workspace, multi-repo workspace, idempotent re-init
+
+### 3.8 ADR + 문서
+
+- [ ] **6.A.1** — `docs/decisions.ko.md` + `decisions.en.md`에 D-019 (adapter interface), D-020 (adapter run unit), D-021 (migration 정책) 추가
+- [ ] **6.A.2** — `docs/progress.ko.md`에 Phase 6 ledger 추가 (P0..P7 sub-phase)
+- [ ] **6.A.3** — `docs/roadmap.md` A1/A5 status 갱신
+- [ ] **6.A.4** — `CHANGELOG.md` Phase 6 항목
+
+---
+
+## 4. 마이그레이션 / 호환성
+
+- 스키마 변화는 **모두 ADD-only** (D-002 정신). 기존 행/컬럼 변경 없음.
+- regex-MVP adapter는 **영구 유지** — Python/Go/Rust 등 미래에도 fallback. Phase 8의 더 정확한 adapter들이 등록되면 priority로 자동 밀려남.
+- 기존 `evidence` 행은 span = NULL로 남음 (backward-compat). 새 indexing run부터 span 채워짐. 점진적 reindex 가능.
+- `indexer.ts`는 "scan + persist orchestrator"로 축소 — 호출자(`src/cli.ts:index`, `src/mcp.ts:analyze`)는 변경 0.
+
+---
+
+## 5. 테스트 plan
+
+| 항목 | 테스트 수 (예상) |
+|---|---|
+| 6.1/6.7 refactor regression | 0 (기존 테스트 전부 pass — 의도된 no-op) |
+| 6.2 TS Compiler API parity + advanced cases | +12 (re-export, path alias, type-only, namespace import, generic call, JSX call, `import.meta`) |
+| 6.3 source span | +5 (basic span, multi-line range, regex heuristic span, NULL backward-compat, MCP serialization) |
+| 6.4 commit SHA + dirty | +4 (clean repo, dirty repo, non-git repo, stale-index detection) |
+| 6.5 relation mapping | +4 (16종 round-trip, attribute_defs additive, recall by attribute, profile bucket parity) |
+| 6.6 workspace loader | +5 (init, add-repo, idempotent, list, CLI integration) |
+| **합계** | **~30** (112 → ~142) |
+
+---
+
+## 6. Adapter interface 후보 시그니처 *(USER 결정 필요)*
+
+> 코드 5–10줄. 다음 PR scope를 정의하는 가장 비싼 결정 지점.
+
+### 후보 A — minimal sync
+
+```typescript
+export interface SemanticAdapter {
+  readonly id: string;          // 'multi-language-regex' | 'typescript-compiler-api' | ...
+  readonly version: string;
+  supports(file: ScannedFile): boolean;
+  extract(file: ScannedFile, ctx: ExtractCtx): ExtractedFile;
+}
+```
+
+### 후보 B — capability-typed async (planner 추천)
+
+```typescript
+export type AdapterCapability =
+  | 'imports' | 'exports' | 'calls' | 'references'
+  | 'types' | 'symbols' | 'docrefs' | 'tests';
+
+export interface SemanticAdapter {
+  readonly id: string;
+  readonly version: string;
+  readonly capabilities: readonly AdapterCapability[];
+  supports(file: ScannedFile): boolean;
+  extract(file: ScannedFile, ctx: ExtractCtx): Promise<ExtractedFile>;
+}
+```
+
+### 후보 C — streaming events
+
+```typescript
+export type IndexEvent =
+  | { kind: 'entity'; entity: PendingEntity }
+  | { kind: 'relation'; relation: PendingRelation }
+  | { kind: 'evidence'; evidence: PendingEvidence }
+  | { kind: 'diagnostic'; level: 'warn' | 'error'; message: string };
+
+export interface SemanticAdapter {
+  readonly id: string;
+  readonly version: string;
+  readonly capabilities: readonly AdapterCapability[];
+  supports(file: ScannedFile): boolean;
+  process(file: ScannedFile, ctx: ExtractCtx): AsyncIterable<IndexEvent>;
+}
+```
+
+**Trade-off:**
+
+| 후보 | 마이그레이션 비용 | LSP/CodeQL 적합도 | 메모리 효율 | 코드 양 |
+|---|---|---|---|---|
+| A | 최저 | 시그니처 깨야 함 (Phase 8) | 중 | 최저 |
+| B | 낮음 | 자연스러움 | 중 | 낮음 (+1 type) |
+| C | 중간 | 자연스러움 | 최고 | 중간 (+1 union) |
+
+**Decided (2026-05-03): C with 2 refinements.**
+
+원래 doc은 B를 권장했으나 사용자 결정으로 C가 채택됨. 두 가지 작은 수정이 도입됨:
+
+1. **Per-run lifecycle 분리** — `start(ctx, files): AdapterRun`이 1회 호출되어 `AdapterRun` 핸들 반환 (TS Compiler API의 `ts.createProgram` 같은 expensive setup을 N파일에 걸쳐 amortize). `AdapterRun.process(file)`가 파일별 events emit. `AdapterRun.dispose?()` cleanup hook.
+2. **Evidence를 relation 이벤트에 임베드** — 별도 `evidence` event 제거. `relation` event가 `evidence?: readonly PendingEvidence[]` 옵션 필드로 가짐 (1:N 가능, 일반 케이스 단순화).
+
+**Shipped:**
+
+- `src/adapters/types.ts` — `SemanticAdapter`, `AdapterRun`, `IndexEvent`, `PendingEntity|Relation|Evidence`, `EntityDescriptor`, `ExtractCtx`, `AdapterCapability`
+- `src/adapters/registry.ts` — `AdapterRegistry` (FIFO, first-match-wins)
+- `tests/adapter_registry.test.ts` — 5 tests (priority order, no-match, dedup, classify, list); 112 → 117 tests
+- `src/types.ts` — `RelationKind` (16-element union) + `ScannedFile` 공용 승격
+
+**Trade-off 회고:** A는 LSP/CodeQL이 등장할 Phase 8에서 시그니처를 깨야 했고, B는 streaming 사례 (huge file, LSP push)에서 다시 wrap이 필요했음. C는 향후 모든 케이스를 흡수 — 비용은 orchestrator-side persist batching이 더 복잡해짐 (#3 regex MVP refactor에서 그 비용을 처음으로 짊어짐).
+
+---
+
+## 7. 성공 기준
+
+- [ ] 기존 112 tests **0 회귀** (6.1/6.7 refactor 직후)
+- [ ] TS adapter parity tests에서 regex-MVP가 *놓치는* 케이스 5종 이상이 TS adapter로 잡힘 (re-export, path alias, type-only import, namespace import, generic call)
+- [ ] 새 evidence 행에 span(line/col/range/confidence) 100% 채워짐
+- [ ] dirty repo 상태에서 indexing 시 `index_runs.git_is_dirty=1` 기록 + analyzer 경고 출력
+- [ ] 16종 relation kind 모두 `attribute_defs`에 매핑 — recall by `attribute=*` 모두 성공
+- [ ] `workspace init` + `workspace add-repo` 라운드트립 — `workspaces` 테이블에 row 존재
+- [ ] ADR D-019/D-020/D-021 + Phase 6 progress ledger 추가
+
+---
+
+## 8. Phase 5 병렬 트랙 (충돌 없음)
+
+`docs/phase5-handoff.ko.md` 기준 — Phase 6와 파일 충돌 0:
+
+- **B1 MemoryBench** — `tests/bench/` + 새 CLI command
+- **B2 reembed cleanup** — `src/agent_memory.ts:reembedFacts` orphan 정리
+- **B3 reflect-lock** — concurrent reflection 충돌 방지
+
+병렬로 한 PR씩 진행. Phase 6와 같은 `src/store.ts` 수정 시점만 rebase 주의.
+
+---
+
+## 9. 다음 행동
+
+1. **사용자 — D-019 (interface 후보 A/B/C) 픽** *(블로커)*
+2. 6.1.1 + 6.1.2 (`src/adapters/types.ts`, `registry.ts`) 작성
+3. 6.7.1 + 6.7.2 (regex MVP refactor) — single PR, 0 regression
+4. 6.2 (TS Compiler API adapter) — separate PR
+5. 6.3..6.6 — 각 1 PR씩 series
+6. ADR + 문서 — 각 PR에 동행
+
+이 doc은 *사전* design — Phase 6 끝난 시점에 회고 doc(`phase6-retro.ko.md`)을 추가하여 P4/P5 패턴(`phase4-p4-p5-design.ko.md`)과 parity 유지.

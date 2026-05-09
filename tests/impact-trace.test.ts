@@ -235,6 +235,479 @@ test('indexProject writes canonical entity graph and broad language file entitie
   }
 });
 
+test('indexProject persists adapter symbol entities without displayName using a fallback', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-symbol-display-fallback-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/app.ts'), 'export function run() { return 1; }\n');
+  await initProject({ repoRoot });
+
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'symbol-display-fallback-test-adapter',
+    version: '1',
+    capabilities: ['symbols'],
+    supports: (file) => file.language === 'typescript',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+      async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
+        yield {
+          kind: 'entity',
+          entity: {
+            kind: 'symbol',
+            path: file.relativePath,
+            symbol: 'run',
+            symbolKind: 'function',
+            languageId: file.language
+          }
+        };
+      }
+    })
+  });
+
+  const index = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const symbol = db
+      .prepare(
+         `SELECT id, display_name
+         FROM entities
+         WHERE updated_index_run_id = ?
+           AND kind = ?
+           AND path = ?
+           AND symbol = ?`
+      )
+      .get(index.indexRunId, 'symbol', 'src/app.ts', 'run') as
+      | { id: string; display_name: string }
+      | undefined;
+
+    assert.ok(symbol, 'expected symbol entity to be persisted');
+    assert.equal(symbol.id, 'symbol:typescript:src/app.ts#function:run');
+    assert.equal(symbol.display_name, 'run');
+  } finally {
+    db.close();
+  }
+});
+
+test('indexProject persists adapter module entities without collapsing them to file ids', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-module-entity-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const app = 1;\n');
+  await initProject({ repoRoot });
+
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'module-entity-test-adapter',
+    version: '1',
+    capabilities: ['symbols'],
+    supports: (file) => file.language === 'typescript',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+      async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
+        yield {
+          kind: 'entity',
+          entity: {
+            kind: 'module',
+            path: file.relativePath,
+            languageId: file.language,
+            displayName: 'app module'
+          }
+        };
+      }
+    })
+  });
+
+  const index = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const moduleEntity = db
+      .prepare(
+         `SELECT id, kind, path, language_id, display_name
+         FROM entities
+         WHERE updated_index_run_id = ?
+           AND kind = ?`
+      )
+      .get(index.indexRunId, 'module') as
+      | {
+          id: string;
+          kind: string;
+          path: string;
+          language_id: string;
+          display_name: string;
+        }
+      | undefined;
+
+    assert.ok(moduleEntity, 'expected module entity to be persisted');
+    assert.notEqual(moduleEntity.id, 'file:src/app.ts');
+    assert.deepEqual(
+      {
+        kind: moduleEntity.kind,
+        path: moduleEntity.path,
+        languageId: moduleEntity.language_id,
+        displayName: moduleEntity.display_name
+      },
+      {
+        kind: 'module',
+        path: 'src/app.ts',
+        languageId: 'typescript',
+        displayName: 'app module'
+      }
+    );
+  } finally {
+    db.close();
+  }
+});
+
+test('indexProject gives adapter module entities distinct ids when paths share displayName', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-module-display-collision-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/a.ts'), 'export const a = 1;\n');
+  await writeFile(path.join(repoRoot, 'src/b.ts'), 'export const b = 1;\n');
+  await initProject({ repoRoot });
+
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'module-display-collision-test-adapter',
+    version: '1',
+    capabilities: ['symbols'],
+    supports: (file) => file.language === 'typescript',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+      async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
+        yield {
+          kind: 'entity',
+          entity: {
+            kind: 'module',
+            path: file.relativePath,
+            languageId: file.language,
+            displayName: 'shared module'
+          }
+        };
+      }
+    })
+  });
+
+  const index = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const moduleRows = db
+      .prepare(
+        `SELECT id, path, display_name
+         FROM entities
+         WHERE updated_index_run_id = ?
+           AND kind = ?
+         ORDER BY id`
+      )
+      .all(index.indexRunId, 'module') as Array<{
+      id: string;
+      path: string;
+      display_name: string;
+    }>;
+
+    assert.deepEqual(
+      moduleRows.map((row) => ({
+        id: row.id,
+        path: row.path,
+        display_name: row.display_name
+      })),
+      [
+        {
+          id: 'module:typescript:src/a.ts',
+          path: 'src/a.ts',
+          display_name: 'shared module'
+        },
+        {
+          id: 'module:typescript:src/b.ts',
+          path: 'src/b.ts',
+          display_name: 'shared module'
+        }
+      ]
+    );
+  } finally {
+    db.close();
+  }
+});
+
+test('indexProject upserts relation endpoint entities before relation persistence', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-relation-endpoint-upsert-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/app.ts'), 'export function run() { return 1; }\n');
+  await initProject({ repoRoot });
+
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'relation-before-entity-test-adapter',
+    version: '1',
+    capabilities: ['calls', 'symbols'],
+    supports: (file) => file.language === 'typescript',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+      async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
+        const runSymbol = {
+          kind: 'symbol',
+          path: file.relativePath,
+          symbol: 'run',
+          symbolKind: 'function',
+          languageId: file.language
+        } as const;
+        yield {
+          kind: 'relation',
+          relation: {
+            source: { kind: 'file', path: file.relativePath, languageId: file.language },
+            target: runSymbol,
+            kind: 'CALLS',
+            metadata: {
+              confidence: 'proven',
+              provenance: 'relation-before-entity-test-adapter:call'
+            },
+            evidence: [
+              {
+                file: file.relativePath,
+                snippet: 'run();',
+                confidence: 'proven'
+              }
+            ]
+          }
+        };
+        yield {
+          kind: 'entity',
+          entity: {
+            ...runSymbol,
+            displayName: 'run'
+          }
+        };
+      }
+    })
+  });
+
+  const index = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const relation = db
+      .prepare(
+        `SELECT count(*) AS count
+         FROM relations
+         WHERE index_run_id = ?
+           AND kind = ?
+           AND source_entity_id = ?
+           AND target_entity_id = ?`
+      )
+      .get(
+        index.indexRunId,
+        'CALLS',
+        'file:src/app.ts',
+        'symbol:typescript:src/app.ts#function:run'
+      ) as { count: number };
+    assert.equal(relation.count, 1);
+
+    const symbol = db
+      .prepare(
+        `SELECT count(*) AS count, display_name
+         FROM entities
+         WHERE id = ?
+           AND kind = ?`
+      )
+      .get('symbol:typescript:src/app.ts#function:run', 'symbol') as {
+      count: number;
+      display_name: string;
+    };
+    assert.equal(symbol.count, 1);
+    assert.equal(symbol.display_name, 'run');
+
+    const versions = db
+      .prepare(
+        `SELECT count(*) AS count
+         FROM entity_versions
+         WHERE entity_id = ?
+           AND index_run_id = ?`
+      )
+      .get('symbol:typescript:src/app.ts#function:run', index.indexRunId) as { count: number };
+    assert.equal(versions.count, 1);
+  } finally {
+    db.close();
+  }
+});
+
+test('indexProject promotes relation-only existing endpoint entities into rerun freshness', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-relation-rerun-freshness-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/app.ts'), 'export function run() { return 1; }\n');
+  await initProject({ repoRoot });
+
+  let emitExplicitEntity = true;
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'relation-only-rerun-freshness-test-adapter',
+    version: '1',
+    capabilities: ['calls', 'symbols'],
+    supports: (file) => file.language === 'typescript',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+      async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
+        const runSymbol = {
+          kind: 'symbol',
+          path: file.relativePath,
+          symbol: 'run',
+          symbolKind: 'function',
+          languageId: file.language
+        } as const;
+        if (emitExplicitEntity) {
+          yield {
+            kind: 'entity',
+            entity: {
+              ...runSymbol,
+              displayName: 'run'
+            }
+          };
+          return;
+        }
+        yield {
+          kind: 'relation',
+          relation: {
+            source: { kind: 'file', path: file.relativePath, languageId: file.language },
+            target: runSymbol,
+            kind: 'CALLS',
+            metadata: {
+              confidence: 'proven',
+              provenance: 'relation-only-rerun-freshness-test-adapter:call'
+            },
+            evidence: [
+              {
+                file: file.relativePath,
+                snippet: 'run();',
+                confidence: 'proven'
+              }
+            ]
+          }
+        };
+      }
+    })
+  });
+
+  await indexProjectWithRegistryForTest({ repoRoot }, registry);
+  emitExplicitEntity = false;
+  const secondIndex = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const symbol = db
+      .prepare(
+        `SELECT id, updated_index_run_id
+         FROM entities
+         WHERE id = ?`
+      )
+      .get('symbol:typescript:src/app.ts#function:run') as
+      | { id: string; updated_index_run_id: number }
+      | undefined;
+    assert.ok(symbol, 'expected symbol entity to remain canonical');
+    assert.equal(symbol.updated_index_run_id, secondIndex.indexRunId);
+
+    const relation = db
+      .prepare(
+        `SELECT target_entity_id
+         FROM relations
+         WHERE index_run_id = ?
+           AND kind = ?
+           AND source_entity_id = ?`
+      )
+      .get(secondIndex.indexRunId, 'CALLS', 'file:src/app.ts') as
+      | { target_entity_id: string }
+      | undefined;
+    assert.ok(relation, 'expected run-2 relation to be persisted');
+    assert.equal(relation.target_entity_id, symbol.id);
+  } finally {
+    db.close();
+  }
+});
+
+test('indexProject uses relation endpoint metadata for external entity identity before explicit entity', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-external-endpoint-identity-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/app.ts'), 'import React from "react";\n');
+  await initProject({ repoRoot });
+
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'external-endpoint-identity-test-adapter',
+    version: '1',
+    capabilities: ['imports', 'symbols'],
+    supports: (file) => file.language === 'typescript',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+      async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
+        yield {
+          kind: 'relation',
+          relation: {
+            source: { kind: 'file', path: file.relativePath, languageId: file.language },
+            target: {
+              kind: 'external_entity',
+              languageId: file.language,
+              metadata: { specifier: 'react' }
+            },
+            kind: 'DEPENDS_ON',
+            metadata: {
+              confidence: 'proven',
+              provenance: 'external-endpoint-identity-test-adapter:react'
+            },
+            evidence: [
+              {
+                file: file.relativePath,
+                snippet: 'import React from "react";',
+                confidence: 'proven'
+              }
+            ]
+          }
+        };
+        yield {
+          kind: 'entity',
+          entity: {
+            kind: 'external_entity',
+            languageId: file.language,
+            displayName: 'React',
+            metadata: { specifier: 'react' }
+          }
+        };
+      }
+    })
+  });
+
+  const index = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const externalRows = db
+      .prepare(
+        `SELECT id, display_name
+         FROM entities
+         WHERE kind = ?
+         ORDER BY id`
+      )
+      .all('external_entity') as Array<{ id: string; display_name: string }>;
+    assert.deepEqual(
+      externalRows.map((row) => ({ id: row.id, display_name: row.display_name })),
+      [
+        {
+          id: 'external:typescript:react',
+          display_name: 'React'
+        }
+      ]
+    );
+
+    const relation = db
+      .prepare(
+        `SELECT target_entity_id
+         FROM relations
+         WHERE index_run_id = ?
+           AND kind = ?
+           AND source_entity_id = ?`
+      )
+      .get(index.indexRunId, 'DEPENDS_ON', 'file:src/app.ts') as
+      | { target_entity_id: string }
+      | undefined;
+    assert.ok(relation, 'expected relation to external endpoint');
+    assert.equal(relation.target_entity_id, 'external:typescript:react');
+  } finally {
+    db.close();
+  }
+});
+
 test('indexProject makes symbol entity version content hash track containing file changes', async () => {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-symbol-version-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
@@ -953,6 +1426,48 @@ test('indexProject preserves diagnostics when an adapter fails after emitting th
   }
 });
 
+test('indexProject redacts adapter failure summaries before persisting adapter runs', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-adapter-fail-redaction-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const app = 1;\n');
+  await initProject({ repoRoot });
+
+  const rawSecret = 'sk_live_111111111111111111111111';
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'secret-failing-adapter',
+    version: '1',
+    capabilities: ['references'],
+    supports: (file) => file.language === 'typescript',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+      async *process(_file: ScannedFile): AsyncIterable<IndexEvent> {
+        throw new Error(`adapter failed with ${rawSecret}`);
+      }
+    })
+  });
+
+  await assert.rejects(indexProjectWithRegistryForTest({ repoRoot }, registry), /adapter failed/);
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const adapterRun = db
+      .prepare(
+        `SELECT status, error_summary
+         FROM adapter_runs
+         WHERE adapter_id = ?`
+      )
+      .get('secret-failing-adapter') as {
+      status: string;
+      error_summary: string | null;
+    };
+    assert.equal(adapterRun.status, 'failed');
+    assert.doesNotMatch(adapterRun.error_summary ?? '', new RegExp(rawSecret));
+    assert.match(adapterRun.error_summary ?? '', /\[REDACTED_STRIPE_KEY\]/);
+  } finally {
+    db.close();
+  }
+});
+
 test('indexProject persists adapter-provided relation evidence entries', async () => {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-relation-evidence-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
@@ -1100,6 +1615,97 @@ test('indexProject persists adapter-provided relation evidence entries', async (
       ])
     );
     assert.deepEqual(secondEvidenceIdsByIdentity, firstEvidenceIdsByIdentity);
+  } finally {
+    db.close();
+  }
+});
+
+test('indexProject keeps redacted no-span relation evidence identities distinct', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-relation-evidence-redacted-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const target = 1;\n');
+  await initProject({ repoRoot });
+
+  const firstSecret = 'sk_live_111111111111111111111111';
+  const secondSecret = 'sk_live_222222222222222222222222';
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'relation-evidence-redaction-test-adapter',
+    version: '1',
+    capabilities: ['references'],
+    supports: (file) => file.language === 'typescript',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+      async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
+        yield {
+          kind: 'relation',
+          relation: {
+            source: { kind: 'file', path: file.relativePath, languageId: file.language },
+            target: { kind: 'file', path: file.relativePath, languageId: file.language },
+            kind: 'REFERENCES',
+            metadata: {
+              confidence: 'proven',
+              provenance: `relation-evidence-redaction-test-adapter:${file.relativePath}`
+            },
+            evidence: [
+              {
+                file: 'src/app.ts',
+                snippet: `token ${firstSecret}`,
+                confidence: 'proven'
+              },
+              {
+                file: 'src/app.ts',
+                snippet: `token ${secondSecret}`,
+                confidence: 'proven'
+              }
+            ]
+          }
+        };
+      }
+    })
+  });
+
+  const index = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const evidenceRows = db
+      .prepare(
+        `SELECT id, relation_id, file_path, snippet, confidence
+         FROM relation_evidence
+         WHERE index_run_id = ?
+         ORDER BY id`
+      )
+      .all(index.indexRunId) as Array<{
+      id: string;
+      relation_id: string;
+      file_path: string;
+      snippet: string;
+      confidence: string;
+    }>;
+    assert.equal(evidenceRows.length, 2);
+    assert.equal(new Set(evidenceRows.map((row) => row.id)).size, 2);
+    assert.equal(new Set(evidenceRows.map((row) => row.relation_id)).size, 1);
+    assert.deepEqual(
+      evidenceRows.map((row) => ({
+        filePath: row.file_path,
+        snippet: row.snippet,
+        confidence: row.confidence
+      })),
+      [
+        {
+          filePath: 'src/app.ts',
+          snippet: 'token [REDACTED_STRIPE_KEY]',
+          confidence: 'proven'
+        },
+        {
+          filePath: 'src/app.ts',
+          snippet: 'token [REDACTED_STRIPE_KEY]',
+          confidence: 'proven'
+        }
+      ]
+    );
+    assert.equal(evidenceRows.some((row) => row.snippet.includes(firstSecret)), false);
+    assert.equal(evidenceRows.some((row) => row.snippet.includes(secondSecret)), false);
   } finally {
     db.close();
   }
@@ -2304,6 +2910,64 @@ test('indexProject dual-writes relations to facts/transactions and advances main
     assert.ok(
       evidenceChain.length > 0,
       'expected at least one fact_provenance edge from imports fact to evidence_snippet fact'
+    );
+  } finally {
+    db.close();
+  }
+});
+
+test('indexProject infers VERIFIES and tests fact from default TypeScript test imports', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-default-test-target-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await mkdir(path.join(repoRoot, 'tests'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/core.ts'), 'export function core() { return 1; }\n');
+  await writeFile(
+    path.join(repoRoot, 'tests/core.test.ts'),
+    [
+      'import { core } from "../src/core";',
+      'test("core", () => {',
+      '  expect(core()).toBe(1);',
+      '});',
+      ''
+    ].join('\n')
+  );
+  await initProject({ repoRoot });
+
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const relationRows = db
+      .prepare(
+        `SELECT kind
+         FROM relations
+         WHERE index_run_id = ?
+           AND source_entity_id = ?
+           AND target_entity_id = ?
+         ORDER BY kind`
+      )
+      .all(index.indexRunId, 'file:tests/core.test.ts', 'file:src/core.ts') as Array<{ kind: RelationKind }>;
+
+    assert.deepEqual(
+      relationRows.map((row) => row.kind),
+      ['DEPENDS_ON', 'VERIFIES']
+    );
+
+    const testsFacts = db
+      .prepare(
+        `SELECT f.value_blob
+         FROM facts f
+         INNER JOIN transactions t ON f.tx_id = t.id
+         WHERE t.agent = 'indexer'
+           AND f.entity_id = ?
+           AND f.attribute = ?
+         ORDER BY f.value_blob`
+      )
+      .all('file:tests/core.test.ts', 'tests') as Array<{ value_blob: string }>;
+
+    assert.deepEqual(
+      testsFacts.map((row) => JSON.parse(row.value_blob) as string),
+      ['file:src/core.ts']
     );
   } finally {
     db.close();

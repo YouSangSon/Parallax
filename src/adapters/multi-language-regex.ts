@@ -123,7 +123,7 @@ async function* extractEvents(
   }
 
   if (isTestFile(file.relativePath)) {
-    for (const sourcePath of inferTestTargets(file.relativePath, file.content, filePathSet)) {
+    for (const sourcePath of inferTestTargets(file.relativePath, file.content, file.language, filePathSet)) {
       yield {
         kind: 'relation',
         relation: makeRelation({
@@ -341,6 +341,7 @@ export function isTestFile(relativePath: string): boolean {
 function inferTestTargets(
   relativePath: string,
   content: string,
+  language: string,
   filePathSet: ReadonlySet<string>
 ): string[] {
   const imported = extractImports({
@@ -348,7 +349,7 @@ function inferTestTargets(
     relativePath,
     content,
     hash: '',
-    language: 'ts'
+    language
   }).flatMap((specifier) => {
     const resolved = resolveImportPath(relativePath, specifier, filePathSet);
     return resolved ? [resolved] : [];

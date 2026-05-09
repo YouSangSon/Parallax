@@ -92,7 +92,10 @@ interface PreparedStatements {
   upsertFile: Statement;
   selectFile: Statement;
   upsertEntity: Statement;
+  insertEntityIfMissing: Statement;
+  updateEntityFreshness: Statement;
   insertEntityVersion: Statement;
+  insertEntityVersionIfMissing: Statement;
   insertCoverage: Statement;
   insertRelation: Statement;
   insertRelationEvidence: Statement;
@@ -873,6 +876,7 @@ function updateAdapterRun(
     ).run(status, adapterRunId);
     return;
   }
+  const storedErrorSummary = redactAdapterErrorSummary(errorSummary);
   if (status === 'failed' && errorSummary !== null) {
     db.prepare(
       `UPDATE adapter_runs
@@ -883,12 +887,16 @@ function updateAdapterRun(
              ELSE error_summary || char(10) || ?
            END
        WHERE id = ?`
-    ).run(status, errorSummary, errorSummary, adapterRunId);
+    ).run(status, storedErrorSummary, storedErrorSummary, adapterRunId);
     return;
   }
   db.prepare(
     "UPDATE adapter_runs SET status = ?, finished_at = datetime('now'), error_summary = ? WHERE id = ?"
-  ).run(status, errorSummary, adapterRunId);
+  ).run(status, storedErrorSummary, adapterRunId);
+}
+
+function redactAdapterErrorSummary(errorSummary: string | null): string | null {
+  return errorSummary === null ? null : redactSecrets(errorSummary);
 }
 
 function markUnstartedAdapterRunsSkipped(
@@ -926,7 +934,7 @@ function failRunningAdapterRuns(db: Db, indexRunId: number, errorSummary: string
     `UPDATE adapter_runs
      SET status = ?, finished_at = datetime('now'), error_summary = ?
      WHERE index_run_id = ? AND status = ?`
-  ).run('failed', errorSummary, indexRunId, 'running');
+  ).run('failed', redactSecrets(errorSummary), indexRunId, 'running');
 }
 
 function adapterGroupsInRegistryOrder(
@@ -1052,8 +1060,23 @@ function prepareStatements(db: Db): PreparedStatements {
         display_name = excluded.display_name,
         updated_index_run_id = excluded.updated_index_run_id
     `),
+    insertEntityIfMissing: db.prepare(`
+      INSERT OR IGNORE INTO entities (
+        id, repo_id, kind, path, symbol, language_id, display_name, created_index_run_id, updated_index_run_id
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `),
+    updateEntityFreshness: db.prepare(`
+      UPDATE entities
+      SET updated_index_run_id = ?
+      WHERE id = ?
+    `),
     insertEntityVersion: db.prepare(`
       INSERT OR REPLACE INTO entity_versions (entity_id, index_run_id, content_hash, location_json, state)
+      VALUES (?, ?, ?, ?, ?)
+    `),
+    insertEntityVersionIfMissing: db.prepare(`
+      INSERT OR IGNORE INTO entity_versions (entity_id, index_run_id, content_hash, location_json, state)
       VALUES (?, ?, ?, ?, ?)
     `),
     insertCoverage: db.prepare(`
@@ -1146,35 +1169,9 @@ function diagnosticLanguageId(filePath: string, currentFile: ScannedFile): strin
 }
 
 function persistEntity(entity: PendingEntity, ctx: PersistContext): void {
+  const entityId = persistEntityDescriptor(entity, ctx, 'explicit');
   if (entity.kind === 'symbol') {
-    const symbolId = entityIdFromDescriptor(entity);
     const meta = entity.metadata as { exported?: boolean } | undefined;
-    const containingFileContentHash = entity.path
-      ? ctx.fileContentHashByPath.get(entity.path) ?? ''
-      : '';
-    ctx.currentStateSnapshot.captureEntity(symbolId);
-    ctx.stmts.upsertEntity.run(
-      symbolId,
-      ctx.repoId,
-      'symbol',
-      entity.path ?? null,
-      entity.symbol ?? null,
-      entity.languageId ?? null,
-      entity.displayName ?? null,
-      ctx.indexRunId,
-      ctx.indexRunId
-    );
-    ctx.stmts.insertEntityVersion.run(
-      symbolId,
-      ctx.indexRunId,
-      symbolEntityVersionContentHash(entity, containingFileContentHash),
-      JSON.stringify({
-        path: entity.path,
-        symbol: entity.symbol,
-        kind: entity.symbolKind ?? ''
-      }),
-      'active'
-    );
     if (entity.path) {
       const fileId = ctx.fileIdByPath.get(entity.path);
       if (fileId !== undefined) {
@@ -1190,39 +1187,78 @@ function persistEntity(entity: PendingEntity, ctx: PersistContext): void {
         );
       }
     }
-    ctx.canonicalEntityIds.add(symbolId);
     ctx.counters.symbolsIndexed++;
-    return;
   }
-  if (entity.kind === 'external_entity') {
-    const externalId = entityIdFromDescriptor(entity);
-    const meta = entity.metadata as { specifier?: string } | undefined;
-    const specifier = meta?.specifier ?? entity.displayName ?? '';
-    ctx.currentStateSnapshot.captureEntity(externalId);
-    ctx.stmts.upsertEntity.run(
-      externalId,
-      ctx.repoId,
-      'external_entity',
-      null,
-      null,
-      entity.languageId ?? null,
-      entity.displayName ?? null,
-      ctx.indexRunId,
-      ctx.indexRunId
-    );
-    ctx.stmts.insertEntityVersion.run(
-      externalId,
-      ctx.indexRunId,
-      specifier,
-      JSON.stringify({ specifier }),
-      'active'
-    );
-    ctx.canonicalEntityIds.add(externalId);
+  ctx.canonicalEntityIds.add(entityId);
+}
+
+function persistEntityDescriptor(
+  entity: EntityDescriptor | PendingEntity,
+  ctx: PersistContext,
+  mode: 'explicit' | 'placeholder'
+): string {
+  const metadata = 'metadata' in entity ? entity.metadata : undefined;
+  const entityId = entityIdFromDescriptor(entity, metadata);
+  const displayName = displayNameForEntityDescriptor(entity, entityId, metadata);
+  const contentHashValue = entityVersionContentHash(entity, ctx, metadata);
+  const locationJson = entityLocationJson(entity, metadata);
+
+  ctx.currentStateSnapshot.captureEntity(entityId);
+  const entityValues = [
+    entityId,
+    ctx.repoId,
+    entity.kind,
+    entity.path ?? null,
+    entity.symbol ?? null,
+    entity.languageId ?? null,
+    displayName,
+    ctx.indexRunId,
+    ctx.indexRunId
+  ] as const;
+  const versionValues = [
+    entityId,
+    ctx.indexRunId,
+    contentHashValue,
+    locationJson,
+    'active'
+  ] as const;
+
+  if (mode === 'placeholder') {
+    ctx.stmts.insertEntityIfMissing.run(...entityValues);
+    ctx.stmts.updateEntityFreshness.run(ctx.indexRunId, entityId);
+    ctx.stmts.insertEntityVersionIfMissing.run(...versionValues);
+  } else {
+    ctx.stmts.upsertEntity.run(...entityValues);
+    ctx.stmts.insertEntityVersion.run(...versionValues);
   }
+  return entityId;
+}
+
+function entityVersionContentHash(
+  entity: EntityDescriptor,
+  ctx: PersistContext,
+  metadata?: Readonly<Record<string, unknown>>
+): string {
+  const containingFileContentHash = entity.path
+    ? ctx.fileContentHashByPath.get(entity.path) ?? ''
+    : '';
+  if (entity.kind === 'symbol') {
+    return symbolEntityVersionContentHash(entity, containingFileContentHash);
+  }
+  return contentHash(
+    entity.kind,
+    entity.languageId ?? '',
+    entity.path ?? '',
+    entity.symbolKind ?? '',
+    entity.symbol ?? '',
+    entity.displayName ?? '',
+    stableJson(metadata ?? {}),
+    containingFileContentHash
+  );
 }
 
 function symbolEntityVersionContentHash(
-  entity: PendingEntity,
+  entity: EntityDescriptor,
   containingFileContentHash: string
 ): string {
   return contentHash(
@@ -1233,13 +1269,28 @@ function symbolEntityVersionContentHash(
   );
 }
 
+function entityLocationJson(
+  entity: EntityDescriptor,
+  metadata?: Readonly<Record<string, unknown>>
+): string {
+  return stableJson({
+    kind: entity.kind,
+    path: entity.path ?? null,
+    symbol: entity.symbol ?? null,
+    symbolKind: entity.symbolKind ?? null,
+    languageId: entity.languageId ?? null,
+    displayName: entity.displayName ?? null,
+    metadata: metadata ?? {}
+  });
+}
+
 function persistRelation(
   relation: PendingRelation,
   file: ScannedFile,
   ctx: PersistContext
 ): void {
-  const sourceId = entityIdFromDescriptor(relation.source);
-  const targetId = entityIdFromDescriptor(relation.target);
+  const sourceId = ensureRelationEndpointEntity(relation.source, ctx);
+  const targetId = ensureRelationEndpointEntity(relation.target, ctx);
   const meta = relation.metadata as
     | { provenance?: string; confidence?: Confidence }
     | undefined;
@@ -1300,6 +1351,12 @@ function persistRelation(
   });
 }
 
+function ensureRelationEndpointEntity(entity: EntityDescriptor, ctx: PersistContext): string {
+  const entityId = persistEntityDescriptor(entity, ctx, 'placeholder');
+  ctx.canonicalEntityIds.add(entityId);
+  return entityId;
+}
+
 function relationEvidenceForPersistence(
   relation: PendingRelation,
   file: ScannedFile,
@@ -1325,14 +1382,105 @@ function relationEvidenceForPersistence(
   ];
 }
 
-function entityIdFromDescriptor(d: EntityDescriptor): string {
+const fileEntityIdKinds = new Set<EntityKind>([
+  'file',
+  'test',
+  'doc',
+  'config',
+  'policy',
+  'workflow',
+  'resource',
+  'contract'
+]);
+
+function entityIdFromDescriptor(
+  d: EntityDescriptor,
+  metadata?: Readonly<Record<string, unknown>>
+): string {
+  const descriptorMetadata = metadata ?? d.metadata;
   if (d.kind === 'symbol') {
     return `symbol:${d.languageId ?? ''}:${d.path ?? ''}#${d.symbolKind ?? ''}:${d.symbol ?? ''}`;
   }
   if (d.kind === 'external_entity') {
-    return `external:${d.languageId ?? ''}:${d.displayName ?? ''}`;
+    return `external:${d.languageId ?? ''}:${externalEntityIdentityForId(d, descriptorMetadata)}`;
   }
-  return fileEntityId(d.path ?? '');
+  if (fileEntityIdKinds.has(d.kind)) {
+    return fileEntityId(d.path ?? descriptorIdentityForId(d, descriptorMetadata));
+  }
+  return `${d.kind}:${d.languageId ?? ''}:${descriptorIdentityForId(d, descriptorMetadata)}`;
+}
+
+function displayNameForEntityDescriptor(
+  d: EntityDescriptor,
+  entityId: string = entityIdFromDescriptor(d),
+  metadata?: Readonly<Record<string, unknown>>
+): string {
+  const descriptorMetadata = metadata ?? d.metadata;
+  return firstNonEmpty(
+    d.displayName,
+    d.symbol,
+    d.path,
+    externalSpecifier(descriptorMetadata),
+    entityId
+  );
+}
+
+function externalEntityIdentityForId(
+  d: EntityDescriptor,
+  metadata?: Readonly<Record<string, unknown>>
+): string {
+  return firstNonEmpty(
+    externalSpecifier(metadata),
+    d.path,
+    d.symbol,
+    d.displayName,
+    d.kind
+  );
+}
+
+function descriptorIdentityForId(
+  d: EntityDescriptor,
+  metadata?: Readonly<Record<string, unknown>>
+): string {
+  return firstNonEmpty(
+    d.path,
+    d.symbol,
+    externalSpecifier(metadata),
+    d.displayName,
+    d.kind
+  );
+}
+
+function externalSpecifier(metadata?: Readonly<Record<string, unknown>>): string | undefined {
+  const specifier = metadata?.specifier;
+  return typeof specifier === 'string' ? specifier : undefined;
+}
+
+function firstNonEmpty(...values: Array<string | undefined>): string {
+  for (const value of values) {
+    if (value !== undefined && value.length > 0) {
+      return value;
+    }
+  }
+  return '';
+}
+
+function stableJson(value: unknown): string {
+  return JSON.stringify(sortJsonValue(value));
+}
+
+function sortJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => sortJsonValue(item));
+  }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, nestedValue]) => [key, sortJsonValue(nestedValue)])
+    );
+  }
+  return value;
 }
 
 function legacyEdgeKindFor(canonical: RelationKind): string {
@@ -1464,9 +1612,12 @@ function relationId(
 function relationEvidenceId(
   relationIdValue: string,
   evidence: RelationEvidenceInput,
-  snippet: string,
+  snippet: string
 ): string {
   const identity: unknown[] = [relationIdValue, evidence.file, snippet, evidence.confidence];
+  if (snippet !== evidence.snippet) {
+    identity.push({ rawSnippetHash: contentHash(evidence.snippet).slice(0, 20) });
+  }
   if (hasEvidenceSpan(evidence)) {
     identity.push({
       startLine: evidence.startLine ?? null,

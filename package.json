@@ -20,6 +20,10 @@
     "typescript"
   ],
   "type": "module",
+  "exports": {
+    ".": "./dist/src/index.js",
+    "./package.json": "./package.json"
+  },
   "bin": {
     "impact-trace": "./dist/src/cli.js"
   },

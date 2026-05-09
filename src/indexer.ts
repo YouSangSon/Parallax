@@ -9,7 +9,8 @@ import type {
   ExtractCtx,
   IndexEvent,
   PendingEntity,
-  PendingRelation
+  PendingRelation,
+  SemanticAdapter
 } from './adapters/types.js';
 import { contentHash, ensureRepo, openDatabase, type Db } from './store.js';
 import { normalizeRepoRoot, redactSecrets, toRelativePath } from './security.js';
@@ -65,6 +66,7 @@ const languageByFileName = new Map<string, string>([
   ['CODEOWNERS', 'policy']
 ]);
 const defaultMaxFileBytes = 1_000_000;
+const unsupportedAdapterId = 'unsupported';
 
 type SkippedFile = {
   relativePath: string;
@@ -103,54 +105,99 @@ interface PersistContext {
   adapterRunId: number;
   memoryTxId: string;
   fileIdByPath: Map<string, number>;
+  fileContentHashByPath: Map<string, string>;
   canonicalEntityIds: Set<string>;
   canonicalRelationIds: Set<string>;
   counters: { symbolsIndexed: number; edgesIndexed: number };
 }
 
+type RelationEvidenceInput = {
+  file: string;
+  snippet: string;
+  confidence: Confidence;
+  startLine?: number;
+  endLine?: number;
+  startCol?: number;
+  endCol?: number;
+};
+
+type AdapterGroup = {
+  adapter: SemanticAdapter;
+  files: ScannedFile[];
+  languageIds: string[];
+};
+
+type AdapterRunStatus = 'completed' | 'failed' | 'skipped';
+
 export async function indexProject(options: IndexOptions): Promise<IndexResult> {
+  return indexProjectInternal(options, createDefaultRegistry());
+}
+
+export async function indexProjectWithRegistryForTest(
+  options: IndexOptions,
+  registry: AdapterRegistry
+): Promise<IndexResult> {
+  return indexProjectInternal(options, registry);
+}
+
+async function indexProjectInternal(
+  options: IndexOptions,
+  registry: AdapterRegistry
+): Promise<IndexResult> {
   const repoRoot = normalizeRepoRoot(options.repoRoot);
   const db = openDatabase(repoRoot);
   const repoId = ensureRepo(db, repoRoot);
 
-  const registry = new AdapterRegistry();
-  registry.register(new MultiLanguageRegexAdapter());
+  const registeredAdapters = registry.list();
+  if (registeredAdapters.length === 0) {
+    db.close();
+    throw new Error('no adapter registered');
+  }
 
   const scan = scanFiles(repoRoot, options.maxFileBytes ?? defaultMaxFileBytes);
   const files = scan.files;
-  const languageIds = [
-    ...new Set([
-      ...files.map((file) => file.language),
-      ...scan.skipped.flatMap((file) => (file.language ? [file.language] : []))
-    ])
-  ].sort();
-
-  const primaryAdapter = registry.list()[0];
-  if (!primaryAdapter) {
-    throw new Error('no adapter registered');
+  const classified = registry.classify(files);
+  const adapterGroups = adapterGroupsInRegistryOrder(registeredAdapters, classified);
+  const fileAdapterByPath = new Map<string, SemanticAdapter>();
+  for (const group of adapterGroups) {
+    for (const file of group.files) {
+      fileAdapterByPath.set(file.relativePath, group.adapter);
+    }
   }
+  const indexedFiles = files.filter((file) => fileAdapterByPath.has(file.relativePath));
+  const unsupportedFiles = files.filter((file) => !fileAdapterByPath.has(file.relativePath));
+  const skippedCoverage = scan.skipped.map((file) => ({
+    file,
+    adapterId: adapterIdForSkippedFile(registry, repoRoot, file)
+  }));
+  const unsupportedLanguageIds = languageIdsForSkippedAndUnsupported(
+    skippedCoverage,
+    unsupportedFiles
+  );
 
   const indexRunResult = db
     .prepare(
       "INSERT INTO index_runs (repo_id, status, started_at, extractor_version) VALUES (?, ?, datetime('now'), ?)"
     )
-    .run(repoId, 'running', `${primaryAdapter.id}-${primaryAdapter.version}`);
+    .run(repoId, 'running', extractorVersionFor(registeredAdapters));
   const indexRunId = Number(indexRunResult.lastInsertRowid);
 
   try {
-    const adapterRunInsert = db
-      .prepare(`
+    const adapterRunIds = new Map<SemanticAdapter, number>();
+    const insertAdapterRun = db.prepare(`
         INSERT INTO adapter_runs (index_run_id, adapter_id, adapter_version, language_ids, status, started_at)
         VALUES (?, ?, ?, ?, ?, datetime('now'))
-      `)
-      .run(
+      `);
+    for (const group of adapterGroups) {
+      const adapterRunInsert = insertAdapterRun.run(
         indexRunId,
-        primaryAdapter.id,
-        primaryAdapter.version,
-        JSON.stringify(languageIds),
+        group.adapter.id,
+        group.adapter.version,
+        JSON.stringify(group.languageIds),
         'running'
       );
-    const adapterRunId = Number(adapterRunInsert.lastInsertRowid);
+      adapterRunIds.set(group.adapter, Number(adapterRunInsert.lastInsertRowid));
+    }
 
     const mainBranch = db
       .prepare("SELECT id, head_tx_id FROM branches WHERE name = 'main'")
@@ -175,22 +222,22 @@ export async function indexProject(options: IndexOptions): Promise<IndexResult> 
     }
 
     const stmts = prepareStatements(db);
-    const persistCtx: PersistContext = {
+    const persistCtx: Omit<PersistContext, 'adapterRunId'> = {
       stmts,
       repoId,
       indexRunId,
-      adapterRunId,
       memoryTxId,
       fileIdByPath: new Map<string, number>(),
+      fileContentHashByPath: new Map(indexedFiles.map((file) => [file.relativePath, file.hash])),
       canonicalEntityIds: new Set<string>(),
       canonicalRelationIds: new Set<string>(),
       counters: { symbolsIndexed: 0, edgesIndexed: 0 }
     };
 
-    for (const skipped of scan.skipped) {
+    for (const { file: skipped, adapterId } of skippedCoverage) {
       stmts.insertCoverage.run(
         indexRunId,
-        primaryAdapter.id,
+        adapterId,
         skipped.relativePath,
         skipped.language ?? null,
         'skipped',
@@ -198,7 +245,20 @@ export async function indexProject(options: IndexOptions): Promise<IndexResult> 
       );
     }
 
-    for (const file of files) {
+    for (const file of unsupportedFiles) {
+      stmts.insertCoverage.run(
+        indexRunId,
+        unsupportedAdapterId,
+        file.relativePath,
+        file.language,
+        'skipped',
+        'no registered adapter supports language'
+      );
+    }
+
+    for (const file of indexedFiles) {
+      const adapter = fileAdapterByPath.get(file.relativePath);
+      if (!adapter) continue;
       stmts.upsertFile.run(repoId, file.relativePath, file.language, file.hash, indexRunId);
       const row = stmts.selectFile.get(repoId, file.relativePath) as { id: number };
       persistCtx.fileIdByPath.set(file.relativePath, row.id);
@@ -223,7 +283,7 @@ export async function indexProject(options: IndexOptions): Promise<IndexResult> 
       );
       stmts.insertCoverage.run(
         indexRunId,
-        primaryAdapter.id,
+        adapter.id,
         file.relativePath,
         file.language,
         'indexed',
@@ -232,36 +292,50 @@ export async function indexProject(options: IndexOptions): Promise<IndexResult> 
       persistCtx.canonicalEntityIds.add(fileEntId);
     }
 
-    const grouped = registry.classify(files);
-    const ctx: ExtractCtx = { repoRoot, indexRunId, adapterRunId };
-    for (const [adapter, adapterFiles] of grouped) {
-      const run = await adapter.start(ctx, adapterFiles);
+    for (let groupIndex = 0; groupIndex < adapterGroups.length; groupIndex++) {
+      const { adapter, files: adapterFiles } = adapterGroups[groupIndex]!;
+      const adapterRunId = adapterRunIds.get(adapter);
+      if (adapterRunId === undefined) {
+        throw new Error(`adapter run missing for ${adapter.id}`);
+      }
+      const ctx: ExtractCtx = { repoRoot, indexRunId, adapterRunId };
+      const adapterPersistCtx: PersistContext = { ...persistCtx, adapterRunId };
       try {
-        for (const file of adapterFiles) {
-          for await (const event of run.process(file)) {
-            handleEvent(event, file, persistCtx);
+        const run = await adapter.start(ctx, adapterFiles);
+        try {
+          for (const file of adapterFiles) {
+            for await (const event of run.process(file)) {
+              handleEvent(event, file, adapterPersistCtx);
+            }
+            stmts.insertEvidence.run(
+              evidenceId(file.relativePath, 'scan'),
+              repoId,
+              file.relativePath,
+              'scan',
+              redactSecrets(file.content),
+              'proven',
+              indexRunId
+            );
           }
-          stmts.insertEvidence.run(
-            evidenceId(file.relativePath, 'scan'),
-            repoId,
-            file.relativePath,
-            'scan',
-            redactSecrets(file.content),
-            'proven',
-            indexRunId
-          );
+        } finally {
+          if (run.dispose) {
+            await run.dispose();
+          }
         }
-      } finally {
-        if (run.dispose) {
-          await run.dispose();
-        }
+        updateAdapterRun(db, adapterRunId, 'completed');
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        updateAdapterRun(db, adapterRunId, 'failed', message);
+        markUnstartedAdapterRunsSkipped(
+          db,
+          adapterGroups.slice(groupIndex + 1),
+          adapterRunIds,
+          adapter.id
+        );
+        throw error;
       }
     }
 
-    db.prepare("UPDATE adapter_runs SET status = ?, finished_at = datetime('now') WHERE id = ?").run(
-      'completed',
-      adapterRunId
-    );
     db.prepare("UPDATE index_runs SET status = ?, finished_at = datetime('now') WHERE id = ?").run(
       'completed',
       indexRunId
@@ -271,34 +345,38 @@ export async function indexProject(options: IndexOptions): Promise<IndexResult> 
 
     return {
       indexRunId,
-      filesIndexed: files.length,
+      filesIndexed: indexedFiles.length,
       symbolsIndexed: persistCtx.counters.symbolsIndexed,
       edgesIndexed: persistCtx.counters.edgesIndexed,
       entitiesIndexed: persistCtx.canonicalEntityIds.size,
       relationsIndexed: persistCtx.canonicalRelationIds.size,
-      adaptersUsed: [
-        {
-          id: primaryAdapter.id,
-          version: primaryAdapter.version,
-          languageIds
-        }
-      ],
+      adaptersUsed: adapterGroups.map((group) => ({
+        id: group.adapter.id,
+        version: group.adapter.version,
+        languageIds: group.languageIds
+      })),
       coverage: {
-        indexedPaths: files.length,
-        skippedPaths: scan.skipped.length,
-        unsupportedLanguageIds: [],
-        skipped: scan.skipped.map((file) => ({
-          path: file.relativePath,
-          ...(file.language ? { languageId: file.language } : {}),
-          status: 'skipped',
-          reason: file.reason
-        }))
+        indexedPaths: indexedFiles.length,
+        skippedPaths: scan.skipped.length + unsupportedFiles.length,
+        unsupportedLanguageIds,
+        skipped: [
+          ...scan.skipped.map((file) => ({
+            path: file.relativePath,
+            ...(file.language ? { languageId: file.language } : {}),
+            status: 'skipped',
+            reason: file.reason
+          }) as const),
+          ...unsupportedFiles.map((file) => ({
+            path: file.relativePath,
+            languageId: file.language,
+            status: 'skipped',
+            reason: 'no registered adapter supports language'
+          }) as const)
+        ]
       }
     };
   } catch (error) {
-    db.prepare(
-      "UPDATE adapter_runs SET status = ?, finished_at = datetime('now'), error_summary = ? WHERE index_run_id = ?"
-    ).run('failed', error instanceof Error ? error.message : String(error), indexRunId);
+    failRunningAdapterRuns(db, indexRunId, error instanceof Error ? error.message : String(error));
     db.prepare("UPDATE index_runs SET status = ?, finished_at = datetime('now') WHERE id = ?").run(
       'failed',
       indexRunId
@@ -306,6 +384,108 @@ export async function indexProject(options: IndexOptions): Promise<IndexResult> 
     db.close();
     throw error;
   }
+}
+
+function createDefaultRegistry(): AdapterRegistry {
+  const registry = new AdapterRegistry();
+  registry.register(new MultiLanguageRegexAdapter());
+  return registry;
+}
+
+function updateAdapterRun(
+  db: Db,
+  adapterRunId: number,
+  status: AdapterRunStatus,
+  errorSummary: string | null = null
+): void {
+  db.prepare(
+    "UPDATE adapter_runs SET status = ?, finished_at = datetime('now'), error_summary = ? WHERE id = ?"
+  ).run(status, errorSummary, adapterRunId);
+}
+
+function markUnstartedAdapterRunsSkipped(
+  db: Db,
+  groups: readonly AdapterGroup[],
+  adapterRunIds: ReadonlyMap<SemanticAdapter, number>,
+  failedAdapterId: string
+): void {
+  for (const group of groups) {
+    const adapterRunId = adapterRunIds.get(group.adapter);
+    if (adapterRunId !== undefined) {
+      updateAdapterRun(db, adapterRunId, 'skipped', `not run because ${failedAdapterId} failed`);
+    }
+  }
+}
+
+function failRunningAdapterRuns(db: Db, indexRunId: number, errorSummary: string): void {
+  db.prepare(
+    `UPDATE adapter_runs
+     SET status = ?, finished_at = datetime('now'), error_summary = ?
+     WHERE index_run_id = ? AND status = ?`
+  ).run('failed', errorSummary, indexRunId, 'running');
+}
+
+function adapterGroupsInRegistryOrder(
+  adapters: readonly SemanticAdapter[],
+  classified: ReadonlyMap<SemanticAdapter, ScannedFile[]>
+): AdapterGroup[] {
+  return adapters.flatMap((adapter) => {
+    const files = classified.get(adapter);
+    if (!files || files.length === 0) {
+      return [];
+    }
+    return [
+      {
+        adapter,
+        files,
+        languageIds: languageIdsForFiles(files)
+      }
+    ];
+  });
+}
+
+function languageIdsForFiles(files: readonly ScannedFile[]): string[] {
+  return [...new Set(files.map((file) => file.language))].sort();
+}
+
+function adapterIdForSkippedFile(
+  registry: AdapterRegistry,
+  repoRoot: string,
+  file: SkippedFile
+): string {
+  if (!file.language) {
+    return unsupportedAdapterId;
+  }
+  const adapter = registry.pickAdapter({
+    absolutePath: path.join(repoRoot, file.relativePath),
+    relativePath: file.relativePath,
+    content: '',
+    hash: '',
+    language: file.language
+  });
+  return adapter?.id ?? unsupportedAdapterId;
+}
+
+function languageIdsForSkippedAndUnsupported(
+  skippedCoverage: ReadonlyArray<{ file: SkippedFile; adapterId: string }>,
+  unsupportedFiles: readonly ScannedFile[]
+): string[] {
+  return [
+    ...new Set([
+      ...unsupportedFiles.map((file) => file.language),
+      ...skippedCoverage.flatMap(({ file, adapterId }) =>
+        adapterId === unsupportedAdapterId && file.language ? [file.language] : []
+      )
+    ])
+  ].sort();
+}
+
+function extractorVersionFor(adapters: readonly SemanticAdapter[]): string {
+  if (adapters.length === 1) {
+    const adapter = adapters[0]!;
+    return `${adapter.id}-${adapter.version}`;
+  }
+  return adapters.map((adapter) => `${adapter.id}-${adapter.version}`).join(',');
 }
 
 function prepareStatements(db: Db): PreparedStatements {
@@ -391,6 +571,9 @@ function persistEntity(entity: PendingEntity, ctx: PersistContext): void {
   if (entity.kind === 'symbol') {
     const symbolId = entityIdFromDescriptor(entity);
     const meta = entity.metadata as { exported?: boolean } | undefined;
+    const containingFileContentHash = entity.path
+      ? ctx.fileContentHashByPath.get(entity.path) ?? ''
+      : '';
     ctx.stmts.upsertEntity.run(
       symbolId,
       ctx.repoId,
@@ -405,9 +588,7 @@ function persistEntity(entity: PendingEntity, ctx: PersistContext): void {
     ctx.stmts.insertEntityVersion.run(
       symbolId,
       ctx.indexRunId,
-      createHash('sha256')
-        .update(`${entity.path ?? ''}:${entity.symbolKind ?? ''}:${entity.symbol ?? ''}`)
-        .digest('hex'),
+      symbolEntityVersionContentHash(entity, containingFileContentHash),
       JSON.stringify({
         path: entity.path,
         symbol: entity.symbol,
@@ -456,6 +637,18 @@ function persistEntity(entity: PendingEntity, ctx: PersistContext): void {
     );
     ctx.canonicalEntityIds.add(externalId);
   }
+}
+
+function symbolEntityVersionContentHash(
+  entity: PendingEntity,
+  containingFileContentHash: string
+): string {
+  return contentHash(
+    entity.path ?? '',
+    entity.symbolKind ?? '',
+    entity.symbol ?? '',
+    containingFileContentHash
+  );
 }
 
 function persistRelation(
@@ -510,8 +703,7 @@ function persistRelation(
     provenance,
     adapterRunId: ctx.adapterRunId,
     indexRunId: ctx.indexRunId,
-    sourcePath: file.relativePath,
-    snippet: file.content,
+    evidence: relationEvidenceForPersistence(relation, file, confidence),
     insertRelation: ctx.stmts.insertRelation,
     insertRelationEvidence: ctx.stmts.insertRelationEvidence,
     canonicalRelationIds: ctx.canonicalRelationIds,
@@ -521,6 +713,31 @@ function persistRelation(
     upsertTextAttribute: ctx.stmts.upsertTextAttribute,
     insertFactProvenance: ctx.stmts.insertFactProvenance
   });
+}
+
+function relationEvidenceForPersistence(
+  relation: PendingRelation,
+  file: ScannedFile,
+  fallbackConfidence: Confidence
+): RelationEvidenceInput[] {
+  if (relation.evidence && relation.evidence.length > 0) {
+    return relation.evidence.map((evidence) => ({
+      file: evidence.file,
+      snippet: evidence.snippet ?? '',
+      confidence: evidence.confidence,
+      ...(evidence.startLine !== undefined ? { startLine: evidence.startLine } : {}),
+      ...(evidence.endLine !== undefined ? { endLine: evidence.endLine } : {}),
+      ...(evidence.startCol !== undefined ? { startCol: evidence.startCol } : {}),
+      ...(evidence.endCol !== undefined ? { endCol: evidence.endCol } : {})
+    }));
+  }
+  return [
+    {
+      file: file.relativePath,
+      snippet: file.content,
+      confidence: fallbackConfidence
+    }
+  ];
 }
 
 function entityIdFromDescriptor(d: EntityDescriptor): string {
@@ -628,8 +845,33 @@ function relationId(
     .slice(0, 20);
 }
 
-function relationEvidenceId(relationIdValue: string, sourcePath: string): string {
-  return createHash('sha1').update(`${relationIdValue}:${sourcePath}`).digest('hex').slice(0, 20);
+function relationEvidenceId(
+  relationIdValue: string,
+  evidence: RelationEvidenceInput,
+  snippet: string,
+): string {
+  const identity: unknown[] = [relationIdValue, evidence.file, snippet, evidence.confidence];
+  if (hasEvidenceSpan(evidence)) {
+    identity.push({
+      startLine: evidence.startLine ?? null,
+      endLine: evidence.endLine ?? null,
+      startCol: evidence.startCol ?? null,
+      endCol: evidence.endCol ?? null
+    });
+  }
+  return createHash('sha1')
+    .update(JSON.stringify(identity))
+    .digest('hex')
+    .slice(0, 20);
+}
+
+function hasEvidenceSpan(evidence: RelationEvidenceInput): boolean {
+  return (
+    evidence.startLine !== undefined ||
+    evidence.endLine !== undefined ||
+    evidence.startCol !== undefined ||
+    evidence.endCol !== undefined
+  );
 }
 
 function insertCanonicalRelation(input: {
@@ -641,8 +883,7 @@ function insertCanonicalRelation(input: {
   provenance: string;
   adapterRunId: number;
   indexRunId: number;
-  sourcePath: string;
-  snippet: string;
+  evidence: readonly RelationEvidenceInput[];
   insertRelation: Statement;
   insertRelationEvidence: Statement;
   canonicalRelationIds: Set<string>;
@@ -653,8 +894,6 @@ function insertCanonicalRelation(input: {
   insertFactProvenance: Statement;
 }): void {
   const id = relationId(input.kind, input.sourceEntityId, input.targetEntityId, input.provenance);
-  const redactedSnippet = redactSecrets(input.snippet);
-  const isSnippetRedacted = redactedSnippet !== input.snippet;
 
   input.insertRelation.run(
     id,
@@ -666,16 +905,6 @@ function insertCanonicalRelation(input: {
     input.adapterRunId,
     input.indexRunId,
     input.provenance
-  );
-  input.insertRelationEvidence.run(
-    relationEvidenceId(id, input.sourcePath),
-    id,
-    input.repoId,
-    input.sourcePath,
-    input.kind,
-    redactedSnippet,
-    input.confidence,
-    input.indexRunId
   );
   input.canonicalRelationIds.add(id);
 
@@ -694,25 +923,40 @@ function insertCanonicalRelation(input: {
   );
 
   input.upsertTextAttribute.run('evidence_snippet');
-  const evidenceEntity = `file:${input.sourcePath}`;
-  const evidenceValueBlob = JSON.stringify(redactedSnippet);
-  const evidenceFactId = contentHash(
-    evidenceEntity,
-    'evidence_snippet',
-    evidenceValueBlob,
-    'assert'
-  );
-  input.insertFact.run(
-    evidenceFactId,
-    evidenceEntity,
-    'evidence_snippet',
-    evidenceValueBlob,
-    'assert',
-    input.memoryTxId,
-    isSnippetRedacted ? 1 : 0
-  );
-  const provenanceId = contentHash(factId, evidenceFactId);
-  input.insertFactProvenance.run(provenanceId, factId, evidenceFactId);
+  input.evidence.forEach((evidence) => {
+    const redactedSnippet = redactSecrets(evidence.snippet);
+    const isSnippetRedacted = redactedSnippet !== evidence.snippet;
+    input.insertRelationEvidence.run(
+      relationEvidenceId(id, evidence, redactedSnippet),
+      id,
+      input.repoId,
+      evidence.file,
+      input.kind,
+      redactedSnippet,
+      evidence.confidence,
+      input.indexRunId
+    );
+
+    const evidenceEntity = `file:${evidence.file}`;
+    const evidenceValueBlob = JSON.stringify(redactedSnippet);
+    const evidenceFactId = contentHash(
+      evidenceEntity,
+      'evidence_snippet',
+      evidenceValueBlob,
+      'assert'
+    );
+    input.insertFact.run(
+      evidenceFactId,
+      evidenceEntity,
+      'evidence_snippet',
+      evidenceValueBlob,
+      'assert',
+      input.memoryTxId,
+      isSnippetRedacted ? 1 : 0
+    );
+    const provenanceId = contentHash(factId, evidenceFactId);
+    input.insertFactProvenance.run(provenanceId, factId, evidenceFactId);
+  });
 }
 
 function relationKindToAttribute(kind: string): string {

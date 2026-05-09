@@ -265,33 +265,56 @@ function loadCanonicalReverseRows(
 ): CanonicalImpactRow[] {
   return db
     .prepare(`
+      WITH bounded_relations AS (
+        SELECT
+          r.id AS relation_id,
+          r.kind AS relation_kind,
+          r.confidence AS relation_confidence,
+          r.provenance AS provenance,
+          source.id AS source_entity_id,
+          source.kind AS source_kind,
+          source.path AS source_path,
+          source.symbol AS source_symbol,
+          source.language_id AS source_language_id,
+          source.display_name AS source_display_name
+        FROM relations r
+        JOIN entities source ON source.id = r.source_entity_id
+        WHERE r.repo_id = ?
+          AND r.target_entity_id = ?
+          AND r.index_run_id = ?
+          AND source.path IS NOT NULL
+        ORDER BY source.path, r.kind, r.id
+        LIMIT ?
+      )
       SELECT
-        r.id AS relation_id,
-        r.kind AS relation_kind,
-        r.confidence AS relation_confidence,
-        r.provenance AS provenance,
-        source.id AS source_entity_id,
-        source.kind AS source_kind,
-        source.path AS source_path,
-        source.symbol AS source_symbol,
-        source.language_id AS source_language_id,
-        source.display_name AS source_display_name,
+        bounded.relation_id AS relation_id,
+        bounded.relation_kind AS relation_kind,
+        bounded.relation_confidence AS relation_confidence,
+        bounded.provenance AS provenance,
+        bounded.source_entity_id AS source_entity_id,
+        bounded.source_kind AS source_kind,
+        bounded.source_path AS source_path,
+        bounded.source_symbol AS source_symbol,
+        bounded.source_language_id AS source_language_id,
+        bounded.source_display_name AS source_display_name,
         evidence.id AS evidence_id,
         evidence.file_path AS evidence_file_path,
         evidence.kind AS evidence_kind,
         evidence.snippet AS evidence_snippet,
         evidence.confidence AS evidence_confidence
-      FROM relations r
-      JOIN entities source ON source.id = r.source_entity_id
-      LEFT JOIN relation_evidence evidence ON evidence.relation_id = r.id
-      WHERE r.repo_id = ?
-        AND r.target_entity_id = ?
-        AND r.index_run_id = ?
-        AND source.path IS NOT NULL
-      ORDER BY source.path, r.kind, r.id
-      LIMIT ?
+      FROM bounded_relations bounded
+      LEFT JOIN relation_evidence evidence ON evidence.id = (
+        SELECT selected_evidence.id
+        FROM relation_evidence selected_evidence
+        WHERE selected_evidence.relation_id = bounded.relation_id
+          AND selected_evidence.repo_id = ?
+          AND selected_evidence.index_run_id = ?
+        ORDER BY selected_evidence.file_path, selected_evidence.kind, selected_evidence.id
+        LIMIT 1
+      )
+      ORDER BY bounded.source_path, bounded.relation_kind, bounded.relation_id
     `)
-    .all(repoId, targetEntityId, indexRunId, limit) as CanonicalImpactRow[];
+    .all(repoId, targetEntityId, indexRunId, limit, repoId, indexRunId) as CanonicalImpactRow[];
 }
 
 function loadLegacyImpactRows(

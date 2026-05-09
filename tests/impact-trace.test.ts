@@ -7,8 +7,12 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
 
+import { AdapterRegistry } from '../src/adapters/registry.js';
+import type { AdapterRun, ExtractCtx, IndexEvent, SemanticAdapter } from '../src/adapters/types.js';
 import { analyzeDiff, exportImpactGraph, indexProject, initProject } from '../src/index.js';
+import { indexProjectWithRegistryForTest } from '../src/indexer.js';
 import { databasePath } from '../src/store.js';
+import type { ScannedFile } from '../src/types.js';
 
 // Force the deterministic SHA-256 stub so embedding tests don't download a
 // real model (~278 MB) and stay fast/offline. Spawned CLI subprocesses
@@ -17,6 +21,12 @@ process.env.IMPACT_TRACE_EMBEDDING_MODEL = 'stub-sha256';
 
 const require = createRequire(import.meta.url);
 const tsxLoaderPath = require.resolve('tsx');
+
+if (false) {
+  const registry = new AdapterRegistry();
+  // @ts-expect-error registry injection is intentionally not part of the public indexProject API
+  void indexProject({ repoRoot: '' }, { registry });
+}
 
 async function makeFixtureRepo(): Promise<string> {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-'));
@@ -74,6 +84,52 @@ async function makeFixtureRepo(): Promise<string> {
   );
 
   return repoRoot;
+}
+
+function makeAttributionAdapter(id: string, language: string): SemanticAdapter {
+  return {
+    id,
+    version: '1',
+    capabilities: ['references'],
+    supports: (file) => file.language === language,
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+      async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
+        yield {
+          kind: 'relation',
+          relation: {
+            source: { kind: 'file', path: file.relativePath, languageId: file.language },
+            target: { kind: 'file', path: file.relativePath, languageId: file.language },
+            kind: 'REFERENCES',
+            metadata: {
+              confidence: 'proven',
+              provenance: `${id}:${file.relativePath}`
+            },
+            evidence: [
+              {
+                file: file.relativePath,
+                snippet: file.content,
+                confidence: 'proven'
+              }
+            ]
+          }
+        };
+      }
+    })
+  };
+}
+
+function makeFailingAdapter(id: string, language: string, message: string): SemanticAdapter {
+  return {
+    id,
+    version: '1',
+    capabilities: ['references'],
+    supports: (file) => file.language === language,
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+      async *process(_file: ScannedFile): AsyncIterable<IndexEvent> {
+        throw new Error(message);
+      }
+    })
+  };
 }
 
 test('initProject creates config and SQLite database tables', async () => {
@@ -178,6 +234,492 @@ test('indexProject writes canonical entity graph and broad language file entitie
   }
 });
 
+test('indexProject makes symbol entity version content hash track containing file changes', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-symbol-version-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  const sourcePath = path.join(repoRoot, 'src/calc.ts');
+  await writeFile(
+    sourcePath,
+    [
+      'export function calculate(input: number) {',
+      '  return input + 1;',
+      '}',
+      ''
+    ].join('\n')
+  );
+  await initProject({ repoRoot });
+
+  const symbolVersionHash = (indexRunId: number): string => {
+    const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+    try {
+      const row = db
+        .prepare(
+          `SELECT ev.content_hash
+           FROM entity_versions ev
+           INNER JOIN entities e ON e.id = ev.entity_id
+           WHERE ev.index_run_id = ?
+             AND e.kind = 'symbol'
+             AND e.path = ?
+             AND e.symbol = ?`
+        )
+        .get(indexRunId, 'src/calc.ts', 'calculate') as { content_hash: string } | undefined;
+      assert.ok(row, 'expected symbol entity version row for calculate');
+      return row.content_hash;
+    } finally {
+      db.close();
+    }
+  };
+
+  const firstIndex = await indexProject({ repoRoot });
+  const firstHash = symbolVersionHash(firstIndex.indexRunId);
+
+  const sameContentIndex = await indexProject({ repoRoot });
+  assert.equal(symbolVersionHash(sameContentIndex.indexRunId), firstHash);
+
+  await writeFile(
+    sourcePath,
+    [
+      'export function calculate(input: number) {',
+      '  const doubled = input * 2;',
+      '  return doubled + 1;',
+      '}',
+      ''
+    ].join('\n')
+  );
+  const changedContentIndex = await indexProject({ repoRoot });
+
+  assert.notEqual(symbolVersionHash(changedContentIndex.indexRunId), firstHash);
+});
+
+test('indexProject attributes adapter runs, relations, coverage, and usage per classified adapter', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-adapters-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await mkdir(path.join(repoRoot, 'scripts'), { recursive: true });
+  await mkdir(path.join(repoRoot, 'docs'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const app = 1;\n');
+  await writeFile(path.join(repoRoot, 'scripts/tool.py'), 'def tool():\n    return 1\n');
+  await writeFile(path.join(repoRoot, 'scripts/large.py'), `value = "${'x'.repeat(160)}"\n`);
+  await writeFile(path.join(repoRoot, 'docs/large.md'), `${'oversized docs\n'.repeat(20)}`);
+  await initProject({ repoRoot });
+
+  const registry = new AdapterRegistry();
+  registry.register(makeAttributionAdapter('typescript-test-adapter', 'typescript'));
+  registry.register(makeAttributionAdapter('python-test-adapter', 'python'));
+
+  const index = await indexProjectWithRegistryForTest({ repoRoot, maxFileBytes: 80 }, registry);
+
+  assert.deepEqual(
+    index.adaptersUsed?.map((adapter) => ({
+      id: adapter.id,
+      languageIds: adapter.languageIds
+    })),
+    [
+      { id: 'typescript-test-adapter', languageIds: ['typescript'] },
+      { id: 'python-test-adapter', languageIds: ['python'] }
+    ]
+  );
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const adapterRuns = db
+      .prepare(
+        'SELECT id, adapter_id, language_ids, status FROM adapter_runs WHERE index_run_id = ? ORDER BY id'
+      )
+      .all(index.indexRunId) as Array<{
+        id: number;
+        adapter_id: string;
+        language_ids: string;
+        status: string;
+      }>;
+    assert.deepEqual(
+      adapterRuns.map((run) => ({
+        adapterId: run.adapter_id,
+        languageIds: JSON.parse(run.language_ids) as string[],
+        status: run.status
+      })),
+      [
+        { adapterId: 'typescript-test-adapter', languageIds: ['typescript'], status: 'completed' },
+        { adapterId: 'python-test-adapter', languageIds: ['python'], status: 'completed' }
+      ]
+    );
+
+    const relationRows = db
+      .prepare(
+        `SELECT r.provenance, ar.adapter_id
+         FROM relations r
+         JOIN adapter_runs ar ON ar.id = r.adapter_run_id
+         WHERE r.index_run_id = ?
+         ORDER BY r.provenance`
+      )
+      .all(index.indexRunId) as Array<{ provenance: string; adapter_id: string }>;
+    assert.deepEqual(
+      relationRows.map((row) => ({
+        provenance: row.provenance,
+        adapter_id: row.adapter_id
+      })),
+      [
+        {
+          provenance: 'python-test-adapter:scripts/tool.py',
+          adapter_id: 'python-test-adapter'
+        },
+        {
+          provenance: 'typescript-test-adapter:src/app.ts',
+          adapter_id: 'typescript-test-adapter'
+        }
+      ]
+    );
+
+    const coverageRows = db
+      .prepare(
+        `SELECT path, adapter_id, status
+         FROM index_coverage
+         WHERE index_run_id = ?
+         ORDER BY path`
+      )
+      .all(index.indexRunId) as Array<{ path: string; adapter_id: string; status: string }>;
+    assert.deepEqual(
+      coverageRows.map((row) => ({
+        path: row.path,
+        adapter_id: row.adapter_id,
+        status: row.status
+      })),
+      [
+        { path: 'docs/large.md', adapter_id: 'unsupported', status: 'skipped' },
+        { path: 'scripts/large.py', adapter_id: 'python-test-adapter', status: 'skipped' },
+        { path: 'scripts/tool.py', adapter_id: 'python-test-adapter', status: 'indexed' },
+        { path: 'src/app.ts', adapter_id: 'typescript-test-adapter', status: 'indexed' }
+      ]
+    );
+  } finally {
+    db.close();
+  }
+});
+
+test('indexProject persists adapter-provided relation evidence entries', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-relation-evidence-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  const fullSource = [
+    'export const source = "full file content should not be relation evidence";',
+    'export const target = source;',
+    ''
+  ].join('\n');
+  await writeFile(path.join(repoRoot, 'src/app.ts'), fullSource);
+  await initProject({ repoRoot });
+
+  const firstSnippet = 'adapter short evidence: source references target';
+  const secondSnippet = 'adapter secret evidence: sk-test-secret-1234567890';
+  let reverseEvidenceOrder = false;
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'relation-evidence-test-adapter',
+    version: '1',
+    capabilities: ['references'],
+    supports: (file) => file.language === 'typescript',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+      async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
+        const evidence = [
+          {
+            file: 'adapter/evidence-one.ts',
+            snippet: firstSnippet,
+            confidence: 'proven'
+          },
+          {
+            file: 'adapter/evidence-two.ts',
+            snippet: secondSnippet,
+            confidence: 'inferred'
+          }
+        ] as const;
+        yield {
+          kind: 'relation',
+          relation: {
+            source: { kind: 'file', path: file.relativePath, languageId: file.language },
+            target: { kind: 'file', path: file.relativePath, languageId: file.language },
+            kind: 'REFERENCES',
+            metadata: {
+              confidence: 'proven',
+              provenance: `relation-evidence-test-adapter:${file.relativePath}`
+            },
+            evidence: reverseEvidenceOrder ? [...evidence].reverse() : [...evidence]
+          }
+        };
+      }
+    })
+  });
+
+  const firstIndex = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const firstEvidenceRows = db
+      .prepare(
+        `SELECT id, file_path, snippet, confidence
+         FROM relation_evidence
+         WHERE index_run_id = ?
+         ORDER BY file_path`
+      )
+      .all(firstIndex.indexRunId) as Array<{
+        id: string;
+        file_path: string;
+        snippet: string;
+        confidence: string;
+      }>;
+    assert.deepEqual(
+      firstEvidenceRows.map((row) => ({
+        filePath: row.file_path,
+        snippet: row.snippet,
+        confidence: row.confidence
+      })),
+      [
+        {
+          filePath: 'adapter/evidence-one.ts',
+          snippet: firstSnippet,
+          confidence: 'proven'
+        },
+        {
+          filePath: 'adapter/evidence-two.ts',
+          snippet: 'adapter secret evidence: [REDACTED_OPENAI_KEY]',
+          confidence: 'inferred'
+        }
+      ]
+    );
+    assert.equal(new Set(firstEvidenceRows.map((row) => row.id)).size, 2);
+    assert.equal(firstEvidenceRows.some((row) => row.file_path === 'src/app.ts'), false);
+    assert.equal(firstEvidenceRows.some((row) => row.snippet === fullSource), false);
+
+    const evidenceFacts = db
+      .prepare(
+        `SELECT entity_id, value_blob, redacted
+         FROM facts
+         WHERE attribute = 'evidence_snippet'
+         ORDER BY entity_id, value_blob`
+      )
+      .all() as Array<{ entity_id: string; value_blob: string; redacted: number }>;
+    assert.deepEqual(
+      evidenceFacts.map((row) => ({
+        entityId: row.entity_id,
+        snippet: JSON.parse(row.value_blob) as string,
+        redacted: row.redacted
+      })),
+      [
+        {
+          entityId: 'file:adapter/evidence-one.ts',
+          snippet: firstSnippet,
+          redacted: 0
+        },
+        {
+          entityId: 'file:adapter/evidence-two.ts',
+          snippet: 'adapter secret evidence: [REDACTED_OPENAI_KEY]',
+          redacted: 1
+        }
+      ]
+    );
+
+    const firstEvidenceIdsByIdentity = new Map(
+      firstEvidenceRows.map((row) => [
+        `${row.file_path}\0${row.snippet}\0${row.confidence}`,
+        row.id
+      ])
+    );
+
+    reverseEvidenceOrder = true;
+    const secondIndex = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+    const secondEvidenceRows = db
+      .prepare(
+        `SELECT id, file_path, snippet, confidence
+         FROM relation_evidence
+         WHERE index_run_id = ?
+         ORDER BY file_path`
+      )
+      .all(secondIndex.indexRunId) as Array<{
+        id: string;
+        file_path: string;
+        snippet: string;
+        confidence: string;
+      }>;
+    const secondEvidenceIdsByIdentity = new Map(
+      secondEvidenceRows.map((row) => [
+        `${row.file_path}\0${row.snippet}\0${row.confidence}`,
+        row.id
+      ])
+    );
+    assert.deepEqual(secondEvidenceIdsByIdentity, firstEvidenceIdsByIdentity);
+  } finally {
+    db.close();
+  }
+});
+
+test('indexProject keeps relation evidence identities distinct for different spans', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-relation-evidence-span-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const target = 1;\n');
+  await initProject({ repoRoot });
+
+  const snippet = 'same evidence snippet';
+  let reverseEvidenceOrder = false;
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'relation-evidence-span-test-adapter',
+    version: '1',
+    capabilities: ['references'],
+    supports: (file) => file.language === 'typescript',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+      async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
+        const evidence = [
+          {
+            file: 'src/app.ts',
+            snippet,
+            confidence: 'proven',
+            startLine: 1
+          },
+          {
+            file: 'src/app.ts',
+            snippet,
+            confidence: 'proven',
+            startLine: 2
+          }
+        ] as const;
+        yield {
+          kind: 'relation',
+          relation: {
+            source: { kind: 'file', path: file.relativePath, languageId: file.language },
+            target: { kind: 'file', path: file.relativePath, languageId: file.language },
+            kind: 'REFERENCES',
+            metadata: {
+              confidence: 'proven',
+              provenance: `relation-evidence-span-test-adapter:${file.relativePath}`
+            },
+            evidence: reverseEvidenceOrder ? [...evidence].reverse() : [...evidence]
+          }
+        };
+      }
+    })
+  });
+
+  const firstIndex = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const firstEvidenceRows = db
+      .prepare(
+        `SELECT id, file_path, snippet, confidence
+         FROM relation_evidence
+         WHERE index_run_id = ?
+         ORDER BY id`
+      )
+      .all(firstIndex.indexRunId) as Array<{
+        id: string;
+        file_path: string;
+        snippet: string;
+        confidence: string;
+      }>;
+    assert.deepEqual(
+      firstEvidenceRows.map((row) => ({
+        filePath: row.file_path,
+        snippet: row.snippet,
+        confidence: row.confidence
+      })),
+      [
+        {
+          filePath: 'src/app.ts',
+          snippet,
+          confidence: 'proven'
+        },
+        {
+          filePath: 'src/app.ts',
+          snippet,
+          confidence: 'proven'
+        }
+      ]
+    );
+    const firstIdSet = new Set(firstEvidenceRows.map((row) => row.id));
+    assert.equal(firstEvidenceRows.length, 2);
+    assert.equal(firstIdSet.size, 2);
+
+    reverseEvidenceOrder = true;
+    const secondIndex = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+    const secondEvidenceRows = db
+      .prepare(
+        `SELECT id
+         FROM relation_evidence
+         WHERE index_run_id = ?
+         ORDER BY id`
+      )
+      .all(secondIndex.indexRunId) as Array<{ id: string }>;
+    assert.deepEqual(
+      new Set(secondEvidenceRows.map((row) => row.id)),
+      firstIdSet
+    );
+  } finally {
+    db.close();
+  }
+});
+
+test('indexProject preserves per-adapter terminal status when a later adapter fails', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-adapter-fail-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await mkdir(path.join(repoRoot, 'scripts'), { recursive: true });
+  await mkdir(path.join(repoRoot, 'docs'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const app = 1;\n');
+  await writeFile(path.join(repoRoot, 'scripts/tool.py'), 'def tool():\n    return 1\n');
+  await writeFile(path.join(repoRoot, 'docs/notes.md'), 'notes for adapter failure test\n');
+  await initProject({ repoRoot });
+
+  const registry = new AdapterRegistry();
+  registry.register(makeAttributionAdapter('typescript-success-adapter', 'typescript'));
+  registry.register(makeFailingAdapter('python-failing-adapter', 'python', 'python adapter failed'));
+  registry.register(makeAttributionAdapter('markdown-not-run-adapter', 'markdown'));
+
+  await assert.rejects(
+    indexProjectWithRegistryForTest({ repoRoot }, registry),
+    /python adapter failed/
+  );
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const indexRun = db
+      .prepare('SELECT id, status FROM index_runs ORDER BY id DESC LIMIT 1')
+      .get() as { id: number; status: string };
+    assert.equal(indexRun.status, 'failed');
+
+    const adapterRuns = db
+      .prepare(
+        `SELECT adapter_id, status, error_summary
+         FROM adapter_runs
+         WHERE index_run_id = ?
+         ORDER BY id`
+      )
+      .all(indexRun.id) as Array<{
+        adapter_id: string;
+        status: string;
+        error_summary: string | null;
+      }>;
+    assert.deepEqual(
+      adapterRuns.map((run) => ({
+        adapterId: run.adapter_id,
+        status: run.status,
+        errorSummary: run.error_summary
+      })),
+      [
+        {
+          adapterId: 'typescript-success-adapter',
+          status: 'completed',
+          errorSummary: null
+        },
+        {
+          adapterId: 'python-failing-adapter',
+          status: 'failed',
+          errorSummary: 'python adapter failed'
+        },
+        {
+          adapterId: 'markdown-not-run-adapter',
+          status: 'skipped',
+          errorSummary: 'not run because python-failing-adapter failed'
+        }
+      ]
+    );
+  } finally {
+    db.close();
+  }
+});
+
 test('exportImpactGraph renders report graph from SQLite relations without graph DB', async () => {
   const repoRoot = await makeFixtureRepo();
   await initProject({ repoRoot });
@@ -257,6 +799,85 @@ test('analyzeDiff report IDs include fanout options that change impact scope', a
 
   assert.notEqual(fanoutOne.id, fanoutTwo.id);
   assert.ok(fanoutTwo.affectedFiles.length >= fanoutOne.affectedFiles.length);
+});
+
+test('analyzeDiff fanout limits distinct relations rather than evidence rows', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-fanout-evidence-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/core.ts'), 'export const core = 1;\n');
+  await writeFile(path.join(repoRoot, 'src/a.ts'), 'import { core } from "./core"; export const a = core;\n');
+  await writeFile(path.join(repoRoot, 'src/b.ts'), 'import { core } from "./core"; export const b = core;\n');
+  await initProject({ repoRoot });
+
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'fanout-evidence-test-adapter',
+    version: '1',
+    capabilities: ['references'],
+    supports: (file) => file.language === 'typescript',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+      async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
+        if (file.relativePath !== 'src/a.ts' && file.relativePath !== 'src/b.ts') {
+          return;
+        }
+        yield {
+          kind: 'relation',
+          relation: {
+            source: { kind: 'file', path: file.relativePath, languageId: file.language },
+            target: { kind: 'file', path: 'src/core.ts', languageId: 'typescript' },
+            kind: 'DEPENDS_ON',
+            metadata: {
+              confidence: 'proven',
+              provenance: `fanout-evidence-test-adapter:${file.relativePath}`
+            },
+            evidence: file.relativePath === 'src/a.ts'
+              ? [
+                  {
+                    file: 'evidence/a-one.ts',
+                    snippet: 'a depends on core, first evidence',
+                    confidence: 'proven'
+                  },
+                  {
+                    file: 'evidence/a-two.ts',
+                    snippet: 'a depends on core, second evidence',
+                    confidence: 'proven'
+                  }
+                ]
+              : [
+                  {
+                    file: 'evidence/b-one.ts',
+                    snippet: 'b depends on core',
+                    confidence: 'proven'
+                  }
+                ]
+          }
+        };
+      }
+    })
+  });
+  await indexProjectWithRegistryForTest({ repoRoot }, registry);
+
+  const report = await analyzeDiff({
+    repoRoot,
+    changedFiles: ['src/core.ts'],
+    maxFanout: 2
+  });
+
+  assert.deepEqual(
+    report.affectedFiles.map((file) => file.path),
+    ['src/a.ts', 'src/b.ts']
+  );
+  assert.equal(
+    report.warnings?.some((warning) => warning.includes('fanout limit')) ?? false,
+    false
+  );
+  assert.deepEqual(
+    report.evidence
+      .filter((item) => item.extractorId === 'canonical-entity-graph')
+      .map((item) => item.file)
+      .sort(),
+    ['evidence/a-one.ts', 'evidence/b-one.ts']
+  );
 });
 
 test('indexProject records skipped files when resource limits are exceeded', async () => {

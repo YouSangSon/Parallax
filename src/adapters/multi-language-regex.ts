@@ -32,8 +32,8 @@ export class MultiLanguageRegexAdapter implements SemanticAdapter {
     return true;
   }
 
-  start(_ctx: ExtractCtx, files: readonly ScannedFile[]): AdapterRun {
-    const filePathSet = new Set(files.map((f) => f.relativePath));
+  start(ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun {
+    const filePathSet = new Set(ctx.indexedFiles.map((f) => f.relativePath));
     return {
       async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
         yield* extractEvents(file, filePathSet);

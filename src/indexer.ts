@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { closeSync, openSync, readFileSync, readdirSync, readSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import { AdapterRegistry } from './adapters/registry.js';
@@ -66,12 +66,15 @@ const languageByFileName = new Map<string, string>([
   ['CODEOWNERS', 'policy']
 ]);
 const defaultMaxFileBytes = 1_000_000;
+const skippedFileContentSampleBytes = 4_096;
 const unsupportedAdapterId = 'unsupported';
 
 type SkippedFile = {
   relativePath: string;
   language?: string;
   reason: string;
+  contentSample?: string;
+  contentSampleHash?: string;
 };
 
 type ScanResult = {
@@ -96,6 +99,7 @@ interface PreparedStatements {
   insertSymbol: Statement;
   insertEdge: Statement;
   insertEvidence: Statement;
+  appendAdapterRunErrorSummary: Statement;
 }
 
 interface PersistContext {
@@ -103,12 +107,14 @@ interface PersistContext {
   repoId: number;
   indexRunId: number;
   adapterRunId: number;
+  adapterId: string;
   memoryTxId: string;
   fileIdByPath: Map<string, number>;
   fileContentHashByPath: Map<string, string>;
   canonicalEntityIds: Set<string>;
   canonicalRelationIds: Set<string>;
   counters: { symbolsIndexed: number; edgesIndexed: number };
+  currentStateSnapshot: CurrentStateSnapshot;
 }
 
 type RelationEvidenceInput = {
@@ -128,6 +134,419 @@ type AdapterGroup = {
 };
 
 type AdapterRunStatus = 'completed' | 'failed' | 'skipped';
+
+type FileSnapshotRow = {
+  id: number;
+  repo_id: number;
+  path: string;
+  language: string;
+  content_hash: string;
+  index_run_id: number;
+};
+
+type EntitySnapshotRow = {
+  id: string;
+  repo_id: number;
+  kind: string;
+  path: string | null;
+  symbol: string | null;
+  language_id: string | null;
+  display_name: string;
+  created_index_run_id: number;
+  updated_index_run_id: number;
+};
+
+type RelationSnapshotRow = {
+  id: string;
+  repo_id: number;
+  source_entity_id: string;
+  target_entity_id: string;
+  kind: string;
+  confidence: string;
+  adapter_run_id: number | null;
+  index_run_id: number;
+  provenance: string;
+};
+
+type RelationEvidenceSnapshotRow = {
+  id: string;
+  relation_id: string;
+  repo_id: number;
+  file_path: string;
+  kind: string;
+  snippet: string;
+  confidence: string;
+  index_run_id: number;
+};
+
+type SymbolSnapshotRow = {
+  id: number;
+  file_id: number;
+  name: string;
+  kind: string;
+  exported: number;
+  semantic_id: string;
+  index_run_id: number;
+};
+
+type EdgeSnapshotRow = {
+  id: number;
+  repo_id: number;
+  source_file_id: number;
+  target_file_id: number | null;
+  kind: string;
+  target_path: string;
+  confidence: string;
+  provenance: string;
+  index_run_id: number;
+};
+
+type EvidenceSnapshotRow = {
+  id: string;
+  repo_id: number;
+  file_path: string;
+  kind: string;
+  snippet: string;
+  confidence: string;
+  index_run_id: number;
+};
+
+type SymbolSnapshotEntry = {
+  fileId: number;
+  semanticId: string;
+  row: SymbolSnapshotRow | null;
+};
+
+type EdgeSnapshotEntry = {
+  repoId: number;
+  sourceFileId: number;
+  kind: string;
+  targetPath: string;
+  row: EdgeSnapshotRow | null;
+};
+
+class CurrentStateSnapshot {
+  private readonly files = new Map<string, FileSnapshotRow | null>();
+  private readonly entities = new Map<string, EntitySnapshotRow | null>();
+  private readonly relations = new Map<string, RelationSnapshotRow | null>();
+  private readonly relationEvidence = new Map<string, RelationEvidenceSnapshotRow | null>();
+  private readonly symbols = new Map<string, SymbolSnapshotEntry>();
+  private readonly edges = new Map<string, EdgeSnapshotEntry>();
+  private readonly evidence = new Map<string, EvidenceSnapshotRow | null>();
+
+  private readonly selectFile: Statement;
+  private readonly selectEntity: Statement;
+  private readonly selectRelation: Statement;
+  private readonly selectRelationEvidence: Statement;
+  private readonly selectSymbol: Statement;
+  private readonly selectEdge: Statement;
+  private readonly selectEvidence: Statement;
+
+  constructor(
+    private readonly db: Db,
+    private readonly repoId: number,
+    private readonly indexRunId: number,
+    private readonly deleteNewRows: boolean
+  ) {
+    this.selectFile = db.prepare('SELECT * FROM files WHERE repo_id = ? AND path = ?');
+    this.selectEntity = db.prepare('SELECT * FROM entities WHERE id = ?');
+    this.selectRelation = db.prepare('SELECT * FROM relations WHERE id = ?');
+    this.selectRelationEvidence = db.prepare('SELECT * FROM relation_evidence WHERE id = ?');
+    this.selectSymbol = db.prepare('SELECT * FROM symbols WHERE file_id = ? AND semantic_id = ?');
+    this.selectEdge = db.prepare(
+      'SELECT * FROM edges WHERE repo_id = ? AND source_file_id = ? AND kind = ? AND target_path = ?'
+    );
+    this.selectEvidence = db.prepare('SELECT * FROM evidence WHERE id = ?');
+  }
+
+  captureFile(pathValue: string): void {
+    if (this.files.has(pathValue)) return;
+    this.files.set(
+      pathValue,
+      (this.selectFile.get(this.repoId, pathValue) as FileSnapshotRow | undefined) ?? null
+    );
+  }
+
+  captureEntity(id: string): void {
+    if (this.entities.has(id)) return;
+    this.entities.set(id, (this.selectEntity.get(id) as EntitySnapshotRow | undefined) ?? null);
+  }
+
+  captureRelation(id: string): void {
+    if (this.relations.has(id)) return;
+    this.relations.set(id, (this.selectRelation.get(id) as RelationSnapshotRow | undefined) ?? null);
+  }
+
+  captureRelationEvidence(id: string): void {
+    if (this.relationEvidence.has(id)) return;
+    this.relationEvidence.set(
+      id,
+      (this.selectRelationEvidence.get(id) as RelationEvidenceSnapshotRow | undefined) ?? null
+    );
+  }
+
+  captureSymbol(fileId: number, semanticId: string): void {
+    const key = `${fileId}\0${semanticId}`;
+    if (this.symbols.has(key)) return;
+    this.symbols.set(key, {
+      fileId,
+      semanticId,
+      row: (this.selectSymbol.get(fileId, semanticId) as SymbolSnapshotRow | undefined) ?? null
+    });
+  }
+
+  captureEdge(repoId: number, sourceFileId: number, kind: string, targetPath: string): void {
+    const key = `${repoId}\0${sourceFileId}\0${kind}\0${targetPath}`;
+    if (this.edges.has(key)) return;
+    this.edges.set(key, {
+      repoId,
+      sourceFileId,
+      kind,
+      targetPath,
+      row:
+        (this.selectEdge.get(repoId, sourceFileId, kind, targetPath) as
+          | EdgeSnapshotRow
+          | undefined) ?? null
+    });
+  }
+
+  captureEvidence(id: string): void {
+    if (this.evidence.has(id)) return;
+    this.evidence.set(id, (this.selectEvidence.get(id) as EvidenceSnapshotRow | undefined) ?? null);
+  }
+
+  restore(): void {
+    if (this.isEmpty()) return;
+
+    const deleteRelationEvidence = this.db.prepare(
+      'DELETE FROM relation_evidence WHERE id = ? AND index_run_id = ?'
+    );
+    const deleteSymbol = this.db.prepare(
+      'DELETE FROM symbols WHERE file_id = ? AND semantic_id = ? AND index_run_id = ?'
+    );
+    const deleteEdge = this.db.prepare(
+      'DELETE FROM edges WHERE repo_id = ? AND source_file_id = ? AND kind = ? AND target_path = ? AND index_run_id = ?'
+    );
+    const deleteEvidence = this.db.prepare('DELETE FROM evidence WHERE id = ? AND index_run_id = ?');
+    const deleteRelation = this.db.prepare(
+      'DELETE FROM relations WHERE id = ? AND index_run_id = ?'
+    );
+    const deleteFile = this.db.prepare(
+      'DELETE FROM files WHERE repo_id = ? AND path = ? AND index_run_id = ?'
+    );
+    const deleteFailedEntityVersions = this.db.prepare(
+      'DELETE FROM entity_versions WHERE entity_id = ? AND index_run_id = ?'
+    );
+    const deleteEntity = this.db.prepare(
+      'DELETE FROM entities WHERE id = ? AND updated_index_run_id = ?'
+    );
+
+    const restoreFile = this.db.prepare(`
+      INSERT INTO files (id, repo_id, path, language, content_hash, index_run_id)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(repo_id, path) DO UPDATE SET
+        language = excluded.language,
+        content_hash = excluded.content_hash,
+        index_run_id = excluded.index_run_id
+    `);
+    const restoreEntity = this.db.prepare(`
+      INSERT INTO entities (
+        id, repo_id, kind, path, symbol, language_id, display_name, created_index_run_id, updated_index_run_id
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        repo_id = excluded.repo_id,
+        kind = excluded.kind,
+        path = excluded.path,
+        symbol = excluded.symbol,
+        language_id = excluded.language_id,
+        display_name = excluded.display_name,
+        created_index_run_id = excluded.created_index_run_id,
+        updated_index_run_id = excluded.updated_index_run_id
+    `);
+    const restoreRelation = this.db.prepare(`
+      INSERT INTO relations (
+        id, repo_id, source_entity_id, target_entity_id, kind, confidence, adapter_run_id, index_run_id, provenance
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const restoreRelationEvidence = this.db.prepare(`
+      INSERT INTO relation_evidence (
+        id, relation_id, repo_id, file_path, kind, snippet, confidence, index_run_id
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const restoreSymbol = this.db.prepare(`
+      INSERT INTO symbols (id, file_id, name, kind, exported, semantic_id, index_run_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+    const restoreEdge = this.db.prepare(`
+      INSERT INTO edges (
+        id, repo_id, source_file_id, target_file_id, kind, target_path, confidence, provenance, index_run_id
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const restoreEvidence = this.db.prepare(`
+      INSERT INTO evidence (id, repo_id, file_path, kind, snippet, confidence, index_run_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    this.db.exec('SAVEPOINT restore_failed_index_current_state');
+    try {
+      for (const [id, row] of this.relationEvidence) {
+        if (row || this.deleteNewRows) {
+          deleteRelationEvidence.run(id, this.indexRunId);
+        }
+      }
+      for (const entry of this.symbols.values()) {
+        if (entry.row || this.deleteNewRows) {
+          deleteSymbol.run(entry.fileId, entry.semanticId, this.indexRunId);
+        }
+      }
+      for (const entry of this.edges.values()) {
+        if (entry.row || this.deleteNewRows) {
+          deleteEdge.run(
+            entry.repoId,
+            entry.sourceFileId,
+            entry.kind,
+            entry.targetPath,
+            this.indexRunId
+          );
+        }
+      }
+      for (const [id, row] of this.evidence) {
+        if (row || this.deleteNewRows) {
+          deleteEvidence.run(id, this.indexRunId);
+        }
+      }
+      for (const [id, row] of this.relations) {
+        if (row || this.deleteNewRows) {
+          deleteRelation.run(id, this.indexRunId);
+        }
+      }
+
+      for (const [pathValue, row] of this.files) {
+        if (row) {
+          restoreFile.run(
+            row.id,
+            row.repo_id,
+            row.path,
+            row.language,
+            row.content_hash,
+            row.index_run_id
+          );
+        } else if (this.deleteNewRows) {
+          deleteFile.run(this.repoId, pathValue, this.indexRunId);
+        }
+      }
+
+      for (const [id, row] of this.entities) {
+        if (row) {
+          restoreEntity.run(
+            row.id,
+            row.repo_id,
+            row.kind,
+            row.path,
+            row.symbol,
+            row.language_id,
+            row.display_name,
+            row.created_index_run_id,
+            row.updated_index_run_id
+          );
+        } else if (this.deleteNewRows) {
+          deleteFailedEntityVersions.run(id, this.indexRunId);
+          deleteEntity.run(id, this.indexRunId);
+        }
+      }
+
+      for (const row of this.relations.values()) {
+        if (!row) continue;
+        restoreRelation.run(
+          row.id,
+          row.repo_id,
+          row.source_entity_id,
+          row.target_entity_id,
+          row.kind,
+          row.confidence,
+          row.adapter_run_id,
+          row.index_run_id,
+          row.provenance
+        );
+      }
+      for (const row of this.relationEvidence.values()) {
+        if (!row) continue;
+        restoreRelationEvidence.run(
+          row.id,
+          row.relation_id,
+          row.repo_id,
+          row.file_path,
+          row.kind,
+          row.snippet,
+          row.confidence,
+          row.index_run_id
+        );
+      }
+      for (const entry of this.symbols.values()) {
+        const { row } = entry;
+        if (!row) continue;
+        restoreSymbol.run(
+          row.id,
+          row.file_id,
+          row.name,
+          row.kind,
+          row.exported,
+          row.semantic_id,
+          row.index_run_id
+        );
+      }
+      for (const entry of this.edges.values()) {
+        const { row } = entry;
+        if (!row) continue;
+        restoreEdge.run(
+          row.id,
+          row.repo_id,
+          row.source_file_id,
+          row.target_file_id,
+          row.kind,
+          row.target_path,
+          row.confidence,
+          row.provenance,
+          row.index_run_id
+        );
+      }
+      for (const row of this.evidence.values()) {
+        if (!row) continue;
+        restoreEvidence.run(
+          row.id,
+          row.repo_id,
+          row.file_path,
+          row.kind,
+          row.snippet,
+          row.confidence,
+          row.index_run_id
+        );
+      }
+
+      this.db.exec('RELEASE SAVEPOINT restore_failed_index_current_state');
+    } catch (error) {
+      this.db.exec('ROLLBACK TO SAVEPOINT restore_failed_index_current_state');
+      this.db.exec('RELEASE SAVEPOINT restore_failed_index_current_state');
+      throw error;
+    }
+  }
+
+  private isEmpty(): boolean {
+    return (
+      this.files.size === 0 &&
+      this.entities.size === 0 &&
+      this.relations.size === 0 &&
+      this.relationEvidence.size === 0 &&
+      this.symbols.size === 0 &&
+      this.edges.size === 0 &&
+      this.evidence.size === 0
+    );
+  }
+}
 
 export async function indexProject(options: IndexOptions): Promise<IndexResult> {
   return indexProjectInternal(options, createDefaultRegistry());
@@ -154,35 +573,48 @@ async function indexProjectInternal(
     throw new Error('no adapter registered');
   }
 
-  const scan = scanFiles(repoRoot, options.maxFileBytes ?? defaultMaxFileBytes);
-  const files = scan.files;
-  const classified = registry.classify(files);
-  const adapterGroups = adapterGroupsInRegistryOrder(registeredAdapters, classified);
-  const fileAdapterByPath = new Map<string, SemanticAdapter>();
-  for (const group of adapterGroups) {
-    for (const file of group.files) {
-      fileAdapterByPath.set(file.relativePath, group.adapter);
-    }
-  }
-  const indexedFiles = files.filter((file) => fileAdapterByPath.has(file.relativePath));
-  const unsupportedFiles = files.filter((file) => !fileAdapterByPath.has(file.relativePath));
-  const skippedCoverage = scan.skipped.map((file) => ({
-    file,
-    adapterId: adapterIdForSkippedFile(registry, repoRoot, file)
-  }));
-  const unsupportedLanguageIds = languageIdsForSkippedAndUnsupported(
-    skippedCoverage,
-    unsupportedFiles
-  );
-
   const indexRunResult = db
     .prepare(
       "INSERT INTO index_runs (repo_id, status, started_at, extractor_version) VALUES (?, ?, datetime('now'), ?)"
     )
     .run(repoId, 'running', extractorVersionFor(registeredAdapters));
   const indexRunId = Number(indexRunResult.lastInsertRowid);
+  const hasCompletedSnapshot = db
+    .prepare('SELECT 1 AS one FROM index_runs WHERE repo_id = ? AND status = ? LIMIT 1')
+    .get(repoId, 'completed') as { one: number } | undefined;
+  const currentStateSnapshot = new CurrentStateSnapshot(
+    db,
+    repoId,
+    indexRunId,
+    hasCompletedSnapshot !== undefined
+  );
 
   try {
+    const scan = scanFiles(repoRoot, options.maxFileBytes ?? defaultMaxFileBytes);
+    const files = scan.files;
+    const classified = registry.classify(files);
+    const skippedCoverage = scan.skipped.map((file) => ({
+      file,
+      adapterId: adapterIdForSkippedFile(registry, repoRoot, file)
+    }));
+    const adapterGroups = adapterGroupsInRegistryOrder(
+      registeredAdapters,
+      classified,
+      skippedCoverage
+    );
+    const fileAdapterByPath = new Map<string, SemanticAdapter>();
+    for (const group of adapterGroups) {
+      for (const file of group.files) {
+        fileAdapterByPath.set(file.relativePath, group.adapter);
+      }
+    }
+    const indexedFiles = files.filter((file) => fileAdapterByPath.has(file.relativePath));
+    const unsupportedFiles = files.filter((file) => !fileAdapterByPath.has(file.relativePath));
+    const unsupportedLanguageIds = languageIdsForSkippedAndUnsupported(
+      skippedCoverage,
+      unsupportedFiles
+    );
+
     const adapterRunIds = new Map<SemanticAdapter, number>();
     const insertAdapterRun = db.prepare(`
         INSERT INTO adapter_runs (index_run_id, adapter_id, adapter_version, language_ids, status, started_at)
@@ -222,7 +654,7 @@ async function indexProjectInternal(
     }
 
     const stmts = prepareStatements(db);
-    const persistCtx: Omit<PersistContext, 'adapterRunId'> = {
+    const persistCtx: Omit<PersistContext, 'adapterRunId' | 'adapterId'> = {
       stmts,
       repoId,
       indexRunId,
@@ -231,7 +663,8 @@ async function indexProjectInternal(
       fileContentHashByPath: new Map(indexedFiles.map((file) => [file.relativePath, file.hash])),
       canonicalEntityIds: new Set<string>(),
       canonicalRelationIds: new Set<string>(),
-      counters: { symbolsIndexed: 0, edgesIndexed: 0 }
+      counters: { symbolsIndexed: 0, edgesIndexed: 0 },
+      currentStateSnapshot
     };
 
     for (const { file: skipped, adapterId } of skippedCoverage) {
@@ -259,10 +692,12 @@ async function indexProjectInternal(
     for (const file of indexedFiles) {
       const adapter = fileAdapterByPath.get(file.relativePath);
       if (!adapter) continue;
+      currentStateSnapshot.captureFile(file.relativePath);
       stmts.upsertFile.run(repoId, file.relativePath, file.language, file.hash, indexRunId);
       const row = stmts.selectFile.get(repoId, file.relativePath) as { id: number };
       persistCtx.fileIdByPath.set(file.relativePath, row.id);
       const fileEntId = fileEntityId(file.relativePath);
+      currentStateSnapshot.captureEntity(fileEntId);
       stmts.upsertEntity.run(
         fileEntId,
         repoId,
@@ -298,8 +733,22 @@ async function indexProjectInternal(
       if (adapterRunId === undefined) {
         throw new Error(`adapter run missing for ${adapter.id}`);
       }
-      const ctx: ExtractCtx = { repoRoot, indexRunId, adapterRunId };
-      const adapterPersistCtx: PersistContext = { ...persistCtx, adapterRunId };
+      if (adapterFiles.length === 0) {
+        updateAdapterRun(db, adapterRunId, 'skipped');
+        continue;
+      }
+      const ctx: ExtractCtx = {
+        repoRoot,
+        indexRunId,
+        adapterRunId,
+        indexedFiles: immutableIndexedFilesSnapshot(indexedFiles)
+      };
+      const adapterPersistCtx: PersistContext = {
+        ...persistCtx,
+        adapterRunId,
+        adapterId: adapter.id
+      };
+      const completedFilePaths = new Set<string>();
       try {
         const run = await adapter.start(ctx, adapterFiles);
         try {
@@ -307,8 +756,10 @@ async function indexProjectInternal(
             for await (const event of run.process(file)) {
               handleEvent(event, file, adapterPersistCtx);
             }
+            const scanEvidenceId = evidenceId(file.relativePath, 'scan');
+            currentStateSnapshot.captureEvidence(scanEvidenceId);
             stmts.insertEvidence.run(
-              evidenceId(file.relativePath, 'scan'),
+              scanEvidenceId,
               repoId,
               file.relativePath,
               'scan',
@@ -316,6 +767,7 @@ async function indexProjectInternal(
               'proven',
               indexRunId
             );
+            completedFilePaths.add(file.relativePath);
           }
         } finally {
           if (run.dispose) {
@@ -326,8 +778,17 @@ async function indexProjectInternal(
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         updateAdapterRun(db, adapterRunId, 'failed', message);
+        markAdapterCoverageSkipped(
+          stmts.insertCoverage,
+          indexRunId,
+          adapter,
+          adapterFiles.filter((file) => !completedFilePaths.has(file.relativePath)),
+          `adapter failed: ${redactSecrets(message)}`
+        );
         markUnstartedAdapterRunsSkipped(
           db,
+          stmts.insertCoverage,
+          indexRunId,
           adapterGroups.slice(groupIndex + 1),
           adapterRunIds,
           adapter.id
@@ -376,6 +837,7 @@ async function indexProjectInternal(
       }
     };
   } catch (error) {
+    currentStateSnapshot.restore();
     failRunningAdapterRuns(db, indexRunId, error instanceof Error ? error.message : String(error));
     db.prepare("UPDATE index_runs SET status = ?, finished_at = datetime('now') WHERE id = ?").run(
       'failed',
@@ -392,12 +854,38 @@ function createDefaultRegistry(): AdapterRegistry {
   return registry;
 }
 
+function immutableIndexedFilesSnapshot(
+  files: readonly ScannedFile[]
+): readonly Readonly<ScannedFile>[] {
+  const snapshot = files.map((file) => Object.freeze({ ...file }));
+  return Object.freeze(snapshot);
+}
+
 function updateAdapterRun(
   db: Db,
   adapterRunId: number,
   status: AdapterRunStatus,
-  errorSummary: string | null = null
+  errorSummary?: string | null
 ): void {
+  if (errorSummary === undefined) {
+    db.prepare(
+      "UPDATE adapter_runs SET status = ?, finished_at = datetime('now') WHERE id = ?"
+    ).run(status, adapterRunId);
+    return;
+  }
+  if (status === 'failed' && errorSummary !== null) {
+    db.prepare(
+      `UPDATE adapter_runs
+       SET status = ?,
+           finished_at = datetime('now'),
+           error_summary = CASE
+             WHEN error_summary IS NULL OR error_summary = '' THEN ?
+             ELSE error_summary || char(10) || ?
+           END
+       WHERE id = ?`
+    ).run(status, errorSummary, errorSummary, adapterRunId);
+    return;
+  }
   db.prepare(
     "UPDATE adapter_runs SET status = ?, finished_at = datetime('now'), error_summary = ? WHERE id = ?"
   ).run(status, errorSummary, adapterRunId);
@@ -405,15 +893,31 @@ function updateAdapterRun(
 
 function markUnstartedAdapterRunsSkipped(
   db: Db,
+  insertCoverage: Statement,
+  indexRunId: number,
   groups: readonly AdapterGroup[],
   adapterRunIds: ReadonlyMap<SemanticAdapter, number>,
   failedAdapterId: string
 ): void {
+  const reason = `not run because ${failedAdapterId} failed`;
   for (const group of groups) {
     const adapterRunId = adapterRunIds.get(group.adapter);
     if (adapterRunId !== undefined) {
-      updateAdapterRun(db, adapterRunId, 'skipped', `not run because ${failedAdapterId} failed`);
+      updateAdapterRun(db, adapterRunId, 'skipped', reason);
     }
+    markAdapterCoverageSkipped(insertCoverage, indexRunId, group.adapter, group.files, reason);
+  }
+}
+
+function markAdapterCoverageSkipped(
+  insertCoverage: Statement,
+  indexRunId: number,
+  adapter: SemanticAdapter,
+  files: readonly ScannedFile[],
+  reason: string
+): void {
+  for (const file of files) {
+    insertCoverage.run(indexRunId, adapter.id, file.relativePath, file.language, 'skipped', reason);
   }
 }
 
@@ -427,18 +931,36 @@ function failRunningAdapterRuns(db: Db, indexRunId: number, errorSummary: string
 
 function adapterGroupsInRegistryOrder(
   adapters: readonly SemanticAdapter[],
-  classified: ReadonlyMap<SemanticAdapter, ScannedFile[]>
+  classified: ReadonlyMap<SemanticAdapter, ScannedFile[]>,
+  skippedCoverage: ReadonlyArray<{ file: SkippedFile; adapterId: string }> = []
 ): AdapterGroup[] {
+  const skippedLanguageIdsByAdapter = new Map<string, Set<string>>();
+  for (const { file, adapterId } of skippedCoverage) {
+    if (adapterId === unsupportedAdapterId || !file.language) {
+      continue;
+    }
+    let languageIds = skippedLanguageIdsByAdapter.get(adapterId);
+    if (!languageIds) {
+      languageIds = new Set<string>();
+      skippedLanguageIdsByAdapter.set(adapterId, languageIds);
+    }
+    languageIds.add(file.language);
+  }
+
   return adapters.flatMap((adapter) => {
-    const files = classified.get(adapter);
-    if (!files || files.length === 0) {
+    const files = classified.get(adapter) ?? [];
+    const languageIds = new Set(languageIdsForFiles(files));
+    for (const languageId of skippedLanguageIdsByAdapter.get(adapter.id) ?? []) {
+      languageIds.add(languageId);
+    }
+    if (files.length === 0 && languageIds.size === 0) {
       return [];
     }
     return [
       {
         adapter,
         files,
-        languageIds: languageIdsForFiles(files)
+        languageIds: [...languageIds].sort()
       }
     ];
   });
@@ -456,11 +978,13 @@ function adapterIdForSkippedFile(
   if (!file.language) {
     return unsupportedAdapterId;
   }
+  const absolutePath = path.join(repoRoot, file.relativePath);
+  const content = file.contentSample ?? '';
   const adapter = registry.pickAdapter({
-    absolutePath: path.join(repoRoot, file.relativePath),
+    absolutePath,
     relativePath: file.relativePath,
-    content: '',
-    hash: '',
+    content,
+    hash: file.contentSampleHash ?? createHash('sha256').update(content).digest('hex'),
     language: file.language
   });
   return adapter?.id ?? unsupportedAdapterId;
@@ -559,6 +1083,14 @@ function prepareStatements(db: Db): PreparedStatements {
     insertEvidence: db.prepare(`
       INSERT OR REPLACE INTO evidence (id, repo_id, file_path, kind, snippet, confidence, index_run_id)
       VALUES (?, ?, ?, ?, ?, ?, ?)
+    `),
+    appendAdapterRunErrorSummary: db.prepare(`
+      UPDATE adapter_runs
+      SET error_summary = CASE
+        WHEN error_summary IS NULL OR error_summary = '' THEN ?
+        ELSE error_summary || char(10) || ?
+      END
+      WHERE id = ?
     `)
   };
 }
@@ -568,7 +1100,49 @@ function handleEvent(event: IndexEvent, file: ScannedFile, ctx: PersistContext):
     persistEntity(event.entity, ctx);
   } else if (event.kind === 'relation') {
     persistRelation(event.relation, file, ctx);
+  } else {
+    persistDiagnostic(event, file, ctx);
   }
+}
+
+function persistDiagnostic(
+  event: Extract<IndexEvent, { kind: 'diagnostic' }>,
+  file: ScannedFile,
+  ctx: PersistContext
+): void {
+  const reason = diagnosticReason(event.level, event.message);
+  if (event.file) {
+    ctx.stmts.insertCoverage.run(
+      ctx.indexRunId,
+      ctx.adapterId,
+      diagnosticCoveragePath(event.file, event.level, reason),
+      diagnosticLanguageId(event.file, file),
+      'skipped',
+      reason
+    );
+    return;
+  }
+  ctx.stmts.appendAdapterRunErrorSummary.run(reason, reason, ctx.adapterRunId);
+}
+
+function diagnosticReason(level: 'warn' | 'error', message: string): string {
+  const label = level === 'warn' ? 'warning' : 'error';
+  return `diagnostic ${label}: ${redactSecrets(message)}`;
+}
+
+function diagnosticCoveragePath(
+  filePath: string,
+  level: 'warn' | 'error',
+  reason: string
+): string {
+  return `${filePath}#diagnostic:${level}:${contentHash(level, reason).slice(0, 12)}`;
+}
+
+function diagnosticLanguageId(filePath: string, currentFile: ScannedFile): string | null {
+  if (filePath === currentFile.relativePath) {
+    return currentFile.language;
+  }
+  return languageForPath(filePath) ?? null;
 }
 
 function persistEntity(entity: PendingEntity, ctx: PersistContext): void {
@@ -578,6 +1152,7 @@ function persistEntity(entity: PendingEntity, ctx: PersistContext): void {
     const containingFileContentHash = entity.path
       ? ctx.fileContentHashByPath.get(entity.path) ?? ''
       : '';
+    ctx.currentStateSnapshot.captureEntity(symbolId);
     ctx.stmts.upsertEntity.run(
       symbolId,
       ctx.repoId,
@@ -603,12 +1178,14 @@ function persistEntity(entity: PendingEntity, ctx: PersistContext): void {
     if (entity.path) {
       const fileId = ctx.fileIdByPath.get(entity.path);
       if (fileId !== undefined) {
+        const semanticId = `${entity.path}#${entity.symbolKind ?? ''}:${entity.symbol ?? ''}`;
+        ctx.currentStateSnapshot.captureSymbol(fileId, semanticId);
         ctx.stmts.insertSymbol.run(
           fileId,
           entity.symbol ?? '',
           entity.symbolKind ?? '',
           meta?.exported ? 1 : 0,
-          `${entity.path}#${entity.symbolKind ?? ''}:${entity.symbol ?? ''}`,
+          semanticId,
           ctx.indexRunId
         );
       }
@@ -621,6 +1198,7 @@ function persistEntity(entity: PendingEntity, ctx: PersistContext): void {
     const externalId = entityIdFromDescriptor(entity);
     const meta = entity.metadata as { specifier?: string } | undefined;
     const specifier = meta?.specifier ?? entity.displayName ?? '';
+    ctx.currentStateSnapshot.captureEntity(externalId);
     ctx.stmts.upsertEntity.run(
       externalId,
       ctx.repoId,
@@ -684,11 +1262,13 @@ function persistRelation(
         relation.target.kind === 'file' && relation.target.path
           ? relation.target.path
           : relation.target.displayName ?? '';
+      const edgeKind = legacyEdgeKindFor(relation.kind);
+      ctx.currentStateSnapshot.captureEdge(ctx.repoId, sourceFileId, edgeKind, targetPath);
       ctx.stmts.insertEdge.run(
         ctx.repoId,
         sourceFileId,
         targetFileId,
-        legacyEdgeKindFor(relation.kind),
+        edgeKind,
         targetPath,
         confidence,
         provenance,
@@ -715,7 +1295,8 @@ function persistRelation(
     insertFact: ctx.stmts.insertFact,
     memoryTxId: ctx.memoryTxId,
     upsertTextAttribute: ctx.stmts.upsertTextAttribute,
-    insertFactProvenance: ctx.stmts.insertFactProvenance
+    insertFactProvenance: ctx.stmts.insertFactProvenance,
+    currentStateSnapshot: ctx.currentStateSnapshot
   });
 }
 
@@ -778,10 +1359,17 @@ function scanFiles(repoRoot: string, maxFileBytes: number): ScanResult {
       if (!language) continue;
       const size = statSync(absolutePath).size;
       if (size > maxFileBytes) {
+        const contentSample = readContentSample(absolutePath, size);
         skipped.push({
           relativePath,
           language,
-          reason: `file exceeds maxFileBytes (${size} > ${maxFileBytes})`
+          reason: `file exceeds maxFileBytes (${size} > ${maxFileBytes})`,
+          ...(contentSample
+            ? {
+                contentSample: contentSample.content,
+                contentSampleHash: contentSample.hash
+              }
+            : {})
         });
         continue;
       }
@@ -800,6 +1388,30 @@ function scanFiles(repoRoot: string, maxFileBytes: number): ScanResult {
     files: out.sort((a, b) => a.relativePath.localeCompare(b.relativePath)),
     skipped: skipped.sort((a, b) => a.relativePath.localeCompare(b.relativePath))
   };
+}
+
+function readContentSample(
+  absolutePath: string,
+  fileSize: number
+): { content: string; hash: string } | undefined {
+  const length = Math.min(fileSize, skippedFileContentSampleBytes);
+  const buffer = Buffer.allocUnsafe(length);
+  let fd: number | undefined;
+  try {
+    fd = openSync(absolutePath, 'r');
+    const bytesRead = readSync(fd, buffer, 0, length, 0);
+    const content = buffer.subarray(0, bytesRead).toString('utf8');
+    return {
+      content,
+      hash: createHash('sha256').update(content).digest('hex')
+    };
+  } catch {
+    return undefined;
+  } finally {
+    if (fd !== undefined) {
+      closeSync(fd);
+    }
+  }
 }
 
 function evidenceId(filePath: string, kind: string): string {
@@ -896,9 +1508,11 @@ function insertCanonicalRelation(input: {
   memoryTxId: string;
   upsertTextAttribute: Statement;
   insertFactProvenance: Statement;
+  currentStateSnapshot: CurrentStateSnapshot;
 }): void {
   const id = relationId(input.kind, input.sourceEntityId, input.targetEntityId, input.provenance);
 
+  input.currentStateSnapshot.captureRelation(id);
   input.insertRelation.run(
     id,
     input.repoId,
@@ -930,8 +1544,10 @@ function insertCanonicalRelation(input: {
   input.evidence.forEach((evidence) => {
     const redactedSnippet = redactSecrets(evidence.snippet);
     const isSnippetRedacted = redactedSnippet !== evidence.snippet;
+    const relationEvidenceIdValue = relationEvidenceId(id, evidence, redactedSnippet);
+    input.currentStateSnapshot.captureRelationEvidence(relationEvidenceIdValue);
     input.insertRelationEvidence.run(
-      relationEvidenceId(id, evidence, redactedSnippet),
+      relationEvidenceIdValue,
       id,
       input.repoId,
       evidence.file,

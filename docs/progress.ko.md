@@ -1,22 +1,23 @@
 # Impact Trace 진행상황
 
-업데이트: 2026-05-01 (Phase 4 P1+P2+P3+P4+P5 모두 완료, ADR D-001..D-018, 112 tests on main `33c49f0`)
+업데이트: 2026-05-04 (`feature/phase6-adapter-foundations`에서 Phase 6 adapter foundations 진행 중; main 머지 전)
 
 비전 / 로드맵 / 용어집: [vision.ko.md](vision.ko.md) · [roadmap.md](roadmap.md) · [glossary.md](glossary.md)
 기준 계획서: [Impact Trace 계획서](impact-trace-plan.ko.md) (영향 분석 축의 원본 P0..P4)
 사용 가이드: [agent memory cookbook](agent-memory-cookbook.ko.md) · [agent DB 탐색 노트](agent-db-exploration.ko.md)
 Phase 3 자료: [Phase 3 design](phase3-design.ko.md) · [Phase 3 handoff](phase3-handoff.ko.md) · [Architecture decisions log](decisions.ko.md)
 Phase 4 자료: [Phase 4 handoff (frozen)](phase4-handoff.ko.md) · [P2/P3 design](phase4-p2-p3-design.ko.md) · [P4/P5 design (회고)](phase4-p4-p5-design.ko.md)
-Phase 5 진입: [Phase 5 handoff](phase5-handoff.ko.md) (5개 후보 ranked + D-019..D-022 design 공간)
+Phase 6 현재 작업: [Phase 6 design](phase6-design.ko.md) (`feature/phase6-adapter-foundations` branch)
+Phase 5 후보: [Phase 5 handoff](phase5-handoff.ko.md) (Agent Memory 후보; 현재 활성 작업은 아님)
 
 ## 현재 위치
 
-원래 P0/P1(Entity Graph Core, Agent Surface/Visualization)을 넘어, 2026-04-28~29
-세션에서 **agent memory 레이어**를 본격 통합했다. 같은 SQLite + MCP stdio 기반에
-agent의 결정·관찰·근거를 1급 시민으로 저장하는 facts/transactions/branches/
-fact_provenance/embeddings/attribute_defs 6개 테이블이 추가됐고, MCP/CLI 양쪽으로
-remember·recall·branch·trace·retract 동작이 노출됐다. Phase 2 (실제 임베딩 모델
-통합과 semantic recall, branch merge)의 scaffolding까지 준비된 상태.
+main 기준으로는 Phase 4 P1..P5(agent memory cap/repair/restore/auto-abandon/ANN)가 완료된 상태다.
+현재 live work는 영향 분석 축으로 돌아온 **Phase 6 adapter foundations**이며, 이 내용은 아직
+main이 아니라 `feature/phase6-adapter-foundations` branch에 있다. 이 branch는 TS Compiler API
+adapter 자체를 완료한 것이 아니라, 이후 adapter series를 받기 위한 interface/registry,
+multi-adapter run attribution, evidence/diagnostic 관측성, symbol hash sensitivity,
+relation-kind memory attribute mapping을 먼저 닫는 foundation 작업이다.
 
 ## 완료
 
@@ -71,23 +72,30 @@ remember·recall·branch·trace·retract 동작이 노출됐다. Phase 2 (실제
 | 2026-05-01 | 결정 기록 | docs/decisions.ko.md에 D-017 (auto-abandon piggybacks on gc-branches --max-age) 추가 |
 | 2026-05-01 | Phase 4 P5 | sqlite-vec ANN — per-model `vec_facts_<model_slug>` virtual table (vec0, int8[N]) lazy create, dual-write from remember/reembed, recallSemantic이 ANN path → brute-force fallback. 새 `reindexVec()` + `reindex-vec` CLI for manual backfill. +8 vec.test.ts cases = 112 tests total |
 | 2026-05-01 | 결정 기록 | docs/decisions.ko.md에 D-018 (sqlite-vec ANN with per-model vec0 tables, lazy create, brute-force fallback) 추가 |
+| 2026-05-04 | Phase 6 adapter foundations | `feature/phase6-adapter-foundations` branch에서 `SemanticAdapter`/`AdapterRun` streaming interface, priority `AdapterRegistry`, `MultiLanguageRegexAdapter` extraction, package public exports fence 추가. main 머지 전. |
+| 2026-05-04 | Phase 6 attribution | `indexProject()`가 per-adapter `adapter_runs`를 만들고, `index_coverage.adapter_id`, `relations.adapter_run_id`, returned `adaptersUsed`를 adapter별로 귀속. later adapter 실패 시 앞선 completed run을 덮어쓰지 않고 이후 adapter는 skipped로 남김. |
+| 2026-05-04 | Phase 6 evidence/fanout | adapter-provided relation evidence를 보존하고 secret redaction 이후 stable evidence ID를 생성. evidence 순서 변경에도 identity가 유지되며, fanout 분석은 multi-evidence join이 relation fanout을 부풀리지 않도록 dedupe. |
+| 2026-05-04 | Phase 6 diagnostics/hash/mapping | adapter diagnostic을 coverage diagnostic row와 `adapter_runs.error_summary`에 저장하며 실패 후에도 보존. symbol `entity_versions.content_hash`는 containing file content hash를 포함. relation-kind → memory attribute mapping을 명시화하고 static relation attributes를 `is_code_relation = 1`로 seed/promote. |
 
 ## 진행 중
 
 | 단계 | 작업 | 상태 |
 |---|---|---|
-| P0 | snapshot-safe indexing | completed run만 읽는 경로는 유지, commit/dirty metadata와 atomic staging 강화 필요 |
-| P1 | workspace/cross-repo resolver | schema는 준비, 실제 catalog loading과 contract diff는 예정 |
-| P1 | 회사 업무 artifact adapter | schema와 entity kind는 준비, Google Drive/Obsidian/Markdown vault adapter는 예정 |
-| P2 | semantic adapter | regex MVP는 동작, Tree-sitter/LSP/CodeQL 정확도 개선 예정 |
-| Agent Memory Phase 4 | reflection 확장 | topic 클러스터링, 시간 기반 자동 abandon, archived 복구, reflect-of-reflections, sqlite-vec ANN, 동시 reflect 락 |
-| Agent Memory Phase 4 | reembed cleanup | 구모델 vector 행 drop 옵션 |
-| Agent Memory Phase 4 | repair sweep | 중간 실패로 생긴 orphan summary fact를 reflections 테이블 기반으로 복원 (`reflect --repair`) |
+| Phase 6 | adapter foundations | branch에서 구현됨; main 머지 전이라 문서에서는 branch scope로만 표기 |
+| Phase 6 | TypeScript Compiler API adapter | 아직 미완료. re-export/path alias/type-only import/source-level call/reference 정확도 개선 예정 |
+| Phase 6 | source span persistence | adapter evidence 타입은 span identity를 받을 수 있지만, `relation_evidence` persisted line/col/range와 report/MCP exposure는 아직 미완료 |
+| Phase 6 | snapshot-safe indexing | completed run만 읽는 경로는 유지, `index_runs` commit/dirty/branch metadata와 atomic staging 강화 필요 |
+| Phase 6/7 | workspace/cross-repo resolver | schema는 준비, 실제 catalog loading과 contract diff는 예정 |
+| Phase 9 | 회사 업무 artifact adapter | schema와 entity kind는 준비, Google Drive/Obsidian/Markdown vault adapter는 예정 |
+| Agent Memory Phase 5 | 후보 backlog | MemoryBench, topic clustering, multi-layer reflection, concurrent reflect lock, reembed cleanup은 deferred |
 
 ## 최근 검증
 
 | 날짜 | 명령 | 결과 |
 |---|---|---|
+| 2026-05-04 | `npm test` | **135개 테스트 통과** (`feature/phase6-adapter-foundations` branch, main 머지 전) |
+| 2026-05-04 | `npm run check` | 통과 |
+| 2026-05-04 | `npm audit --audit-level=high` | 취약점 0개 |
 | 2026-04-29 | `npm run lint` | 통과 (Phase 3 완료 후) |
 | 2026-04-29 | `npm test` | **78개 테스트 통과** (Phase 1+2: 43 → Phase 3: +33 → Phase 4 P1: +2) |
 | 2026-04-29 | `npm run check` | 통과 |
@@ -104,24 +112,21 @@ remember·recall·branch·trace·retract 동작이 노출됐다. Phase 2 (실제
 4. ✅ Reflective consolidation — entity별 LLM 요약 + summary fact (Phase 3, multi-provider)
 5. ✅ Speculative branch GC — soft-delete via transactions.archived (Phase 3)
 
-### Agent Memory 트랙 (Phase 4 후보)
+### Impact analysis 트랙 (Phase 6 이후)
 
+5. TypeScript Compiler API adapter를 추가해 regex MVP의 정확도 한계(re-export/path alias/type-only import 등)를 줄인다.
+6. source span, line range, confidence rationale을 persisted `relation_evidence`와 report/MCP output에 추가한다.
+7. `index_runs`에 commit SHA, dirty state, branch name을 저장해 snapshot-safe indexing 경고를 정밀화한다.
+8. 실제 workspace catalog 파일을 정의하고 여러 repo를 등록/조회하는 CLI를 추가한다.
+9. OpenAPI/protobuf/GraphQL/AsyncAPI contract baseline과 breaking-change 분류를 구현한다.
+
+### Agent Memory 트랙 (Phase 5 후보, deferred)
+
+- MemoryBench harness
 - topic 클러스터링 reflection (entity별 → 의미 클러스터)
-- 시간 기반 자동 abandon 정책 (head_tx_id가 N일 미동작 시)
-- archived → unarchived 복구 명령 (`branch --restore`)
 - 다층 reflection (reflection-of-reflections로 long-term memory)
-- sqlite-vec ANN 인덱스 (10M+ facts)
 - 동시 reflect 락
-- `reflect --repair` (orphan summary fact 보정)
 - reembed cleanup (구모델 vector drop)
-
-### 기존 트랙 (지속)
-
-5. 실제 workspace catalog 파일을 정의하고 여러 repo를 등록/조회하는 CLI를 추가한다.
-6. OpenAPI/protobuf/GraphQL/AsyncAPI contract baseline과 breaking-change 분류를 구현한다.
-7. TypeScript Compiler API 또는 Tree-sitter adapter로 regex MVP의 정확도 한계를 줄인다.
-8. 회사 업무 artifact adapter를 설계한다. 우선 Markdown/Obsidian vault, 그 다음 Google Drive/Docs/Sheets 같은 외부 connector를 붙인다.
-9. source span, line range, confidence rationale을 evidence에 추가한다.
 
 ## 기록 규칙
 

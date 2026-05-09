@@ -8,6 +8,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
 
 import { AdapterRegistry } from '../src/adapters/registry.js';
+import { MultiLanguageRegexAdapter } from '../src/adapters/multi-language-regex.js';
 import type { AdapterRun, ExtractCtx, IndexEvent, SemanticAdapter } from '../src/adapters/types.js';
 import { analyzeDiff, exportImpactGraph, indexProject, initProject, profileEntity } from '../src/index.js';
 import { indexProjectWithRegistryForTest } from '../src/indexer.js';
@@ -395,6 +396,563 @@ test('indexProject attributes adapter runs, relations, coverage, and usage per c
   }
 });
 
+test('indexProject preserves skipped-file adapter attribution for skipped-only adapters', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-skipped-only-adapter-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/big.ts'), `export const big = "${'x'.repeat(200)}";\n`);
+  await initProject({ repoRoot });
+
+  const registry = new AdapterRegistry();
+  registry.register(makeAttributionAdapter('typescript-skipped-adapter', 'typescript'));
+
+  const index = await indexProjectWithRegistryForTest({ repoRoot, maxFileBytes: 1 }, registry);
+
+  assert.equal(index.filesIndexed, 0);
+  assert.deepEqual(
+    index.adaptersUsed?.map((adapter) => ({
+      id: adapter.id,
+      languageIds: adapter.languageIds
+    })),
+    [{ id: 'typescript-skipped-adapter', languageIds: ['typescript'] }]
+  );
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const adapterRuns = db
+      .prepare(
+        'SELECT adapter_id, language_ids, status FROM adapter_runs WHERE index_run_id = ? ORDER BY id'
+      )
+      .all(index.indexRunId) as Array<{
+        adapter_id: string;
+        language_ids: string;
+        status: string;
+      }>;
+    assert.deepEqual(
+      adapterRuns.map((run) => ({
+        adapterId: run.adapter_id,
+        languageIds: JSON.parse(run.language_ids) as string[],
+        status: run.status
+      })),
+      [{ adapterId: 'typescript-skipped-adapter', languageIds: ['typescript'], status: 'skipped' }]
+    );
+
+    const joinableCoverage = db
+      .prepare(
+        `SELECT ic.path, ic.adapter_id, ic.status
+         FROM index_coverage ic
+         JOIN adapter_runs ar
+           ON ar.index_run_id = ic.index_run_id
+          AND ar.adapter_id = ic.adapter_id
+         WHERE ic.index_run_id = ?
+         ORDER BY ic.path`
+      )
+      .all(index.indexRunId) as Array<{ path: string; adapter_id: string; status: string }>;
+    assert.deepEqual(
+      joinableCoverage.map((row) => ({
+        path: row.path,
+        adapter_id: row.adapter_id,
+        status: row.status
+      })),
+      [{ path: 'src/big.ts', adapter_id: 'typescript-skipped-adapter', status: 'skipped' }]
+    );
+  } finally {
+    db.close();
+  }
+});
+
+test('indexProject uses readable skipped file content for skipped-file adapter attribution', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-skipped-content-router-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(
+    path.join(repoRoot, 'src/generated.ts'),
+    `// @generated\nexport const generated = "${'x'.repeat(200)}";\n`
+  );
+  await initProject({ repoRoot });
+
+  let startCalls = 0;
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'generated-content-adapter',
+    version: '1',
+    capabilities: ['references'],
+    supports: (file) => file.language === 'typescript' && file.content.startsWith('// @generated'),
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => {
+      startCalls++;
+      return {
+        async *process(_file: ScannedFile): AsyncIterable<IndexEvent> {}
+      };
+    }
+  });
+
+  const index = await indexProjectWithRegistryForTest({ repoRoot, maxFileBytes: 1 }, registry);
+
+  assert.equal(index.filesIndexed, 0);
+  assert.equal(index.relationsIndexed, 0);
+  assert.equal(startCalls, 0);
+  assert.deepEqual(
+    index.adaptersUsed?.map((adapter) => ({
+      id: adapter.id,
+      languageIds: adapter.languageIds
+    })),
+    [{ id: 'generated-content-adapter', languageIds: ['typescript'] }]
+  );
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const coverage = db
+      .prepare(
+        `SELECT path, adapter_id, status
+         FROM index_coverage
+         WHERE index_run_id = ?
+         ORDER BY path`
+      )
+      .all(index.indexRunId) as Array<{ path: string; adapter_id: string; status: string }>;
+    assert.deepEqual(
+      coverage.map((row) => ({
+        path: row.path,
+        adapter_id: row.adapter_id,
+        status: row.status
+      })),
+      [{ path: 'src/generated.ts', adapter_id: 'generated-content-adapter', status: 'skipped' }]
+    );
+
+    const relationCount = db
+      .prepare('SELECT count(*) AS count FROM relations WHERE index_run_id = ?')
+      .get(index.indexRunId) as { count: number };
+    assert.equal(relationCount.count, 0);
+  } finally {
+    db.close();
+  }
+});
+
+test('indexProject lets adapter relation extraction resolve against all indexed files', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-global-file-view-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const app = 1;\n');
+  await writeFile(path.join(repoRoot, 'README.md'), 'The public entrypoint lives in src/app.ts.\n');
+  await initProject({ repoRoot });
+
+  const regexAdapter = new MultiLanguageRegexAdapter();
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'typescript-noop-adapter',
+    version: '1',
+    capabilities: ['references'],
+    supports: (file) => file.language === 'typescript',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+      async *process(_file: ScannedFile): AsyncIterable<IndexEvent> {}
+    })
+  });
+  registry.register({
+    id: 'markdown-regex-adapter',
+    version: regexAdapter.version,
+    capabilities: regexAdapter.capabilities,
+    supports: (file) => file.language === 'markdown',
+    start: (ctx: ExtractCtx, files: readonly ScannedFile[]): AdapterRun => regexAdapter.start(ctx, files)
+  });
+
+  const index = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const relation = db
+      .prepare(
+        `SELECT count(*) AS count
+         FROM relations
+         WHERE index_run_id = ?
+           AND kind = ?
+           AND source_entity_id = ?
+           AND target_entity_id = ?`
+      )
+      .get(index.indexRunId, 'DOCUMENTS', 'file:README.md', 'file:src/app.ts') as {
+      count: number;
+    };
+    assert.equal(relation.count, 1);
+  } finally {
+    db.close();
+  }
+});
+
+test('indexProject gives each adapter an immutable indexedFiles snapshot', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-indexed-files-snapshot-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const app = 1;\n');
+  await writeFile(path.join(repoRoot, 'README.md'), 'The public entrypoint lives in src/app.ts.\n');
+  await initProject({ repoRoot });
+
+  let ctxArrayFrozen: boolean | undefined;
+  let ctxMarkdownFileFrozen: boolean | undefined;
+  const regexAdapter = new MultiLanguageRegexAdapter();
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'typescript-mutating-start-adapter',
+    version: '1',
+    capabilities: ['references'],
+    supports: (file) => file.language === 'typescript',
+    start: (ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => {
+      ctxArrayFrozen = Object.isFrozen(ctx.indexedFiles);
+      const markdownFile = ctx.indexedFiles.find((file) => file.language === 'markdown');
+      ctxMarkdownFileFrozen =
+        markdownFile === undefined ? undefined : Object.isFrozen(markdownFile);
+      try {
+        (markdownFile as ScannedFile | undefined)!.content =
+          'Adapter mutation removed the source mention.\n';
+      } catch {
+        // Frozen snapshots reject the mutation; the adapter keeps running.
+      }
+      return {
+        async *process(_file: ScannedFile): AsyncIterable<IndexEvent> {}
+      };
+    }
+  });
+  registry.register({
+    id: 'markdown-regex-adapter',
+    version: regexAdapter.version,
+    capabilities: regexAdapter.capabilities,
+    supports: (file) => file.language === 'markdown',
+    start: (ctx: ExtractCtx, files: readonly ScannedFile[]): AdapterRun => regexAdapter.start(ctx, files)
+  });
+
+  const index = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const relation = db
+      .prepare(
+        `SELECT count(*) AS count
+         FROM relations
+         WHERE index_run_id = ?
+           AND kind = ?
+           AND source_entity_id = ?
+           AND target_entity_id = ?`
+      )
+      .get(index.indexRunId, 'DOCUMENTS', 'file:README.md', 'file:src/app.ts') as {
+      count: number;
+    };
+    assert.deepEqual(
+      {
+        relationCount: relation.count,
+        ctxArrayFrozen,
+        ctxMarkdownFileFrozen
+      },
+      {
+        relationCount: 1,
+        ctxArrayFrozen: true,
+        ctxMarkdownFileFrozen: true
+      }
+    );
+  } finally {
+    db.close();
+  }
+});
+
+test('indexProject records a failed index run when adapter support routing throws', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-support-routing-fail-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const app = 1;\n');
+  await initProject({ repoRoot });
+
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'throwing-support-adapter',
+    version: '1',
+    capabilities: ['references'],
+    supports: (_file) => {
+      throw new Error('supports routing exploded');
+    },
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+      async *process(_file: ScannedFile): AsyncIterable<IndexEvent> {}
+    })
+  });
+
+  await assert.rejects(
+    indexProjectWithRegistryForTest({ repoRoot }, registry),
+    /supports routing exploded/
+  );
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const indexRuns = db.prepare('SELECT id, status FROM index_runs ORDER BY id').all() as Array<{
+      id: number;
+      status: string;
+    }>;
+    assert.deepEqual(
+      indexRuns.map((run) => run.status),
+      ['failed']
+    );
+
+    const adapterRuns = db.prepare('SELECT count(*) AS count FROM adapter_runs').get() as {
+      count: number;
+    };
+    assert.equal(adapterRuns.count, 0);
+  } finally {
+    db.close();
+  }
+});
+
+test('indexProject routes oversized skipped files using a bounded content sample', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-skipped-bounded-router-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  const generatedPrefix = '// @generated\n';
+  const fullReadSentinel = '__FULL_OVERSIZED_CONTENT_READ__';
+  await writeFile(
+    path.join(repoRoot, 'src/generated.ts'),
+    `${generatedPrefix}${'x'.repeat(5_000)}${fullReadSentinel}\n`
+  );
+  await initProject({ repoRoot });
+
+  const contentLengthsSeen: number[] = [];
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'bounded-sample-content-adapter',
+    version: '1',
+    capabilities: ['references'],
+    supports: (file) => {
+      contentLengthsSeen.push(file.content.length);
+      assert.ok(file.content.length <= 4_096);
+      assert.equal(file.content.includes(fullReadSentinel), false);
+      return file.language === 'typescript' && file.content.startsWith(generatedPrefix);
+    },
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+      async *process(_file: ScannedFile): AsyncIterable<IndexEvent> {}
+    })
+  });
+
+  const index = await indexProjectWithRegistryForTest({ repoRoot, maxFileBytes: 64 }, registry);
+
+  assert.equal(index.filesIndexed, 0);
+  assert.deepEqual(contentLengthsSeen, [4_096]);
+  assert.deepEqual(
+    index.adaptersUsed?.map((adapter) => ({
+      id: adapter.id,
+      languageIds: adapter.languageIds
+    })),
+    [{ id: 'bounded-sample-content-adapter', languageIds: ['typescript'] }]
+  );
+});
+
+test('indexProject exposes adapter diagnostics while completing the adapter run', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-adapter-diagnostics-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const app = 1;\n');
+  await initProject({ repoRoot });
+
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'diagnostic-test-adapter',
+    version: '1',
+    capabilities: ['references'],
+    supports: (file) => file.language === 'typescript',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+      async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
+        yield {
+          kind: 'diagnostic',
+          level: 'warn',
+          message: 'parser recovered after syntax ambiguity',
+          file: file.relativePath
+        };
+        yield {
+          kind: 'diagnostic',
+          level: 'error',
+          message: 'missing optional type info',
+          file: file.relativePath
+        };
+        yield {
+          kind: 'diagnostic',
+          level: 'error',
+          message: 'adapter-level cache probe failed'
+        };
+        yield {
+          kind: 'relation',
+          relation: {
+            source: { kind: 'file', path: file.relativePath, languageId: file.language },
+            target: { kind: 'file', path: file.relativePath, languageId: file.language },
+            kind: 'REFERENCES',
+            metadata: {
+              confidence: 'proven',
+              provenance: `diagnostic-test-adapter:${file.relativePath}`
+            },
+            evidence: [
+              {
+                file: file.relativePath,
+                snippet: file.content,
+                confidence: 'proven'
+              }
+            ]
+          }
+        };
+      }
+    })
+  });
+
+  const index = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+
+  assert.equal(index.filesIndexed, 1);
+  assert.equal(index.relationsIndexed, 1);
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const indexRun = db
+      .prepare('SELECT status FROM index_runs WHERE id = ?')
+      .get(index.indexRunId) as { status: string };
+    assert.equal(indexRun.status, 'completed');
+
+    const adapterRun = db
+      .prepare(
+        `SELECT status, error_summary
+         FROM adapter_runs
+         WHERE index_run_id = ? AND adapter_id = ?`
+      )
+      .get(index.indexRunId, 'diagnostic-test-adapter') as {
+      status: string;
+      error_summary: string | null;
+    };
+    assert.equal(adapterRun.status, 'completed');
+    assert.match(adapterRun.error_summary ?? '', /diagnostic error: adapter-level cache probe failed/);
+
+    const coverageRows = db
+      .prepare(
+        `SELECT path, status, reason
+         FROM index_coverage
+         WHERE index_run_id = ? AND adapter_id = ?
+         ORDER BY path`
+      )
+      .all(index.indexRunId, 'diagnostic-test-adapter') as Array<{
+      path: string;
+      status: string;
+      reason: string;
+    }>;
+    const normalCoverage = coverageRows.find((row) => row.path === 'src/app.ts');
+    assert.deepEqual(
+      normalCoverage
+        ? {
+            path: normalCoverage.path,
+            status: normalCoverage.status,
+            reason: normalCoverage.reason
+          }
+        : undefined,
+      {
+        path: 'src/app.ts',
+        status: 'indexed',
+        reason: 'matched source extension'
+      }
+    );
+
+    const diagnosticCoverage = coverageRows
+      .filter((row) => row.path.startsWith('src/app.ts#diagnostic:'))
+      .map((row) => ({
+        pathPrefix: row.path.replace(/:[^:]+$/, ':<stable>'),
+        status: row.status,
+        reason: row.reason
+      }));
+    assert.deepEqual(diagnosticCoverage, [
+      {
+        pathPrefix: 'src/app.ts#diagnostic:error:<stable>',
+        status: 'skipped',
+        reason: 'diagnostic error: missing optional type info'
+      },
+      {
+        pathPrefix: 'src/app.ts#diagnostic:warn:<stable>',
+        status: 'skipped',
+        reason: 'diagnostic warning: parser recovered after syntax ambiguity'
+      }
+    ]);
+  } finally {
+    db.close();
+  }
+});
+
+test('indexProject preserves diagnostics when an adapter fails after emitting them', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-adapter-diagnostic-fail-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const app = 1;\n');
+  await initProject({ repoRoot });
+
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'diagnostic-then-failing-adapter',
+    version: '1',
+    capabilities: ['references'],
+    supports: (file) => file.language === 'typescript',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+      async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
+        yield {
+          kind: 'diagnostic',
+          level: 'warn',
+          message: 'adapter cache unavailable'
+        };
+        yield {
+          kind: 'diagnostic',
+          level: 'error',
+          message: 'file parse recovered before crash',
+          file: file.relativePath
+        };
+        throw new Error('adapter crashed after diagnostics');
+      }
+    })
+  });
+
+  await assert.rejects(
+    indexProjectWithRegistryForTest({ repoRoot }, registry),
+    /adapter crashed after diagnostics/
+  );
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const indexRun = db
+      .prepare('SELECT id, status FROM index_runs ORDER BY id DESC LIMIT 1')
+      .get() as { id: number; status: string };
+    assert.equal(indexRun.status, 'failed');
+
+    const adapterRun = db
+      .prepare(
+        `SELECT status, error_summary
+         FROM adapter_runs
+         WHERE index_run_id = ? AND adapter_id = ?`
+      )
+      .get(indexRun.id, 'diagnostic-then-failing-adapter') as {
+      status: string;
+      error_summary: string | null;
+    };
+    assert.equal(adapterRun.status, 'failed');
+    assert.match(
+      adapterRun.error_summary ?? '',
+      /diagnostic warning: adapter cache unavailable[\s\S]+adapter crashed after diagnostics/
+    );
+
+    const diagnosticCoverage = db
+      .prepare(
+        `SELECT path, status, reason
+         FROM index_coverage
+         WHERE index_run_id = ?
+           AND adapter_id = ?
+           AND path LIKE ?
+         ORDER BY path`
+      )
+      .all(indexRun.id, 'diagnostic-then-failing-adapter', 'src/app.ts#diagnostic:%') as Array<{
+      path: string;
+      status: string;
+      reason: string;
+    }>;
+    assert.deepEqual(
+      diagnosticCoverage.map((row) => ({
+        pathPrefix: row.path.replace(/:[^:]+$/, ':<stable>'),
+        status: row.status,
+        reason: row.reason
+      })),
+      [
+        {
+          pathPrefix: 'src/app.ts#diagnostic:error:<stable>',
+          status: 'skipped',
+          reason: 'diagnostic error: file parse recovered before crash'
+        }
+      ]
+    );
+  } finally {
+    db.close();
+  }
+});
+
 test('indexProject persists adapter-provided relation evidence entries', async () => {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-relation-evidence-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
@@ -712,6 +1270,315 @@ test('indexProject preserves per-adapter terminal status when a later adapter fa
           adapterId: 'markdown-not-run-adapter',
           status: 'skipped',
           errorSummary: 'not run because python-failing-adapter failed'
+        }
+      ]
+    );
+
+    const coverageRows = db
+      .prepare(
+        `SELECT adapter_id, path, status, reason
+         FROM index_coverage
+         WHERE index_run_id = ?
+         ORDER BY path`
+      )
+      .all(indexRun.id) as Array<{
+      adapter_id: string;
+      path: string;
+      status: string;
+      reason: string;
+    }>;
+    assert.deepEqual(
+      coverageRows.map((row) => ({
+        adapterId: row.adapter_id,
+        path: row.path,
+        status: row.status,
+        reason: row.reason
+      })),
+      [
+        {
+          adapterId: 'markdown-not-run-adapter',
+          path: 'docs/notes.md',
+          status: 'skipped',
+          reason: 'not run because python-failing-adapter failed'
+        },
+        {
+          adapterId: 'python-failing-adapter',
+          path: 'scripts/tool.py',
+          status: 'skipped',
+          reason: 'adapter failed: python adapter failed'
+        },
+        {
+          adapterId: 'typescript-success-adapter',
+          path: 'src/app.ts',
+          status: 'indexed',
+          reason: 'matched source extension'
+        }
+      ]
+    );
+  } finally {
+    db.close();
+  }
+});
+
+test('failed reruns preserve last completed current-state snapshot for analyzeDiff', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-failed-rerun-snapshot-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(
+    path.join(repoRoot, 'src/a-importer.ts'),
+    [
+      'import { core } from "./core";',
+      'export const importer = core;',
+      ''
+    ].join('\n')
+  );
+  await writeFile(path.join(repoRoot, 'src/core.ts'), 'export const core = 1;\n');
+  await initProject({ repoRoot });
+
+  const makeImportAdapter = (failOnCore: boolean): SemanticAdapter => ({
+    id: 'snapshot-preservation-test-adapter',
+    version: '1',
+    capabilities: ['imports'],
+    supports: (file) => file.language === 'typescript',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+      async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
+        if (file.relativePath === 'src/a-importer.ts') {
+          yield {
+            kind: 'relation',
+            relation: {
+              source: { kind: 'file', path: 'src/a-importer.ts', languageId: file.language },
+              target: { kind: 'file', path: 'src/core.ts', languageId: file.language },
+              kind: 'DEPENDS_ON',
+              metadata: {
+                confidence: 'proven',
+                provenance: 'snapshot-preservation-test-adapter:import'
+              },
+              evidence: [
+                {
+                  file: file.relativePath,
+                  snippet: file.content,
+                  confidence: 'proven'
+                }
+              ]
+            }
+          };
+        }
+        if (failOnCore && file.relativePath === 'src/core.ts') {
+          throw new Error('snapshot preservation adapter failed');
+        }
+      }
+    })
+  });
+
+  const successfulRegistry = new AdapterRegistry();
+  successfulRegistry.register(makeImportAdapter(false));
+  const firstIndex = await indexProjectWithRegistryForTest({ repoRoot }, successfulRegistry);
+
+  const firstReport = await analyzeDiff({ repoRoot, changedFiles: ['src/core.ts'] });
+  assert.equal(firstReport.indexRunId, firstIndex.indexRunId);
+  assert.ok(firstReport.affectedFiles.some((file) => file.path === 'src/a-importer.ts'));
+  assert.equal(firstReport.warnings?.some((warning) => warning.includes('coverage gap')), undefined);
+
+  const failingRegistry = new AdapterRegistry();
+  failingRegistry.register(makeImportAdapter(true));
+  await assert.rejects(
+    indexProjectWithRegistryForTest({ repoRoot }, failingRegistry),
+    /snapshot preservation adapter failed/
+  );
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const failedRun = db
+      .prepare('SELECT id, status FROM index_runs ORDER BY id DESC LIMIT 1')
+      .get() as { id: number; status: string };
+    assert.equal(failedRun.status, 'failed');
+    assert.notEqual(failedRun.id, firstIndex.indexRunId);
+
+    const currentFiles = db
+      .prepare(
+        `SELECT path, index_run_id
+         FROM files
+         WHERE path IN ('src/a-importer.ts', 'src/core.ts')
+         ORDER BY path`
+      )
+      .all() as Array<{ path: string; index_run_id: number }>;
+    assert.deepEqual(
+      currentFiles.map((row) => ({ path: row.path, indexRunId: row.index_run_id })),
+      [
+        { path: 'src/a-importer.ts', indexRunId: firstIndex.indexRunId },
+        { path: 'src/core.ts', indexRunId: firstIndex.indexRunId }
+      ]
+    );
+
+    const relation = db
+      .prepare(
+        `SELECT index_run_id
+         FROM relations
+         WHERE source_entity_id = ? AND target_entity_id = ? AND kind = ?`
+      )
+      .get('file:src/a-importer.ts', 'file:src/core.ts', 'DEPENDS_ON') as {
+      index_run_id: number;
+    };
+    assert.equal(relation.index_run_id, firstIndex.indexRunId);
+
+    const mainHead = db
+      .prepare(
+        `SELECT t.index_run_id
+         FROM branches b
+         INNER JOIN transactions t ON t.id = b.head_tx_id
+         WHERE b.name = 'main'`
+      )
+      .get() as { index_run_id: number };
+    assert.equal(mainHead.index_run_id, firstIndex.indexRunId);
+
+    const failedCoverage = db
+      .prepare(
+        `SELECT path, status, reason
+         FROM index_coverage
+         WHERE index_run_id = ? AND adapter_id = ?
+         ORDER BY path`
+      )
+      .all(failedRun.id, 'snapshot-preservation-test-adapter') as Array<{
+      path: string;
+      status: string;
+      reason: string;
+    }>;
+    assert.deepEqual(
+      failedCoverage.map((row) => ({
+        path: row.path,
+        status: row.status,
+        reason: row.reason
+      })),
+      [
+        {
+          path: 'src/a-importer.ts',
+          status: 'indexed',
+          reason: 'matched source extension'
+        },
+        {
+          path: 'src/core.ts',
+          status: 'skipped',
+          reason: 'adapter failed: snapshot preservation adapter failed'
+        }
+      ]
+    );
+  } finally {
+    db.close();
+  }
+
+  const rerunReport = await analyzeDiff({ repoRoot, changedFiles: ['src/core.ts'] });
+  assert.equal(rerunReport.indexRunId, firstIndex.indexRunId);
+  assert.ok(rerunReport.affectedFiles.some((file) => file.path === 'src/a-importer.ts'));
+  assert.equal(rerunReport.warnings?.some((warning) => warning.includes('coverage gap')), undefined);
+});
+
+test('indexProject preserves completed same-adapter file coverage after later file failure', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-adapter-partial-fail-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/a-ok.ts'), 'export const ok = 1;\n');
+  await writeFile(path.join(repoRoot, 'src/z-fail.ts'), 'export const fail = 1;\n');
+  await initProject({ repoRoot });
+
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'typescript-partial-failing-adapter',
+    version: '1',
+    capabilities: ['references'],
+    supports: (file) => file.language === 'typescript',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+      async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
+        if (file.relativePath === 'src/z-fail.ts') {
+          throw new Error('typescript adapter failed midway');
+        }
+        yield {
+          kind: 'relation',
+          relation: {
+            source: { kind: 'file', path: file.relativePath, languageId: file.language },
+            target: { kind: 'file', path: file.relativePath, languageId: file.language },
+            kind: 'REFERENCES',
+            metadata: {
+              confidence: 'proven',
+              provenance: `typescript-partial-failing-adapter:${file.relativePath}`
+            },
+            evidence: [
+              {
+                file: file.relativePath,
+                snippet: file.content,
+                confidence: 'proven'
+              }
+            ]
+          }
+        };
+      }
+    })
+  });
+
+  await assert.rejects(
+    indexProjectWithRegistryForTest({ repoRoot }, registry),
+    /typescript adapter failed midway/
+  );
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const indexRun = db
+      .prepare('SELECT id, status FROM index_runs ORDER BY id DESC LIMIT 1')
+      .get() as { id: number; status: string };
+    assert.equal(indexRun.status, 'failed');
+
+    const coverageRows = db
+      .prepare(
+        `SELECT path, status, reason
+         FROM index_coverage
+         WHERE index_run_id = ? AND adapter_id = ?
+         ORDER BY path`
+      )
+      .all(indexRun.id, 'typescript-partial-failing-adapter') as Array<{
+      path: string;
+      status: string;
+      reason: string;
+    }>;
+    assert.deepEqual(
+      coverageRows.map((row) => ({
+        path: row.path,
+        status: row.status,
+        reason: row.reason
+      })),
+      [
+        {
+          path: 'src/a-ok.ts',
+          status: 'indexed',
+          reason: 'matched source extension'
+        },
+        {
+          path: 'src/z-fail.ts',
+          status: 'skipped',
+          reason: 'adapter failed: typescript adapter failed midway'
+        }
+      ]
+    );
+
+    const relationRows = db
+      .prepare(
+        `SELECT source_entity_id, target_entity_id, provenance
+         FROM relations
+         WHERE index_run_id = ?
+         ORDER BY provenance`
+      )
+      .all(indexRun.id) as Array<{
+      source_entity_id: string;
+      target_entity_id: string;
+      provenance: string;
+    }>;
+    assert.deepEqual(
+      relationRows.map((row) => ({
+        sourceEntityId: row.source_entity_id,
+        targetEntityId: row.target_entity_id,
+        provenance: row.provenance
+      })),
+      [
+        {
+          sourceEntityId: 'file:src/a-ok.ts',
+          targetEntityId: 'file:src/a-ok.ts',
+          provenance: 'typescript-partial-failing-adapter:src/a-ok.ts'
         }
       ]
     );

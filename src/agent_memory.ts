@@ -3,6 +3,7 @@ import type { EmbeddingResult } from './embeddings.js';
 import { contentHash, getRepoId, openDatabase } from './store.js';
 import type { Db } from './store.js';
 import { normalizeRepoRoot, redactSecrets } from './security.js';
+import type { Lifecycle } from './types.js';
 
 export type RememberValue = string | number | boolean | null | RememberValue[] | { [key: string]: RememberValue };
 
@@ -644,4 +645,26 @@ export function trace(db: Db, input: TraceInput): TraceResult {
   }
 
   return { chain };
+}
+
+/**
+ * Resolve the Lifecycle ('static' | 'dynamic') of a fact attribute by
+ * consulting attribute_defs.is_code_relation. Indexer-emitted code
+ * relations (imports, calls, depends_on, affects) are 'static' because
+ * they are derived deterministically from repository state. Agent-
+ * decision attributes (observed, verified, concern, reflection, ...)
+ * default to 'dynamic' because they reflect mutable agent observations.
+ *
+ * Unknown attributes (not yet seen by ensureAttributeDef) default to
+ * 'dynamic' since they originate from agent calls. This avoids
+ * reporting an attribute as 'static' before it has been registered.
+ */
+export function factLifecycle(db: Db, attribute: string): Lifecycle {
+  const row = db
+    .prepare('SELECT is_code_relation FROM attribute_defs WHERE name = ?')
+    .get(attribute) as { is_code_relation: number } | undefined;
+  if (!row) {
+    return 'dynamic';
+  }
+  return row.is_code_relation === 1 ? 'static' : 'dynamic';
 }

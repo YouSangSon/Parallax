@@ -1,4 +1,4 @@
-export { createBranch, mergeBranches, recall, recallOnRepo, recallSemantic, reembedFacts, remember, rememberOnRepo, trace, withAgentMemoryDb } from './agent_memory.js';
+export { createBranch, factLifecycle, mergeBranches, recall, recallOnRepo, recallSemantic, reembedFacts, remember, rememberOnRepo, trace, withAgentMemoryDb } from './agent_memory.js';
 export type {
   BranchInput,
   BranchResult,
@@ -27,6 +27,8 @@ export type { ReflectionResult, SummarizeInput } from './llm.js';
 export { reflectFacts } from './reflection.js';
 export type { ReflectOptions, ReflectResult, ReflectedEntity } from './reflection.js';
 export { abandonBranch, gcBranches } from './branch_gc.js';
+export { profileEntity } from './profile.js';
+export type { ProfileOptions, ProfileResult } from './profile.js';
 export type {
   AbandonBranchInput,
   AbandonBranchResult,
@@ -56,6 +58,7 @@ export type {
   IndexOptions,
   IndexResult,
   InitOptions,
-  InitResult
+  InitResult,
+  Lifecycle
 } from './types.js';
 export type { McpContext } from './mcp.js';

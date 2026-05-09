@@ -245,6 +245,62 @@ test('reflect caps per-entity facts and links exactly cap many provenance edges'
   }
 });
 
+test('reflect cap window keeps the OLDEST facts (ts ASC), not the newest', async () => {
+  // F4: ORDER BY ts ASC contract — the kept window is the start-of-history
+  // slice; recent activity stays raw. If the production query regressed to
+  // ts DESC (or any other ordering), this test fails by checking which
+  // specific iterations got linked into fact_provenance kind='summary'.
+  const repoRoot = await makeRepo();
+  const previousCap = process.env.IMPACT_TRACE_REFLECT_MAX_FACTS_PER_ENTITY;
+  process.env.IMPACT_TRACE_REFLECT_MAX_FACTS_PER_ENTITY = '5';
+  try {
+    withAgentMemoryDb(repoRoot, false, (db) => {
+      const stampTx = db.prepare(
+        `UPDATE transactions SET ts = ?
+         WHERE id = (SELECT tx_id FROM facts WHERE value_blob = ?)`
+      );
+      for (let i = 0; i < 12; i += 1) {
+        remember(db, {
+          entity: 'file:src/window.ts',
+          attribute: 'observed',
+          value: `iteration ${i}`
+        });
+        // Stamp this iteration's tx with a deterministic ts so ASC/DESC
+        // ordering is observable. tx.id is a content-hash and not ordered
+        // by iteration, so we look up by value_blob (JSON-encoded string).
+        const isoStamp = new Date(Date.UTC(2020, 0, 1, 0, 0, i)).toISOString();
+        stampTx.run(isoStamp, JSON.stringify(`iteration ${i}`));
+      }
+    });
+
+    const result = await reflectFacts(repoRoot, { olderThanDays: 1 });
+    const reflection = result.reflections[0]!;
+
+    withAgentMemoryDb(repoRoot, true, (db) => {
+      const linked = db
+        .prepare(
+          `SELECT f.value_blob
+           FROM fact_provenance fp
+           INNER JOIN facts f ON fp.source_fact_id = f.id
+           WHERE fp.fact_id = ? AND fp.kind = 'summary'`
+        )
+        .all(reflection.summaryFactId) as Array<{ value_blob: string }>;
+      const values = linked.map((r) => JSON.parse(r.value_blob) as string).sort();
+      assert.deepEqual(
+        values,
+        ['iteration 0', 'iteration 1', 'iteration 2', 'iteration 3', 'iteration 4'],
+        'kept window must be the OLDEST 5 facts (iteration 0..4), not the newest 5 (iteration 7..11)'
+      );
+    });
+  } finally {
+    if (previousCap === undefined) {
+      delete process.env.IMPACT_TRACE_REFLECT_MAX_FACTS_PER_ENTITY;
+    } else {
+      process.env.IMPACT_TRACE_REFLECT_MAX_FACTS_PER_ENTITY = previousCap;
+    }
+  }
+});
+
 test('reflect cap env var falls back to default when invalid', async () => {
   const repoRoot = await makeRepo();
   const previous = process.env.IMPACT_TRACE_REFLECT_MAX_FACTS_PER_ENTITY;

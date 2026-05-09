@@ -3,6 +3,7 @@
 > **목적:** 프로젝트의 *돌이키기 어려운* 결정과 그 이유를 한곳에 모은다.
 > 코드는 변하지만, 결정의 *맥락*은 코드에 남지 않는다. 이 문서가 그 맥락을 보존한다.
 > **포맷:** 결정 1개 = 1 섹션. 각 섹션은 *결정·맥락·고려한 대안·결과/위험·관련 commit*.
+> **English pair:** [decisions.en.md](decisions.en.md).
 
 ---
 
@@ -22,6 +23,8 @@
 | [D-010](#d-010-preserve-original-facts-when-summarizing) | preserve original facts when summarizing | P3 | 2026-04-29 |
 | [D-011](#d-011-soft-delete-branch-gc-via-transactionsarchived) | soft-delete branch GC via transactions.archived | P3 | 2026-04-29 |
 | [D-012](#d-012-no-llm-or-embedding-sdks-fetch-only) | no LLM or embedding SDKs (fetch only) | P3 | 2026-04-29 |
+| [D-013](#d-013-lifecycle-binary-derives-from-is_code_relation-no-new-column) | lifecycle binary derives from is_code_relation; no new column | P4 | 2026-04-30 |
+| [D-014](#d-014-profile-api-is-built-on-top-of-recall-not-merged-into-it) | profile API is built on top of recall, not merged into it | P4 | 2026-04-30 |
 
 ---
 
@@ -220,6 +223,43 @@
 **결과/위험:** API spec 변경 시 직접 수정해야 함. 대응: 각 provider 함수가 ~30 LOC라 수정 비용 작음.
 
 **관련 commit:** Phase 3 (`src/llm.ts`)
+
+---
+
+## D-013: lifecycle binary derives from `is_code_relation`; no new column
+
+**결정:** static / dynamic 구분을 위한 새 `attribute_defs.is_static` 컬럼 추가 *안 함*. 기존 `is_code_relation`을 query-time에 `Lifecycle = 'static' | 'dynamic'`으로 derive.
+
+**맥락:** [supermemoryai/supermemory](https://github.com/supermemoryai/supermemory)는 메모리 lifetime을 결정하는 `isStatic` 플래그를 갖고 있다. 우리 분석 (`docs/supermemory-adoption.ko.md`) 결과 *동일 정보가 이미 attribute level에 있음*. `is_code_relation=1` (imports/calls/affects/depends_on)는 영구 코드 구조, `=0` (observed/verified/concern/reflection/...)는 동적 agent 활동.
+
+**대안:**
+- 새 `is_static` 컬럼 추가 — 데이터 중복.
+- `is_code_relation`을 `lifecycle TEXT`로 rename — schema migration 비파괴적이지만 backward compat 깨짐.
+
+**결과/위험:** Profile API가 lifecycle 분류를 query-time에 derive (`src/profile.ts`의 LEFT JOIN attribute_defs). 새 컬럼 없음. `factLifecycle(db, attribute)` 헬퍼가 단일 진입점.
+
+**관련 commit:** Phase 4 supermemory-best-practices branch (`src/agent_memory.ts:factLifecycle`, `src/types.ts:Lifecycle`).
+
+---
+
+## D-014: Profile API is built on top of recall, not merged into it
+
+**결정:** `profileEntity()` 함수는 `recall()`과 *독립*. `recall()` 시그니처를 modify 하지 않음.
+
+**맥락:** supermemory의 `client.profile()`은 `recall + profile`을 한 함수로 합쳤다. 우리는 분리:
+- `recall()`은 *raw history view* (모든 facts, 시간순, 필터 가능)
+- `profileEntity()`는 *aggregated snapshot* (한 entity의 static/dynamic/summary 3-bucket view)
+
+명확한 책임 분리.
+
+**대안:**
+- `recall({ profile: true })` 옵션 — 한 함수가 두 가지 mode를 가지면 인터페이스 부풀어짐.
+- `recall`이 항상 profile 형식 반환 — backward compat 깨짐.
+- profile이 recall을 내부 호출 — *추가 round-trip*. 우리는 단일 SELECT + in-memory bucketization로 효율 우선.
+
+**결과/위험:** profile은 자체 SQL을 갖되 *recall과 같은 invariants*를 적용 — `t.archived = 0` 필터, branch scope, redacted facts surface as `[REDACTED]`. 만약 recall에 새 invariant이 추가되면 profile도 함께 갱신해야 함 (코드베이스 검색 시 두 곳 모두 손봐야 함).
+
+**관련 commit:** Phase 4 supermemory-best-practices branch (`src/profile.ts`).
 
 ---
 

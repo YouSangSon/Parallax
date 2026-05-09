@@ -491,7 +491,11 @@ function extractorVersionFor(adapters: readonly SemanticAdapter[]): string {
 function prepareStatements(db: Db): PreparedStatements {
   return {
     upsertAttributeDef: db.prepare(
-      "INSERT OR IGNORE INTO attribute_defs (name, value_type, is_code_relation, description) VALUES (?, 'entity_ref', 0, '')"
+      `INSERT INTO attribute_defs (name, value_type, is_code_relation, description)
+       VALUES (?, 'entity_ref', 1, '')
+       ON CONFLICT(name) DO UPDATE SET
+         value_type = 'entity_ref',
+         is_code_relation = 1`
     ),
     upsertTextAttribute: db.prepare(
       "INSERT OR IGNORE INTO attribute_defs (name, value_type, is_code_relation, description) VALUES (?, 'text', 0, '')"
@@ -959,7 +963,28 @@ function insertCanonicalRelation(input: {
   });
 }
 
+const relationAttributeByKind: Record<RelationKind, string> = {
+  DEPENDS_ON: 'imports',
+  CALLS: 'calls',
+  IMPORTS: 'imports',
+  EXPORTS: 'exports',
+  IMPLEMENTS: 'implements',
+  EXTENDS: 'extends',
+  READS: 'reads',
+  WRITES: 'writes',
+  RAISES: 'raises',
+  HANDLES: 'handles',
+  OWNS: 'owns',
+  TESTS: 'tests',
+  VERIFIES: 'tests',
+  DOCUMENTS: 'documents',
+  CONFIGURES: 'configures',
+  BREAKS_COMPATIBILITY_WITH: 'breaks_compat',
+  REFERENCES: 'references',
+  DECLARES: 'declares',
+  GOVERNS: 'governs'
+};
+
 function relationKindToAttribute(kind: string): string {
-  if (kind === 'DEPENDS_ON') return 'imports';
-  return kind.toLowerCase();
+  return relationAttributeByKind[kind as RelationKind] ?? kind.toLowerCase();
 }

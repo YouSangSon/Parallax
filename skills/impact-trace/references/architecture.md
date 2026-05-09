@@ -169,6 +169,10 @@ All providers use Node 24+ native `fetch` — no SDK dependencies (D-012). Anthr
 | D-012 | no LLM/embedding SDKs | fetch only |
 | D-013 | lifecycle from is_code_relation | no new is_static column |
 | D-014 | profile is built on top of recall | separate function, not a recall mode |
+| D-015 | reflect --repair as separate trigger | not auto-on-reflect |
+| D-016 | branch --restore bundles state + tx unarchive | one atomic call |
+| D-017 | auto-abandon piggybacks on gc-branches --max-age | opt-in flag, no default |
+| D-018 | sqlite-vec ANN with per-model vec0 | lazy create, brute-force fallback |
 
 Read the cumulative log in `docs/decisions.ko.md`.
 

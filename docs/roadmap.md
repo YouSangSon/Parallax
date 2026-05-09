@@ -1,0 +1,131 @@
+# Impact-trace 통합 로드맵
+
+> 이 문서는 *두 축* (영향 분석 + 에이전트 메모리)의 진척과 다음 작업을 한 페이지로 정리한다.
+> *왜* 이 방향인지는 [vision.md](vision.md) / [vision.ko.md](vision.ko.md), *왜* 각 결정인지는 [decisions.ko.md](decisions.ko.md), *날짜별 로그*는 [progress.ko.md](progress.ko.md).
+> 마지막 업데이트: 2026-05-01 (Phase 4 P5 머지 직후)
+
+## 한 눈에 보기
+
+```
+영향 분석 축                   에이전트 메모리 축
+────────────────              ────────────────
+P0 (file/edge core)  ✅       Phase 1 (스키마 + MCP 8개)        ✅
+P0 (workspace/contract) ⏳    Phase 1.5 (인덱서 dual-write)     ✅
+P1 (TS Compiler API) ⏳       Phase 2 (real embed + semantic) ✅
+P1 (Python/Go/Rust)  ⏳       Phase 3 (reflect + branch GC)    ✅
+P1 (config/CI/infra) ⏳       Phase 4 P1..P5 (cap/repair/restore/auto-abandon/ANN) ✅
+P2 (JVM/.NET/native) ⏳
+P3 (agent-ready MCP) ⏳       Phase 5 (5 candidates)            ⏳
+
+✅ shipped to main · ⏳ deferred / not started
+```
+
+## 영향 분석 축 (`impact-trace-plan.ko.md`의 P0..P4)
+
+자세한 내용은 `impact-trace-plan.ko.md`. 여기는 *다음 N개* 우선순위만.
+
+### P1 — Mixed Repo Adapter Pack (next track)
+
+| 우선순위 | 작업 | 이유 / 시작 트리거 |
+|---|---|---|
+| **A1** | TypeScript Compiler API 어댑터 | regex 추출이 re-export / path alias / type-only import 놓침. 첫 high-confidence lane. |
+| A2 | Python / Go / Rust 어댑터 (모듈/심볼/import) | 다중 언어 fixture 검증을 위한 최소 cover. |
+| A3 | npm/pnpm/yarn workspace 어댑터 | monorepo 첫 진입점. |
+| A4 | YAML / GitHub Actions / Docker / Terraform 어댑터 | enterprise repo의 실제 영향 경로. |
+| A5 | OpenAPI / protobuf / GraphQL / AsyncAPI 어댑터 + cross-repo resolver | workspace catalog의 첫 사용 사례. |
+| A6 | Mermaid / DOT / JSON graph export | `analyze` 출력에 그래프 첨부 — 사람이 PR 본문에서 바로 봄. |
+
+### P2 — Enterprise Language Adapter Pack
+
+| 작업 |
+|---|
+| Java / Kotlin (Maven/Gradle, package/class/method, annotation) |
+| C# / .NET (solution/project ref, namespace/class) |
+| C / C++ (header include, function/type, build target) |
+| build-system resolver (Maven, Gradle, dotnet, CMake, Bazel, Make) |
+| LSP / CodeQL enrichment (지원 언어에서 reference/call/data-flow) |
+
+### P3 — Agent-Ready MCP
+
+| 작업 |
+|---|
+| `impact://report/{id}` resource (큰 페이로드 pagination) |
+| `impact://entity/{id}` / `impact://evidence/{id}` resource |
+| workspace diff tool — multi-repo 변경 + downstream consumer risk |
+| `explain` 명령 — entity 1개의 relation + evidence |
+| typed error envelope (problem / cause / fix / evidence id) |
+| stale-index warning |
+
+### P4 — Optional Projections
+
+| 작업 |
+|---|
+| graph DB projection (Neo4j / FalkorDB / Kuzu — 선택) |
+| web graph explorer |
+| CodeQL adapter |
+| Obsidian dry-run export |
+| hotspot / history analytics |
+
+---
+
+## 에이전트 메모리 축 (Phase 1..5)
+
+### 완료 (main에 있음)
+
+| Phase | 핵심 산출물 | ADR |
+|---|---|---|
+| **1** | schema v1..v4, MCP 4개 (analyze_diff, remember, recall, branch) | D-001..D-004 |
+| **1.5** | indexer dual-write (canonical relation → fact + evidence_snippet + provenance) | — |
+| **2** | real `@huggingface/transformers` 임베딩 + semantic recall + branch merge (multi-parent tx) | D-005..D-007 |
+| **3** | schema v7 + 4-provider LLM + reflective consolidation + speculative branch GC | D-008..D-012 |
+| **4 P1** | reflect scaling cap + Profile API + factLifecycle + Skill packaging + supermemory adoption review | D-013, D-014 |
+| **4 P2** | `reflect --repair` for orphan summary facts | D-015 |
+| **4 P3** | `branch --restore` (state + tx unarchive) | D-016 |
+| **4 P4** | `gc-branches --max-age N` time-based auto-abandon | D-017 |
+| **4 P5** | sqlite-vec ANN, per-model `vec_facts_<model_slug>` lazy create, brute-force fallback, `reindex-vec` CLI | D-018 |
+
+main은 `33c49f0`, **112 tests passing**, ADR D-001..D-018, MCP 12개, CLI 16개.
+
+### Phase 5 후보 (ranked)
+
+자세한 우선순위와 design 공간은 [phase5-handoff.ko.md](phase5-handoff.ko.md).
+
+| 순위 | 후보 | 이유 | ETA |
+|---|---|---|---|
+| **B1** | **MemoryBench harness** — 외부 회귀 신호 framework | 다른 모든 P5 후보의 *대전제*. 측정 도구 없으면 clustering / multi-layer / 새 모델이 정말 더 나은지 알 수 없음. | 1+ week (design doc 선행) |
+| B2 | Topic clustering reflection | entity별 reflect를 *주제별*로 확장 (Park 2023 / Letta MemGPT 패턴). | 3-5일 |
+| B3 | Multi-layer reflection (reflection-of-reflections) | summary fact 자체를 다음 reflect의 input으로 — 장기 semantic hierarchy. | 3일 |
+| B4 | Concurrent reflect lock | 두 프로세스가 같은 entity reflect 시 두 다른 summary 생성. policy 결정 + 락 구현. | 반나절 |
+| B5 | Reembed cleanup (`reembed --drop-old-model`) | 모델 swap 후 구모델 vector 행 정리 (`fact_embeddings` + `vec_facts_<old>`). | 반나절 |
+
+---
+
+## 두 축이 만나는 지점
+
+두 축이 *같은 SQLite 위에 살지만 코드는 분리*. 향후 통합 후보:
+
+| 후보 | 시점 | 설명 |
+|---|---|---|
+| **agent의 영향 분석 결과를 fact로 저장** | 미정 | `analyze` 결과를 자동으로 `remember()` → 재실행 비용 0. ADR 필요 (provenance kind 확장). |
+| **memory branch가 git branch와 정렬** | 미정 | git branch checkout이 memory branch를 자동 활성화. `git checkout` hook 또는 명시 명령 (`branch --sync-git`). |
+| **profile API의 entity가 impact entity와 매칭** | 미정 | `profileEntity('file:src/foo.ts')`이 *코드 entity의 relations + 메모리 facts*를 함께 반환. |
+| **MemoryBench가 영향 분석 정확도도 측정** | Phase 5+ | golden-set fixture가 두 축 모두 cover. |
+
+이 통합은 *기회*이지 *현재 약속*이 아님. Phase 5 작업 중 트리거가 자연스러우면 별도 ADR로 등록.
+
+---
+
+## 사용 가이드
+
+- **다음 작업이 뭔지 알고 싶다** → 이 문서의 "Phase 5 후보 ranked" / "P1 next track" 섹션
+- **왜 이 결정인지 알고 싶다** → [decisions.ko.md](decisions.ko.md) (D-001..D-018)
+- **언제 무엇이 들어왔는지 알고 싶다** → [progress.ko.md](progress.ko.md) (chronological log) / [CHANGELOG.md](../CHANGELOG.md) (Phase별 grouping)
+- **새 contributor / agent에게 한 페이지로 설명** → [vision.ko.md](vision.ko.md)
+- **두 축의 어휘가 헷갈린다** → [glossary.md](glossary.md)
+
+## 이 문서를 갱신할 때
+
+1. Phase가 ship될 때 — "완료" 표에 행 추가, "Phase 5 후보"에서 해당 행 제거.
+2. 새 ADR이 추가될 때 — 해당 Phase 행의 ADR 컬럼 갱신.
+3. P1/P2/P3/P4 영향 분석 축 작업이 시작될 때 — "next track" 표의 우선순위 재정렬.
+4. *큰 방향 전환*이 있을 때 — [vision.md](vision.md) 먼저 갱신, 이 문서는 그 다음.

@@ -24,6 +24,10 @@
 | [D-012](#d-012-no-llm-or-embedding-sdks-fetch-only) | no LLM or embedding SDKs (fetch only) | P3 | 2026-04-29 |
 | [D-013](#d-013-lifecycle-binary-derives-from-is_code_relation-no-new-column) | lifecycle binary derives from is_code_relation; no new column | P4 | 2026-04-30 |
 | [D-014](#d-014-profile-api-is-built-on-top-of-recall-not-merged-into-it) | profile API is built on top of recall, not merged into it | P4 | 2026-04-30 |
+| [D-015](#d-015-reflect---repair-as-a-separate-trigger) | `reflect --repair` as a separate trigger | P4 | 2026-04-30 |
+| [D-016](#d-016-branch---restore-restores-state-and-un-archives-transactions) | `branch --restore` restores state and un-archives transactions | P4 | 2026-04-30 |
+| [D-017](#d-017-time-based-auto-abandon-piggybacks-on-gc-branches---max-age) | time-based auto-abandon piggybacks on `gc-branches --max-age` | P4 | 2026-05-01 |
+| [D-018](#d-018-sqlite-vec-ann-with-per-model-vec0-tables-lazy-create-and-brute-force-fallback) | sqlite-vec ANN with per-model vec0 tables, lazy create, brute-force fallback | P4 | 2026-05-01 |
 
 ---
 
@@ -255,6 +259,76 @@
 **Consequence/Risk:** Profile owns its SQL but applies the *same invariants* as recall — `t.archived = 0` filter, branch scoping, redacted facts surfaced as `[REDACTED]`. When a new invariant lands on recall, profile must follow (codebase search must find both sites).
 
 **Related commit:** Phase 4 supermemory-best-practices branch (`src/profile.ts`).
+
+---
+
+## D-015: `reflect --repair` as a separate trigger
+
+**Decision:** A repair sweep that reconciles orphan summary facts (Phase 3 SAVEPOINT atomicity gap left a reflection fact whose `kind='summary'` provenance edges or `reflections` audit row are missing) ships as a *separate* command — `impact-trace reflect --repair` (CLI) + `impact_trace_repair_reflections` (MCP). It is **not** auto-run on every `reflect` invocation.
+
+**Context:** The Phase 3 architect review found a gap — `remember()` commits with its own BEGIN/COMMIT, then the outer SAVEPOINT covers `fact_provenance` UPDATE + `reflections` INSERT. A crash between those two commits leaves a summary fact with no audit row and possibly partial provenance — an *orphan*. Recovery path required.
+
+**Rejected alternatives:**
+- (b) auto-repair at the start of every `reflect` call — adds unconditional cost; tangles repair semantics with normal reflect output.
+- (c) separate `repair-reflections` command — fragments the CLI surface; users have to remember a second verb.
+
+**Consequence/Risk:** If the user never calls `--repair`, orphans accumulate. Mitigation: cookbook recommends monthly cadence (or right after `reflect`). Concurrent repair processes — SAVEPOINT only covers row-level contention; the first version uses `INSERT OR IGNORE` audit rows so two concurrent repairs are harmless.
+
+**Related commit:** Phase 4 P2 `feat/phase4-p2-p3-repair-restore` branch.
+
+---
+
+## D-016: `branch --restore` restores state and un-archives transactions
+
+**Decision:** Restoring an abandoned branch *simultaneously* sets `branches.state = 'active'` AND clears `transactions.archived = 0` for that branch's transactions, in one atomic call. Single command satisfies the user mental model "I restored it, so it's visible again."
+
+**Context:** D-011 soft-delete promised reversibility, but Phase 3 only shipped the abandon→archive direction. Setting `branches.state = 'active'` while leaving archived transactions untouched would mean *recall does not surface facts again* — restore would be in name only.
+
+**Rejected alternatives:**
+- (i) state only — violates the mental model above.
+- (iii) split into `branch --restore` + `gc-branches --un` — doubles the user-error surface (forgetting the second step looks like a silent failure).
+
+**Consequence/Risk:** After restore, facts surface immediately. If another active branch produced a content-hash-identical fact while this branch was abandoned, it stays deduped — a logical re-emergence with no new row. Re-confirms D-011: facts are never deleted, only the *visibility* of their transactions changes.
+
+**Related commit:** Phase 4 P3 `feat/phase4-p2-p3-repair-restore` branch.
+
+---
+
+## D-017: time-based auto-abandon piggybacks on `gc-branches --max-age`
+
+**Decision:** Time-based auto-abandon ships as an *opt-in flag* `--max-age N` on the existing `gc-branches` command, not as a separate command. Without the flag, `gc-branches` behaves identically to before (backward compat). With the flag, one pass performs `active → abandoned → archived` for active non-main branches whose most-recent activity is older than `now − N days`. Activity timestamp = `transactions.ts` of `branches.head_tx_id`, with `branches.created_at` as the fallback when `head_tx_id` is NULL. `main` is always protected. Future non-active non-abandoned states (e.g. `'merged'`) are *silently skipped* — excluded from auto-abandon candidates rather than throwing.
+
+**Context:** D-011 soft-delete is most valuable when *stale speculative branches actually get cleaned up*. Requiring users to call `branch --abandon` for every old branch shifts cost onto memory and discipline. Time-based automation is needed, but the D-009 (no daemon) identity rules out always-on background processes — the trigger must be user-issued. `gc-branches` is already that trigger (it is the cleanup verb), so opting into auto-abandon there is the natural place.
+
+**Rejected alternatives:**
+- (B) a new `auto-abandon` command + a separate `gc-branches` — clean separation but doubles call cost; users have to chain two verbs.
+- (C) `branch --auto-abandon` — sweep semantics on a single-name command surface feels wrong.
+- (β) `--max-age` defaults to 60 days — convenient but risks unintended large sweeps.
+- (γ) env-var default (`IMPACT_TRACE_AUTO_ABANDON_DAYS`) — implicit policy is inappropriate for destructive ops.
+
+**Consequence/Risk:** Users explicitly state their threshold (30/60/90 days) — prevents accidental large abandons. Existing `gc-branches` callers see zero change. The `branches.created_at` fallback mixes ISO 8601 (user-created branches via `new Date().toISOString()`) and SQLite `datetime('now')` format on the seeded `main` row — but `main` is `PROTECTED_BRANCH` and excluded from comparison, so the format mismatch is moot. If `'merged'` is later introduced, silent skip will need a follow-up ADR to clarify treatment.
+
+**Related commit:** Phase 4 P4 `feat/phase4-p4-auto-abandon` branch.
+
+---
+
+## D-018: sqlite-vec ANN with per-model vec0 tables, lazy create, and brute-force fallback
+
+**Decision:** Accelerate `recallSemantic` with sqlite-vec virtual tables. (a) **Per-model vec0 tables** `vec_facts_<model_slug>(fact_id TEXT PRIMARY KEY, embedding int8[<dim>])` — different models have different dims, so a single virtual table with max-dim padding wastes storage. (b) **Lazy creation** — `CREATE VIRTUAL TABLE IF NOT EXISTS` at the first dual-write for that model. (c) **Manual backfill + automatic fallback hybrid** — users run `reindex-vec` (CLI) to repopulate; if the vec table is absent or sqlite-vec extension load fails, recallSemantic *silently* falls back to the JS-side brute-force int8 dot product. (d) **`int8[N]`** type matches existing `fact_embeddings.vector` storage parity. (e) **Silent fallback on extension load failure** — existing callers see zero regression.
+
+**Context:** D-007 multi-model + D-001 local-first jointly narrowed the design space. The `sqlite-vec ^0.1.9` dep had been declared since Phase 1.5 but was never wired (the `loadVectorExtension` function existed and was exported, but had zero call sites; `recallSemantic` always loaded every embedding row and ran a JS dot product). Above ~10K rows the brute-force latency is user-perceptible. The signatures of `recallSemantic` + multi-model isolation must both be preserved.
+
+**Rejected alternatives:**
+- (b1) v8 migration creates vec tables per known model — irrelevant when no model is known yet; lazy is simpler.
+- (b2) auto-backfill at every db open — *blocks first open* for repos with tens of thousands of rows.
+- (c1) explicit reindex with no fallback — existing callers see performance regressions or hard breaks if the extension fails to load.
+- (1) single virtual table + model column + max-dim padding — 12× storage waste when 768d and 64d models coexist.
+- (2) float[N] — slightly higher recall, 4× storage.
+- (3) bit[N] — much faster, slight accuracy loss (binary quantization). Reserved as a follow-up optimization.
+
+**Consequence/Risk:** vec0 does **not** support `INSERT OR REPLACE` — dual-write uses `DELETE WHERE fact_id = ? + INSERT` for idempotent upsert. A raw 768-byte int8 buffer is auto-detected as float32 by vec0 (768/4=192) — `vec_int8(?)` explicit cast is mandatory; missing it is a silent quality loss. ANN combined with archived/branch filters: vec0 MATCH returns top-k from the *whole index*; if post-JOIN filters drop too many rows, results may underflow. Mitigation: over-fetch by `k * 5` (min 20). Future sqlite-vec API drift or native binary architecture mismatch is absorbed by the silent fallback.
+
+**Related commit:** Phase 4 P5 `feat/phase4-p5-sqlite-vec-ann` branch.
 
 ---
 

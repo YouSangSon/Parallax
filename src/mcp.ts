@@ -4,8 +4,8 @@ import { z } from 'zod';
 
 import { createBranch, mergeBranches, recallOnRepo, rememberOnRepo, trace } from './agent_memory.js';
 import type { RememberValue } from './agent_memory.js';
-import { abandonBranch, gcBranches } from './branch_gc.js';
-import { reflectFacts } from './reflection.js';
+import { abandonBranch, gcBranches, restoreBranch } from './branch_gc.js';
+import { reflectFacts, repairReflections } from './reflection.js';
 import { profileEntity } from './profile.js';
 import { normalizeRepoRoot } from './security.js';
 import { getRepoId, latestCompletedIndexRun, openDatabase } from './store.js';
@@ -256,9 +256,10 @@ export function createMcpServer(context: McpContext): McpServer {
     {
       title: 'GC abandoned branches',
       description:
-        'Archive transactions of all abandoned branches so recall and recallSemantic stop surfacing their facts. Facts themselves are never deleted (content-addressable). dryRun reports without writing.',
+        'Archive transactions of all abandoned branches so recall and recallSemantic stop surfacing their facts. Facts themselves are never deleted (content-addressable). dryRun reports without writing. When maxAgeDays is set, the pass first auto-abandons every active non-main branch with no activity newer than now − maxAgeDays days (Phase 4 P4 / ADR D-017).',
       inputSchema: {
-        dryRun: z.boolean().optional()
+        dryRun: z.boolean().optional(),
+        maxAgeDays: z.number().int().min(0).optional()
       },
       annotations: {
         title: 'GC abandoned branches',
@@ -268,9 +269,12 @@ export function createMcpServer(context: McpContext): McpServer {
         openWorldHint: false
       }
     },
-    async ({ dryRun }) => {
+    async ({ dryRun, maxAgeDays }) => {
       const result = withWritableDb(context, (db) =>
-        gcBranches(db, { ...(dryRun !== undefined ? { dryRun } : {}) })
+        gcBranches(db, {
+          ...(dryRun !== undefined ? { dryRun } : {}),
+          ...(maxAgeDays !== undefined ? { maxAgeDays } : {})
+        })
       );
       return { content: [{ type: 'text', text: JSON.stringify(result) }] };
     }
@@ -303,6 +307,56 @@ export function createMcpServer(context: McpContext): McpServer {
         ...(k !== undefined ? { k } : {}),
         ...(asOfTx !== undefined ? { asOfTx } : {})
       });
+      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+    }
+  );
+
+  server.registerTool(
+    'impact_trace_repair_reflections',
+    {
+      title: 'Repair orphan reflection facts',
+      description:
+        'Sweep reflection facts on a branch and restore the provenance kind=summary edges and reflections audit row for any that lost them mid-write. Idempotent. dryRun reports orphans without writing.',
+      inputSchema: {
+        branch: z.string().optional(),
+        dryRun: z.boolean().optional()
+      },
+      annotations: {
+        title: 'Repair orphan reflection facts',
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      }
+    },
+    async ({ branch, dryRun }) => {
+      const result = await repairReflections(context.repoRoot, {
+        ...(branch !== undefined ? { branch } : {}),
+        ...(dryRun !== undefined ? { dryRun } : {})
+      });
+      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+    }
+  );
+
+  server.registerTool(
+    'impact_trace_restore_branch',
+    {
+      title: 'Restore an abandoned branch',
+      description:
+        'Move an abandoned branch back to active state and un-archive its transactions so recall surfaces its facts again. Idempotent on already-active branches.',
+      inputSchema: {
+        name: z.string().min(1)
+      },
+      annotations: {
+        title: 'Restore an abandoned branch',
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      }
+    },
+    async ({ name }) => {
+      const result = withWritableDb(context, (db) => restoreBranch(db, { name }));
       return { content: [{ type: 'text', text: JSON.stringify(result) }] };
     }
   );

@@ -25,6 +25,10 @@
 | [D-012](#d-012-no-llm-or-embedding-sdks-fetch-only) | no LLM or embedding SDKs (fetch only) | P3 | 2026-04-29 |
 | [D-013](#d-013-lifecycle-binary-derives-from-is_code_relation-no-new-column) | lifecycle binary derives from is_code_relation; no new column | P4 | 2026-04-30 |
 | [D-014](#d-014-profile-api-is-built-on-top-of-recall-not-merged-into-it) | profile API is built on top of recall, not merged into it | P4 | 2026-04-30 |
+| [D-015](#d-015-reflect---repair-as-a-separate-trigger) | `reflect --repair` as a separate trigger | P4 | 2026-04-30 |
+| [D-016](#d-016-branch---restore-restores-state-and-un-archives-transactions) | `branch --restore` restores state and un-archives transactions | P4 | 2026-04-30 |
+| [D-017](#d-017-time-based-auto-abandon-piggybacks-on-gc-branches---max-age) | time-based auto-abandon piggybacks on `gc-branches --max-age` | P4 | 2026-05-01 |
+| [D-018](#d-018-sqlite-vec-ann-with-per-model-vec0-tables-lazy-create-and-brute-force-fallback) | sqlite-vec ANN with per-model vec0 tables, lazy create, brute-force fallback | P4 | 2026-05-01 |
 
 ---
 
@@ -260,6 +264,76 @@
 **결과/위험:** profile은 자체 SQL을 갖되 *recall과 같은 invariants*를 적용 — `t.archived = 0` 필터, branch scope, redacted facts surface as `[REDACTED]`. 만약 recall에 새 invariant이 추가되면 profile도 함께 갱신해야 함 (코드베이스 검색 시 두 곳 모두 손봐야 함).
 
 **관련 commit:** Phase 4 supermemory-best-practices branch (`src/profile.ts`).
+
+---
+
+## D-015: `reflect --repair` as a separate trigger
+
+**결정:** orphan summary fact (Phase 3 SAVEPOINT atomicity 갭으로 audit row 또는 provenance kind가 누락된 reflection fact)를 보정하는 sweep을 *별도 명령*으로 분리. `impact-trace reflect --repair` (CLI) + `impact_trace_repair_reflections` (MCP).
+
+**맥락:** Phase 3 architect review가 발견한 갭 — `remember()`가 자기 BEGIN/COMMIT으로 commit한 후 SAVEPOINT 안에서 provenance UPDATE + reflections INSERT. 그 사이 crash 시 summary fact만 남고 audit/edge가 없는 *orphan*이 됨. 회복 path 필요.
+
+**대안:**
+- (b) 매 reflect 호출 시 자동 repair — 시작마다 추가 비용. 일반 reflect와 격리 안 됨.
+- (c) 별도 `repair-reflections` 명령 — CLI 표면 분산.
+
+**결과/위험:** 사용자가 repair를 안 부르면 orphan 누적. 대응: cookbook에 권장 주기 명시 (월 1회 또는 reflect 직후). 동시 두 repair 프로세스: SAVEPOINT가 row-level contention만 처리하므로 정책 결정 필요 — 첫 버전은 *idempotent INSERT OR IGNORE*로 무해.
+
+**관련 commit:** Phase 4 P2 `feat/phase4-p2-p3-repair-restore` branch.
+
+---
+
+## D-016: `branch --restore` restores state and un-archives transactions
+
+**결정:** abandoned branch를 복구하면 *동시에* `branches.state = 'active'`로 변경하고 `transactions.archived = 0` 회수. 한 명령으로 mental model "복구하면 보인다"를 만족.
+
+**맥락:** soft-delete 정책 D-011은 *되돌릴 수 있다*가 핵심 가치인데 Phase 3에선 abandon→archive 한 방향만 있었음. branch state만 active로 되돌리고 archived tx는 그대로면 *recall이 facts를 surface 안 함* — 사용자에게는 "복구가 복구가 아닌" 상태.
+
+**대안:**
+- (i) state만 — 위 mental model 위반.
+- (iii) 별도 `gc-branches --un` 명령 — 두 단계라 사용자 실수 surface 늘어남.
+
+**결과/위험:** restore 후 facts가 즉시 다시 surface — abandoned 동안 발생한 다른 branch의 활동과 *content-hash로* 같은 fact가 있다면 dedup된 채로 그대로. retire의 "사라짐"은 logical만이고 *fact 자체는 항상 살아있음* (D-011 재확인).
+
+**관련 commit:** Phase 4 P3 `feat/phase4-p2-p3-repair-restore` branch.
+
+---
+
+## D-017: time-based auto-abandon piggybacks on `gc-branches --max-age`
+
+**결정:** 시간 기반 자동 abandon은 *별도 명령*이 아닌 기존 `gc-branches`의 *opt-in flag* `--max-age N`으로 구현. flag 없으면 기존 archive-only sweep과 동일 (backward compat). flag가 있으면 1-패스로 active→abandoned→archived까지 진행. 기준값은 `branches.head_tx_id`의 `transactions.ts`, NULL일 때 `branches.created_at`로 fallback. `main`은 항상 보호. `'merged'` 같은 미래의 다른 상태는 *silently skip* (auto-abandon 후보에서 제외하되 throw하지 않음).
+
+**맥락:** D-011 soft-delete의 핵심 가치는 *오래된 speculative branch가 누적되지 않도록 정리*. 사용자가 `branch --abandon`을 매번 명시적으로 부르는 비용을 줄이려면 시간 기반 자동화가 필요. 그러나 D-009 (no daemon) 정체성을 지키려면 자동 백그라운드 실행은 거부 — 사용자가 *명시 명령*으로 trigger해야 함. `gc-branches`가 이미 해당 의도("정리"이니까)를 갖는 trigger이므로 `--max-age` opt-in이 자연스러움.
+
+**대안:**
+- (B) 새 `auto-abandon` 명령 + 별도 `gc-branches` — 두 단계 분리되어 사용자가 둘을 chain해야 함. 명확하지만 호출 비용 ×2.
+- (C) `branch --auto-abandon` — 기존 single-name 명령군에 sweep semantics 끼움. 어색.
+- (β) `--max-age` 기본값 60일 — UX 편의지만 사용자가 의도하지 않은 큰 sweep 위험.
+- (γ) env var 기본값 — 다른 reembed/reflect와 일관성 있으나 *암묵적 정책*은 destructive op에 부적절.
+
+**결과/위험:** 사용자가 30일/60일/90일 같은 자체 정책을 `--max-age`로 명시 — 잘못된 기본 정책으로 의도치 않게 abandon하는 사고 방지. flag 없는 기존 `gc-branches` 호출자는 0 영향. `branches.created_at` fallback이 `'main'`의 SQLite-format ts와 ISO 8601이 섞여있을 수 있으나 main은 PROTECTED_BRANCH로 항상 제외되므로 비교 안전. 미래에 `'merged'` 상태가 도입되면 silent skip — 별도 ADR이 그 처리를 결정.
+
+**관련 commit:** Phase 4 P4 `feat/phase4-p4-auto-abandon` branch.
+
+---
+
+## D-018: sqlite-vec ANN with per-model vec0 tables, lazy create, brute-force fallback
+
+**결정:** 의미 검색(`recallSemantic`)을 sqlite-vec virtual table로 가속. (a) **per-model vec0 테이블** `vec_facts_<model_slug>(fact_id TEXT PK, embedding int8[<dim>])` — 모델마다 dim이 다르므로 single virtual table에 max-dim padding은 storage 낭비. (b) **lazy 생성** — 첫 write 시점에 `CREATE VIRTUAL TABLE IF NOT EXISTS`. (c) **manual backfill + automatic fallback hybrid** — 사용자가 `reindex-vec` CLI로 전체 백필; 그러나 vec table이 없거나 sqlite-vec 확장 로드에 실패하면 *조용히* JS-side brute-force int8 dot product로 fallback. (d) **int8[N]** 형식 유지 (기존 `fact_embeddings.vector` 와 storage parity). (e) **silent fallback on extension load failure** — 기존 caller 회귀 0.
+
+**맥락:** D-007 multi-model + D-001 local-first가 ANN 설계 공간을 좁힘. sqlite-vec dep는 이미 in (`^0.1.9`); 그러나 한 번도 wiring되지 않아 `loadVectorExtension` 함수가 export되었으나 호출 사이트가 0이었음 (`recallSemantic`은 모든 행을 SELECT 후 JS dot product). 1만 행 이상에서 brute-force는 O(N) latency가 사용자 인지 가능 수준. `recallSemantic` 시그니처 호환성 + multi-model 격리가 동시 만족되어야 함.
+
+**대안:**
+- (b1) v8 마이그레이션에서 *기존 모델별로* vec table 사전 생성 — 알려진 model이 없으면 의미 없음, lazy가 자연스러움.
+- (b2) 첫 db open 시 모든 (model, dim) 그룹 자동 backfill — *blocking first open* 발생 (수만 row × insert latency).
+- (c1) explicit reindex만, fallback 없음 — 기존 caller가 성능 회귀 또는 깨짐.
+- (1) single virtual table + model 컬럼 + max-dim padding — 768 dim + 64 dim 혼재 시 12배 storage 낭비.
+- (2) float[N] — 정확도 약간 ↑, storage 4배.
+- (3) bit[N] — 속도 ↑↑, 정확도 약간 ↓ (binary quantization). 추후 별도 optimization.
+
+**결과/위험:** `vec0`는 `INSERT OR REPLACE`를 지원 *안 함* — `DELETE WHERE fact_id = ? + INSERT` 패턴으로 idempotent upsert 구현. raw 768-byte buffer가 vec0에 의해 자동으로 float32 (768/4=192) 인식되는 함정 — `vec_int8(?)` 명시 cast 필수. ANN과 archived/branch 필터 조합: vec0 MATCH는 *전체 인덱스에서 top-k*만 — post-filter로 archived row가 drop되면 결과 부족 가능 → `k * 5` over-fetch (min 20)로 보완. 충분한 k가 안 나오면 LIMIT k 미달이지만 false-positive는 0. 향후 sqlite-vec API 변경 또는 native binary 호환성 issue → silent fallback이 차단막.
+
+**관련 commit:** Phase 4 P5 `feat/phase4-p5-sqlite-vec-ann` branch.
 
 ---
 

@@ -1,4 +1,5 @@
-export { createBranch, factLifecycle, mergeBranches, recall, recallOnRepo, recallSemantic, reembedFacts, remember, rememberOnRepo, trace, withAgentMemoryDb } from './agent_memory.js';
+export { createBranch, factLifecycle, mergeBranches, recall, recallOnRepo, recallSemantic, reembedFacts, reindexVec, reindexVecOnRepo, remember, rememberOnRepo, trace, withAgentMemoryDb } from './agent_memory.js';
+export type { ReindexVecOptions, ReindexVecResult } from './agent_memory.js';
 export type {
   BranchInput,
   BranchResult,
@@ -24,9 +25,16 @@ export { computeEmbedding, computeEmbeddingSync, STUB_MODEL_NAME } from './embed
 export type { EmbeddingResult } from './embeddings.js';
 export { summarize, STUB_LLM_MODEL } from './llm.js';
 export type { ReflectionResult, SummarizeInput } from './llm.js';
-export { reflectFacts } from './reflection.js';
-export type { ReflectOptions, ReflectResult, ReflectedEntity } from './reflection.js';
-export { abandonBranch, gcBranches } from './branch_gc.js';
+export { reflectFacts, repairReflections } from './reflection.js';
+export type {
+  ReflectOptions,
+  ReflectResult,
+  ReflectedEntity,
+  RepairOptions,
+  RepairResult,
+  OrphanReflection
+} from './reflection.js';
+export { abandonBranch, gcBranches, restoreBranch } from './branch_gc.js';
 export { profileEntity } from './profile.js';
 export type { ProfileOptions, ProfileResult } from './profile.js';
 export type {
@@ -34,10 +42,18 @@ export type {
   AbandonBranchResult,
   GcBranchesOptions,
   GcBranchesResult,
-  GcBranchSummary
+  GcBranchSummary,
+  RestoreBranchInput,
+  RestoreBranchResult
 } from './branch_gc.js';
 export { redactSecrets, resolveInsideRoot } from './security.js';
-export { loadVectorExtension } from './store.js';
+export {
+  ensureVecTable,
+  hasVecTable,
+  isVectorExtensionLoaded,
+  loadVectorExtension,
+  vecTableName
+} from './store.js';
 export type {
   AffectedFile,
   AdapterUsage,

@@ -4,7 +4,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { abandonBranch, gcBranches } from '../src/branch_gc.js';
+import { abandonBranch, gcBranches, restoreBranch } from '../src/branch_gc.js';
 import { createBranch, recall, remember, trace, withAgentMemoryDb } from '../src/agent_memory.js';
 import { initProject } from '../src/init.js';
 
@@ -204,4 +204,235 @@ test('gc with zero abandoned branches returns scanned=0', async () => {
   assert.equal(result.archivedTransactions, 0);
   assert.equal(result.dryRun, false);
   assert.equal(result.branches.length, 0);
+});
+
+test('restore moves abandoned branch back to active and unarchives txs', async () => {
+  // The abandon → gc → restore cycle. After restore, recall surfaces
+  // the branch's facts again because transactions.archived = 0 once
+  // more. This exercises the full Phase 4 P3 reverse path.
+  const repoRoot = await makeRepo();
+  withAgentMemoryDb(repoRoot, false, (db) => {
+    createBranch(db, { name: 'revivable' });
+    remember(db, {
+      branch: 'revivable',
+      entity: 'file:revive.ts',
+      attribute: 'observed',
+      value: 'pre-abandon-fact'
+    });
+    abandonBranch(db, { name: 'revivable' });
+    gcBranches(db);
+  });
+
+  const restored = withAgentMemoryDb(repoRoot, false, (db) =>
+    restoreBranch(db, { name: 'revivable' })
+  );
+  assert.equal(restored.alreadyActive, false);
+  assert.equal(restored.state, 'active');
+  assert.equal(restored.unarchivedTransactions, 1);
+
+  withAgentMemoryDb(repoRoot, true, (db) => {
+    const branchRow = db
+      .prepare("SELECT state FROM branches WHERE name = 'revivable'")
+      .get() as { state: string };
+    assert.equal(branchRow.state, 'active');
+    const txArchived = (
+      db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM transactions t INNER JOIN branches b ON t.branch_id = b.id
+           WHERE b.name = ? AND t.archived = 1`
+        )
+        .get('revivable') as { n: number }
+    ).n;
+    assert.equal(txArchived, 0, 'all archived txs must be un-archived');
+    const recallResult = recall(db, { branch: 'revivable', entity: 'file:revive.ts' });
+    assert.equal(
+      recallResult.facts.length,
+      1,
+      'recall must surface the restored branch facts again'
+    );
+  });
+});
+
+test('restore is idempotent on an already-active branch', async () => {
+  const repoRoot = await makeRepo();
+  withAgentMemoryDb(repoRoot, false, (db) => {
+    createBranch(db, { name: 'already-active' });
+  });
+  const result = withAgentMemoryDb(repoRoot, false, (db) =>
+    restoreBranch(db, { name: 'already-active' })
+  );
+  assert.equal(result.alreadyActive, true);
+  assert.equal(result.unarchivedTransactions, 0);
+  assert.equal(result.state, 'active');
+});
+
+test('restore throws on non-existent branch', async () => {
+  const repoRoot = await makeRepo();
+  withAgentMemoryDb(repoRoot, false, (db) => {
+    assert.throws(() => restoreBranch(db, { name: 'never-existed' }), /branch not found/);
+  });
+});
+
+// Phase 4 P4 — auto-abandon by maxAgeDays (ADR D-017)
+
+test('gc --max-age auto-abandons active non-main branches with stale head_tx_id', async () => {
+  const repoRoot = await makeRepo();
+  withAgentMemoryDb(repoRoot, false, (db) => {
+    createBranch(db, { name: 'stale' });
+    createBranch(db, { name: 'fresh' });
+    remember(db, { branch: 'stale', entity: 'file:s.ts', attribute: 'observed', value: 'old' });
+    remember(db, { branch: 'fresh', entity: 'file:f.ts', attribute: 'observed', value: 'new' });
+    db.prepare(
+      `UPDATE transactions SET ts = '2020-01-01T00:00:00.000Z'
+       WHERE branch_id = (SELECT id FROM branches WHERE name = 'stale')`
+    ).run();
+  });
+
+  const result = withAgentMemoryDb(repoRoot, false, (db) =>
+    gcBranches(db, { maxAgeDays: 1 })
+  );
+  assert.equal(result.autoAbandoned, 1, 'exactly one branch must be auto-abandoned');
+  assert.equal(result.scanned, 1);
+  const stale = result.branches.find((b) => b.name === 'stale');
+  assert.ok(stale, 'stale branch must appear in result');
+  assert.equal(stale!.autoAbandoned, true);
+  assert.equal(stale!.archivedTransactions, 1);
+
+  withAgentMemoryDb(repoRoot, true, (db) => {
+    const states = db
+      .prepare("SELECT name, state FROM branches WHERE name IN ('stale', 'fresh', 'main')")
+      .all() as Array<{ name: string; state: string }>;
+    const byName = new Map(states.map((s) => [s.name, s.state]));
+    assert.equal(byName.get('stale'), 'abandoned', 'stale must be flipped to abandoned');
+    assert.equal(byName.get('fresh'), 'active', 'fresh must remain active');
+    assert.equal(byName.get('main'), 'active', 'main must never be auto-abandoned');
+  });
+});
+
+test('gc --max-age never auto-abandons main even when main is older than the cutoff', async () => {
+  const repoRoot = await makeRepo();
+  withAgentMemoryDb(repoRoot, false, (db) => {
+    remember(db, { entity: 'file:m.ts', attribute: 'observed', value: 'main-fact' });
+    db.prepare("UPDATE transactions SET ts = '2020-01-01T00:00:00.000Z'").run();
+  });
+  const result = withAgentMemoryDb(repoRoot, false, (db) =>
+    gcBranches(db, { maxAgeDays: 1 })
+  );
+  assert.equal(result.autoAbandoned, 0);
+  assert.equal(result.scanned, 0);
+  withAgentMemoryDb(repoRoot, true, (db) => {
+    const main = db.prepare("SELECT state FROM branches WHERE name = 'main'").get() as {
+      state: string;
+    };
+    assert.equal(main.state, 'active');
+  });
+});
+
+test('gc --max-age dry-run reports candidates without writing', async () => {
+  const repoRoot = await makeRepo();
+  withAgentMemoryDb(repoRoot, false, (db) => {
+    createBranch(db, { name: 'stale' });
+    remember(db, { branch: 'stale', entity: 'file:s.ts', attribute: 'observed', value: 'old' });
+    db.prepare(
+      `UPDATE transactions SET ts = '2020-01-01T00:00:00.000Z'
+       WHERE branch_id = (SELECT id FROM branches WHERE name = 'stale')`
+    ).run();
+  });
+
+  const result = withAgentMemoryDb(repoRoot, false, (db) =>
+    gcBranches(db, { maxAgeDays: 1, dryRun: true })
+  );
+  assert.equal(result.dryRun, true);
+  assert.equal(result.autoAbandoned, 1);
+  assert.equal(result.scanned, 1);
+
+  withAgentMemoryDb(repoRoot, true, (db) => {
+    const branch = db
+      .prepare("SELECT state FROM branches WHERE name = 'stale'")
+      .get() as { state: string };
+    assert.equal(branch.state, 'active', 'dry-run must not flip state');
+    const archivedCount = (
+      db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM transactions
+           WHERE branch_id = (SELECT id FROM branches WHERE name = 'stale')
+             AND archived = 1`
+        )
+        .get() as { n: number }
+    ).n;
+    assert.equal(archivedCount, 0, 'dry-run must not archive transactions');
+  });
+});
+
+test('gc --max-age covers a branch that never received any commits via created_at fallback', async () => {
+  const repoRoot = await makeRepo();
+  withAgentMemoryDb(repoRoot, false, (db) => {
+    createBranch(db, { name: 'empty' });
+    db.prepare(
+      `UPDATE branches SET created_at = '2020-01-01T00:00:00.000Z' WHERE name = 'empty'`
+    ).run();
+  });
+  const result = withAgentMemoryDb(repoRoot, false, (db) =>
+    gcBranches(db, { maxAgeDays: 1 })
+  );
+  assert.equal(result.autoAbandoned, 1);
+  const empty = result.branches.find((b) => b.name === 'empty');
+  assert.ok(empty);
+  assert.equal(empty!.autoAbandoned, true);
+  assert.equal(empty!.archivedTransactions, 0, 'empty branch has no txs to archive');
+});
+
+test('gc --max-age skips already-abandoned branches as auto-abandon candidates', async () => {
+  const repoRoot = await makeRepo();
+  withAgentMemoryDb(repoRoot, false, (db) => {
+    createBranch(db, { name: 'pre-abandoned' });
+    remember(db, {
+      branch: 'pre-abandoned',
+      entity: 'file:p.ts',
+      attribute: 'observed',
+      value: 'old'
+    });
+    abandonBranch(db, { name: 'pre-abandoned' });
+    db.prepare(
+      `UPDATE transactions SET ts = '2020-01-01T00:00:00.000Z'
+       WHERE branch_id = (SELECT id FROM branches WHERE name = 'pre-abandoned')`
+    ).run();
+  });
+  const result = withAgentMemoryDb(repoRoot, false, (db) =>
+    gcBranches(db, { maxAgeDays: 1 })
+  );
+  assert.equal(result.autoAbandoned, 0, 'already-abandoned must not count as auto-abandoned');
+  assert.equal(result.scanned, 1, 'still archive-swept though');
+  const entry = result.branches[0]!;
+  assert.equal(entry.name, 'pre-abandoned');
+  assert.equal(entry.autoAbandoned, false);
+});
+
+test('gc without maxAgeDays preserves backward-compat behaviour', async () => {
+  const repoRoot = await makeRepo();
+  withAgentMemoryDb(repoRoot, false, (db) => {
+    createBranch(db, { name: 'stale' });
+    remember(db, { branch: 'stale', entity: 'file:s.ts', attribute: 'observed', value: 'x' });
+    db.prepare(
+      `UPDATE transactions SET ts = '2020-01-01T00:00:00.000Z'
+       WHERE branch_id = (SELECT id FROM branches WHERE name = 'stale')`
+    ).run();
+  });
+  const result = withAgentMemoryDb(repoRoot, false, (db) => gcBranches(db));
+  assert.equal(result.autoAbandoned, 0, 'no auto-abandon without maxAgeDays');
+  assert.equal(result.scanned, 0, 'stale is still active so nothing to archive');
+});
+
+test('gc --max-age rejects non-integer or negative input', async () => {
+  const repoRoot = await makeRepo();
+  withAgentMemoryDb(repoRoot, false, (db) => {
+    assert.throws(
+      () => gcBranches(db, { maxAgeDays: -1 }),
+      /maxAgeDays must be a non-negative integer/
+    );
+    assert.throws(
+      () => gcBranches(db, { maxAgeDays: 1.5 }),
+      /maxAgeDays must be a non-negative integer/
+    );
+  });
 });

@@ -4,7 +4,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { reflectFacts } from '../src/reflection.js';
+import { reflectFacts, repairReflections } from '../src/reflection.js';
 import { remember, withAgentMemoryDb } from '../src/agent_memory.js';
 import { initProject } from '../src/init.js';
 
@@ -321,4 +321,128 @@ test('reflect cap env var falls back to default when invalid', async () => {
       process.env.IMPACT_TRACE_REFLECT_MAX_FACTS_PER_ENTITY = previous;
     }
   }
+});
+
+async function buildOrphanReflection(repoRoot: string): Promise<{ summaryFactId: string }> {
+  withAgentMemoryDb(repoRoot, false, (db) => {
+    remember(db, { entity: 'file:src/orphan.ts', attribute: 'observed', value: 'a' });
+    remember(db, { entity: 'file:src/orphan.ts', attribute: 'observed', value: 'b' });
+  });
+  ageAllTransactionsToFar(repoRoot);
+  const result = await reflectFacts(repoRoot, { olderThanDays: 1 });
+  const summaryFactId = result.reflections[0]!.summaryFactId;
+  // Simulate a mid-failure crash: the audit row never landed and the
+  // provenance edges never flipped to kind='summary'. We undo both
+  // with two surgical UPDATEs so the rest of the orphan looks real.
+  withAgentMemoryDb(repoRoot, false, (db) => {
+    db.prepare('DELETE FROM reflections WHERE summary_fact_id = ?').run(summaryFactId);
+    db.prepare(
+      "UPDATE fact_provenance SET kind = 'evidence' WHERE fact_id = ?"
+    ).run(summaryFactId);
+  });
+  return { summaryFactId };
+}
+
+test('repair finds orphan summary fact and fixes provenance kind + audit row', async () => {
+  const repoRoot = await makeRepo();
+  const { summaryFactId } = await buildOrphanReflection(repoRoot);
+
+  const result = await repairReflections(repoRoot);
+  assert.equal(result.scanned, 1);
+  assert.equal(result.repaired, 1);
+  assert.equal(result.dryRun, false);
+  assert.equal(result.orphans[0]!.summaryFactId, summaryFactId);
+
+  withAgentMemoryDb(repoRoot, true, (db) => {
+    const audit = db
+      .prepare('SELECT model, source_fact_count FROM reflections WHERE summary_fact_id = ?')
+      .get(summaryFactId) as { model: string; source_fact_count: number };
+    assert.equal(audit.model, 'repair');
+    assert.equal(audit.source_fact_count, 2);
+
+    const kinds = db
+      .prepare('SELECT kind FROM fact_provenance WHERE fact_id = ?')
+      .all(summaryFactId) as Array<{ kind: string }>;
+    assert.equal(kinds.length, 2);
+    for (const row of kinds) {
+      assert.equal(row.kind, 'summary');
+    }
+  });
+});
+
+test('repair --dry-run reports orphans without writing', async () => {
+  const repoRoot = await makeRepo();
+  const { summaryFactId } = await buildOrphanReflection(repoRoot);
+
+  const result = await repairReflections(repoRoot, { dryRun: true });
+  assert.equal(result.scanned, 1);
+  assert.equal(result.repaired, 0);
+  assert.equal(result.dryRun, true);
+
+  withAgentMemoryDb(repoRoot, true, (db) => {
+    const auditCount = (
+      db
+        .prepare('SELECT COUNT(*) AS n FROM reflections WHERE summary_fact_id = ?')
+        .get(summaryFactId) as { n: number }
+    ).n;
+    assert.equal(auditCount, 0, 'dry-run must not have inserted an audit row');
+    const kinds = db
+      .prepare('SELECT kind FROM fact_provenance WHERE fact_id = ?')
+      .all(summaryFactId) as Array<{ kind: string }>;
+    for (const row of kinds) {
+      assert.equal(row.kind, 'evidence', 'dry-run must not have promoted provenance kind');
+    }
+  });
+});
+
+test('repair on healthy reflections is a no-op', async () => {
+  const repoRoot = await makeRepo();
+  withAgentMemoryDb(repoRoot, false, (db) => {
+    remember(db, { entity: 'file:src/healthy.ts', attribute: 'observed', value: 'a' });
+    remember(db, { entity: 'file:src/healthy.ts', attribute: 'observed', value: 'b' });
+  });
+  ageAllTransactionsToFar(repoRoot);
+  await reflectFacts(repoRoot, { olderThanDays: 1 });
+
+  const result = await repairReflections(repoRoot);
+  assert.equal(result.scanned, 0);
+  assert.equal(result.repaired, 0);
+  assert.equal(result.orphans.length, 0);
+});
+
+test('repair throws on unknown branch', async () => {
+  const repoRoot = await makeRepo();
+  await assert.rejects(
+    () => repairReflections(repoRoot, { branch: 'never-existed' }),
+    /branch not found/
+  );
+});
+
+test('repair is idempotent — second call sees no orphan and writes nothing', async () => {
+  // F6: the repair contract claims INSERT OR IGNORE makes a second pass
+  // safe. The existing 'no-op on healthy reflections' test proves the
+  // detection-side path (zero orphans). This test proves the write-side
+  // path (post-repair state is also undetectable as orphan, so the
+  // INSERT OR IGNORE branch is actually exercised). Regression to plain
+  // INSERT would surface as a UNIQUE constraint crash on the second
+  // repair call.
+  const repoRoot = await makeRepo();
+  const { summaryFactId } = await buildOrphanReflection(repoRoot);
+
+  const first = await repairReflections(repoRoot);
+  assert.equal(first.scanned, 1);
+  assert.equal(first.repaired, 1);
+
+  const second = await repairReflections(repoRoot);
+  assert.equal(second.scanned, 0, 'second repair must find zero orphans');
+  assert.equal(second.repaired, 0);
+
+  withAgentMemoryDb(repoRoot, true, (db) => {
+    const auditCount = (
+      db
+        .prepare('SELECT COUNT(*) AS n FROM reflections WHERE summary_fact_id = ?')
+        .get(summaryFactId) as { n: number }
+    ).n;
+    assert.equal(auditCount, 1, 'audit row count must remain 1 after two repair calls');
+  });
 });

@@ -1,11 +1,13 @@
 # Impact Trace 진행상황
 
-업데이트: 2026-04-29 (Phase 3 완료)
+업데이트: 2026-05-01 (Phase 4 P1+P2+P3+P4+P5 모두 완료, ADR D-001..D-018, 112 tests on main `33c49f0`)
 
-기준 계획서: [Impact Trace 계획서](impact-trace-plan.ko.md)
+비전 / 로드맵 / 용어집: [vision.ko.md](vision.ko.md) · [roadmap.md](roadmap.md) · [glossary.md](glossary.md)
+기준 계획서: [Impact Trace 계획서](impact-trace-plan.ko.md) (영향 분석 축의 원본 P0..P4)
 사용 가이드: [agent memory cookbook](agent-memory-cookbook.ko.md) · [agent DB 탐색 노트](agent-db-exploration.ko.md)
 Phase 3 자료: [Phase 3 design](phase3-design.ko.md) · [Phase 3 handoff](phase3-handoff.ko.md) · [Architecture decisions log](decisions.ko.md)
-Phase 4 진입: [Phase 4 handoff](phase4-handoff.ko.md) (D-013..D-016 결정 + 7가지 후보 우선순위)
+Phase 4 자료: [Phase 4 handoff (frozen)](phase4-handoff.ko.md) · [P2/P3 design](phase4-p2-p3-design.ko.md) · [P4/P5 design (회고)](phase4-p4-p5-design.ko.md)
+Phase 5 진입: [Phase 5 handoff](phase5-handoff.ko.md) (5개 후보 ranked + D-019..D-022 design 공간)
 
 ## 현재 위치
 
@@ -60,6 +62,15 @@ remember·recall·branch·trace·retract 동작이 노출됐다. Phase 2 (실제
 | 2026-04-30 | P2 Profile API | src/profile.ts — profileEntity()가 entity별 static/dynamic/summary 3-bucket view 반환. CLI `profile` + MCP impact_trace_profile (D-014) |
 | 2026-04-30 | P6 Skills 패키징 | skills/impact-trace/SKILL.md + references/architecture.md — `npx skills add` 한 줄 install path |
 | 2026-04-30 | 결정 기록 | docs/decisions.ko.md에 D-013, D-014 추가 |
+| 2026-04-30 | Phase 4 P2/P3 design | docs/phase4-p2-p3-design.ko.md 작성 — D-015, D-016 결정 + 알고리즘 + test plan |
+| 2026-04-30 | Phase 4 P2 | reflect --repair — orphan summary fact 보정 sweep (`repairReflections`) + CLI/MCP wiring + 4 tests |
+| 2026-04-30 | Phase 4 P3 | branch --restore — abandoned → active + tx unarchive (`restoreBranch`) + CLI/MCP wiring + 3 tests |
+| 2026-04-30 | 결정 기록 | docs/decisions.ko.md에 D-015 (reflect --repair) + D-016 (branch --restore) 추가 |
+| 2026-04-30 | PR #1·#2 외부-시점 review | architect/security/typescript/code-reviewer 4-agent 병렬 review — invariant 0 위반, F1·F2·F3·F4·F6 (1 MEDIUM type + 4 HIGH 테스트 갭) fix-now, F5 (prompt footer) follow-up issue #3로 이동. main 76→97 tests로 진척, PR #1·#2 모두 rebase merge |
+| 2026-05-01 | Phase 4 P4 | gc-branches에 `--max-age N` flag — `branches.head_tx_id`의 `transactions.ts` (NULL일 시 `branches.created_at`)이 `now − N일` 이전인 active non-main branch를 *동일 패스에서* abandoned로 자동 전환 후 archive sweep까지 진행. 기본값 없음 (D-017 explicit-only). +7 tests = 104 total |
+| 2026-05-01 | 결정 기록 | docs/decisions.ko.md에 D-017 (auto-abandon piggybacks on gc-branches --max-age) 추가 |
+| 2026-05-01 | Phase 4 P5 | sqlite-vec ANN — per-model `vec_facts_<model_slug>` virtual table (vec0, int8[N]) lazy create, dual-write from remember/reembed, recallSemantic이 ANN path → brute-force fallback. 새 `reindexVec()` + `reindex-vec` CLI for manual backfill. +8 vec.test.ts cases = 112 tests total |
+| 2026-05-01 | 결정 기록 | docs/decisions.ko.md에 D-018 (sqlite-vec ANN with per-model vec0 tables, lazy create, brute-force fallback) 추가 |
 
 ## 진행 중
 

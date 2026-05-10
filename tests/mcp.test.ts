@@ -148,6 +148,16 @@ async function makeRepo(): Promise<string> {
   return repoRoot;
 }
 
+async function makeSecretPathRepo(): Promise<{ repoRoot: string; secretPath: string }> {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-mcp-secret-path-'));
+  const secretPath = 'src/sk-12345678901234567890.ts';
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, secretPath), 'export const secretNamedFile = 1;\n');
+  await initProject({ repoRoot });
+  await indexProject({ repoRoot });
+  return { repoRoot, secretPath };
+}
+
 async function makeWideContextRepo(): Promise<string> {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-mcp-wide-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
@@ -371,6 +381,66 @@ function countReports(repoRoot: string): number {
   }
 }
 
+type ContextToolRunRow = {
+  tool_name: string;
+  index_run_id: number | null;
+  budget: string | null;
+  query: string | null;
+  changed_files_json: string;
+  returned_bytes: number;
+  resource_count: number;
+  omitted_json: string;
+};
+
+function contextToolRuns(repoRoot: string): ContextToolRunRow[] {
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    return db
+      .prepare(`
+        SELECT tool_name, index_run_id, budget, query, changed_files_json, returned_bytes, resource_count, omitted_json
+        FROM context_tool_runs
+        ORDER BY started_at, id
+      `)
+      .all() as ContextToolRunRow[];
+  } finally {
+    db.close();
+  }
+}
+
+type ContextResourceAccessRow = {
+  uri: string;
+  resource_kind: string;
+  resource_id: string | null;
+  index_run_id: number | null;
+  returned_bytes: number;
+};
+
+function contextResourceAccesses(repoRoot: string): ContextResourceAccessRow[] {
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    return db
+      .prepare(`
+        SELECT uri, resource_kind, resource_id, index_run_id, returned_bytes
+        FROM context_resource_accesses
+        ORDER BY accessed_at, id
+      `)
+      .all() as ContextResourceAccessRow[];
+  } finally {
+    db.close();
+  }
+}
+
+function removeTelemetrySchema(repoRoot: string): void {
+  const db = new DatabaseSync(databasePath(repoRoot));
+  try {
+    db.prepare('DROP TABLE IF EXISTS context_tool_runs').run();
+    db.prepare('DROP TABLE IF EXISTS context_resource_accesses').run();
+    db.prepare('DELETE FROM schema_versions WHERE version = 10').run();
+  } finally {
+    db.close();
+  }
+}
+
 function dbArtifacts(repoRoot: string): string[] {
   return ['impact.db', 'impact.db-wal', 'impact.db-shm']
     .filter((file) => existsSync(path.join(repoRoot, '.impact-trace', file)));
@@ -387,8 +457,8 @@ test('MCP stdio server initializes and exposes the full agent memory tool surfac
 
     const response = await client.request('tools/list', {});
     assert.equal(response.error, undefined);
-    const toolByName = new Map<string, { name: string; annotations?: { readOnlyHint?: boolean } }>(
-      (response.result.tools as Array<{ name: string; annotations?: { readOnlyHint?: boolean } }>).map((tool) => [tool.name, tool])
+    const toolByName = new Map<string, { name: string; annotations?: { readOnlyHint?: boolean; idempotentHint?: boolean } }>(
+      (response.result.tools as Array<{ name: string; annotations?: { readOnlyHint?: boolean; idempotentHint?: boolean } }>).map((tool) => [tool.name, tool])
     );
     for (const expected of [
       'impact_trace_analyze_diff',
@@ -405,17 +475,24 @@ test('MCP stdio server initializes and exposes the full agent memory tool surfac
       'impact_trace_profile',
       'impact_trace_explain_entity',
       'impact_trace_repair_reflections',
-      'impact_trace_restore_branch'
+      'impact_trace_restore_branch',
+      'impact_trace_context_telemetry'
     ]) {
       assert.ok(toolByName.has(expected), `expected MCP tool ${expected} to be advertised`);
     }
-    assert.equal(toolByName.get('impact_trace_analyze_diff')!.annotations?.readOnlyHint, true);
-    assert.equal(toolByName.get('impact_trace_context_for_change')!.annotations?.readOnlyHint, true);
-    assert.equal(toolByName.get('impact_trace_search_context')!.annotations?.readOnlyHint, true);
+    assert.equal(toolByName.get('impact_trace_analyze_diff')!.annotations?.readOnlyHint, false);
+    assert.equal(toolByName.get('impact_trace_context_for_change')!.annotations?.readOnlyHint, false);
+    assert.equal(toolByName.get('impact_trace_search_context')!.annotations?.readOnlyHint, false);
+    assert.equal(toolByName.get('impact_trace_analyze_diff')!.annotations?.idempotentHint, false);
+    assert.equal(toolByName.get('impact_trace_context_for_change')!.annotations?.idempotentHint, false);
+    assert.equal(toolByName.get('impact_trace_search_context')!.annotations?.idempotentHint, false);
     assert.equal(toolByName.get('impact_trace_recall')!.annotations?.readOnlyHint, true);
     assert.equal(toolByName.get('impact_trace_trace')!.annotations?.readOnlyHint, true);
     assert.equal(toolByName.get('impact_trace_profile')!.annotations?.readOnlyHint, true);
-    assert.equal(toolByName.get('impact_trace_explain_entity')!.annotations?.readOnlyHint, true);
+    assert.equal(toolByName.get('impact_trace_explain_entity')!.annotations?.readOnlyHint, false);
+    assert.equal(toolByName.get('impact_trace_explain_entity')!.annotations?.idempotentHint, false);
+    assert.equal(toolByName.get('impact_trace_context_telemetry')!.annotations?.readOnlyHint, true);
+    assert.equal(toolByName.get('impact_trace_context_telemetry')!.annotations?.idempotentHint, true);
     assert.equal(toolByName.get('impact_trace_remember')!.annotations?.readOnlyHint, false);
     assert.equal(toolByName.get('impact_trace_branch')!.annotations?.readOnlyHint, false);
     assert.equal(toolByName.get('impact_trace_merge')!.annotations?.readOnlyHint, false);
@@ -499,6 +576,7 @@ test('MCP context_for_change returns budgeted compact context without persisting
     const pack = JSON.parse(response.result.content[0].text) as {
       version: number;
       budget: string;
+      indexRunId: number;
       changed: Array<{ entity: { id: string }; resourceUri: string }>;
       context: Array<{ path: string; resourceUri: string; relations: string[] }>;
       evidence: Array<{ id: string; snippet: string; file: string; resourceUri?: string }>;
@@ -531,6 +609,21 @@ test('MCP context_for_change returns budgeted compact context without persisting
       const evidenceJson = JSON.parse(evidenceResource.result.contents[0].text) as { id: string };
       assert.ok(pack.evidence.some((item) => item.id === evidenceJson.id));
     }
+    const telemetryRuns = contextToolRuns(repoRoot);
+    assert.equal(telemetryRuns.length, 1);
+    assert.equal(telemetryRuns[0]!.tool_name, 'impact_trace_context_for_change');
+    assert.equal(telemetryRuns[0]!.budget, 'brief');
+    assert.equal(telemetryRuns[0]!.query, null);
+    assert.deepEqual(JSON.parse(telemetryRuns[0]!.changed_files_json), ['src/a.ts']);
+    assert.equal(telemetryRuns[0]!.index_run_id, pack.indexRunId);
+    assert.ok(telemetryRuns[0]!.returned_bytes > 0);
+    assert.equal(telemetryRuns[0]!.resource_count, pack.resources.entities.length + pack.resources.evidence.length + 1);
+    assert.deepEqual(JSON.parse(telemetryRuns[0]!.omitted_json), pack.omittedCounts);
+    const telemetryAccesses = contextResourceAccesses(repoRoot);
+    assert.equal(telemetryAccesses.length, pack.resources.evidence.length);
+    assert.ok(telemetryAccesses.every((item) => item.resource_kind === 'evidence'));
+    assert.ok(telemetryAccesses.every((item) => item.index_run_id === pack.indexRunId));
+    assert.ok(telemetryAccesses.every((item) => item.returned_bytes > 0));
     assert.equal(pack.limits.affectedLimit, 5);
     assert.equal(pack.limits.evidenceLimit, 5);
     assert.equal(pack.omittedCounts.affected, 0);
@@ -539,6 +632,251 @@ test('MCP context_for_change returns budgeted compact context without persisting
       names.filter((name) => !/\.db-(wal|shm)$/.test(name));
     assert.deepEqual(filterWalAux(dbArtifacts(repoRoot)), filterWalAux(artifactsBefore));
     assert.equal(existsSync(path.join(repoRoot, '.impact-trace/reports')), false);
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP context telemetry summarizes tool runs and resource reads', async () => {
+  const repoRoot = await makeWideContextRepo();
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+
+    const searchResponse = await client.request('tools/call', {
+      name: 'impact_trace_search_context',
+      arguments: { query: 'DEPENDS_ON', k: 3 }
+    });
+    assert.equal(searchResponse.error, undefined);
+    const search = JSON.parse(searchResponse.result.content[0].text) as {
+      indexRunId: number;
+      resources: { entities: string[]; evidence: string[] };
+    };
+    assert.ok(search.resources.evidence.length > 0);
+
+    const evidenceUri = search.resources.evidence[0]!;
+    const evidenceResponse = await client.request('resources/read', { uri: evidenceUri });
+    assert.equal(evidenceResponse.error, undefined);
+
+    const telemetryResponse = await client.request('tools/call', {
+      name: 'impact_trace_context_telemetry',
+      arguments: { limit: 10 }
+    });
+    assert.equal(telemetryResponse.error, undefined);
+    assert.equal(telemetryResponse.result.isError, undefined);
+    const telemetry = JSON.parse(telemetryResponse.result.content[0].text) as {
+      version: number;
+      summary: {
+        toolRuns: number;
+        resourceAccesses: number;
+        returnedBytes: number;
+        resourcesAdvertised: number;
+      };
+      toolRuns: Array<{
+        toolName: string;
+        indexRunId: number | null;
+        query: string | null;
+        changedFiles: string[];
+        returnedBytes: number;
+        resourceCount: number;
+      }>;
+      resourceAccesses: Array<{
+        uri: string;
+        resourceKind: string;
+        resourceId: string | null;
+        indexRunId: number | null;
+        returnedBytes: number;
+      }>;
+    };
+
+    assert.equal(telemetry.version, 0);
+    assert.equal(telemetry.summary.toolRuns, 1);
+    assert.equal(telemetry.summary.resourceAccesses, 1);
+    assert.ok(telemetry.summary.returnedBytes > 0);
+    assert.equal(telemetry.summary.resourcesAdvertised, search.resources.entities.length + search.resources.evidence.length);
+    assert.equal(telemetry.toolRuns[0]!.toolName, 'impact_trace_search_context');
+    assert.equal(telemetry.toolRuns[0]!.query, 'DEPENDS_ON');
+    assert.deepEqual(telemetry.toolRuns[0]!.changedFiles, []);
+    assert.equal(telemetry.toolRuns[0]!.indexRunId, search.indexRunId);
+    assert.equal(telemetry.toolRuns[0]!.resourceCount, search.resources.entities.length + search.resources.evidence.length);
+    assert.equal(telemetry.resourceAccesses[0]!.uri, evidenceUri);
+    assert.equal(telemetry.resourceAccesses[0]!.resourceKind, 'evidence');
+    assert.ok(telemetry.resourceAccesses[0]!.resourceId);
+    assert.equal(telemetry.resourceAccesses[0]!.indexRunId, search.indexRunId);
+    assert.ok(telemetry.resourceAccesses[0]!.returnedBytes > 0);
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP context telemetry records analyze, explain, resource kinds, and redacted queries', async () => {
+  const repoRoot = await makeRepo();
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+
+    const analyzeResponse = await client.request('tools/call', {
+      name: 'impact_trace_analyze_diff',
+      arguments: { changedFiles: ['src/a.ts'] }
+    });
+    assert.equal(analyzeResponse.error, undefined);
+
+    const explainResponse = await client.request('tools/call', {
+      name: 'impact_trace_explain_entity',
+      arguments: { entity: 'file:src/a.ts', evidenceLimit: 1 }
+    });
+    assert.equal(explainResponse.error, undefined);
+
+    const secretSearchResponse = await client.request('tools/call', {
+      name: 'impact_trace_search_context',
+      arguments: { query: 'sk-12345678901234567890', includeEvidence: false }
+    });
+    assert.equal(secretSearchResponse.error, undefined);
+
+    const entityResource = await client.request('resources/read', {
+      uri: `impact-trace://entities/${encodeURIComponent('file:src/a.ts')}`
+    });
+    assert.equal(entityResource.error, undefined);
+
+    const coverageResource = await client.request('resources/read', {
+      uri: 'impact-trace://coverage/latest'
+    });
+    assert.equal(coverageResource.error, undefined);
+
+    const telemetryResponse = await client.request('tools/call', {
+      name: 'impact_trace_context_telemetry',
+      arguments: { limit: 10 }
+    });
+    assert.equal(telemetryResponse.error, undefined);
+    const telemetry = JSON.parse(telemetryResponse.result.content[0].text) as {
+      summary: { toolRuns: number; resourceAccesses: number };
+      toolRuns: Array<{ toolName: string; query: string | null; changedFiles: string[]; resourceCount: number }>;
+      resourceAccesses: Array<{ resourceKind: string; resourceId: string | null; returnedBytes: number }>;
+    };
+
+    assert.equal(telemetry.summary.toolRuns, 3);
+    assert.equal(telemetry.summary.resourceAccesses, 2);
+    const toolByName = new Map(telemetry.toolRuns.map((item) => [item.toolName, item]));
+    assert.deepEqual(toolByName.get('impact_trace_analyze_diff')!.changedFiles, ['src/a.ts']);
+    assert.equal(toolByName.get('impact_trace_explain_entity')!.query, 'file:src/a.ts');
+    assert.ok(toolByName.get('impact_trace_explain_entity')!.resourceCount > 0);
+    assert.equal(toolByName.get('impact_trace_search_context')!.query, '[REDACTED_OPENAI_KEY]');
+    const resourceKinds = new Set(telemetry.resourceAccesses.map((item) => item.resourceKind));
+    assert.ok(resourceKinds.has('entity'));
+    assert.ok(resourceKinds.has('coverage'));
+    assert.ok(telemetry.resourceAccesses.every((item) => item.returnedBytes > 0));
+    assert.equal(countReports(repoRoot), 0);
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP context telemetry redacts changed file paths before storage', async () => {
+  const { repoRoot, secretPath } = await makeSecretPathRepo();
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+
+    const response = await client.request('tools/call', {
+      name: 'impact_trace_analyze_diff',
+      arguments: { changedFiles: [secretPath] }
+    });
+    assert.equal(response.error, undefined);
+    assert.equal(response.result.isError, undefined);
+
+    const runs = contextToolRuns(repoRoot);
+    assert.equal(runs.length, 1);
+    const changedFiles = JSON.parse(runs[0]!.changed_files_json) as string[];
+    assert.deepEqual(changedFiles, ['src/[REDACTED_OPENAI_KEY].ts']);
+    assert.equal(runs[0]!.changed_files_json.includes('sk-12345678901234567890'), false);
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP context telemetry redacts resource uri and id before storage', async () => {
+  const { repoRoot, secretPath } = await makeSecretPathRepo();
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+
+    const uri = `impact-trace://entities/${encodeURIComponent(`file:${secretPath}`)}`;
+    const response = await client.request('resources/read', { uri });
+    assert.equal(response.error, undefined);
+
+    const accesses = contextResourceAccesses(repoRoot);
+    assert.equal(accesses.length, 1);
+    assert.equal(accesses[0]!.resource_kind, 'entity');
+    assert.equal(accesses[0]!.uri.includes('sk-12345678901234567890'), false);
+    assert.equal(accesses[0]!.resource_id?.includes('sk-12345678901234567890'), false);
+    assert.ok(accesses[0]!.uri.includes('[REDACTED_OPENAI_KEY]'));
+    assert.equal(accesses[0]!.resource_id, 'file:src/[REDACTED_OPENAI_KEY].ts');
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP context telemetry returns empty rows on pre-v10 databases', async () => {
+  const repoRoot = await makeRepo();
+  removeTelemetrySchema(repoRoot);
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+
+    const response = await client.request('tools/call', {
+      name: 'impact_trace_context_telemetry',
+      arguments: { limit: 5 }
+    });
+    assert.equal(response.error, undefined);
+    assert.equal(response.result.isError, undefined);
+    const telemetry = JSON.parse(response.result.content[0].text) as {
+      summary: { toolRuns: number; resourceAccesses: number; returnedBytes: number; resourcesAdvertised: number };
+      toolRuns: unknown[];
+      resourceAccesses: unknown[];
+    };
+    assert.deepEqual(telemetry.summary, {
+      toolRuns: 0,
+      resourceAccesses: 0,
+      returnedBytes: 0,
+      resourcesAdvertised: 0
+    });
+    assert.deepEqual(telemetry.toolRuns, []);
+    assert.deepEqual(telemetry.resourceAccesses, []);
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP context telemetry failures do not fail primary tool or resource responses', async () => {
+  const repoRoot = await makeRepo();
+  const previous = process.env.IMPACT_TRACE_TELEMETRY_FORCE_FAILURE;
+  process.env.IMPACT_TRACE_TELEMETRY_FORCE_FAILURE = '1';
+  const client = new McpProcessClient(repoRoot);
+  if (previous === undefined) {
+    delete process.env.IMPACT_TRACE_TELEMETRY_FORCE_FAILURE;
+  } else {
+    process.env.IMPACT_TRACE_TELEMETRY_FORCE_FAILURE = previous;
+  }
+  try {
+    await client.initialize();
+
+    const searchResponse = await client.request('tools/call', {
+      name: 'impact_trace_search_context',
+      arguments: { query: 'src/a.ts', includeEvidence: false }
+    });
+    assert.equal(searchResponse.error, undefined);
+    assert.equal(searchResponse.result.isError, undefined);
+    const search = JSON.parse(searchResponse.result.content[0].text) as { results: Array<{ entity: { id: string } }> };
+    assert.ok(search.results.some((item) => item.entity.id === 'file:src/a.ts'));
+
+    const entityResponse = await client.request('resources/read', {
+      uri: `impact-trace://entities/${encodeURIComponent('file:src/a.ts')}`
+    });
+    assert.equal(entityResponse.error, undefined);
+    const entity = JSON.parse(entityResponse.result.contents[0].text) as { entity: { id: string } };
+    assert.equal(entity.entity.id, 'file:src/a.ts');
+    assert.deepEqual(contextToolRuns(repoRoot), []);
+    assert.deepEqual(contextResourceAccesses(repoRoot), []);
   } finally {
     await client.close();
   }

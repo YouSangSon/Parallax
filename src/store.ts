@@ -601,6 +601,51 @@ function migrate(db: Db): void {
     INSERT OR IGNORE INTO schema_versions (version, applied_at)
     VALUES (9, datetime('now'));
   `);
+
+  // Schema v10: local context access telemetry. These rows are append-only
+  // observability for MCP context tools/resources and do not change reports,
+  // index runs, facts, or relation graph semantics.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS context_tool_runs (
+      id TEXT PRIMARY KEY NOT NULL,
+      repo_id INTEGER NOT NULL,
+      tool_name TEXT NOT NULL,
+      index_run_id INTEGER,
+      budget TEXT,
+      query TEXT,
+      changed_files_json TEXT NOT NULL DEFAULT '[]',
+      returned_bytes INTEGER NOT NULL,
+      resource_count INTEGER NOT NULL,
+      omitted_json TEXT NOT NULL DEFAULT '{}',
+      started_at TEXT NOT NULL,
+      finished_at TEXT NOT NULL,
+      FOREIGN KEY(repo_id) REFERENCES repos(id),
+      FOREIGN KEY(index_run_id) REFERENCES index_runs(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS context_resource_accesses (
+      id TEXT PRIMARY KEY NOT NULL,
+      repo_id INTEGER NOT NULL,
+      uri TEXT NOT NULL,
+      resource_kind TEXT NOT NULL,
+      resource_id TEXT,
+      index_run_id INTEGER,
+      returned_bytes INTEGER NOT NULL,
+      accessed_at TEXT NOT NULL,
+      FOREIGN KEY(repo_id) REFERENCES repos(id),
+      FOREIGN KEY(index_run_id) REFERENCES index_runs(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_context_tool_runs_repo_time
+      ON context_tool_runs(repo_id, started_at);
+    CREATE INDEX IF NOT EXISTS idx_context_resource_accesses_repo_time
+      ON context_resource_accesses(repo_id, accessed_at);
+    CREATE INDEX IF NOT EXISTS idx_context_resource_accesses_uri
+      ON context_resource_accesses(repo_id, uri);
+
+    INSERT OR IGNORE INTO schema_versions (version, applied_at)
+    VALUES (10, datetime('now'));
+  `);
 }
 
 // Identifier allowlists guard the only place in this codebase that

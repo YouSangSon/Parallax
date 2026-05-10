@@ -149,7 +149,7 @@ flowchart LR
 |---|---|---|
 | **RRF hybrid ranking** | initial v1은 keyword/relation/evidence stream을 fuse한다. 다음 depth pass에서 "의미상 관련"과 "graph상 가까움"까지 충분히 합쳐야 한다. | 현재 `src/mcp.ts`; 후속으로 `src/search_context.ts` 분리 |
 | **compact-first + expand-on-demand 계약 강화** | 사용자의 핵심 요구가 AI context 절감이다. tool 응답은 compact hit와 URI만 보내고, source/evidence는 resource fetch로 늦춘다. | `impact_trace_search_context`, `impact_trace_context_for_change`, resource templates |
-| **access telemetry** | 어떤 context가 실제로 agent에 의해 확장됐는지 알아야 ranking과 budget을 개선할 수 있다. | `context_access`, `context_pack_runs` 테이블 |
+| **access telemetry** | 어떤 context가 실제로 agent에 의해 확장됐는지 알아야 ranking과 budget을 개선할 수 있다. | v0: `context_tool_runs`, `context_resource_accesses`, `impact_trace_context_telemetry` |
 | **explicit memory supersession** | 지금은 retract/currentOnly가 있지만, "이 summary/decision이 저 fact를 대체한다"를 더 명시적으로 표현할 수 있다. | `fact_provenance.kind='supersedes'` 또는 `fact_supersessions` |
 | **session import/replay UX** | Codex/Claude가 이미 수정한 흐름을 영향 그래프와 연결하면 "왜 이 변경이 일어났는가"를 UI에서 볼 수 있다. | `impact-trace import-session --format codex|claude` |
 | **diagnose/doctor command** | vector dimension, stale vec table, index coverage, resource truncation을 사용자가 확인할 수 있어야 한다. | `impact-trace doctor` |
@@ -174,7 +174,7 @@ flowchart LR
 | 51-tool MCP surface | agent에게 너무 많은 action surface를 제공하면 UX와 보안이 모두 나빠진다. |
 | automatic hooks / filesystem watcher | 사용자가 원치 않는 prompt/tool output/file preview를 저장할 수 있다. |
 | mesh/team sync | 현재 목표인 single repo/single agent context layer 이후 문제다. |
-| arbitrary export/write/compress tools | Impact-trace MCP는 read-only impact context가 기본이어야 한다. |
+| arbitrary export/write/compress tools | Impact-trace MCP는 source/external write 없는 impact context가 기본이어야 한다. repo-local telemetry append만 예외로 둔다. |
 | hard auto-forget | provenance와 reproducibility를 해친다. |
 
 ---
@@ -253,13 +253,13 @@ flowchart LR
 
 목표: context 절감이 실제로 되는지 측정한다.
 
-테이블 후보:
+상태: v0 landed. agentmemory의 access tracking을 platform daemon 없이 repo-local SQLite에 맞춰 줄였다.
 
 | table | 내용 |
 |---|---|
-| `context_pack_runs` | tool, query, changed files, budget, returned bytes, omitted counts |
-| `context_resource_access` | resource URI, entity/evidence/report id, caller tool, timestamp |
-| `context_rank_feedback` | expanded 여부, selected 여부, result rank |
+| `context_tool_runs` | context/analyze/search/explain tool, redacted query, changed files, budget, returned bytes, resource count, omitted counts |
+| `context_resource_accesses` | resource URI, report/entity/evidence/graph/coverage id, index run, returned bytes, timestamp |
+| `context_rank_feedback` | expanded 여부, selected 여부, result rank. 아직 미구현; UI/agent feedback slice에서 추가 |
 
 Metric:
 
@@ -319,7 +319,7 @@ Metric:
 |---|---|---|
 | 1 | `agentmemory` adoption boundary를 docs에 고정 | platform sprawl을 막고 다음 구현 방향을 명확히 한다. |
 | 2 | `impact_trace_search_context` RRF design + tests | 완료. initial v1은 keyword/relation/evidence stream, `rankSignals`, tie-break regression을 고정했다. |
-| 3 | context access telemetry schema | 다음. "context를 줄인다"는 제품 약속을 측정 가능하게 만든다. |
+| 3 | context access telemetry schema | 완료. v0는 `context_tool_runs`, `context_resource_accesses`, `impact_trace_context_telemetry`로 "context를 줄인다"는 제품 약속을 측정 가능하게 만든다. |
 | 4 | MCP allowlist/security tests | agentmemory에서 드러난 위험한 surface를 early block한다. |
 | 5 | `doctor` command | vector/index/resource 상태를 사용자와 agent가 확인하게 한다. |
 | 6 | opt-in session import spec | UI timeline과 memory lifecycle의 입력을 만든다. |
@@ -328,4 +328,4 @@ Metric:
 
 ## 8. 한 줄 결론
 
-`agentmemory`에서 배울 것은 "agent memory platform"이 아니라 **context를 작게 찾고, 근거를 나중에 확장하고, 사용된 memory를 측정하고, 오래된 기억을 명시적으로 대체하는 방법**이다. Impact-trace는 이 패턴을 repo-local SQLite, evidence-first graph, read-only MCP, local UI explorer로 재구성한다.
+`agentmemory`에서 배울 것은 "agent memory platform"이 아니라 **context를 작게 찾고, 근거를 나중에 확장하고, 사용된 memory를 측정하고, 오래된 기억을 명시적으로 대체하는 방법**이다. Impact-trace는 이 패턴을 repo-local SQLite, evidence-first graph, telemetry-aware MCP context, local UI explorer로 재구성한다.

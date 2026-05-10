@@ -222,7 +222,9 @@ test('initProject creates config and SQLite database tables', async () => {
     assert.match(tables.names, /contracts/);
     assert.match(tables.names, /cross_repo_links/);
     assert.match(tables.names, /work_artifacts/);
-    assert.equal(schemaVersion.version, 9);
+    assert.match(tables.names, /context_tool_runs/);
+    assert.match(tables.names, /context_resource_accesses/);
+    assert.equal(schemaVersion.version, 10);
   } finally {
     db.close();
   }

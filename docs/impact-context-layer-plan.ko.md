@@ -96,7 +96,7 @@ flowchart LR
 
 | 표준/문서 | 적용 결정 |
 |---|---|
-| [MCP Tools](https://modelcontextprotocol.io/specification/2025-06-18/server/tools) | tool 응답은 작게 유지하고, structured output schema를 둔다. 큰 payload는 resource link로 넘긴다. read-only annotation과 보안 경계를 명확히 한다. |
+| [MCP Tools](https://modelcontextprotocol.io/specification/2025-06-18/server/tools) | tool 응답은 작게 유지하고, structured output schema를 둔다. 큰 payload는 resource link로 넘긴다. annotation은 실제 write semantics에 맞춘다: telemetry-writing context tools는 write-capable, pure recall/query tools는 read-only. |
 | [MCP Resources](https://modelcontextprotocol.io/specification/2025-06-18/server/resources) | report, entity, evidence, graph, policy, workspace를 URI resource로 노출한다. `impact://` custom URI를 사용한다. |
 | [MCP Apps](https://modelcontextprotocol.io/extensions/apps/overview) | 장기적으로 chat 안에서 graph UI를 렌더링할 수 있다. 단, Claude/Codex CLI 호환성을 고려해 v0 UI는 local web UI로 시작한다. |
 
@@ -108,7 +108,7 @@ flowchart LR
 2. **정책/제안서/의사결정까지 1급:** code graph뿐 아니라 policy, proposal, PRD, decision, customer promise를 impact path에 넣는다.
 3. **agent와 사람이 같은 evidence를 본다:** MCP response와 UI가 같은 report/resource contract를 공유한다.
 4. **AI context 절감이 1급 목표:** 반복 파일 읽기, grep, repo 재탐색을 precomputed graph lookup과 resource-on-demand로 대체한다.
-5. **read-only 신뢰 레이어:** agent가 코드를 고치는 기능보다, agent가 고치기 전후 알아야 할 맥락을 정확히 주는 기능을 먼저 신뢰시킨다.
+5. **read-mostly 신뢰 레이어:** agent가 코드를 고치는 기능보다, agent가 고치기 전후 알아야 할 맥락을 정확히 주는 기능을 먼저 신뢰시킨다. context telemetry처럼 repo-local SQLite에 append하는 관측성 write는 허용하되 source/report/external write와 분리한다.
 6. **local-first SQLite source of truth:** graph DB, cloud, daemon 없이 작동하고, projection은 뒤에 붙인다.
 
 ---
@@ -190,7 +190,7 @@ MCP tool 기본값은 `standard`다. UI는 같은 report에서 더 많은 내용
 | Metric | 목표 |
 |---|---|
 | `context_pack_bytes` | 기본 응답 크기를 안정적으로 제한한다. |
-| `resource_fetch_count` | agent가 실제로 추가 evidence를 얼마나 읽었는지 본다. |
+| `resource_fetch_count` | agent가 실제로 추가 evidence/resource를 얼마나 읽었는지 본다. v0는 `context_resource_accesses`에 report/entity/evidence/graph/coverage read를 append-only로 기록한다. |
 | `deduped_entities` | 반복 context 제거량을 측정한다. |
 | `agent_file_reads_avoided` | benchmark fixture에서 기존 탐색 대비 줄어든 파일 read 추정치를 기록한다. |
 | `impact_recall_at_budget` | context를 줄여도 필요한 affected entity를 놓치지 않는지 측정한다. |
@@ -433,6 +433,7 @@ flowchart TB
 | `impact_trace_context_for_change` | agent가 작업 전에 query/path/symbol 기준 context를 요청 | relevant code/docs/policies/proposals/decisions context pack |
 | `impact_trace_explain_entity` | entity 하나의 relation/evidence를 설명 | entity summary, incoming/outgoing direct relations, compact evidence, resource links. v0 기본값은 `relationLimit=20` per direction, `evidenceLimit=10` global, `snippetChars=300` |
 | `impact_trace_search_context` | keyword/path/symbol/relation/evidence 기반 graph search. v1 landed: deterministic SQLite keyword/relation/evidence streams + RRF `rankSignals`, `k=10`, `includeEvidence=true`, `snippetChars=240` | ranked entities, stream rank signals, match reasons, compact evidence, entity/evidence resource links |
+| `impact_trace_context_telemetry` | context tool run과 resource read 사용량을 조회 | v0 landed: `context_tool_runs`, `context_resource_accesses` 기반 summary, recent tool/resource rows, redacted query |
 | `impact_trace_get_graph` | report/entity 주변 graph metadata 요청 | paginated graph resource URI |
 | `impact_trace_action_plan` | report 기준 검증 action 생성 | tests/docs/review/security actions, 실행은 하지 않음 |
 
@@ -465,7 +466,7 @@ next_actions: 실행하지 않는 추천 command/action
 보안 경계:
 
 - MCP tool은 repo 밖 path를 읽지 않는다.
-- 기본 tool은 read-only다.
+- 기본 context tool은 source file과 report를 변경하지 않는다. context 절감 측정을 위한 telemetry write는 repo-local SQLite append-only로 제한한다.
 - command execution은 하지 않는다.
 - 문서/정책 내용은 prompt injection 가능 input으로 취급하고, agent에게 "instruction"이 아니라 "evidence"로 전달한다.
 - future write/action tool은 별도 ADR과 explicit user confirmation 전에는 만들지 않는다.
@@ -633,6 +634,7 @@ flowchart LR
 | context dedupe and ranking | 반복 file/doc payload 없이 top impact paths 우선 반환 |
 | `impact_trace_search_context` | keyword/path/symbol/relation/evidence 검색으로 ranked entities와 resource link를 반환. v1 landed: deterministic SQLite keyword/relation/evidence RRF ranking, `rankSignals`, `k=10`, `includeEvidence=true`, entity/evidence resource-on-demand |
 | `impact_trace_explain_entity` | entity 주변 relation/evidence resource 제공. v0 landed: incoming/outgoing direct relation을 direction별 cap으로 반환하고 evidence는 선택된 relation 전체에서 global cap을 적용 |
+| `impact_trace_context_telemetry` | context/search/explain/analyze tool run과 resource read가 실제로 얼마나 쓰였는지 조회. v0 landed: returned bytes, resource count, omitted counts, redacted query |
 | `impact-trace://evidence/{id}` | source span과 redacted snippet fetch 가능. v0 landed: context pack evidence id에서 resource-on-demand로 읽는다. |
 | `impact-trace://reports/{id}/graph/{format}` pagination | 큰 graph를 tool payload에 넣지 않음 |
 | typed error envelope | problem/cause/fix/evidence id 구조화 |
@@ -789,7 +791,7 @@ UI가 들어오면 완료 전에 반드시 확인한다.
 | prompt injection from docs | docs/policies/proposals는 evidence로만 취급, instruction으로 전달 금지 |
 | stale index | git snapshot metadata와 UI/MCP warning |
 | false confidence | confidence enum, coverage gaps, adapter attribution |
-| MCP mutation risk | read-only tools first, future write tools는 별도 ADR |
+| MCP mutation risk | source/external write는 금지, telemetry는 repo-local append-only, future write tools는 별도 ADR |
 | unbounded graph | depth/fanout/page size limit |
 | third-party tool drift | LSP/CodeQL/Semgrep adapter는 optional enrichment |
 

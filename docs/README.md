@@ -1,6 +1,6 @@
 # Impact-Trace 문서 인덱스
 
-> *Updated 2026-05-10, Phase 6B adapter pack v0, agentmemory adoption review, and MCP search RRF ranking v1 documented*
+> *Updated 2026-05-10, Phase 6B adapter pack v0, agentmemory adoption review, MCP search RRF ranking v1, and context telemetry v0 documented*
 
 이 폴더에는 15개 문서가 있습니다. 현재 작업과 온보딩에 필요한 문서만 남깁니다.
 

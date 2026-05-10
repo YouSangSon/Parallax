@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
@@ -44,9 +45,9 @@ export function createMcpServer(context: McpContext): McpServer {
       },
       annotations: {
         title: 'Analyze Impact Trace diff',
-        readOnlyHint: true,
+        readOnlyHint: false,
         destructiveHint: false,
-        idempotentHint: true,
+        idempotentHint: false,
         openWorldHint: false
       }
     },
@@ -60,14 +61,10 @@ export function createMcpServer(context: McpContext): McpServer {
         ...(maxDepth === undefined ? {} : { maxDepth }),
         ...(maxFanout === undefined ? {} : { maxFanout })
       });
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(report)
-          }
-        ]
-      };
+      return toolJsonResponse(context, 'impact_trace_analyze_diff', report, {
+        indexRunId: report.indexRunId,
+        changedFiles: report.changedFiles
+      });
     }
   );
 
@@ -85,9 +82,9 @@ export function createMcpServer(context: McpContext): McpServer {
       },
       annotations: {
         title: 'Build compact context for a change',
-        readOnlyHint: true,
+        readOnlyHint: false,
         destructiveHint: false,
-        idempotentHint: true,
+        idempotentHint: false,
         openWorldHint: false
       }
     },
@@ -104,14 +101,13 @@ export function createMcpServer(context: McpContext): McpServer {
         maxFanout: maxFanout ?? preset.maxFanout
       });
       const pack = buildContextPack(report, normalizedBudget);
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(pack)
-          }
-        ]
-      };
+      return toolJsonResponse(context, 'impact_trace_context_for_change', pack, {
+        indexRunId: pack.indexRunId,
+        budget: pack.budget,
+        changedFiles: report.changedFiles,
+        resourceCount: pack.resources.entities.length + pack.resources.evidence.length + 1,
+        omitted: pack.omittedCounts
+      });
     }
   );
 
@@ -128,9 +124,9 @@ export function createMcpServer(context: McpContext): McpServer {
       },
       annotations: {
         title: 'Search indexed context',
-        readOnlyHint: true,
+        readOnlyHint: false,
         destructiveHint: false,
-        idempotentHint: true,
+        idempotentHint: false,
         openWorldHint: false
       }
     },
@@ -140,14 +136,12 @@ export function createMcpServer(context: McpContext): McpServer {
         k: k ?? 10,
         includeEvidence: includeEvidence ?? true
       });
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(result)
-          }
-        ]
-      };
+      const telemetry = searchContextTelemetry(result);
+      return toolJsonResponse(context, 'impact_trace_search_context', result, {
+        indexRunId: telemetry.indexRunId,
+        query,
+        resourceCount: telemetry.resourceCount
+      });
     }
   );
 
@@ -415,9 +409,9 @@ export function createMcpServer(context: McpContext): McpServer {
       },
       annotations: {
         title: 'Explain an entity',
-        readOnlyHint: true,
+        readOnlyHint: false,
         destructiveHint: false,
-        idempotentHint: true,
+        idempotentHint: false,
         openWorldHint: false
       }
     },
@@ -427,7 +421,35 @@ export function createMcpServer(context: McpContext): McpServer {
         relationLimit: relationLimit ?? 20,
         evidenceLimit: evidenceLimit ?? 10
       });
-      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+      const telemetry = explainEntityTelemetry(result);
+      return toolJsonResponse(context, 'impact_trace_explain_entity', result, {
+        indexRunId: telemetry.indexRunId,
+        query: entity,
+        resourceCount: telemetry.resourceCount
+      });
+    }
+  );
+
+  server.registerTool(
+    'impact_trace_context_telemetry',
+    {
+      title: 'Inspect context telemetry',
+      description:
+        'Return recent local MCP context tool runs and resource reads so agents and UI can measure which compact context was actually expanded.',
+      inputSchema: {
+        limit: z.number().int().min(1).max(100).optional()
+      },
+      annotations: {
+        title: 'Inspect context telemetry',
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      }
+    },
+    async ({ limit }) => {
+      const telemetry = contextTelemetry(context, limit ?? 20);
+      return { content: [{ type: 'text', text: JSON.stringify(telemetry) }] };
     }
   );
 
@@ -521,7 +543,7 @@ export function createMcpServer(context: McpContext): McpServer {
     },
     async (uri, variables) => {
       const reportId = String(variables.reportId);
-      return jsonResource(uri.toString(), readReport(context, reportId));
+      return telemetryJsonResource(context, uri.toString(), 'report', reportId, readReport(context, reportId));
     }
   );
 
@@ -537,7 +559,7 @@ export function createMcpServer(context: McpContext): McpServer {
     },
     async (uri, variables) => {
       const entityId = decodeURIComponent(String(variables.entityId));
-      return jsonResource(uri.toString(), readEntity(context, entityId));
+      return telemetryJsonResource(context, uri.toString(), 'entity', entityId, readEntity(context, entityId));
     }
   );
 
@@ -553,7 +575,7 @@ export function createMcpServer(context: McpContext): McpServer {
     },
     async (uri, variables) => {
       const evidenceId = decodeURIComponent(String(variables.evidenceId));
-      return jsonResource(uri.toString(), readEvidence(context, evidenceId));
+      return telemetryJsonResource(context, uri.toString(), 'evidence', evidenceId, readEvidence(context, evidenceId));
     }
   );
 
@@ -576,12 +598,20 @@ export function createMcpServer(context: McpContext): McpServer {
         reportId,
         format
       });
+      const text = graph.rendered;
+      recordContextResourceAccess(context, {
+        uri: uri.toString(),
+        resourceKind: 'graph',
+        resourceId: `${reportId}:${format}`,
+        indexRunId: graph.indexRunId,
+        returnedBytes: byteLength(text)
+      });
       return {
         contents: [
           {
             uri: uri.toString(),
             mimeType: format === 'json' ? 'application/json' : 'text/plain',
-            text: graph.rendered
+            text
           }
         ]
       };
@@ -596,7 +626,7 @@ export function createMcpServer(context: McpContext): McpServer {
       description: 'Index coverage rows for the latest completed index run.',
       mimeType: 'application/json'
     },
-    async (uri) => jsonResource(uri.toString(), readLatestCoverage(context))
+    async (uri) => telemetryJsonResource(context, uri.toString(), 'coverage', 'latest', readLatestCoverage(context))
   );
 
   return server;
@@ -847,6 +877,328 @@ function numericCompare(left: number, right: number): number {
   return left === right ? 0 : left < right ? -1 : 1;
 }
 
+type ToolResponse = {
+  content: Array<{ type: 'text'; text: string }>;
+};
+
+type ToolTelemetryInput = {
+  indexRunId?: number | null;
+  budget?: string | null;
+  query?: string | null;
+  changedFiles?: string[];
+  resourceCount?: number;
+  omitted?: unknown;
+};
+
+type ResourceTelemetryInput = {
+  uri: string;
+  resourceKind: string;
+  resourceId?: string | null;
+  indexRunId?: number | null;
+  returnedBytes: number;
+};
+
+function toolJsonResponse(
+  context: McpContext,
+  toolName: string,
+  value: unknown,
+  telemetry: ToolTelemetryInput = {}
+): ToolResponse {
+  const text = JSON.stringify(value);
+  recordContextToolRun(context, {
+    toolName,
+    indexRunId: telemetry.indexRunId ?? indexRunIdOf(value),
+    budget: telemetry.budget ?? null,
+    query: sanitizeTelemetryText(telemetry.query),
+    changedFiles: telemetry.changedFiles ?? [],
+    returnedBytes: byteLength(text),
+    resourceCount: telemetry.resourceCount ?? resourceCountOf(value),
+    omitted: telemetry.omitted ?? omittedCountsOf(value)
+  });
+  return {
+    content: [
+      {
+        type: 'text',
+        text
+      }
+    ]
+  };
+}
+
+function telemetryJsonResource(
+  context: McpContext,
+  uri: string,
+  resourceKind: string,
+  resourceId: string | null,
+  value: unknown
+): { contents: Array<{ uri: string; mimeType: string; text: string }> } {
+  const text = JSON.stringify(value, null, 2);
+  recordContextResourceAccess(context, {
+    uri,
+    resourceKind,
+    resourceId,
+    indexRunId: indexRunIdOf(value),
+    returnedBytes: byteLength(text)
+  });
+  return {
+    contents: [
+      {
+        uri,
+        mimeType: 'application/json',
+        text
+      }
+    ]
+  };
+}
+
+function recordContextToolRun(
+  context: McpContext,
+  input: ToolTelemetryInput & {
+    toolName: string;
+    returnedBytes: number;
+    resourceCount: number;
+    omitted: unknown;
+  }
+): void {
+  bestEffortTelemetry(() => withWritableDb(context, (db, repoId) => {
+    const now = new Date().toISOString();
+    db
+      .prepare(`
+        INSERT INTO context_tool_runs (
+          id, repo_id, tool_name, index_run_id, budget, query, changed_files_json,
+          returned_bytes, resource_count, omitted_json, started_at, finished_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      .run(
+        randomUUID(),
+        repoId,
+        input.toolName,
+        input.indexRunId ?? null,
+        input.budget ?? null,
+        input.query ?? null,
+        JSON.stringify(sanitizeTelemetryPaths(input.changedFiles ?? [])),
+        input.returnedBytes,
+        input.resourceCount,
+        JSON.stringify(input.omitted ?? {}),
+        now,
+        now
+      );
+  }));
+}
+
+function recordContextResourceAccess(context: McpContext, input: ResourceTelemetryInput): void {
+  bestEffortTelemetry(() => withWritableDb(context, (db, repoId) => {
+    db
+      .prepare(`
+        INSERT INTO context_resource_accesses (
+          id, repo_id, uri, resource_kind, resource_id, index_run_id, returned_bytes, accessed_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      .run(
+        randomUUID(),
+        repoId,
+        sanitizeTelemetryText(input.uri) ?? input.uri,
+        input.resourceKind,
+        sanitizeTelemetryText(input.resourceId),
+        input.indexRunId ?? null,
+        input.returnedBytes,
+        new Date().toISOString()
+      );
+  }));
+}
+
+function contextTelemetry(context: McpContext, limit: number): unknown {
+  return withReadOnlyDb(context, (db, repoId) => {
+    if (!hasContextTelemetryTables(db)) {
+      return emptyContextTelemetry();
+    }
+    const summary = db
+      .prepare(`
+        SELECT
+          (SELECT count(*) FROM context_tool_runs WHERE repo_id = ?) AS tool_runs,
+          (SELECT count(*) FROM context_resource_accesses WHERE repo_id = ?) AS resource_accesses,
+          (SELECT COALESCE(sum(returned_bytes), 0) FROM context_tool_runs WHERE repo_id = ?)
+            + (SELECT COALESCE(sum(returned_bytes), 0) FROM context_resource_accesses WHERE repo_id = ?) AS returned_bytes,
+          (SELECT COALESCE(sum(resource_count), 0) FROM context_tool_runs WHERE repo_id = ?) AS resources_advertised
+      `)
+      .get(repoId, repoId, repoId, repoId, repoId) as {
+        tool_runs: number;
+        resource_accesses: number;
+        returned_bytes: number;
+        resources_advertised: number;
+      };
+    const toolRows = db
+      .prepare(`
+        SELECT id, tool_name, index_run_id, budget, query, changed_files_json,
+               returned_bytes, resource_count, omitted_json, started_at, finished_at
+        FROM context_tool_runs
+        WHERE repo_id = ?
+        ORDER BY started_at DESC, id DESC
+        LIMIT ?
+      `)
+      .all(repoId, limit) as Array<{
+        id: string;
+        tool_name: string;
+        index_run_id: number | null;
+        budget: string | null;
+        query: string | null;
+        changed_files_json: string;
+        returned_bytes: number;
+        resource_count: number;
+        omitted_json: string;
+        started_at: string;
+        finished_at: string;
+      }>;
+    const resourceRows = db
+      .prepare(`
+        SELECT id, uri, resource_kind, resource_id, index_run_id, returned_bytes, accessed_at
+        FROM context_resource_accesses
+        WHERE repo_id = ?
+        ORDER BY accessed_at DESC, id DESC
+        LIMIT ?
+      `)
+      .all(repoId, limit) as Array<{
+        id: string;
+        uri: string;
+        resource_kind: string;
+        resource_id: string | null;
+        index_run_id: number | null;
+        returned_bytes: number;
+        accessed_at: string;
+      }>;
+
+    return {
+      version: 0,
+      summary: {
+        toolRuns: summary.tool_runs,
+        resourceAccesses: summary.resource_accesses,
+        returnedBytes: summary.returned_bytes,
+        resourcesAdvertised: summary.resources_advertised
+      },
+      toolRuns: toolRows.map((row) => ({
+        id: row.id,
+        toolName: row.tool_name,
+        indexRunId: row.index_run_id,
+        budget: row.budget,
+        query: row.query,
+        changedFiles: parseJsonArray(row.changed_files_json),
+        returnedBytes: row.returned_bytes,
+        resourceCount: row.resource_count,
+        omitted: parseJsonObject(row.omitted_json),
+        startedAt: row.started_at,
+        finishedAt: row.finished_at
+      })),
+      resourceAccesses: resourceRows.map((row) => ({
+        id: row.id,
+        uri: row.uri,
+        resourceKind: row.resource_kind,
+        resourceId: row.resource_id,
+        indexRunId: row.index_run_id,
+        returnedBytes: row.returned_bytes,
+        accessedAt: row.accessed_at
+      }))
+    };
+  });
+}
+
+function hasContextTelemetryTables(db: ReturnType<typeof openDatabase>): boolean {
+  return mcpHasTable(db, 'context_tool_runs') && mcpHasTable(db, 'context_resource_accesses');
+}
+
+function emptyContextTelemetry(): unknown {
+  return {
+    version: 0,
+    summary: {
+      toolRuns: 0,
+      resourceAccesses: 0,
+      returnedBytes: 0,
+      resourcesAdvertised: 0
+    },
+    toolRuns: [],
+    resourceAccesses: []
+  };
+}
+
+function bestEffortTelemetry(callback: () => void): void {
+  try {
+    if (process.env.IMPACT_TRACE_TELEMETRY_FORCE_FAILURE === '1') {
+      throw new Error('forced telemetry failure');
+    }
+    callback();
+  } catch {
+    // Telemetry must never break the primary MCP result or resource read.
+  }
+}
+
+function searchContextTelemetry(value: unknown): { indexRunId: number | null; resourceCount: number } {
+  return {
+    indexRunId: indexRunIdOf(value),
+    resourceCount: resourceCountOf(value)
+  };
+}
+
+function explainEntityTelemetry(value: unknown): { indexRunId: number | null; resourceCount: number } {
+  return {
+    indexRunId: indexRunIdOf(value),
+    resourceCount: resourceCountOf(value)
+  };
+}
+
+function indexRunIdOf(value: unknown): number | null {
+  if (!isRecord(value)) return null;
+  const indexRunId = value.indexRunId;
+  return typeof indexRunId === 'number' && Number.isFinite(indexRunId) ? indexRunId : null;
+}
+
+function resourceCountOf(value: unknown): number {
+  if (!isRecord(value) || !isRecord(value.resources)) return 0;
+  return Object.values(value.resources).reduce<number>((total, item) => {
+    if (Array.isArray(item)) return total + item.length;
+    return typeof item === 'string' && item.length > 0 ? total + 1 : total;
+  }, 0);
+}
+
+function omittedCountsOf(value: unknown): unknown {
+  if (!isRecord(value)) return {};
+  return isRecord(value.omittedCounts) ? value.omittedCounts : {};
+}
+
+function sanitizeTelemetryText(value: string | null | undefined): string | null {
+  return value === undefined || value === null ? null : redactSecrets(value);
+}
+
+function sanitizeTelemetryPaths(paths: string[]): string[] {
+  return paths.map((item) => redactSecrets(item));
+}
+
+function byteLength(value: string): number {
+  return Buffer.byteLength(value, 'utf8');
+}
+
+function parseJsonArray(value: string): string[] {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? parsed.map((item) => String(item)) : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseJsonObject(value: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return isRecord(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 function listReportResources(context: McpContext): Array<{ uri: string; name: string; mimeType: string }> {
   return withReadOnlyDb(context, (db, repoId) => {
     const rows = db
@@ -937,6 +1289,7 @@ function readEntity(context: McpContext, entityId: string): unknown {
       .all(repoId, entityId, indexRunId, relationLimit + 1);
     return {
       entity,
+      indexRunId,
       outgoing: outgoing.slice(0, relationLimit),
       incoming: incoming.slice(0, relationLimit),
       limits: {
@@ -1743,6 +2096,12 @@ function mcpHasColumn(db: ReturnType<typeof openDatabase>, table: string, column
     .get(table, column) !== undefined;
 }
 
+function mcpHasTable(db: ReturnType<typeof openDatabase>, table: string): boolean {
+  return db
+    .prepare("SELECT 1 AS one FROM sqlite_master WHERE type = 'table' AND name = ?")
+    .get(table) !== undefined;
+}
+
 function entityFromEvidenceRow(row: EvidenceResourceRow, prefix: 'source' | 'target'): EntityRef {
   const id = prefix === 'source' ? row.source_id! : row.target_id!;
   const kind = prefix === 'source' ? row.source_kind! : row.target_kind!;
@@ -1796,18 +2155,6 @@ function withWritableDb<T>(context: McpContext, callback: (db: ReturnType<typeof
   } finally {
     db.close();
   }
-}
-
-function jsonResource(uri: string, value: unknown): { contents: Array<{ uri: string; mimeType: string; text: string }> } {
-  return {
-    contents: [
-      {
-        uri,
-        mimeType: 'application/json',
-        text: JSON.stringify(value, null, 2)
-      }
-    ]
-  };
 }
 
 function parseGraphFormat(value: string): GraphExportFormat {

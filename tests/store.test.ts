@@ -21,14 +21,14 @@ function withTempDb<T>(callback: (db: Db) => T): T {
   }
 }
 
-test('migrate records schema_versions through v9', () => {
+test('migrate records schema_versions through v10', () => {
   withTempDb((db) => {
     const versions = db
       .prepare('SELECT version FROM schema_versions ORDER BY version')
       .all() as Array<{ version: number }>;
     assert.deepEqual(
       versions.map((row) => row.version),
-      [1, 2, 3, 4, 5, 6, 7, 8, 9]
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     );
   });
 });
@@ -44,13 +44,31 @@ test('migrate creates the agent memory tables and later extension tables', () =>
       'fact_provenance',
       'transaction_parents',
       'fact_embeddings',
-      'reflections'
+      'reflections',
+      'context_tool_runs',
+      'context_resource_accesses'
     ];
     for (const name of expected) {
       const row = db
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
         .get(name);
       assert.ok(row, `expected table ${name} to exist`);
+    }
+  });
+});
+
+test('migrate v10 adds context access telemetry tables', () => {
+  withTempDb((db) => {
+    for (const [table, columns] of [
+      ['context_tool_runs', ['id', 'repo_id', 'tool_name', 'index_run_id', 'budget', 'query', 'changed_files_json', 'returned_bytes', 'resource_count', 'omitted_json', 'started_at', 'finished_at']],
+      ['context_resource_accesses', ['id', 'repo_id', 'uri', 'resource_kind', 'resource_id', 'index_run_id', 'returned_bytes', 'accessed_at']]
+    ] as const) {
+      for (const column of columns) {
+        const row = db
+          .prepare(`SELECT name FROM pragma_table_info('${table}') WHERE name = ?`)
+          .get(column);
+        assert.ok(row, `${table}.${column} column should exist`);
+      }
     }
   });
 });
@@ -105,7 +123,7 @@ test('migrate is idempotent across re-runs', () => {
         .all() as Array<{ version: number }>;
       assert.deepEqual(
         versions.map((row) => row.version),
-        [1, 2, 3, 4, 5, 6, 7, 8, 9]
+        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
       );
     } finally {
       second.close();
@@ -128,7 +146,10 @@ test('migrate upgrades a synthetic v6 schema by adding v7/v8/v9 columns and tabl
       seed.prepare('DELETE FROM schema_versions WHERE version = 7').run();
       seed.prepare('DELETE FROM schema_versions WHERE version = 8').run();
       seed.prepare('DELETE FROM schema_versions WHERE version = 9').run();
+      seed.prepare('DELETE FROM schema_versions WHERE version = 10').run();
       seed.prepare('DROP TABLE IF EXISTS reflections').run();
+      seed.prepare('DROP TABLE IF EXISTS context_tool_runs').run();
+      seed.prepare('DROP TABLE IF EXISTS context_resource_accesses').run();
       seed.prepare('CREATE TABLE branches_v6_only AS SELECT id, name, head_tx_id, parent_branch_id, created_at FROM branches').run();
       seed.prepare('DROP TABLE branches').run();
       seed
@@ -240,7 +261,11 @@ test('migrate upgrades a synthetic v6 schema by adding v7/v8/v9 columns and tabl
       const versions = upgraded
         .prepare('SELECT max(version) AS v FROM schema_versions')
         .get() as { v: number };
-      assert.equal(versions.v, 9);
+      assert.equal(versions.v, 10);
+      const telemetry = upgraded
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'context_tool_runs'")
+        .get();
+      assert.ok(telemetry, 'context_tool_runs table must exist after upgrade');
     } finally {
       upgraded.close();
     }

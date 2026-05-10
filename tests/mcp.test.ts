@@ -148,6 +148,57 @@ async function makeRepo(): Promise<string> {
   return repoRoot;
 }
 
+async function makeWideContextRepo(): Promise<string> {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-mcp-wide-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await mkdir(path.join(repoRoot, 'tests'), { recursive: true });
+  await mkdir(path.join(repoRoot, 'docs'), { recursive: true });
+  await mkdir(path.join(repoRoot, '.github/workflows'), { recursive: true });
+
+  await writeFile(path.join(repoRoot, 'src/a.ts'), 'export const a = 1;\n');
+  for (const name of ['b', 'c', 'd', 'e', 'f', 'g']) {
+    await writeFile(
+      path.join(repoRoot, `src/${name}.ts`),
+      [
+        'import { a } from "./a";',
+        `const padded${name.toUpperCase()} = "${'x'.repeat(420)}";`,
+        `export const ${name} = a + padded${name.toUpperCase()}.length;`
+      ].join('\n')
+    );
+  }
+  await writeFile(
+    path.join(repoRoot, 'tests/a.test.ts'),
+    [
+      'import { a } from "../src/a";',
+      `const paddedTest = "${'t'.repeat(420)}";`,
+      'export const verified = a + paddedTest.length;'
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(repoRoot, 'docs/a.md'),
+    [
+      '# A module',
+      `The implementation in src/a.ts is part of this flow. ${'d'.repeat(420)}`
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(repoRoot, '.github/workflows/ci.yml'),
+    [
+      'name: ci',
+      'on: [push]',
+      'jobs:',
+      '  test:',
+      '    runs-on: ubuntu-latest',
+      '    steps:',
+      `      - run: npm test -- src/a.ts ${'c'.repeat(420)}`
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot });
+  await indexProject({ repoRoot });
+  return repoRoot;
+}
+
 function countReports(repoRoot: string): number {
   const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
   try {
@@ -179,24 +230,34 @@ test('MCP stdio server initializes and exposes the full agent memory tool surfac
     );
     for (const expected of [
       'impact_trace_analyze_diff',
+      'impact_trace_context_for_change',
       'impact_trace_remember',
       'impact_trace_recall',
       'impact_trace_branch',
+      'impact_trace_merge',
       'impact_trace_trace',
       'impact_trace_reflect',
       'impact_trace_abandon_branch',
-      'impact_trace_gc_branches'
+      'impact_trace_gc_branches',
+      'impact_trace_profile',
+      'impact_trace_repair_reflections',
+      'impact_trace_restore_branch'
     ]) {
       assert.ok(toolByName.has(expected), `expected MCP tool ${expected} to be advertised`);
     }
     assert.equal(toolByName.get('impact_trace_analyze_diff')!.annotations?.readOnlyHint, true);
+    assert.equal(toolByName.get('impact_trace_context_for_change')!.annotations?.readOnlyHint, true);
     assert.equal(toolByName.get('impact_trace_recall')!.annotations?.readOnlyHint, true);
     assert.equal(toolByName.get('impact_trace_trace')!.annotations?.readOnlyHint, true);
+    assert.equal(toolByName.get('impact_trace_profile')!.annotations?.readOnlyHint, true);
     assert.equal(toolByName.get('impact_trace_remember')!.annotations?.readOnlyHint, false);
     assert.equal(toolByName.get('impact_trace_branch')!.annotations?.readOnlyHint, false);
+    assert.equal(toolByName.get('impact_trace_merge')!.annotations?.readOnlyHint, false);
     assert.equal(toolByName.get('impact_trace_reflect')!.annotations?.readOnlyHint, false);
     assert.equal(toolByName.get('impact_trace_abandon_branch')!.annotations?.readOnlyHint, false);
     assert.equal(toolByName.get('impact_trace_gc_branches')!.annotations?.readOnlyHint, false);
+    assert.equal(toolByName.get('impact_trace_repair_reflections')!.annotations?.readOnlyHint, false);
+    assert.equal(toolByName.get('impact_trace_restore_branch')!.annotations?.readOnlyHint, false);
     assert.equal(response.result.tools.some((tool: { name: string }) => tool.name.includes('obsidian')), false);
   } finally {
     await client.close();
@@ -250,6 +311,119 @@ test('MCP analyze_diff does not persist reports', async () => {
       names.filter((name) => !/\.db-(wal|shm)$/.test(name));
     assert.deepEqual(filterWalAux(dbArtifacts(repoRoot)), filterWalAux(artifactsBefore));
     assert.equal(existsSync(path.join(repoRoot, '.impact-trace/reports')), false);
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP context_for_change returns budgeted compact context without persisting reports', async () => {
+  const repoRoot = await makeRepo();
+  const artifactsBefore = dbArtifacts(repoRoot);
+  assert.equal(countReports(repoRoot), 0);
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+    const response = await client.request('tools/call', {
+      name: 'impact_trace_context_for_change',
+      arguments: { changedFiles: ['src/a.ts'], budget: 'brief' }
+    });
+
+    assert.equal(response.error, undefined);
+    assert.equal(response.result.content[0].type, 'text');
+    const pack = JSON.parse(response.result.content[0].text) as {
+      version: number;
+      budget: string;
+      changed: Array<{ entity: { id: string }; resourceUri: string }>;
+      context: Array<{ path: string; resourceUri: string; relations: string[] }>;
+      evidence: Array<{ snippet: string; file: string }>;
+      resources: { coverage: string; entities: string[] };
+      limits: { affectedLimit: number; evidenceLimit: number; snippetChars: number };
+      omittedCounts: { affected: number; evidence: number; actions: number };
+    };
+    assert.equal(pack.version, 0);
+    assert.equal(pack.budget, 'brief');
+    assert.equal(pack.changed[0]?.entity.id, 'file:src/a.ts');
+    assert.equal(pack.changed[0]?.resourceUri, `impact-trace://entities/${encodeURIComponent('file:src/a.ts')}`);
+    assert.ok(pack.context.some((item) => item.path === 'src/b.ts'));
+    assert.ok(pack.context.every((item) => item.resourceUri.startsWith('impact-trace://entities/')));
+    assert.ok(pack.context.every((item) => item.relations.length > 0));
+    assert.ok(pack.evidence.length > 0);
+    assert.ok(pack.evidence.every((item) => item.snippet.length <= pack.limits.snippetChars));
+    assert.equal(pack.resources.coverage, 'impact-trace://coverage/latest');
+    assert.ok(pack.resources.entities.includes(`impact-trace://entities/${encodeURIComponent('file:src/a.ts')}`));
+    assert.equal(pack.limits.affectedLimit, 5);
+    assert.equal(pack.limits.evidenceLimit, 5);
+    assert.equal(pack.omittedCounts.affected, 0);
+    assert.equal(countReports(repoRoot), 0);
+    const filterWalAux = (names: string[]): string[] =>
+      names.filter((name) => !/\.db-(wal|shm)$/.test(name));
+    assert.deepEqual(filterWalAux(dbArtifacts(repoRoot)), filterWalAux(artifactsBefore));
+    assert.equal(existsSync(path.join(repoRoot, '.impact-trace/reports')), false);
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP context_for_change applies budget presets and validates paths', async () => {
+  const repoRoot = await makeWideContextRepo();
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+
+    const briefResponse = await client.request('tools/call', {
+      name: 'impact_trace_context_for_change',
+      arguments: { changedFiles: ['src/a.ts'], budget: 'brief' }
+    });
+    const deepResponse = await client.request('tools/call', {
+      name: 'impact_trace_context_for_change',
+      arguments: { changedFiles: ['src/a.ts'], budget: 'deep' }
+    });
+    const brief = JSON.parse(briefResponse.result.content[0].text) as {
+      context: Array<{ path: string }>;
+      evidence: Array<{ snippet: string }>;
+      omittedCounts: { affected: number; evidence: number };
+      limits: {
+        affectedLimit: number;
+        evidenceLimit: number;
+        snippetChars: number;
+        affectedTruncated: boolean;
+        evidenceTruncated: boolean;
+      };
+    };
+    const deep = JSON.parse(deepResponse.result.content[0].text) as {
+      context: Array<{ path: string }>;
+      evidence: Array<{ snippet: string }>;
+      omittedCounts: { affected: number; evidence: number };
+      limits: {
+        affectedLimit: number;
+        evidenceLimit: number;
+        snippetChars: number;
+        affectedTruncated: boolean;
+        evidenceTruncated: boolean;
+      };
+    };
+    assert.ok(deep.limits.affectedLimit > brief.limits.affectedLimit);
+    assert.ok(deep.limits.evidenceLimit > brief.limits.evidenceLimit);
+    assert.ok(deep.limits.snippetChars > brief.limits.snippetChars);
+    assert.equal(brief.context.length, brief.limits.affectedLimit);
+    assert.equal(brief.evidence.length, brief.limits.evidenceLimit);
+    assert.equal(brief.limits.affectedTruncated, true);
+    assert.equal(brief.limits.evidenceTruncated, true);
+    assert.ok(brief.omittedCounts.affected > 0);
+    assert.ok(brief.omittedCounts.evidence > 0);
+    assert.ok(brief.evidence.every((item) => item.snippet.length <= brief.limits.snippetChars));
+    assert.ok(brief.evidence.some((item) => item.snippet.endsWith('...')));
+    assert.ok(deep.context.length > brief.context.length);
+    assert.ok(deep.evidence.length > brief.evidence.length);
+    assert.equal(deep.omittedCounts.affected, 0);
+
+    const bad = await client.request('tools/call', {
+      name: 'impact_trace_context_for_change',
+      arguments: { changedFiles: ['../outside.ts'] }
+    });
+    assert.equal(bad.error, undefined);
+    assert.equal(bad.result.isError, true);
+    assert.match(bad.result.content[0].text, /outside repo root/);
   } finally {
     await client.close();
   }

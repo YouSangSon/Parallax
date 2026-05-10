@@ -87,6 +87,74 @@ async function makeFixtureRepo(): Promise<string> {
   return repoRoot;
 }
 
+function initGitRepo(repoRoot: string): string {
+  execFileSync('git', ['init', '-b', 'main'], { cwd: repoRoot, stdio: 'ignore' });
+  execFileSync('git', ['config', 'user.email', 'impact-trace@example.com'], { cwd: repoRoot });
+  execFileSync('git', ['config', 'user.name', 'Impact Trace Test'], { cwd: repoRoot });
+  execFileSync('git', ['add', '.'], { cwd: repoRoot });
+  execFileSync('git', ['commit', '-m', 'base'], { cwd: repoRoot, stdio: 'ignore' });
+  return gitHead(repoRoot);
+}
+
+function gitHead(repoRoot: string): string {
+  return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim();
+}
+
+function downgradeSnapshotAndSpanSchemaForReadOnlyTest(repoRoot: string): void {
+  const db = new DatabaseSync(databasePath(repoRoot));
+  try {
+    db.exec(`
+      PRAGMA foreign_keys = OFF;
+
+      CREATE TABLE relation_evidence_legacy AS
+        SELECT id, relation_id, repo_id, file_path, kind, snippet, confidence, index_run_id
+        FROM relation_evidence;
+      DROP TABLE relation_evidence;
+      CREATE TABLE relation_evidence (
+        id TEXT PRIMARY KEY,
+        relation_id TEXT NOT NULL,
+        repo_id INTEGER NOT NULL,
+        file_path TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        snippet TEXT NOT NULL,
+        confidence TEXT NOT NULL,
+        index_run_id INTEGER NOT NULL,
+        FOREIGN KEY(relation_id) REFERENCES relations(id),
+        FOREIGN KEY(repo_id) REFERENCES repos(id),
+        FOREIGN KEY(index_run_id) REFERENCES index_runs(id)
+      );
+      INSERT INTO relation_evidence (
+        id, relation_id, repo_id, file_path, kind, snippet, confidence, index_run_id
+      )
+      SELECT id, relation_id, repo_id, file_path, kind, snippet, confidence, index_run_id
+      FROM relation_evidence_legacy;
+      DROP TABLE relation_evidence_legacy;
+
+      CREATE TABLE index_runs_legacy AS
+        SELECT id, repo_id, status, started_at, finished_at, extractor_version
+        FROM index_runs;
+      DROP TABLE index_runs;
+      CREATE TABLE index_runs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        repo_id INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        finished_at TEXT,
+        extractor_version TEXT NOT NULL,
+        FOREIGN KEY(repo_id) REFERENCES repos(id)
+      );
+      INSERT INTO index_runs (id, repo_id, status, started_at, finished_at, extractor_version)
+      SELECT id, repo_id, status, started_at, finished_at, extractor_version
+      FROM index_runs_legacy;
+      DROP TABLE index_runs_legacy;
+
+      PRAGMA foreign_keys = ON;
+    `);
+  } finally {
+    db.close();
+  }
+}
+
 function makeAttributionAdapter(id: string, language: string): SemanticAdapter {
   return {
     id,
@@ -151,7 +219,7 @@ test('initProject creates config and SQLite database tables', async () => {
     assert.match(tables.names, /contracts/);
     assert.match(tables.names, /cross_repo_links/);
     assert.match(tables.names, /work_artifacts/);
-    assert.equal(schemaVersion.version, 7);
+    assert.equal(schemaVersion.version, 9);
   } finally {
     db.close();
   }
@@ -2388,6 +2456,240 @@ test('analyzeDiff warns when the working tree is stale relative to the latest in
   const report = await analyzeDiff({ repoRoot, changedFiles: ['src/auth/session.ts'] });
 
   assert.ok(report.warnings?.some((warning) => warning.includes('stale index')));
+});
+
+test('analyzeDiff readOnly remains compatible with pre-span and pre-git-snapshot databases', async () => {
+  const repoRoot = await makeFixtureRepo();
+  await initProject({ repoRoot });
+  await indexProject({ repoRoot });
+  downgradeSnapshotAndSpanSchemaForReadOnlyTest(repoRoot);
+
+  const report = await analyzeDiff({
+    repoRoot,
+    changedFiles: ['src/auth/session.ts'],
+    readOnly: true,
+    persistReport: false
+  });
+
+  assert.ok(report.affectedFiles.some((file) => file.path === 'src/routes/private.ts'));
+  assert.ok(report.evidence.length > 0);
+});
+
+test('indexProject records git snapshot metadata for clean, dirty, and non-git repos', async () => {
+  const repoRoot = await makeFixtureRepo();
+  const baseHead = initGitRepo(repoRoot);
+  await initProject({ repoRoot });
+
+  const cleanIndex = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const cleanRun = db
+      .prepare('SELECT git_commit_sha, git_branch_name, git_is_dirty FROM index_runs WHERE id = ?')
+      .get(cleanIndex.indexRunId) as {
+      git_commit_sha: string | null;
+      git_branch_name: string | null;
+      git_is_dirty: number;
+    };
+    assert.equal(cleanRun.git_commit_sha, baseHead);
+    assert.equal(cleanRun.git_branch_name, 'main');
+    assert.equal(cleanRun.git_is_dirty, 0);
+  } finally {
+    db.close();
+  }
+
+  await writeFile(path.join(repoRoot, 'README.md'), 'Dirty working tree.\n');
+  const dirtyIndex = await indexProject({ repoRoot });
+  const dirtyDb = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const dirtyRun = dirtyDb
+      .prepare('SELECT git_commit_sha, git_branch_name, git_is_dirty FROM index_runs WHERE id = ?')
+      .get(dirtyIndex.indexRunId) as {
+      git_commit_sha: string | null;
+      git_branch_name: string | null;
+      git_is_dirty: number;
+    };
+    assert.equal(dirtyRun.git_commit_sha, baseHead);
+    assert.equal(dirtyRun.git_branch_name, 'main');
+    assert.equal(dirtyRun.git_is_dirty, 1);
+  } finally {
+    dirtyDb.close();
+  }
+
+  const nonGitRoot = await makeFixtureRepo();
+  await initProject({ repoRoot: nonGitRoot });
+  const nonGitIndex = await indexProject({ repoRoot: nonGitRoot });
+  const nonGitDb = new DatabaseSync(databasePath(nonGitRoot), { readOnly: true });
+  try {
+    const nonGitRun = nonGitDb
+      .prepare('SELECT git_commit_sha, git_branch_name, git_is_dirty FROM index_runs WHERE id = ?')
+      .get(nonGitIndex.indexRunId) as {
+      git_commit_sha: string | null;
+      git_branch_name: string | null;
+      git_is_dirty: number;
+    };
+    assert.equal(nonGitRun.git_commit_sha, null);
+    assert.equal(nonGitRun.git_branch_name, null);
+    assert.equal(nonGitRun.git_is_dirty, 0);
+  } finally {
+    nonGitDb.close();
+  }
+});
+
+test('indexProject records branch and dirty state for git repos before the first commit', async () => {
+  const repoRoot = await makeFixtureRepo();
+  execFileSync('git', ['init', '-b', 'main'], { cwd: repoRoot, stdio: 'ignore' });
+  await initProject({ repoRoot });
+
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const run = db
+      .prepare('SELECT git_commit_sha, git_branch_name, git_is_dirty FROM index_runs WHERE id = ?')
+      .get(index.indexRunId) as {
+      git_commit_sha: string | null;
+      git_branch_name: string | null;
+      git_is_dirty: number;
+    };
+    assert.equal(run.git_commit_sha, null);
+    assert.equal(run.git_branch_name, 'main');
+    assert.equal(run.git_is_dirty, 1);
+  } finally {
+    db.close();
+  }
+});
+
+test('analyzeDiff warns when git HEAD changed after the latest index', async () => {
+  const repoRoot = await makeFixtureRepo();
+  const indexedHead = initGitRepo(repoRoot);
+  await initProject({ repoRoot });
+  await indexProject({ repoRoot });
+
+  await writeFile(path.join(repoRoot, 'README.md'), 'Docs changed after index.\n');
+  execFileSync('git', ['add', 'README.md'], { cwd: repoRoot });
+  execFileSync('git', ['commit', '-m', 'docs after index'], { cwd: repoRoot, stdio: 'ignore' });
+  const currentHead = gitHead(repoRoot);
+
+  const report = await analyzeDiff({ repoRoot, changedFiles: ['src/auth/session.ts'] });
+
+  assert.ok(
+    report.warnings?.some(
+      (warning) =>
+        warning.includes('git HEAD changed since index run') &&
+        warning.includes(indexedHead.slice(0, 12)) &&
+        warning.includes(currentHead.slice(0, 12))
+    )
+  );
+});
+
+test('analyzeDiff warns when working tree dirty state changed after a clean index', async () => {
+  const repoRoot = await makeFixtureRepo();
+  initGitRepo(repoRoot);
+  await initProject({ repoRoot });
+  await indexProject({ repoRoot });
+
+  await writeFile(path.join(repoRoot, 'README.md'), 'Uncommitted docs change.\n');
+
+  const report = await analyzeDiff({ repoRoot, changedFiles: ['src/auth/session.ts'] });
+
+  assert.ok(
+    report.warnings?.some((warning) =>
+      warning.includes('working tree is dirty but index run')
+    )
+  );
+});
+
+test('analyzeDiff does not emit git dirty warnings for migrated legacy runs without snapshot metadata', async () => {
+  const repoRoot = await makeFixtureRepo();
+  initGitRepo(repoRoot);
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+  const db = new DatabaseSync(databasePath(repoRoot));
+  try {
+    db
+      .prepare('UPDATE index_runs SET git_commit_sha = NULL, git_branch_name = NULL, git_is_dirty = 0 WHERE id = ?')
+      .run(index.indexRunId);
+  } finally {
+    db.close();
+  }
+
+  await writeFile(path.join(repoRoot, 'README.md'), 'Uncommitted docs change after legacy index.\n');
+
+  const report = await analyzeDiff({ repoRoot, changedFiles: ['src/auth/session.ts'] });
+
+  assert.equal(
+    report.warnings?.some((warning) =>
+      warning.includes('working tree is dirty but index run')
+    ) ?? false,
+    false
+  );
+});
+
+test('analyzeDiff warns when latest index was created from a dirty working tree', async () => {
+  const repoRoot = await makeFixtureRepo();
+  initGitRepo(repoRoot);
+  await initProject({ repoRoot });
+
+  await writeFile(path.join(repoRoot, 'README.md'), 'Dirty while indexing.\n');
+  await indexProject({ repoRoot });
+  execFileSync('git', ['checkout', '--', 'README.md'], { cwd: repoRoot });
+
+  const report = await analyzeDiff({ repoRoot, changedFiles: ['src/auth/session.ts'] });
+
+  assert.ok(
+    report.warnings?.some((warning) =>
+      warning.includes('index run') && warning.includes('was created from a dirty working tree')
+    )
+  );
+});
+
+test('indexProject treats renames from .impact-trace to source paths as dirty', async () => {
+  const repoRoot = await makeFixtureRepo();
+  initGitRepo(repoRoot);
+  await initProject({ repoRoot });
+
+  await mkdir(path.join(repoRoot, '.impact-trace'), { recursive: true });
+  await writeFile(path.join(repoRoot, '.impact-trace/local-note.txt'), 'local note\n');
+  execFileSync('git', ['add', '-f', '.impact-trace/local-note.txt'], { cwd: repoRoot });
+  execFileSync('git', ['commit', '-m', 'track impact note'], { cwd: repoRoot, stdio: 'ignore' });
+  execFileSync('git', ['mv', '.impact-trace/local-note.txt', 'src/local-note.txt'], { cwd: repoRoot });
+
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const run = db
+      .prepare('SELECT git_is_dirty FROM index_runs WHERE id = ?')
+      .get(index.indexRunId) as { git_is_dirty: number };
+    assert.equal(run.git_is_dirty, 1);
+  } finally {
+    db.close();
+  }
+});
+
+test('indexProject ignores quoted renames that stay inside .impact-trace', async () => {
+  const repoRoot = await makeFixtureRepo();
+  initGitRepo(repoRoot);
+  await initProject({ repoRoot });
+
+  await mkdir(path.join(repoRoot, '.impact-trace'), { recursive: true });
+  await writeFile(path.join(repoRoot, '.impact-trace/a -> b.txt'), 'local note\n');
+  execFileSync('git', ['add', '-f', '.impact-trace/a -> b.txt'], { cwd: repoRoot });
+  execFileSync('git', ['commit', '-m', 'track quoted impact note'], { cwd: repoRoot, stdio: 'ignore' });
+  execFileSync('git', ['mv', '.impact-trace/a -> b.txt', '.impact-trace/c -> d.txt'], { cwd: repoRoot });
+
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const run = db
+      .prepare('SELECT git_is_dirty FROM index_runs WHERE id = ?')
+      .get(index.indexRunId) as { git_is_dirty: number };
+    assert.equal(run.git_is_dirty, 0);
+  } finally {
+    db.close();
+  }
 });
 
 test('analyzeDiff returns structured test commands for repo-controlled filenames', async () => {

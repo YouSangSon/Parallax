@@ -68,6 +68,6 @@ These were considered and rejected — see [decisions.ko.md](decisions.ko.md) fo
 |---|---|
 | New AI agent picking up the project | This file → [docs/README.md](README.md) → [decisions.ko.md](decisions.ko.md) |
 | Engineer running it for the first time | [README.md](../README.md) → [agent-memory-cookbook.ko.md](agent-memory-cookbook.ko.md) |
-| Designer of a new feature | [decisions.ko.md](decisions.ko.md) → [roadmap.md](roadmap.md) → most recent `phaseN-handoff.ko.md` |
+| Designer of a new feature | [decisions.ko.md](decisions.ko.md) → [roadmap.md](roadmap.md) → current phase plan such as [phase6b-ts-accuracy-plan.ko.md](phase6b-ts-accuracy-plan.ko.md) |
 | Maintainer doing a release | [CHANGELOG.md](../CHANGELOG.md) → [progress.ko.md](progress.ko.md) |
 | Open-sourcing or onboarding teammate | This file → [glossary.md](glossary.md) → [skills/impact-trace/SKILL.md](../skills/impact-trace/SKILL.md) |

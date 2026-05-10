@@ -123,10 +123,11 @@ For deep architecture details, see `references/architecture.md`.
 
 For the full design rationale and decision log, see:
 - `docs/vision.md` / `docs/vision.ko.md` — one-page thesis (start here)
+- `docs/impact-context-layer-plan.ko.md` — MCP context layer, local UI explorer, context budget, code/docs/policies/proposals impact
+- `docs/phase6b-ts-accuracy-plan.ko.md` — current next slice: multi-language + Spring Boot adapter pack v0 + trusted evidence
+- `docs/phase6-design.ko.md` — adapter foundation that landed on main
 - `docs/roadmap.md` — unified roadmap across both axes (impact analysis + agent memory)
 - `docs/glossary.md` — disambiguates branch/entity/transaction across the two axes
 - `docs/decisions.ko.md` — **D-001..D-018** cumulative ADRs (six new in Phase 4)
-- `docs/phase3-design.ko.md` — schema v7, LLM provider abstraction, reflection, branch GC
-- `docs/phase4-p2-p3-design.ko.md` + `docs/phase4-p4-p5-design.ko.md` — Phase 4 sub-phase design / retrospective
-- `docs/phase5-handoff.ko.md` — Phase 5 entry point (5 candidates, 4 design decisions)
-- `docs/supermemory-adoption.ko.md` — patterns we adopted from supermemory and why we rejected others
+- `docs/progress.ko.md` — chronological developer log
+- `docs/agent-memory-cookbook.ko.md` — practical agent memory usage patterns

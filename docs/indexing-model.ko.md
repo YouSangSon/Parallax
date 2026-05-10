@@ -1,7 +1,5 @@
 # Impact Trace 인덱싱 모델
 
-영어 버전: [indexing-model.en.md](indexing-model.en.md)
-
 ## 목표
 
 Impact Trace의 인덱싱 모델은 한 repo 안의 여러 언어와 여러 시스템 설정, 그리고 여러
@@ -171,7 +169,7 @@ Repo files
 
 | Adapter family | 역할 |
 |---|---|
-| Language semantic | TypeScript Compiler API, LSP, CodeQL처럼 정확한 symbol/reference를 만든다. |
+| Language semantic | compiler API, LSP, CodeQL처럼 정확한 symbol/reference를 만든다. |
 | Syntax fallback | Tree-sitter처럼 여러 언어에서 기본 symbol/import를 만든다. |
 | Build/project system | Maven, Gradle, dotnet, CMake, Make, Bazel, package manager metadata를 읽는다. |
 | Config/system | YAML, JSON, TOML, shell, Docker, Kubernetes, Terraform, CI를 읽는다. |

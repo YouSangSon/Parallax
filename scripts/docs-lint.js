@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 
 const files = execFileSync('git', ['ls-files', '*.md'], { encoding: 'utf8' })
@@ -18,6 +18,7 @@ const forbidden = [
 ];
 
 for (const file of files) {
+  if (!existsSync(file)) continue;
   const content = readFileSync(file, 'utf8');
   for (const pattern of forbidden) {
     if (pattern.test(content)) {
@@ -26,4 +27,3 @@ for (const file of files) {
     }
   }
 }
-

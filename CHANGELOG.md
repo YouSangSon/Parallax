@@ -6,13 +6,26 @@ For day-by-day developer log see [docs/progress.ko.md](docs/progress.ko.md). For
 
 ---
 
-## Phase 6 — Adapter foundations branch (2026-05-04)
-
-Branch `feature/phase6-adapter-foundations`. Not merged to `main` yet.
+## Planning — Impact context layer (2026-05-09)
 
 ### Added
 
-- **Adapter foundation scaffold** — `SemanticAdapter`/`AdapterRun` streaming interface, priority `AdapterRegistry`, and `MultiLanguageRegexAdapter` extraction give future TS Compiler API, LSP, CodeQL, and workspace adapters a stable dispatch point.
+- **Product plan** — `docs/impact-context-layer-plan.ko.md` defines the MCP + local UI product shape, with code/docs/policies/proposals/decisions in one impact graph.
+- **Context budget goal** — the plan makes AI context reduction a first-class requirement: compact context packs, resource-on-demand evidence, ranking/dedupe, and `brief`/`standard`/`deep` MCP budgets.
+- **Phase 6B retargeted** — the next product slice is now Multi-language + Spring Boot Adapter Pack v0 + Trusted Evidence, covering Java, Kotlin, Spring Boot, Python, Go, Rust, TypeScript, and JavaScript rather than a TypeScript-only lane.
+- **ImpactBench thin spine** — `npm run bench` now builds a deterministic multi-language/Spring Boot fixture, scores relation recall/precision, affected-file recall, evidence presence, span completeness, adapter attribution, and context-pack readiness, then writes `.impact-trace/bench/impact-bench-report.json`.
+- **MCP context pack v0** — `impact_trace_context_for_change` returns budgeted `brief`/`standard`/`deep` context packs with top impact paths, compact evidence, actions, omitted counts, and entity/coverage resource links without persisting a full report.
+- **Docs root cleanup** — root `docs/` keeps the current high-signal docs for planning, onboarding, and implementation.
+
+---
+
+## Phase 6 — Adapter foundations (2026-05-04, landed on main 2026-05-09)
+
+Originally developed on `feature/phase6-adapter-foundations`; landed on `main` as the rewritten 8-commit Phase 6 series ending at `3cba0a2`.
+
+### Added
+
+- **Adapter foundation scaffold** — `SemanticAdapter`/`AdapterRun` streaming interface, priority `AdapterRegistry`, and `MultiLanguageRegexAdapter` extraction give future language/framework, LSP, CodeQL, and workspace adapters a stable dispatch point.
 - **Multi-adapter attribution** — `indexProject()` now creates per-adapter runs, attributes coverage per adapter, writes relation `adapter_run_id`, and reports adapters used by language.
 - **Adapter diagnostics observability** — diagnostics are persisted as coverage diagnostic entries and summarized on adapter runs, including diagnostics emitted before a later adapter failure.
 - **Public exports fence** — package exports are fenced so consumers import through the intended public package surface.
@@ -27,7 +40,7 @@ Branch `feature/phase6-adapter-foundations`. Not merged to `main` yet.
 
 ### Still pending in Phase 6
 
-- TypeScript Compiler API adapter, persisted source spans/ranges, `index_runs` commit/dirty/branch snapshot metadata, and workspace catalog loader/resolver.
+- Java/Kotlin/Spring Boot/Python/Go/Rust/TS/JS adapter v0, persisted source spans/ranges, `index_runs` commit/dirty/branch snapshot metadata, and workspace catalog loader/resolver.
 
 ---
 
@@ -77,10 +90,10 @@ Phase 4 code baseline `33c49f0`. **112 tests passing.** ADR D-001..D-018. MCP 12
 - README's MCP tools table now lists **12 tools** (added `impact_trace_profile`, `impact_trace_repair_reflections`, `impact_trace_restore_branch`).
 - README's CLI list now has **16 commands** (added `profile`, `reindex-vec` — plus `branch --restore`, `reflect --repair`, `gc-branches --max-age` flags).
 - README's Phase status table marks Phase 4 complete (P1..P5 all shipped) and adds a Phase 5 candidate row.
-- New top-level docs: `vision.{ko,md}`, `roadmap.md`, `glossary.md`, `phase4-p2-p3-design.ko.md`, `phase4-p4-p5-design.ko.md`, `phase5-handoff.ko.md`.
-- `decisions.en.md` synced to D-001..D-018.
+- New top-level docs at the time included vision, roadmap, glossary, and planning notes.
+- Historical English decision-log sync covered D-001..D-018.
 
-### Rejected (recorded in `supermemory-adoption.ko.md` for future reference)
+### Rejected (recorded in the historical supermemory adoption review)
 
 - **`fact_provenance.kind` enum expansion** to add `'updates' / 'extends' / 'derives'`. Conflicts with D-002 + D-010.
 - **Pipeline state machine** on `index_runs.stage`. Wrong table — D-005 keeps memory ingestion stateless.
@@ -108,7 +121,7 @@ Phase 4 code baseline `33c49f0`. **112 tests passing.** ADR D-001..D-018. MCP 12
 - **CLI commands** — `reflect`, `branch --abandon`, `gc-branches`.
 - **MCP tools** — `impact_trace_reflect`, `impact_trace_abandon_branch`, `impact_trace_gc_branches`.
 - **Secret regex expansion** — added Stripe, Google API, npm, JWT, DB connection URL families to `redactSecrets`.
-- **`docs/phase3-design.ko.md`** with autoplan-style dual-voice consensus, DX scorecard, failure modes registry.
+- **Phase 3 design note** with autoplan-style dual-voice consensus, DX scorecard, failure modes registry.
 - **`docs/decisions.ko.md`** — cumulative ADR log D-001..D-012.
 
 ### Changed
@@ -156,7 +169,7 @@ Phase 4 code baseline `33c49f0`. **112 tests passing.** ADR D-001..D-018. MCP 12
 - **Redact-then-embed zero-row policy** (D-004) — facts whose value matches a secret pattern store `value_blob='[REDACTED]'` and create *no* embedding row.
 - **`as_of_tx` time-travel** — recall walks `transaction_parents` via recursive CTE.
 - **`--current-only`** — recall window-function dedups retracts (latest assert per `(entity, attribute, value_blob)`).
-- **`docs/agent-db-exploration.ko.md`**, **`docs/agent-memory-cookbook.ko.md`**.
+- **`docs/agent-memory-cookbook.ko.md`**.
 
 ---
 

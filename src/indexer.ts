@@ -4,6 +4,7 @@ import path from 'node:path';
 
 import { AdapterRegistry } from './adapters/registry.js';
 import { MultiLanguageRegexAdapter, isTestFile } from './adapters/multi-language-regex.js';
+import { readGitSnapshot } from './git-snapshot.js';
 import type {
   EntityDescriptor,
   ExtractCtx,
@@ -180,6 +181,10 @@ type RelationEvidenceSnapshotRow = {
   snippet: string;
   confidence: string;
   index_run_id: number;
+  start_line: number | null;
+  end_line: number | null;
+  start_col: number | null;
+  end_col: number | null;
 };
 
 type SymbolSnapshotRow = {
@@ -375,9 +380,10 @@ class CurrentStateSnapshot {
     `);
     const restoreRelationEvidence = this.db.prepare(`
       INSERT INTO relation_evidence (
-        id, relation_id, repo_id, file_path, kind, snippet, confidence, index_run_id
+        id, relation_id, repo_id, file_path, kind, snippet, confidence, index_run_id,
+        start_line, end_line, start_col, end_col
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const restoreSymbol = this.db.prepare(`
       INSERT INTO symbols (id, file_id, name, kind, exported, semantic_id, index_run_id)
@@ -486,7 +492,11 @@ class CurrentStateSnapshot {
           row.kind,
           row.snippet,
           row.confidence,
-          row.index_run_id
+          row.index_run_id,
+          row.start_line,
+          row.end_line,
+          row.start_col,
+          row.end_col
         );
       }
       for (const entry of this.symbols.values()) {
@@ -569,6 +579,7 @@ async function indexProjectInternal(
   const repoRoot = normalizeRepoRoot(options.repoRoot);
   const db = openDatabase(repoRoot);
   const repoId = ensureRepo(db, repoRoot);
+  const gitSnapshot = readGitSnapshot(repoRoot);
 
   const registeredAdapters = registry.list();
   if (registeredAdapters.length === 0) {
@@ -578,9 +589,19 @@ async function indexProjectInternal(
 
   const indexRunResult = db
     .prepare(
-      "INSERT INTO index_runs (repo_id, status, started_at, extractor_version) VALUES (?, ?, datetime('now'), ?)"
+      `INSERT INTO index_runs (
+         repo_id, status, started_at, extractor_version, git_commit_sha, git_branch_name, git_is_dirty
+       )
+       VALUES (?, ?, datetime('now'), ?, ?, ?, ?)`
     )
-    .run(repoId, 'running', extractorVersionFor(registeredAdapters));
+    .run(
+      repoId,
+      'running',
+      extractorVersionFor(registeredAdapters),
+      gitSnapshot.commitSha,
+      gitSnapshot.branchName,
+      gitSnapshot.isDirty ? 1 : 0
+    );
   const indexRunId = Number(indexRunResult.lastInsertRowid);
   const hasCompletedSnapshot = db
     .prepare('SELECT 1 AS one FROM index_runs WHERE repo_id = ? AND status = ? LIMIT 1')
@@ -1091,9 +1112,10 @@ function prepareStatements(db: Db): PreparedStatements {
     `),
     insertRelationEvidence: db.prepare(`
       INSERT OR REPLACE INTO relation_evidence (
-        id, relation_id, repo_id, file_path, kind, snippet, confidence, index_run_id
+        id, relation_id, repo_id, file_path, kind, snippet, confidence, index_run_id,
+        start_line, end_line, start_col, end_col
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `),
     insertSymbol: db.prepare(`
       INSERT OR REPLACE INTO symbols (file_id, name, kind, exported, semantic_id, index_run_id)
@@ -1705,7 +1727,11 @@ function insertCanonicalRelation(input: {
       input.kind,
       redactedSnippet,
       evidence.confidence,
-      input.indexRunId
+      input.indexRunId,
+      evidence.startLine ?? null,
+      evidence.endLine ?? null,
+      evidence.startCol ?? null,
+      evidence.endCol ?? null
     );
 
     const evidenceEntity = `file:${evidence.file}`;

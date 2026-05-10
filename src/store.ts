@@ -167,6 +167,9 @@ function migrate(db: Db): void {
       started_at TEXT NOT NULL,
       finished_at TEXT,
       extractor_version TEXT NOT NULL,
+      git_commit_sha TEXT,
+      git_branch_name TEXT,
+      git_is_dirty INTEGER NOT NULL DEFAULT 0,
       FOREIGN KEY(repo_id) REFERENCES repos(id)
     );
 
@@ -564,6 +567,13 @@ function migrate(db: Db): void {
   tryAddColumn(db, 'branches', 'state', "TEXT NOT NULL DEFAULT 'active'");
   tryAddColumn(db, 'transactions', 'archived', 'INTEGER NOT NULL DEFAULT 0');
   tryAddColumn(db, 'fact_provenance', 'kind', "TEXT NOT NULL DEFAULT 'evidence'");
+  tryAddColumn(db, 'relation_evidence', 'start_line', 'INTEGER');
+  tryAddColumn(db, 'relation_evidence', 'end_line', 'INTEGER');
+  tryAddColumn(db, 'relation_evidence', 'start_col', 'INTEGER');
+  tryAddColumn(db, 'relation_evidence', 'end_col', 'INTEGER');
+  tryAddColumn(db, 'index_runs', 'git_commit_sha', 'TEXT');
+  tryAddColumn(db, 'index_runs', 'git_branch_name', 'TEXT');
+  tryAddColumn(db, 'index_runs', 'git_is_dirty', 'INTEGER NOT NULL DEFAULT 0');
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS reflections (
@@ -586,6 +596,10 @@ function migrate(db: Db): void {
 
     INSERT OR IGNORE INTO schema_versions (version, applied_at)
     VALUES (7, datetime('now'));
+    INSERT OR IGNORE INTO schema_versions (version, applied_at)
+    VALUES (8, datetime('now'));
+    INSERT OR IGNORE INTO schema_versions (version, applied_at)
+    VALUES (9, datetime('now'));
   `);
 }
 
@@ -594,8 +608,19 @@ function migrate(db: Db): void {
 // IF NOT EXISTS form for ADD COLUMN and does not bind identifiers in
 // ALTER TABLE, so we accept the interpolation but constrain it. Every
 // caller must pass a literal that appears in these sets.
-const ALLOWED_TABLES = new Set(['branches', 'transactions', 'fact_provenance']);
-const ALLOWED_COLUMNS = new Set(['state', 'archived', 'kind']);
+const ALLOWED_TABLES = new Set(['branches', 'transactions', 'fact_provenance', 'relation_evidence', 'index_runs']);
+const ALLOWED_COLUMNS = new Set([
+  'state',
+  'archived',
+  'kind',
+  'start_line',
+  'end_line',
+  'start_col',
+  'end_col',
+  'git_commit_sha',
+  'git_branch_name',
+  'git_is_dirty'
+]);
 const ALLOWED_DEFINITIONS = /^(?:TEXT|INTEGER|REAL|BLOB|NUMERIC)\b[\sA-Za-z0-9_'-]*$/;
 
 function tryAddColumn(db: Db, table: string, column: string, definition: string): void {

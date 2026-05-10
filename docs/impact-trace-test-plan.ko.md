@@ -2,8 +2,6 @@
 
 생성일: 2026-04-28
 
-영어 버전: [impact-trace-test-plan.en.md](impact-trace-test-plan.en.md)
-
 ## 목표
 
 테스트의 목적은 Impact Trace가 "그럴듯한 report"가 아니라 증거 기반 영향도 분석을

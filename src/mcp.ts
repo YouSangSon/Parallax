@@ -9,7 +9,18 @@ import { reflectFacts, repairReflections } from './reflection.js';
 import { profileEntity } from './profile.js';
 import { normalizeRepoRoot } from './security.js';
 import { getRepoId, latestCompletedIndexRun, openDatabase } from './store.js';
-import type { GraphExportFormat } from './types.js';
+import type {
+  Confidence,
+  ContextBudget,
+  ContextPack,
+  ContextPackEvidence,
+  ContextPackItem,
+  EntityRef,
+  Evidence,
+  GraphExportFormat,
+  ImpactAction,
+  ImpactReport
+} from './types.js';
 
 export type McpContext = {
   repoRoot: string;
@@ -54,6 +65,50 @@ export function createMcpServer(context: McpContext): McpServer {
           {
             type: 'text',
             text: JSON.stringify(report)
+          }
+        ]
+      };
+    }
+  );
+
+  server.registerTool(
+    'impact_trace_context_for_change',
+    {
+      title: 'Build compact context for a change',
+      description:
+        'Return a budgeted context pack for changed files so coding agents get ranked impact paths, evidence refs, and resource links without the full report payload.',
+      inputSchema: {
+        changedFiles: z.array(z.string()).min(1),
+        budget: z.enum(['brief', 'standard', 'deep']).optional(),
+        maxDepth: z.number().int().min(1).max(8).optional(),
+        maxFanout: z.number().int().min(1).max(2_000).optional()
+      },
+      annotations: {
+        title: 'Build compact context for a change',
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      }
+    },
+    async ({ changedFiles, budget, maxDepth, maxFanout }) => {
+      const normalizedBudget = normalizeContextBudget(budget);
+      const preset = contextBudgetPreset(normalizedBudget);
+      const { analyzeDiff } = await import('./analyzer.js');
+      const report = await analyzeDiff({
+        repoRoot: context.repoRoot,
+        changedFiles,
+        persistReport: false,
+        readOnly: true,
+        maxDepth: maxDepth ?? preset.maxDepth,
+        maxFanout: maxFanout ?? preset.maxFanout
+      });
+      const pack = buildContextPack(report, normalizedBudget);
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(pack)
           }
         ]
       };
@@ -470,6 +525,223 @@ export async function serveMcp(context: McpContext): Promise<void> {
   const server = createMcpServer(context);
   const transport = new StdioServerTransport();
   await server.connect(transport);
+}
+
+type ContextBudgetPreset = {
+  maxDepth: number;
+  maxFanout: number;
+  affectedLimit: number;
+  evidenceLimit: number;
+  snippetChars: number;
+};
+
+const contextBudgetPresets: Record<ContextBudget, ContextBudgetPreset> = {
+  brief: {
+    maxDepth: 1,
+    maxFanout: 50,
+    affectedLimit: 5,
+    evidenceLimit: 5,
+    snippetChars: 300
+  },
+  standard: {
+    maxDepth: 2,
+    maxFanout: 200,
+    affectedLimit: 15,
+    evidenceLimit: 12,
+    snippetChars: 800
+  },
+  deep: {
+    maxDepth: 3,
+    maxFanout: 500,
+    affectedLimit: 50,
+    evidenceLimit: 30,
+    snippetChars: 1_500
+  }
+};
+
+function normalizeContextBudget(value: unknown): ContextBudget {
+  return value === 'brief' || value === 'standard' || value === 'deep' ? value : 'standard';
+}
+
+function contextBudgetPreset(budget: ContextBudget): ContextBudgetPreset {
+  return contextBudgetPresets[budget];
+}
+
+function buildContextPack(report: ImpactReport, budget: ContextBudget): ContextPack {
+  const preset = contextBudgetPreset(budget);
+  const affectedTargetsByPath = new Map(
+    report.affected
+      .filter((target) => target.target.path)
+      .map((target) => [target.target.path!, target])
+  );
+  const rankedAffected = [...report.affectedFiles].sort(compareAffectedFiles);
+  const selectedAffected = rankedAffected.slice(0, preset.affectedLimit);
+  const selectedPaths = new Set([
+    ...report.changedFiles,
+    ...selectedAffected.map((file) => file.path)
+  ]);
+  const contextItems: ContextPackItem[] = selectedAffected.map((file) => {
+    const affectedTarget = affectedTargetsByPath.get(file.path);
+    const target = affectedTarget?.target ?? entityForContextPath(file.path);
+    return {
+      target,
+      path: file.path,
+      reason: file.reason,
+      confidence: file.confidence,
+      ...(file.depth !== undefined ? { depth: file.depth } : {}),
+      relations: affectedTarget?.relations ?? file.relationPath ?? [file.reason],
+      resourceUri: entityResourceUri(target)
+    };
+  });
+  const selectedEvidence = dedupeEvidenceForContext(report.evidence)
+    .sort((a, b) => compareEvidence(a, b, selectedPaths))
+    .slice(0, preset.evidenceLimit)
+    .map((evidence) => compactEvidence(evidence, preset.snippetChars));
+  const selectedActionPaths = new Set(selectedAffected.map((file) => file.path));
+  const actions = report.actions.filter((action) =>
+    action.target.path ? selectedActionPaths.has(action.target.path) : false
+  );
+  const entityLinks = [
+    ...report.changed.map(entityResourceUri),
+    ...contextItems.map((item) => item.resourceUri)
+  ];
+  return {
+    version: 0,
+    budget,
+    indexRunId: report.indexRunId,
+    summary: contextSummary(report, selectedAffected.length, selectedEvidence.length),
+    changed: report.changed.map((entity) => ({
+      entity,
+      resourceUri: entityResourceUri(entity)
+    })),
+    context: contextItems,
+    actions,
+    evidence: selectedEvidence,
+    resources: {
+      coverage: 'impact-trace://coverage/latest',
+      entities: [...new Set(entityLinks)].sort()
+    },
+    omittedCounts: {
+      affected: Math.max(report.affectedFiles.length - selectedAffected.length, 0),
+      evidence: Math.max(dedupeEvidenceForContext(report.evidence).length - selectedEvidence.length, 0),
+      actions: Math.max(report.actions.length - actions.length, 0)
+    },
+    limits: {
+      affectedLimit: preset.affectedLimit,
+      evidenceLimit: preset.evidenceLimit,
+      snippetChars: preset.snippetChars,
+      affectedTruncated: report.affectedFiles.length > preset.affectedLimit,
+      evidenceTruncated: dedupeEvidenceForContext(report.evidence).length > preset.evidenceLimit
+    },
+    ...(report.warnings && report.warnings.length > 0 ? { warnings: report.warnings } : {})
+  };
+}
+
+function contextSummary(
+  report: ImpactReport,
+  selectedAffectedCount: number,
+  selectedEvidenceCount: number
+): string[] {
+  return [
+    `${report.changedFiles.length} changed file(s) analyzed against index run ${report.indexRunId}.`,
+    `${report.affectedFiles.length} affected file(s) found; ${selectedAffectedCount} included in this context pack.`,
+    `${selectedEvidenceCount} evidence item(s) included; fetch entity resources for more detail.`,
+    `${report.actions.length} recommended action(s) available from the full impact analysis.`
+  ];
+}
+
+function compareAffectedFiles(
+  left: ImpactReport['affectedFiles'][number],
+  right: ImpactReport['affectedFiles'][number]
+): number {
+  return numericCompare(left.depth ?? 99, right.depth ?? 99)
+    || numericCompare(confidenceRank(right.confidence), confidenceRank(left.confidence))
+    || numericCompare(pathPriority(left.path), pathPriority(right.path))
+    || left.path.localeCompare(right.path);
+}
+
+function dedupeEvidenceForContext(evidence: readonly Evidence[]): Evidence[] {
+  const byKey = new Map<string, Evidence>();
+  for (const item of evidence) {
+    const key = item.id || `${item.file}:${item.kind}:${item.snippet}`;
+    if (!byKey.has(key)) byKey.set(key, item);
+  }
+  return [...byKey.values()];
+}
+
+function compareEvidence(
+  left: Evidence,
+  right: Evidence,
+  selectedPaths: ReadonlySet<string>
+): number {
+  return numericCompare(evidencePathRank(left, selectedPaths), evidencePathRank(right, selectedPaths))
+    || numericCompare(confidenceRank(right.confidence), confidenceRank(left.confidence))
+    || numericCompare(hasSpan(right), hasSpan(left))
+    || numericCompare(left.snippet.length, right.snippet.length)
+    || left.file.localeCompare(right.file)
+    || left.kind.localeCompare(right.kind);
+}
+
+function compactEvidence(evidence: Evidence, snippetChars: number): ContextPackEvidence {
+  return {
+    id: evidence.id,
+    file: evidence.file,
+    kind: evidence.kind,
+    snippet: truncateSnippet(evidence.snippet, snippetChars),
+    confidence: evidence.confidence,
+    ...(evidence.startLine !== undefined ? { startLine: evidence.startLine } : {}),
+    ...(evidence.endLine !== undefined ? { endLine: evidence.endLine } : {}),
+    ...(evidence.startCol !== undefined ? { startCol: evidence.startCol } : {}),
+    ...(evidence.endCol !== undefined ? { endCol: evidence.endCol } : {}),
+    ...(evidence.subject !== undefined ? { subject: evidence.subject } : {}),
+    ...(evidence.relationKind !== undefined ? { relationKind: evidence.relationKind } : {})
+  };
+}
+
+function truncateSnippet(snippet: string, limit: number): string {
+  if (snippet.length <= limit) return snippet;
+  return `${snippet.slice(0, Math.max(limit - 3, 0))}...`;
+}
+
+function evidencePathRank(evidence: Evidence, selectedPaths: ReadonlySet<string>): number {
+  if (selectedPaths.has(evidence.file)) return 0;
+  if (evidence.subject?.path && selectedPaths.has(evidence.subject.path)) return 1;
+  return 2;
+}
+
+function hasSpan(evidence: Evidence): number {
+  return evidence.startLine !== undefined ? 1 : 0;
+}
+
+function confidenceRank(confidence: Confidence): number {
+  if (confidence === 'proven') return 4;
+  if (confidence === 'inferred') return 3;
+  if (confidence === 'heuristic') return 2;
+  return 1;
+}
+
+function pathPriority(filePath: string): number {
+  if (/(^|\/)(tests?|__tests__)\/|(\.|-)(test|spec)\./.test(filePath)) return 0;
+  if (filePath.endsWith('.md') || filePath.startsWith('docs/')) return 1;
+  if (filePath.startsWith('.github/workflows/') || /\.(ya?ml|json|toml)$/.test(filePath)) return 2;
+  return 3;
+}
+
+function entityForContextPath(filePath: string): EntityRef {
+  return {
+    id: `file:${filePath}`,
+    kind: 'file',
+    path: filePath,
+    displayName: filePath
+  };
+}
+
+function entityResourceUri(entity: EntityRef): string {
+  return `impact-trace://entities/${encodeURIComponent(entity.id)}`;
+}
+
+function numericCompare(left: number, right: number): number {
+  return left === right ? 0 : left < right ? -1 : 1;
 }
 
 function listReportResources(context: McpContext): Array<{ uri: string; name: string; mimeType: string }> {

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
+import { readGitSnapshot } from './git-snapshot.js';
 import { ensureRepo, getRepoId, latestCompletedIndexRun, openDatabase } from './store.js';
 import { normalizeRepoRoot, redactSecrets, resolveInsideRoot, toRelativePath } from './security.js';
 import type { AnalyzeOptions, Confidence, EntityKind, EntityRef, Evidence, ImpactAction, ImpactReport, ImpactTarget } from './types.js';
@@ -33,6 +34,25 @@ type CanonicalImpactRow = {
   evidence_kind: string | null;
   evidence_snippet: string | null;
   evidence_confidence: string | null;
+  evidence_start_line: number | null;
+  evidence_end_line: number | null;
+  evidence_start_col: number | null;
+  evidence_end_col: number | null;
+};
+
+type CanonicalContextEvidenceRow = {
+  relation_id: string;
+  relation_kind: string;
+  relation_confidence: string;
+  evidence_id: string;
+  evidence_file_path: string;
+  evidence_kind: string;
+  evidence_snippet: string;
+  evidence_confidence: string;
+  evidence_start_line: number | null;
+  evidence_end_line: number | null;
+  evidence_start_col: number | null;
+  evidence_end_col: number | null;
 };
 
 type LegacyImpactRow = {
@@ -45,6 +65,17 @@ type LegacyImpactRow = {
 type IndexedFileRow = {
   id: number;
   content_hash: string;
+};
+
+type IndexRunSnapshotRow = {
+  git_commit_sha: string | null;
+  git_branch_name: string | null;
+  git_is_dirty: number;
+};
+
+type AnalyzerSchemaFeatures = {
+  gitSnapshotColumns: boolean;
+  relationEvidenceSpanColumns: boolean;
 };
 
 type TraversalNode = {
@@ -76,6 +107,10 @@ export async function analyzeDiff(options: AnalyzeOptions): Promise<ImpactReport
   }>();
   const evidence: Evidence[] = [];
   const warnings: string[] = [];
+  const schemaFeatures = detectAnalyzerSchemaFeatures(db);
+  if (schemaFeatures.gitSnapshotColumns) {
+    appendGitSnapshotWarnings(db, repoId, indexRunId, repoRoot, warnings);
+  }
 
   for (const changedFile of changedFiles) {
     const changedEntityId = `file:${changedFile}`;
@@ -109,11 +144,34 @@ export async function analyzeDiff(options: AnalyzeOptions): Promise<ImpactReport
     }
 
     const impactRows = changedEntityRow
-      ? loadCanonicalImpactRows(db, repoId, indexRunId, changedEntityId, changedFile, maxDepth, maxFanout, warnings)
+      ? loadCanonicalImpactRows(
+        db,
+        repoId,
+        indexRunId,
+        changedEntityId,
+        changedFile,
+        maxDepth,
+        maxFanout,
+        warnings,
+        schemaFeatures
+      )
       : [];
     const rows = impactRows.length > 0
       ? impactRows
       : loadLegacyImpactRows(db, repoRoot, repoId, indexRunId, changedFile);
+
+    if (changedEntityRow) {
+      evidence.push(
+        ...loadCanonicalOutgoingEvidence(
+          db,
+          repoId,
+          indexRunId,
+          changedEntityId,
+          entityForPath(changedFile),
+          schemaFeatures
+        )
+      );
+    }
 
     for (const row of rows) {
       const next = {
@@ -142,7 +200,7 @@ export async function analyzeDiff(options: AnalyzeOptions): Promise<ImpactReport
     confidence: file.confidence
   }));
   const actions = affectedFiles
-    .filter((file) => /(^|\/)(tests?|__tests__)\/|(\.|-)(test|spec)\.[cm]?[tj]sx?$/.test(file.path))
+    .filter((file) => isJavaScriptTestPath(file.path))
     .map((file): ImpactAction => {
       const target = entityForPath(file.path);
       return {
@@ -186,6 +244,94 @@ export async function analyzeDiff(options: AnalyzeOptions): Promise<ImpactReport
   return report;
 }
 
+function detectAnalyzerSchemaFeatures(db: ReturnType<typeof openDatabase>): AnalyzerSchemaFeatures {
+  return {
+    gitSnapshotColumns: hasColumn(db, 'index_runs', 'git_commit_sha'),
+    relationEvidenceSpanColumns: hasColumn(db, 'relation_evidence', 'start_line')
+  };
+}
+
+function hasColumn(db: ReturnType<typeof openDatabase>, table: string, column: string): boolean {
+  return db
+    .prepare('SELECT 1 AS one FROM pragma_table_info(?) WHERE name = ?')
+    .get(table, column) !== undefined;
+}
+
+function appendGitSnapshotWarnings(
+  db: ReturnType<typeof openDatabase>,
+  repoId: number,
+  indexRunId: number,
+  repoRoot: string,
+  warnings: string[]
+): void {
+  const indexedSnapshot = db
+    .prepare('SELECT git_commit_sha, git_branch_name, git_is_dirty FROM index_runs WHERE repo_id = ? AND id = ?')
+    .get(repoId, indexRunId) as IndexRunSnapshotRow | undefined;
+  if (!indexedSnapshot) return;
+  if (!hasCapturedGitSnapshot(indexedSnapshot)) return;
+
+  const currentSnapshot = readGitSnapshot(repoRoot);
+  if (
+    indexedSnapshot.git_commit_sha &&
+    currentSnapshot.commitSha &&
+    indexedSnapshot.git_commit_sha !== currentSnapshot.commitSha
+  ) {
+    warnings.push(
+      `git HEAD changed since index run ${indexRunId}: ${shortSha(indexedSnapshot.git_commit_sha)} -> ${shortSha(currentSnapshot.commitSha)}`
+    );
+  }
+
+  if (indexedSnapshot.git_is_dirty === 0 && currentSnapshot.isDirty) {
+    warnings.push(`working tree is dirty but index run ${indexRunId} was clean`);
+  }
+  if (indexedSnapshot.git_is_dirty !== 0) {
+    warnings.push(`index run ${indexRunId} was created from a dirty working tree`);
+  }
+}
+
+function hasCapturedGitSnapshot(indexedSnapshot: IndexRunSnapshotRow): boolean {
+  return indexedSnapshot.git_commit_sha !== null || indexedSnapshot.git_branch_name !== null;
+}
+
+function shortSha(sha: string): string {
+  return sha.slice(0, 12);
+}
+
+function loadCanonicalOutgoingEvidence(
+  db: ReturnType<typeof openDatabase>,
+  repoId: number,
+  indexRunId: number,
+  changedEntityId: string,
+  sourceEntity: EntityRef,
+  schemaFeatures: AnalyzerSchemaFeatures
+): Evidence[] {
+  const spanColumns = evidenceSpanColumnSelect(schemaFeatures, 'evidence');
+  const rows = db
+    .prepare(`
+      SELECT
+        r.id AS relation_id,
+        r.kind AS relation_kind,
+        r.confidence AS relation_confidence,
+        evidence.id AS evidence_id,
+        evidence.file_path AS evidence_file_path,
+        evidence.kind AS evidence_kind,
+        evidence.snippet AS evidence_snippet,
+        evidence.confidence AS evidence_confidence,
+        ${spanColumns}
+      FROM relations r
+      INNER JOIN relation_evidence evidence ON evidence.relation_id = r.id
+      WHERE r.repo_id = ?
+        AND r.source_entity_id = ?
+        AND r.index_run_id = ?
+        AND evidence.repo_id = ?
+        AND evidence.index_run_id = ?
+      ORDER BY r.kind, r.id, evidence.file_path, evidence.kind, evidence.id
+    `)
+    .all(repoId, changedEntityId, indexRunId, repoId, indexRunId) as CanonicalContextEvidenceRow[];
+
+  return rows.map((row) => evidenceFromContextRow(row, sourceEntity));
+}
+
 function loadCanonicalImpactRows(
   db: ReturnType<typeof openDatabase>,
   repoId: number,
@@ -194,7 +340,8 @@ function loadCanonicalImpactRows(
   changedFile: string,
   maxDepth: number,
   maxFanout: number,
-  warnings: string[]
+  warnings: string[],
+  schemaFeatures: AnalyzerSchemaFeatures
 ): ImpactRow[] {
   const out: ImpactRow[] = [];
   const visitedRelations = new Set<string>();
@@ -209,7 +356,14 @@ function loadCanonicalImpactRows(
   for (let depth = 1; depth <= maxDepth && frontier.length > 0; depth++) {
     const nextFrontier: TraversalNode[] = [];
     for (const node of frontier) {
-      const rows = loadCanonicalReverseRows(db, repoId, indexRunId, node.entityId, maxFanout + 1);
+      const rows = loadCanonicalReverseRows(
+        db,
+        repoId,
+        indexRunId,
+        node.entityId,
+        maxFanout + 1,
+        schemaFeatures
+      );
       if (rows.length > maxFanout) {
         warnings.push(`fanout limit: ${node.label} has more than ${maxFanout} inbound relations; analysis truncated at depth ${depth}`);
       }
@@ -261,8 +415,10 @@ function loadCanonicalReverseRows(
   repoId: number,
   indexRunId: number,
   targetEntityId: string,
-  limit: number
+  limit: number,
+  schemaFeatures: AnalyzerSchemaFeatures
 ): CanonicalImpactRow[] {
+  const spanColumns = evidenceSpanColumnSelect(schemaFeatures, 'evidence');
   return db
     .prepare(`
       WITH bounded_relations AS (
@@ -301,7 +457,8 @@ function loadCanonicalReverseRows(
         evidence.file_path AS evidence_file_path,
         evidence.kind AS evidence_kind,
         evidence.snippet AS evidence_snippet,
-        evidence.confidence AS evidence_confidence
+        evidence.confidence AS evidence_confidence,
+        ${spanColumns}
       FROM bounded_relations bounded
       LEFT JOIN relation_evidence evidence ON evidence.id = (
         SELECT selected_evidence.id
@@ -315,6 +472,26 @@ function loadCanonicalReverseRows(
       ORDER BY bounded.source_path, bounded.relation_kind, bounded.relation_id
     `)
     .all(repoId, targetEntityId, indexRunId, limit, repoId, indexRunId) as CanonicalImpactRow[];
+}
+
+function evidenceSpanColumnSelect(
+  schemaFeatures: AnalyzerSchemaFeatures,
+  alias: string
+): string {
+  if (!schemaFeatures.relationEvidenceSpanColumns) {
+    return [
+      'NULL AS evidence_start_line',
+      'NULL AS evidence_end_line',
+      'NULL AS evidence_start_col',
+      'NULL AS evidence_end_col'
+    ].join(',\n        ');
+  }
+  return [
+    `${alias}.start_line AS evidence_start_line`,
+    `${alias}.end_line AS evidence_end_line`,
+    `${alias}.start_col AS evidence_start_col`,
+    `${alias}.end_col AS evidence_end_col`
+  ].join(',\n        ');
 }
 
 function loadLegacyImpactRows(
@@ -395,8 +572,29 @@ function evidenceFromCanonicalRow(
     kind: row.evidence_kind ?? relationKind,
     snippet: row.evidence_snippet ?? '',
     confidence: asConfidence(row.evidence_confidence ?? confidence),
+    ...(row.evidence_start_line !== null ? { startLine: row.evidence_start_line } : {}),
+    ...(row.evidence_end_line !== null ? { endLine: row.evidence_end_line } : {}),
+    ...(row.evidence_start_col !== null ? { startCol: row.evidence_start_col } : {}),
+    ...(row.evidence_end_col !== null ? { endCol: row.evidence_end_col } : {}),
     subject: sourceEntity,
     relationKind,
+    extractorId: 'canonical-entity-graph'
+  };
+}
+
+function evidenceFromContextRow(row: CanonicalContextEvidenceRow, sourceEntity: EntityRef): Evidence {
+  return {
+    id: row.evidence_id,
+    file: row.evidence_file_path,
+    kind: row.evidence_kind,
+    snippet: row.evidence_snippet,
+    confidence: asConfidence(row.evidence_confidence || row.relation_confidence),
+    ...(row.evidence_start_line !== null ? { startLine: row.evidence_start_line } : {}),
+    ...(row.evidence_end_line !== null ? { endLine: row.evidence_end_line } : {}),
+    ...(row.evidence_start_col !== null ? { startCol: row.evidence_start_col } : {}),
+    ...(row.evidence_end_col !== null ? { endCol: row.evidence_end_col } : {}),
+    subject: sourceEntity,
+    relationKind: row.relation_kind,
     extractorId: 'canonical-entity-graph'
   };
 }
@@ -619,7 +817,23 @@ function languageIdForPath(relativePath: string): string | undefined {
 }
 
 function isTestPath(relativePath: string): boolean {
-  return /(^|\/)(tests?|__tests__)\/|(\.|-)(test|spec)\.[cm]?[tj]sx?$/.test(relativePath);
+  const basename = path.posix.basename(relativePath);
+  return (
+    /(^|\/)(tests?|__tests__)\/|(^|\/)src\/test\//.test(relativePath) ||
+    /(\.|-)(test|spec)\.[cm]?[tj]sx?$/.test(basename) ||
+    /(?:Test|Tests|Spec)\.(?:java|kt)$/.test(basename) ||
+    /(?:^test_.*|.*_test)\.py$/.test(basename) ||
+    /_test\.go$/.test(basename) ||
+    /(?:_test|_spec)\.rs$/.test(basename)
+  );
+}
+
+function isJavaScriptTestPath(relativePath: string): boolean {
+  const basename = path.posix.basename(relativePath);
+  return (
+    /(^|\/)(tests?|__tests__)\/|(^|\/)src\/test\//.test(relativePath) ||
+    /(\.|-)(test|spec)\.[cm]?[tj]sx?$/.test(basename)
+  ) && /\.[cm]?[tj]sx?$/.test(basename);
 }
 
 function shellQuote(value: string): string {

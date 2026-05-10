@@ -29,12 +29,13 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "bench": "tsx bench/impact-bench.ts",
     "check": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test tests/**/*.test.ts",
     "test:fixtures": "npm test",
     "test:security": "tsx --test tests/security.test.ts",
     "test:mcp": "tsx --test tests/mcp.test.ts",
-    "test:benchmark": "npm test",
+    "test:benchmark": "npm run bench",
     "test:install-smoke": "npm run build && node dist/src/cli.js --help",
     "docs:lint": "node scripts/docs-lint.js",
     "lint": "npm run check && npm run docs:lint"

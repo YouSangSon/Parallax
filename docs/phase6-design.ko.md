@@ -1,9 +1,9 @@
-# Phase 6 — Adapter Foundations + TS Accuracy Lane Design Doc
+# Phase 6 — Adapter Foundations + Multi-language/Spring Boot Trusted Evidence Lane
 
-> **목적:** Phase 1~4(agent-memory 축)가 완료된 시점에서, 원래 P0/P1 (Entity Graph Core, "code graph project") 중 미수입 high-confidence 레인을 닫는다. 본 phase는 **TypeScript 정확도 + workspace catalog + evidence 정밀도**에 집중.
-> **작성:** 2026-05-03 (사전 design doc), 2026-05-04 branch 진행 상태 반영
-> **상태:** 2026-05-04 기준 `feature/phase6-adapter-foundations` branch에서 foundation subset 구현됨. main 머지 전.
-> **참고:** [decisions.ko.md](decisions.ko.md) (D-001 local-first, D-019..D-021 ADR 승격은 아직 pending) · [impact-trace-plan.ko.md](impact-trace-plan.ko.md) (원래 P0/P1 ledger) · [roadmap.md](roadmap.md) (A1/A5 row) · [progress.ko.md](progress.ko.md) · [phase4-p2-p3-design.ko.md](phase4-p2-p3-design.ko.md) (사전 design doc 형식 reference)
+> **목적:** Phase 1~4(agent-memory 축)가 완료된 시점에서, 원래 P0/P1 (Entity Graph Core, "code graph project") 중 미수입 adapter foundation과 trusted evidence 레인을 닫는다. 본 phase는 **adapter foundations + multi-language/Spring Boot trusted evidence + workspace catalog + evidence 정밀도**의 기반에 집중.
+> **작성:** 2026-05-03 (사전 design doc), 2026-05-04 branch 진행 상태 반영, 2026-05-09 main 반영 상태 정리
+> **상태:** foundation subset은 `main`에 반영됨 (`3cba0a2`). 다음 slice는 [Phase 6B multi-language + Spring Boot trusted evidence plan](phase6b-ts-accuracy-plan.ko.md).
+> **참고:** [decisions.ko.md](decisions.ko.md) (D-001 local-first, D-019..D-021 ADR 승격은 아직 pending) · [impact-trace-plan.ko.md](impact-trace-plan.ko.md) (원래 P0/P1 ledger) · [roadmap.md](roadmap.md) (A1/A5 row) · [progress.ko.md](progress.ko.md).
 
 ---
 
@@ -17,7 +17,7 @@
 - ✅ MCP report/graph/entity 리소스 (`src/mcp.ts:392-464`)
 - ✅ 정규 테이블의 attribute 4종 (`imports` / `calls` / `affects` / `depends_on`) 일부 dual-write
 
-`feature/phase6-adapter-foundations` branch에 구현된 foundation subset:
+`main`에 반영된 foundation subset:
 
 - 🟡 Pluggable adapter interface + priority registry + `MultiLanguageRegexAdapter` extraction
 - 🟡 Per-adapter `adapter_runs`, adapter-specific coverage attribution, relation `adapter_run_id`
@@ -30,15 +30,15 @@
 
 미수입 (Phase 6 scope, 아직 완료 아님):
 
-- ❌ TypeScript Compiler API adapter
+- ❌ Multi-language + Spring Boot adapter pack v0
 - ❌ Persisted source span (file:line:col + range) on `relation_evidence` and report/MCP output
 - ❌ Commit SHA / dirty state on `index_runs` — snapshot-safe indexing 미흡
 - 🟡 Workspace catalog — DDL은 있으나 writer 0건 (loader는 Phase 6, resolver는 Phase 7)
 
 미수입 (Phase 6 scope **외** — Phase 7 이후):
 
-- Phase 7: contract baseline + breaking-change classifier · cross-repo resolver · MCP `impact://entity|evidence|workspace|contract` block · `explain` CLI · Python/Go/Rust adapters
-- Phase 8: JVM/.NET/native, LSP/CodeQL enrichment
+- Phase 7: contract baseline + breaking-change classifier · cross-repo resolver · MCP `impact://entity|evidence|workspace|contract` block · `explain` CLI
+- Phase 8: deep language adapters beyond v0, .NET/native, LSP/CodeQL enrichment
 - Phase 9: work-artifacts (Markdown vault → external connectors)
 - DROP (이유: D-001/local-first 위반 또는 demand 부재): 별도 graph DB · web explorer · supermemory `fact_provenance.kind` 확장 · Notion/Gmail 커넥터
 
@@ -49,7 +49,7 @@
 | ID | 항목 | 약속 위치 | 효과 |
 |---|---|---|---|
 | **6.1** | Pluggable adapter interface + registry | `impact-trace-plan.ko.md` P1 전제 | 🟡 branch 구현됨 — Phase 6/7/8 모든 adapter 작업의 토대 |
-| **6.2** | TypeScript Compiler API adapter | `impact-trace-plan.ko.md:438` | TS/JS 정확도 → re-export, path alias, type-only import, call/reference 정확하게 |
+| **6.2** | Multi-language + Spring Boot adapter pack v0 | `phase6b-ts-accuracy-plan.ko.md` | Java/Kotlin/Spring Boot/Python/Go/Rust/TS/JS의 선언/import/test relation과 Spring Boot endpoint/config/persistence/client relation을 source span과 함께 추출 |
 | **6.3** | Source span on `relation_evidence` | `progress.ko.md:124` item #9 | line/col + range — agent가 evidence를 코드 위치로 직접 점프 |
 | **6.4** | Commit SHA + dirty state on `index_runs` | `progress.ko.md:79` | stale index 경고 정밀화 (현재는 mtime heuristic) |
 | **6.5** | relation-kind ↔ attribute mapping 완성 | `src/indexer.ts` | 🟡 branch 구현됨 — recall/profile에서 의미 정보 보존 |
@@ -70,9 +70,9 @@
 | **B** | capability-typed async | A + `capabilities: AdapterCapability[]` + `Promise<ExtractedFile>` | LSP/CodeQL/CompilerAPI(`ts.createProgram`)이 자연스럽게 들어옴, agent surface(P3)가 capabilities 노출 가능 |
 | **C** | streaming events | `process(file, ctx) → AsyncIterable<IndexEvent>` | huge file/LSP push 친화, but transactional batching 복잡 |
 
-**초기 Planner 추천:** **B**. 이유: TS Compiler API는 `ts.createProgram`이 동기적이라 sync 시그니처도 가능하지만, Phase 8의 LSP/CodeQL은 비동기 외부 프로세스가 필수 — 인터페이스가 sync이면 그 시점에 깨야 함. capabilities는 약 1줄 추가지만 P3 agent surface에서 "이 adapter는 imports/exports만 안다"를 노출 가능. 스트리밍은 YAGNI.
+**초기 Planner 추천:** **B**. 이유: compiler-backed adapter는 동기 구현도 가능하지만, Phase 8의 LSP/CodeQL은 비동기 외부 프로세스가 필수 — 인터페이스가 sync이면 그 시점에 깨야 함. capabilities는 약 1줄 추가지만 P3 agent surface에서 "이 adapter는 imports/exports만 안다"를 노출 가능. 스트리밍은 YAGNI.
 
-**최종 결정(2026-05-03): C with 2 refinements.** §6의 "Decided" 블록 참고. 이 branch는 해당 형태를 구현했고, 정식 ADR(D-019/D-020/D-021)로 `decisions.ko.md`/`decisions.en.md`에 승격하는 일은 아직 남아 있다.
+**최종 결정(2026-05-03): C with 2 refinements.** §6의 "Decided" 블록 참고. 이 branch는 해당 형태를 구현했고, 정식 ADR(D-019/D-020/D-021)로 `decisions.ko.md`에 승격하는 일은 아직 남아 있다.
 
 **대안 시그니처 후보 (5–10줄, 사용자 picks):** §6 참조.
 
@@ -92,7 +92,7 @@
 | (ii) | regex-MVP를 `MultiLanguageRegexAdapter`로 *별도 adapter*로 보존, TS만 Compiler API로 promote | ✅ default | regex MVP는 Python/Go/Rust 등 fallback으로 영구 유지 가능. TS만 더 정확한 adapter가 우선권. |
 | (iii) | dual-write (regex + Compiler API 둘 다 emit) | ❌ | 의미 충돌 시 어느 게 truth? — 결정 비용 ↑ |
 
-**채택:** (a) + (ii) + 6.1의 인터페이스(D-019 결정 후) + adapter priority 룰 (`registry.first(file => adapter.supports(file))`로 첫 매치 — TS Compiler API가 regex 앞에 등록).
+**채택:** (a) + (ii) + 6.1의 인터페이스(D-019 결정 후) + adapter priority 룰 (`registry.first(file => adapter.supports(file))`로 첫 매치 — language/framework-specific adapter가 regex fallback 앞에 등록).
 
 ---
 
@@ -109,18 +109,20 @@
 - [x] **6.7.1** — `src/indexer.ts`의 per-file extract 부분을 `src/adapters/multi-language-regex.ts`로 이동, `MultiLanguageRegexAdapter`로 export
 - [x] **6.7.2** — `indexProject()`는 scan → registry.dispatch(file) → persist orchestrator 역할로 축소
 
-### 3.3 TypeScript Compiler API adapter
+### 3.3 Multi-language + Spring Boot adapter pack v0
 
-- [ ] **6.2.1** — `package.json` 의존성: `typescript ^5.x` (peerDep 가능성도 검토)
-- [ ] **6.2.2** — `src/adapters/typescript.ts` `TypeScriptCompilerAdapter`. `ts.createProgram` 1회 / index run, `program.getSourceFile(absPath)` 재사용으로 N파일 cost amortize
-- [ ] **6.2.3** — extract: imports (re-export, type-only, namespace import 포함), call/reference (`ts.SymbolFlags.Function`/`Method`), exports, type aliases, declarations
-- [ ] **6.2.4** — registry priority: TS adapter가 regex 앞 (`'typescript'`/`'javascript'` 언어에 대해서만)
-- [ ] **6.2.5** — Tests: parity tests vs regex MVP (re-export, path alias, type-only import 케이스에서 TS adapter가 더 많이/정확히 잡는 걸 assertion)
+- [ ] **6.2.1** — fixture matrix: TS/JS, Java/Kotlin/Spring Boot, Python, Go, Rust의 선언/import/test/config relation을 같은 acceptance 기준으로 고정
+- [ ] **6.2.2** — TS/JS adapter v0: imports, re-exports, dynamic import/require, exported declarations, test imports, source span
+- [ ] **6.2.3** — Java/Kotlin adapter v0: package/import, class/interface/object/function-ish declarations, annotations, JUnit/Kotlin test relation
+- [ ] **6.2.4** — Spring Boot adapter v0: endpoint/config/persistence/test/client relation (`@RestController`, mapping annotations, `@Service`, `@Repository`, `@Configuration`, `@Bean`, config properties, JPA, Spring Data, Feign/WebClient/RestTemplate)
+- [ ] **6.2.5** — Python/Go/Rust adapter v0: module/package/import/declaration/test relation과 source span
+- [ ] **6.2.6** — registry priority: language/framework-specific adapter가 regex fallback 앞에 등록되고 adapter coverage/diagnostic을 남김
+- [ ] **6.2.7** — Tests: 각 언어 fixture에서 regex-MVP보다 정확한 declaration/import/test/config relation과 span을 assertion
 
 ### 3.4 Source span
 
 - [ ] **6.3.1** — `relation_evidence` 스키마 확장: `start_line`/`end_line`/`start_col`/`end_col`/`confidence` 컬럼 추가 (D-002 ADD-only). `confidence` `'exact'|'heuristic'|'inferred'`
-- [ ] **6.3.2** — `PendingEvidence` 타입에 span 추가, regex MVP는 `confidence='heuristic'` + line만, TS adapter는 `'exact'` + range 채움
+- [ ] **6.3.2** — `PendingEvidence` 타입에 span 추가, regex MVP는 `confidence='heuristic'` + line만, parser-backed adapter는 `'exact'` 또는 adapter별 confidence + range 채움
 - [ ] **6.3.3** — MCP graph resource + analyze report의 evidence 직렬화에 span 노출
 - [ ] **6.3.4** — Tests: span 검증, 기존 evidence는 NULL span으로 backward-compat
 
@@ -146,7 +148,7 @@
 
 ### 3.8 ADR + 문서
 
-- [ ] **6.A.1** — `docs/decisions.ko.md` + `decisions.en.md`에 D-019 (adapter interface), D-020 (adapter run unit), D-021 (migration 정책) 추가
+- [ ] **6.A.1** — `docs/decisions.ko.md`에 D-019 (adapter interface), D-020 (adapter run unit), D-021 (migration 정책) 추가
 - [x] **6.A.2** — `docs/progress.ko.md`에 Phase 6 foundation ledger 추가 (2026-05-04)
 - [x] **6.A.3** — `docs/roadmap.md` A1/A5 status 갱신
 - [x] **6.A.4** — `CHANGELOG.md` Phase 6 branch 항목
@@ -156,7 +158,7 @@
 ## 4. 마이그레이션 / 호환성
 
 - 스키마 변화는 **모두 ADD-only** (D-002 정신). 기존 행/컬럼 변경 없음.
-- regex-MVP adapter는 **영구 유지** — Python/Go/Rust 등 미래에도 fallback. Phase 8의 더 정확한 adapter들이 등록되면 priority로 자동 밀려남.
+- regex-MVP adapter는 **영구 유지** — 모든 언어의 fallback. Phase 6B/8의 더 정확한 adapter들이 등록되면 priority로 자동 밀려남.
 - 기존 `evidence` 행은 span = NULL로 남음 (backward-compat). Persisted span/range는 아직 남은 Phase 6 작업이며, 도입 후 점진적 reindex 가능.
 - `indexer.ts`는 "scan + persist orchestrator"로 축소 — 호출자(`src/cli.ts:index`, `src/mcp.ts:analyze`)는 변경 0.
 
@@ -167,17 +169,17 @@
 | 항목 | 테스트 수 (예상) |
 |---|---|
 | 6.1/6.7 foundation regression | 2026-05-04 branch 검증: 144 passing |
-| 6.2 TS Compiler API parity + advanced cases | +12 (re-export, path alias, type-only, namespace import, generic call, JSX call, `import.meta`) |
+| 6.2 multi-language + Spring Boot fixture matrix | +18 (TS/JS imports/exports, Java/Kotlin declarations/annotations, Spring endpoint/config/persistence/test/client, Python/Go/Rust imports/declarations/tests) |
 | 6.3 source span | +5 (basic span, multi-line range, regex heuristic span, NULL backward-compat, MCP serialization) |
 | 6.4 commit SHA + dirty | +4 (clean repo, dirty repo, non-git repo, stale-index detection) |
 | 6.6 workspace loader | +5 (init, add-repo, idempotent, list, CLI integration) |
-| **남은 예상** | **~25** (현재 branch 144 passing에서 추가 예정) |
+| **남은 예상** | **~31** (현재 main 144 passing에서 추가 예정) |
 
 ---
 
 ## 6. Adapter interface 후보와 결정 기록
 
-> 초기 후보 비교와 2026-05-03 최종 결정 기록. 다음 PR scope는 TS Compiler API adapter, source span persistence, snapshot metadata, workspace loader다.
+> 초기 후보 비교와 2026-05-03 최종 결정 기록. 다음 PR scope는 multi-language + Spring Boot adapter pack v0, source span persistence, snapshot metadata, workspace loader다.
 
 ### 후보 A — minimal sync
 
@@ -236,7 +238,7 @@ export interface SemanticAdapter {
 
 원래 doc은 B를 권장했으나 사용자 결정으로 C가 채택됨. 두 가지 작은 수정이 도입됨:
 
-1. **Per-run lifecycle 분리** — `start(ctx, files): AdapterRun`이 1회 호출되어 `AdapterRun` 핸들 반환 (TS Compiler API의 `ts.createProgram` 같은 expensive setup을 N파일에 걸쳐 amortize). `AdapterRun.process(file)`가 파일별 events emit. `AdapterRun.dispose?()` cleanup hook.
+1. **Per-run lifecycle 분리** — `start(ctx, files): AdapterRun`이 1회 호출되어 `AdapterRun` 핸들 반환 (compiler/LSP-backed setup 같은 expensive setup을 N파일에 걸쳐 amortize). `AdapterRun.process(file)`가 파일별 events emit. `AdapterRun.dispose?()` cleanup hook.
 2. **Evidence를 relation 이벤트에 임베드** — 별도 `evidence` event 제거. `relation` event가 `evidence?: readonly PendingEvidence[]` 옵션 필드로 가짐 (1:N 가능, 일반 케이스 단순화).
 
 **Shipped:**
@@ -252,7 +254,7 @@ export interface SemanticAdapter {
 
 ## 7. 성공 기준
 
-Foundation subset (`feature/phase6-adapter-foundations`):
+Foundation subset (`main`):
 
 - [x] Adapter interface + registry + regex adapter extraction
 - [x] Per-adapter run attribution (`adapter_runs`, coverage, relation `adapter_run_id`)
@@ -262,20 +264,20 @@ Foundation subset (`feature/phase6-adapter-foundations`):
 - [x] Symbol version `content_hash` changes when containing file content changes
 - [x] Explicit relation-kind → memory attribute mapping + static relation attributes seeded/promoted
 
-Remaining Phase 6 scope:
+Remaining Phase 6/6B scope:
 
-- [x] 2026-05-04 branch verification: `npm test` 144 passing, `npm run check`, `npm run docs:lint`, `npm audit --audit-level=high`
-- [ ] TS adapter parity tests에서 regex-MVP가 *놓치는* 케이스 5종 이상이 TS adapter로 잡힘 (re-export, path alias, type-only import, namespace import, generic call)
+- [x] 2026-05-09 main verification baseline: `npm test` 144 passing (prior branch verification also passed `npm run check`, `npm run docs:lint`, `npm audit --audit-level=high`)
+- [ ] Java/Kotlin/Spring Boot/Python/Go/Rust/TS/JS fixture에서 regex-MVP가 놓치거나 흐리게 잡는 declaration/import/test/config relation을 adapter v0가 source span과 함께 잡음
 - [ ] 새 evidence 행에 span(line/col/range/confidence) 100% 채워짐
 - [ ] dirty repo 상태에서 indexing 시 `index_runs.git_is_dirty=1` 기록 + analyzer 경고 출력
 - [ ] `workspace init` + `workspace add-repo` 라운드트립 — `workspaces` 테이블에 row 존재
-- [ ] ADR D-019/D-020/D-021 정식 승격 (`decisions.ko.md`/`decisions.en.md`)
+- [ ] ADR D-019/D-020/D-021 정식 승격 (`decisions.ko.md`)
 
 ---
 
 ## 8. Phase 5 후보 backlog (deferred)
 
-`docs/phase5-handoff.ko.md` 기준의 Agent Memory 후보. 현재 live work는 Phase 6 adapter foundations이며, 아래 항목은 이번 branch의 active scope가 아니다:
+Agent Memory 후보는 현재 live work가 아니다:
 
 - **B1 MemoryBench** — `tests/bench/` + 새 CLI command
 - **B2 reembed cleanup** — `src/agent_memory.ts:reembedFacts` orphan 정리
@@ -287,10 +289,10 @@ Phase 6 완료 또는 별도 우선순위 변경 후 독립 PR로 재개한다. 
 
 ## 9. 다음 행동
 
-1. 6.2 (TS Compiler API adapter) — separate PR
+1. 6.2 (Multi-language + Spring Boot adapter pack v0) — separate PR
 2. 6.3 source span persistence/report/MCP exposure
 3. 6.4 snapshot metadata (`index_runs.git_commit_sha`, dirty, branch)
 4. 6.6 workspace loader (`workspace init`, `workspace add-repo`)
-5. ADR D-019/D-020/D-021 정식 승격 (`decisions.ko.md`/`decisions.en.md`)
+5. ADR D-019/D-020/D-021 정식 승격 (`decisions.ko.md`)
 
-이 doc은 *사전 design에서 branch-progress doc으로 전환됨*. Phase 6 전체가 끝난 시점에는 회고 doc(`phase6-retro.ko.md`)을 추가하여 P4/P5 패턴(`phase4-p4-p5-design.ko.md`)과 parity 유지.
+이 doc은 *사전 design에서 branch-progress doc으로 전환됨*. Phase 6 전체가 끝난 시점에는 회고 doc(`phase6-retro.ko.md`)을 추가한다.

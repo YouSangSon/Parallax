@@ -2,9 +2,9 @@
 
 > **상태:** Phase 1 + 1.5 + 2 + 3 + 4 (P1..P5) 모두 완성 — 2026-05-01, ADR D-001..D-018, 112 tests on main `33c49f0`
 > **대상:** Impact Trace의 agent memory 레이어를 *지금 바로* 써보고 싶은 사용자
-> **선수 지식:** [README.md](../README.md), [vision.ko.md](vision.ko.md) (한 페이지 비전), 선택적으로 [docs/agent-db-exploration.ko.md](agent-db-exploration.ko.md) · [docs/glossary.md](glossary.md)
+> **선수 지식:** [README.md](../README.md), [vision.ko.md](vision.ko.md) (한 페이지 비전), 선택적으로 [docs/glossary.md](glossary.md)
 
-이 문서는 *실전 흐름*만 모았습니다. 설계 배경은 exploration 문서, 스키마는 [indexing-model.ko.md](indexing-model.ko.md), 큰 그림은 README를 참고하세요.
+이 문서는 *실전 흐름*만 모았습니다. 설계 배경은 [decisions.ko.md](decisions.ko.md), 스키마는 [indexing-model.ko.md](indexing-model.ko.md), 큰 그림은 README를 참고하세요.
 
 ---
 
@@ -483,7 +483,7 @@ flowchart TD
   Loop -- 아니오 --> Out([chain 반환])
 ```
 
-자세한 SQL DDL: [docs/agent-db-exploration.ko.md §6](agent-db-exploration.ko.md).
+자세한 SQL DDL: [indexing-model.ko.md](indexing-model.ko.md).
 
 ---
 
@@ -562,7 +562,7 @@ impact-trace gc-branches --dry-run
 impact-trace gc-branches  # dry-run 확인 후
 ```
 
-자세한 설계 근거: [docs/phase3-design.ko.md](phase3-design.ko.md), 누적 결정 로그: [docs/decisions.ko.md](decisions.ko.md).
+자세한 설계 근거는 누적 결정 로그 [docs/decisions.ko.md](decisions.ko.md)를 기준으로 본다.
 
 ### C.5 `profile` — 한 entity의 컨텍스트를 한 번에 (Phase 4)
 
@@ -624,4 +624,4 @@ impact-trace profile --entity file:src/auth.ts --k 10
 }
 ```
 
-자세한 설계 근거: [docs/supermemory-adoption.ko.md](supermemory-adoption.ko.md) §2.B, [docs/decisions.ko.md](decisions.ko.md) D-013, D-014.
+자세한 설계 근거: [docs/decisions.ko.md](decisions.ko.md) D-013, D-014.

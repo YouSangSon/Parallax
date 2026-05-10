@@ -3,7 +3,6 @@
 > **목적:** 프로젝트의 *돌이키기 어려운* 결정과 그 이유를 한곳에 모은다.
 > 코드는 변하지만, 결정의 *맥락*은 코드에 남지 않는다. 이 문서가 그 맥락을 보존한다.
 > **포맷:** 결정 1개 = 1 섹션. 각 섹션은 *결정·맥락·고려한 대안·결과/위험·관련 commit*.
-> **English pair:** [decisions.en.md](decisions.en.md).
 
 ---
 
@@ -186,7 +185,7 @@
 
 **결정:** reflection은 *summary fact를 추가*만 하고 원본 facts는 보존. 연결은 `fact_provenance` edge에 `kind='summary'`로 표시. retract/archive 안 함.
 
-**맥락:** Letta MemGPT 같은 다른 시스템은 종종 원본을 archive/retract. 본 프로젝트는 *audit trail* 우선. "왜 이 결정을 내렸나"의 답이 되는 source facts는 영원히 살아있어야 함.
+**맥락:** Letta MemGPT 같은 다른 시스템은 종종 원본을 archive 또는 retract 처리. 본 프로젝트는 *audit trail* 우선. "왜 이 결정을 내렸나"의 답이 되는 source facts는 영원히 살아있어야 함.
 
 **대안:**
 - (B) source facts retract — 소급 검색 불가.
@@ -234,7 +233,7 @@
 
 **결정:** static / dynamic 구분을 위한 새 `attribute_defs.is_static` 컬럼 추가 *안 함*. 기존 `is_code_relation`을 query-time에 `Lifecycle = 'static' | 'dynamic'`으로 derive.
 
-**맥락:** [supermemoryai/supermemory](https://github.com/supermemoryai/supermemory)는 메모리 lifetime을 결정하는 `isStatic` 플래그를 갖고 있다. 우리 분석 (`docs/supermemory-adoption.ko.md`) 결과 *동일 정보가 이미 attribute level에 있음*. `is_code_relation=1` (imports/calls/affects/depends_on)는 영구 코드 구조, `=0` (observed/verified/concern/reflection/...)는 동적 agent 활동.
+**맥락:** [supermemoryai/supermemory](https://github.com/supermemoryai/supermemory)는 메모리 lifetime을 결정하는 `isStatic` 플래그를 갖고 있다. 우리 분석 결과 *동일 정보가 이미 attribute level에 있음*. `is_code_relation=1` (imports/calls/affects/depends_on)는 영구 코드 구조, `=0` (observed/verified/concern/reflection/...)는 동적 agent 활동.
 
 **대안:**
 - 새 `is_static` 컬럼 추가 — 데이터 중복.

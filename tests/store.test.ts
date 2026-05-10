@@ -21,19 +21,19 @@ function withTempDb<T>(callback: (db: Db) => T): T {
   }
 }
 
-test('migrate records schema_versions through v7', () => {
+test('migrate records schema_versions through v9', () => {
   withTempDb((db) => {
     const versions = db
       .prepare('SELECT version FROM schema_versions ORDER BY version')
       .all() as Array<{ version: number }>;
     assert.deepEqual(
       versions.map((row) => row.version),
-      [1, 2, 3, 4, 5, 6, 7]
+      [1, 2, 3, 4, 5, 6, 7, 8, 9]
     );
   });
 });
 
-test('migrate creates the agent memory tables (v4) plus v5/v6/v7 extensions', () => {
+test('migrate creates the agent memory tables and later extension tables', () => {
   withTempDb((db) => {
     const expected = [
       'attribute_defs',
@@ -55,7 +55,7 @@ test('migrate creates the agent memory tables (v4) plus v5/v6/v7 extensions', ()
   });
 });
 
-test('migrate v7 adds branches.state, transactions.archived, fact_provenance.kind columns', () => {
+test('migrate v7/v8/v9 adds branch GC, relation evidence spans, and git snapshot columns', () => {
   withTempDb((db) => {
     const branchState = db
       .prepare("SELECT name FROM pragma_table_info('branches') WHERE name = 'state'")
@@ -71,6 +71,20 @@ test('migrate v7 adds branches.state, transactions.archived, fact_provenance.kin
       .prepare("SELECT name FROM pragma_table_info('fact_provenance') WHERE name = 'kind'")
       .get();
     assert.ok(provKind, 'fact_provenance.kind column should exist');
+
+    for (const column of ['start_line', 'end_line', 'start_col', 'end_col']) {
+      const spanColumn = db
+        .prepare("SELECT name FROM pragma_table_info('relation_evidence') WHERE name = ?")
+        .get(column);
+      assert.ok(spanColumn, `relation_evidence.${column} column should exist`);
+    }
+
+    for (const column of ['git_commit_sha', 'git_branch_name', 'git_is_dirty']) {
+      const snapshotColumn = db
+        .prepare("SELECT name FROM pragma_table_info('index_runs') WHERE name = ?")
+        .get(column);
+      assert.ok(snapshotColumn, `index_runs.${column} column should exist`);
+    }
 
     const seededMain = db
       .prepare("SELECT state FROM branches WHERE name = 'main'")
@@ -91,7 +105,7 @@ test('migrate is idempotent across re-runs', () => {
         .all() as Array<{ version: number }>;
       assert.deepEqual(
         versions.map((row) => row.version),
-        [1, 2, 3, 4, 5, 6, 7]
+        [1, 2, 3, 4, 5, 6, 7, 8, 9]
       );
     } finally {
       second.close();
@@ -101,7 +115,7 @@ test('migrate is idempotent across re-runs', () => {
   }
 });
 
-test('migrate upgrades a synthetic v6 schema by adding v7 columns and tables', () => {
+test('migrate upgrades a synthetic v6 schema by adding v7/v8/v9 columns and tables', () => {
   // Build a stripped-down v6-equivalent schema (the columns we know v7
   // will ADD), then re-open to trigger migrate(). This is the path that
   // executes tryAddColumn in the real upgrade scenario; the fresh-DB
@@ -110,8 +124,10 @@ test('migrate upgrades a synthetic v6 schema by adding v7 columns and tables', (
   try {
     const seed = openDatabase(dir);
     try {
-      // Drop the v7-added columns and table to simulate an older DB.
+      // Drop the v7/v8-added columns and table to simulate an older DB.
       seed.prepare('DELETE FROM schema_versions WHERE version = 7').run();
+      seed.prepare('DELETE FROM schema_versions WHERE version = 8').run();
+      seed.prepare('DELETE FROM schema_versions WHERE version = 9').run();
       seed.prepare('DROP TABLE IF EXISTS reflections').run();
       seed.prepare('CREATE TABLE branches_v6_only AS SELECT id, name, head_tx_id, parent_branch_id, created_at FROM branches').run();
       seed.prepare('DROP TABLE branches').run();
@@ -133,6 +149,72 @@ test('migrate upgrades a synthetic v6 schema by adding v7 columns and tables', (
         )
         .run();
       seed.prepare('DROP TABLE branches_v6_only').run();
+      seed
+        .prepare(
+          `CREATE TABLE relation_evidence_v6_only AS
+           SELECT id, relation_id, repo_id, file_path, kind, snippet, confidence, index_run_id
+           FROM relation_evidence`
+        )
+        .run();
+      seed.prepare('DROP TABLE relation_evidence').run();
+      seed
+        .prepare(
+          `CREATE TABLE relation_evidence (
+             id TEXT PRIMARY KEY,
+             relation_id TEXT NOT NULL,
+             repo_id INTEGER NOT NULL,
+             file_path TEXT NOT NULL,
+             kind TEXT NOT NULL,
+             snippet TEXT NOT NULL,
+             confidence TEXT NOT NULL,
+             index_run_id INTEGER NOT NULL,
+             FOREIGN KEY(relation_id) REFERENCES relations(id),
+             FOREIGN KEY(repo_id) REFERENCES repos(id),
+             FOREIGN KEY(index_run_id) REFERENCES index_runs(id)
+           )`
+        )
+        .run();
+      seed
+        .prepare(
+          `INSERT INTO relation_evidence (
+             id, relation_id, repo_id, file_path, kind, snippet, confidence, index_run_id
+           )
+           SELECT id, relation_id, repo_id, file_path, kind, snippet, confidence, index_run_id
+           FROM relation_evidence_v6_only`
+        )
+        .run();
+      seed.prepare('DROP TABLE relation_evidence_v6_only').run();
+      seed.exec('PRAGMA foreign_keys = OFF');
+      seed
+        .prepare(
+          `CREATE TABLE index_runs_v8_only AS
+           SELECT id, repo_id, status, started_at, finished_at, extractor_version
+           FROM index_runs`
+        )
+        .run();
+      seed.prepare('DROP TABLE index_runs').run();
+      seed
+        .prepare(
+          `CREATE TABLE index_runs (
+             id INTEGER PRIMARY KEY AUTOINCREMENT,
+             repo_id INTEGER NOT NULL,
+             status TEXT NOT NULL,
+             started_at TEXT NOT NULL,
+             finished_at TEXT,
+             extractor_version TEXT NOT NULL,
+             FOREIGN KEY(repo_id) REFERENCES repos(id)
+           )`
+        )
+        .run();
+      seed
+        .prepare(
+          `INSERT INTO index_runs (id, repo_id, status, started_at, finished_at, extractor_version)
+           SELECT id, repo_id, status, started_at, finished_at, extractor_version
+           FROM index_runs_v8_only`
+        )
+        .run();
+      seed.prepare('DROP TABLE index_runs_v8_only').run();
+      seed.exec('PRAGMA foreign_keys = ON');
     } finally {
       seed.close();
     }
@@ -147,10 +229,18 @@ test('migrate upgrades a synthetic v6 schema by adding v7 columns and tables', (
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'reflections'")
         .get();
       assert.ok(reflections, 'reflections table must exist after upgrade');
+      const spanColumn = upgraded
+        .prepare("SELECT name FROM pragma_table_info('relation_evidence') WHERE name = 'start_line'")
+        .get();
+      assert.ok(spanColumn, 'tryAddColumn must add relation_evidence.start_line on real upgrade');
+      const gitDirtyColumn = upgraded
+        .prepare("SELECT name FROM pragma_table_info('index_runs') WHERE name = 'git_is_dirty'")
+        .get();
+      assert.ok(gitDirtyColumn, 'tryAddColumn must add index_runs.git_is_dirty on real upgrade');
       const versions = upgraded
         .prepare('SELECT max(version) AS v FROM schema_versions')
         .get() as { v: number };
-      assert.equal(versions.v, 7);
+      assert.equal(versions.v, 9);
     } finally {
       upgraded.close();
     }

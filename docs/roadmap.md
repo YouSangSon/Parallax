@@ -1,8 +1,8 @@
 # Impact-trace 통합 로드맵
 
 > 이 문서는 *두 축* (영향 분석 + 에이전트 메모리)의 진척과 다음 작업을 한 페이지로 정리한다.
-> *왜* 이 방향인지는 [vision.md](vision.md) / [vision.ko.md](vision.ko.md), *왜* 각 결정인지는 [decisions.ko.md](decisions.ko.md), *날짜별 로그*는 [progress.ko.md](progress.ko.md).
-> 마지막 업데이트: 2026-05-04 (`feature/phase6-adapter-foundations` branch 진행 반영; main 머지 전)
+> *왜* 이 방향인지는 [vision.md](vision.md) / [vision.ko.md](vision.ko.md), 제품 단위 계획은 [impact-context-layer-plan.ko.md](impact-context-layer-plan.ko.md), *왜* 각 결정인지는 [decisions.ko.md](decisions.ko.md), *날짜별 로그*는 [progress.ko.md](progress.ko.md).
+> 마지막 업데이트: 2026-05-09 (Phase 6 adapter foundations `main` 반영; Phase 6B multi-language + Spring Boot adapter pack next)
 
 ## 한 눈에 보기
 
@@ -11,23 +11,23 @@
 ────────────────              ────────────────
 P0 (file/edge core)  ✅       Phase 1 (스키마 + MCP 8개)        ✅
 P0 (workspace/contract) ⏳    Phase 1.5 (인덱서 dual-write)     ✅
-P1 (adapter foundations) 🟡   Phase 2 (real embed + semantic) ✅
-P1 (TS Compiler API) ⏳       Phase 3 (reflect + branch GC)    ✅
-P1 (Python/Go/Rust)  ⏳       Phase 4 P1..P5 (cap/repair/restore/auto-abandon/ANN) ✅
+P1 (adapter foundations) ✅   Phase 2 (real embed + semantic) ✅
+P1 (multi-language v0) 🟡     Phase 3 (reflect + branch GC)    ✅
+P1 (Spring Boot v0)  🟡       Phase 4 P1..P5 (cap/repair/restore/auto-abandon/ANN) ✅
 P1 (config/CI/infra) ⏳       Phase 5 (5 candidates)            ⏳
 P2 (JVM/.NET/native) ⏳
-P3 (agent-ready MCP) ⏳
+P3 (agent-ready MCP + context budget) ⏳
 
-✅ shipped to main · 🟡 shipped on feature branch, not merged to main · ⏳ deferred / not started
+✅ shipped to main · 🟡 active next slice · ⏳ deferred / not started
 ```
 
 ## 영향 분석 축 (`impact-trace-plan.ko.md`의 P0..P4)
 
 자세한 내용은 `impact-trace-plan.ko.md`. 여기는 *다음 N개* 우선순위만.
 
-### P1 — Mixed Repo Adapter Pack (next track)
+### P1 — Multi-language + Spring Boot Adapter Pack v0 (next track)
 
-현재 live work는 `feature/phase6-adapter-foundations`의 **Phase 6 adapter foundations**다. 이 branch에는 다음 기반 작업이 들어갔다:
+Phase 6 adapter foundations는 `main`에 반영됐다. 이 작업에는 다음 기반이 들어갔다:
 
 - adapter interface + priority registry scaffold, regex MVP의 adapter 추출
 - `indexProject()`의 per-adapter run 생성, coverage attribution, relation `adapter_run_id`
@@ -38,14 +38,14 @@ P3 (agent-ready MCP) ⏳
 - relation-kind → memory attribute mapping 명시화, static relation `attribute_defs.is_code_relation = 1` seed/promote
 - package public exports fence
 
-아직 완료로 표시하지 않는 항목: TypeScript Compiler API adapter, persisted source span/range, `index_runs` snapshot metadata(commit/dirty/branch), workspace loader/resolver.
+다음 live work는 [Phase 6B Multi-language + Spring Boot Adapter Pack v0 plan](phase6b-ts-accuracy-plan.ko.md)이다. 아직 완료로 표시하지 않는 항목: Java/Kotlin/Spring Boot/Python/Go/Rust/TS/JS adapter v0, persisted source span/range, `index_runs` snapshot metadata(commit/dirty/branch), workspace loader/resolver.
 
 | 우선순위 | 작업 | 이유 / 시작 트리거 |
 |---|---|---|
-| **A0** | Adapter foundations | `feature/phase6-adapter-foundations`에서 진행 중. TS/Workspace adapter series의 prerequisite. |
-| **A1** | TypeScript Compiler API 어댑터 | 아직 미완료. regex 추출이 re-export / path alias / type-only import 놓침. 첫 high-confidence lane. |
-| A2 | Python / Go / Rust 어댑터 (모듈/심볼/import) | 다중 언어 fixture 검증을 위한 최소 cover. |
-| A3 | npm/pnpm/yarn workspace 어댑터 | monorepo 첫 진입점. |
+| **A0** | Adapter foundations | 완료. adapter pack series의 prerequisite가 `main`에 있음. |
+| **A1** | Java/Kotlin/Spring Boot/Python/Go/Rust/TS/JS adapter v0 + source span + git snapshot | 다음 slice. 실제 stack을 coverage gap 없이 설명하고 MCP context pack의 근거 입력을 만든다. |
+| A2 | Spring Boot depth pass | endpoint/config/persistence/test/client relation을 더 넓힘. `@RestController`, mapping annotations, `@Service`, `@Repository`, `@Configuration/@Bean`, `@ConfigurationProperties`, `application.yml/properties`, Spring test annotations, JPA, Spring Data, Feign/WebClient/RestTemplate. |
+| A3 | npm/pnpm/yarn + Maven/Gradle/Cargo/Go workspace 어댑터 | monorepo 첫 진입점. |
 | A4 | YAML / GitHub Actions / Docker / Terraform 어댑터 | enterprise repo의 실제 영향 경로. |
 | A5 | OpenAPI / protobuf / GraphQL / AsyncAPI 어댑터 + cross-repo resolver | workspace catalog의 첫 사용 사례. |
 | A6 | Mermaid / DOT / JSON graph export | `analyze` 출력에 그래프 첨부 — 사람이 PR 본문에서 바로 봄. |
@@ -54,7 +54,7 @@ P3 (agent-ready MCP) ⏳
 
 | 작업 |
 |---|
-| Java / Kotlin (Maven/Gradle, package/class/method, annotation) |
+| Java / Kotlin deep adapter (Maven/Gradle, package/class/method, annotation beyond v0) |
 | C# / .NET (solution/project ref, namespace/class) |
 | C / C++ (header include, function/type, build target) |
 | build-system resolver (Maven, Gradle, dotnet, CMake, Bazel, Make) |
@@ -64,6 +64,8 @@ P3 (agent-ready MCP) ⏳
 
 | 작업 |
 |---|
+| `impact_trace_context_for_change` — `brief`/`standard`/`deep` budget으로 agent context 사용량을 줄이는 context pack |
+| context pack ranking/dedupe — 반복 file/doc payload 없이 top impact paths와 resource links 우선 반환 |
 | `impact://report/{id}` resource (큰 페이로드 pagination) |
 | `impact://entity/{id}` / `impact://evidence/{id}` resource |
 | workspace diff tool — multi-repo 변경 + downstream consumer risk |
@@ -99,11 +101,11 @@ P3 (agent-ready MCP) ⏳
 | **4 P4** | `gc-branches --max-age N` time-based auto-abandon | D-017 |
 | **4 P5** | sqlite-vec ANN, per-model `vec_facts_<model_slug>` lazy create, brute-force fallback, `reindex-vec` CLI | D-018 |
 
-Phase 4 code baseline은 `33c49f0`에서 **112 tests passing**, ADR D-001..D-018, MCP 12개, CLI 16개였다. 현재 `main` head는 그 뒤 docs sweep commit `b41b340`이다.
+Phase 4 code baseline은 `33c49f0`에서 **112 tests passing**, ADR D-001..D-018, MCP 12개, CLI 16개였다. 현재 `main` head는 Phase 6 foundations를 포함한 `3cba0a2`이며, 2026-05-09 기준 **144 tests passing**이다.
 
 ### Phase 5 후보 (ranked, deferred)
 
-자세한 우선순위와 design 공간은 [phase5-handoff.ko.md](phase5-handoff.ko.md).
+현재 우선순위 요약은 아래 표를 기준으로 본다.
 
 | 순위 | 후보 | 이유 | ETA |
 |---|---|---|---|
@@ -133,6 +135,7 @@ Phase 4 code baseline은 `33c49f0`에서 **112 tests passing**, ADR D-001..D-018
 ## 사용 가이드
 
 - **다음 작업이 뭔지 알고 싶다** → 이 문서의 "P1 next track" / "Phase 5 후보 ranked" 섹션
+- **MCP + UI + context 절감 제품 그림을 보고 싶다** → [impact-context-layer-plan.ko.md](impact-context-layer-plan.ko.md)
 - **왜 이 결정인지 알고 싶다** → [decisions.ko.md](decisions.ko.md) (D-001..D-018)
 - **언제 무엇이 들어왔는지 알고 싶다** → [progress.ko.md](progress.ko.md) (chronological log) / [CHANGELOG.md](../CHANGELOG.md) (Phase별 grouping)
 - **새 contributor / agent에게 한 페이지로 설명** → [vision.ko.md](vision.ko.md)

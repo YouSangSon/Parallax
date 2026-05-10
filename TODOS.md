@@ -8,7 +8,7 @@
 > - [`docs/progress.ko.md`](docs/progress.ko.md) — daily developer log
 > - [`/CHANGELOG.md`](CHANGELOG.md) — Phase-grouped highlights
 > - [`docs/decisions.ko.md`](docs/decisions.ko.md) — cumulative ADR log (D-001..D-018)
-> - [`docs/phase5-handoff.ko.md`](docs/phase5-handoff.ko.md) — current next-session entry point (Phase 4 handoff is now frozen)
+> - Current Phase 5 candidate summary lives in the unified roadmap and progress docs.
 >
 > Many P0 items below are already shipped (canonical entities/relations, snapshot isolation, git diff input, graph export, recursive traversal, oversized file skip). P1/P2 adapter pack is partially done: TS/JS/Markdown/Python/Go/Rust/Java/Kotlin/C#/C/C++/shell/YAML/JSON/TOML/Dockerfile/Makefile/Terraform/protobuf/GraphQL/CODEOWNERS adapters all have regex-MVP coverage. *Semantic adapter accuracy* (Tree-sitter / LSP / CodeQL) is still a gap.
 >
@@ -35,8 +35,7 @@
 
 | Item | Why | Exit Criteria |
 |---|---|---|
-| TypeScript semantic adapter | Regex extraction misses too many real edges. | Compiler API handles exports, re-exports, path aliases, source spans. |
-| Python/Go/Rust adapters | Core language coverage must move beyond TS/JS. | Package/module/symbol/import/reference relations are indexed. |
+| Multi-language + Spring Boot adapter pack | Impact Trace must work in the user's real stacks, not only TS/JS repos. | Java, Kotlin, Spring Boot, Python, Go, Rust, TypeScript, and JavaScript declaration/dependency/test/config relations are indexed with source spans. |
 | Package/workspace adapter | Test and package actions require workspace context. | npm/pnpm/yarn/bun workspaces and scripts are indexed. |
 | Build-system adapter | Non-JS repos depend on build metadata for impact and test selection. | npm, pip, cargo, Maven, Gradle, dotnet, CMake, Make, and Bazel targets are modeled. |
 | Shell/Make adapter | Enterprise repos rely on scripts for build/test/deploy. | Commands, targets, generated artifacts become entities/relations. |

@@ -7,3 +7,4 @@ coverage/
 *.tsbuildinfo
 tmp/
 .worktrees/
+docs/archive/

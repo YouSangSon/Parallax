@@ -50,6 +50,10 @@ export type Evidence = {
   kind: string;
   snippet: string;
   confidence: Confidence;
+  startLine?: number;
+  endLine?: number;
+  startCol?: number;
+  endCol?: number;
   subject?: EntityRef;
   relationKind?: string;
   extractorId?: string;
@@ -175,6 +179,73 @@ export type ImpactReport = {
   evidence: Evidence[];
   warnings?: string[];
   reportPath?: string;
+};
+
+export type ContextBudget = 'brief' | 'standard' | 'deep';
+
+export type ContextForChangeOptions = {
+  repoRoot: string;
+  changedFiles: string[];
+  budget?: ContextBudget;
+  maxDepth?: number;
+  maxFanout?: number;
+};
+
+export type ContextPackChangedEntity = {
+  entity: EntityRef;
+  resourceUri: string;
+};
+
+export type ContextPackItem = {
+  target: EntityRef;
+  path: string;
+  reason: string;
+  confidence: Confidence;
+  depth?: number;
+  relations: string[];
+  resourceUri: string;
+};
+
+export type ContextPackEvidence = {
+  id: string;
+  file: string;
+  kind: string;
+  snippet: string;
+  confidence: Confidence;
+  startLine?: number;
+  endLine?: number;
+  startCol?: number;
+  endCol?: number;
+  subject?: EntityRef;
+  relationKind?: string;
+};
+
+export type ContextPack = {
+  version: 0;
+  budget: ContextBudget;
+  indexRunId: number;
+  summary: string[];
+  changed: ContextPackChangedEntity[];
+  context: ContextPackItem[];
+  actions: ImpactAction[];
+  evidence: ContextPackEvidence[];
+  resources: {
+    coverage: 'impact-trace://coverage/latest';
+    entities: string[];
+  };
+  omittedCounts: {
+    affected: number;
+    evidence: number;
+    actions: number;
+  };
+  limits: {
+    affectedLimit: number;
+    evidenceLimit: number;
+    snippetChars: number;
+    affectedTruncated: boolean;
+    evidenceTruncated: boolean;
+  };
+  warnings?: string[];
 };
 
 export type GraphNode = {

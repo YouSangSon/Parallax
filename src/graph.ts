@@ -283,7 +283,17 @@ function asConfidence(value: string): Confidence {
 }
 
 function kindForPath(path: string): EntityKind {
-  if (/(^|\/)(tests?|__tests__)\/|(\.|-)(test|spec)\.[cm]?[tj]sx?$/.test(path)) return 'test';
+  const basename = path.split('/').at(-1) ?? path;
+  if (
+    /(^|\/)(tests?|__tests__)\/|(^|\/)src\/test\//.test(path) ||
+    /(\.|-)(test|spec)\.[cm]?[tj]sx?$/.test(basename) ||
+    /(?:Test|Tests|Spec)\.(?:java|kt)$/.test(basename) ||
+    /(?:^test_.*|.*_test)\.py$/.test(basename) ||
+    /_test\.go$/.test(basename) ||
+    /(?:_test|_spec)\.rs$/.test(basename)
+  ) {
+    return 'test';
+  }
   if (path.toLowerCase().endsWith('.md')) return 'doc';
   return 'file';
 }

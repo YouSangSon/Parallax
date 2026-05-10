@@ -1,7 +1,7 @@
 # agentmemory 적용성 분석
 
 > **작성:** 2026-05-10
-> **상태:** `$team-builder` 기반 GPT-5.5 4역할 리뷰 + 로컬 코드 확인 결과
+> **상태:** `$team-builder` 기반 GPT-5.5 5역할 리뷰 + 로컬 코드 확인 결과
 > **대상:** [rohitg00/agentmemory](https://github.com/rohitg00/agentmemory) `main` @ `0322da8004dc9f5132d243bca89b5944e51f1f5f`
 > **결론:** Impact-trace는 `agentmemory`를 가져오는 프로젝트가 아니라, 그중 **retrieval/lifecycle/UX 패턴만 SQLite + MCP impact context layer에 맞게 재구현**한다.
 
@@ -22,6 +22,16 @@ Impact-trace가 만들려는 것은 더 좁고 선명하다. **코드/문서/정
 | **Reject** | iii-engine/iii-sdk, global `~/.agentmemory`, REST/streams daemon, 51-tool MCP surface, automatic hook capture, mesh/team sync, arbitrary export/write tools, hard auto-forget |
 
 가장 중요한 제품 원칙은 유지한다: **작게 보내고, 필요할 때 resource로 확장하며, 모든 근거를 SQLite provenance로 남긴다.**
+
+이 문서는 source-copy 계획이 아니라 **pattern adoption log**다. 상세 schema/API spec은 `impact-context-layer-plan.ko.md`, roadmap, 또는 별도 ADR에 둔다.
+
+### 0.1 Impact-trace 반영 상태
+
+| 상태 | 항목 |
+|---|---|
+| landed | `impact_trace_search_context` keyword/relation/evidence RRF ranking v1, `rankSignals`, evidence resource v0, context telemetry v0, doctor v0, MCP surface guard, opt-in `import-session` v0 |
+| next | FTS5/BM25 projection, semanticRank, graphProximityRank, path/entity/relation diversification, byte/token budget, resource pagination, typed errors, explicit supersession |
+| later | UI Explorer session timeline, context rank feedback, persisted context pack id/reuse, workspace/contract impact |
 
 ---
 
@@ -122,7 +132,7 @@ flowchart LR
     P["provenance-first facts"]
     C["compact MCP output"]
     E["resource-on-demand"]
-    L["local-first / read-only default"]
+    L["local-first / no external write default"]
   end
 ```
 
@@ -177,6 +187,8 @@ flowchart LR
 | arbitrary export/write/compress tools | Impact-trace MCP는 source/external write 없는 impact context가 기본이어야 한다. repo-local telemetry append만 예외로 둔다. |
 | hard auto-forget | provenance와 reproducibility를 해친다. |
 
+추가로 upstream v0.9.5에는 그대로 복사하면 안 되는 rough edge가 확인됐다. `iii-engine` sandbox-model drift, saved memory/hybrid graph hit enrichment 누락 가능성, graph edge merge 취약성, live index persistence gap, docs/runtime count drift가 있었다. 따라서 Impact-trace는 Apache-2.0 source를 복사하지 않고, 이미 가진 SQLite/provenance 모델 위에 필요한 retrieval/lifecycle 아이디어만 재구현한다.
+
 ---
 
 ## 5. 보안/라이선스/운영 경계
@@ -190,8 +202,11 @@ Impact-trace에 필요한 guardrail:
 | guardrail | 이유 |
 |---|---|
 | MCP tool allowlist test | `export`, `obsidian`, `compress_file`, `mesh`, `team`, `heal`, `routine`, `signal`, `lease`, `snapshot`, `write_file` 같은 surface가 core MCP에 들어오지 않게 막는다. |
+| MCP exact surface snapshot | forbidden substring만 보지 말고 tool name 전체 snapshot으로 의도치 않은 surface 추가를 잡는다. |
+| forbidden `tools/call` rejection | `tools/list`에 없어도 직접 호출된 금지 tool name은 에러가 나야 한다. |
 | resource URI traversal test | percent-decoding, null byte, `..`, symlinked `.impact-trace`를 검증한다. |
 | redaction regression | SQLite, Markdown, MCP response, graph export, UI JSON에 raw secret이 없어야 한다. |
+| no implicit daemon/proxy guard | core MCP가 `node:http` listener, localhost proxy, background fetch를 몰래 추가하지 않게 정적/동작 테스트를 둔다. |
 | viewer CSP | UI가 생기면 nonce-based script, no inline event handler, escaped text rendering을 기본으로 둔다. |
 | no background daemon invariant | 기본 실행은 명시적 CLI/MCP stdio. HTTP server는 별도 opt-in과 auth가 필요하다. |
 | audit gate | release 전 `npm audit --audit-level=high`를 CI gate로 둔다. 현재 MCP SDK transitive advisory는 release 전 해결해야 한다. |
@@ -246,8 +261,11 @@ flowchart LR
 
 1. `entities`, `relation_evidence`, `facts`에 대한 FTS5 projection 추가.
 2. semantic recall/sqlite-vec stream을 `semanticRank`로 추가.
-3. relation proximity stream을 단순 relation/evidence match에서 graph-distance 기반으로 확장.
-4. large index에서 common query가 전체 stream을 materialize하지 않도록 FTS/cap/guard 추가.
+3. relation proximity stream을 단순 relation/evidence match에서 `graphProximityRank` 기반으로 확장.
+4. path prefix/entity kind/relation kind 다양화를 truncation 전에 적용해 한 디렉터리나 relation class가 budget을 독점하지 않게 한다.
+5. item count뿐 아니라 returned bytes / estimated tokens budget을 적용하고 value-per-byte 기준을 실험한다.
+6. large index에서 common query가 전체 stream을 materialize하지 않도록 FTS/cap/guard 추가.
+7. retrieval bench를 추가해 Recall@5/10, Precision@5, NDCG@10, MRR, latency, returned bytes를 stream ablation별로 측정한다.
 
 ### Slice B: context access telemetry
 
@@ -266,6 +284,8 @@ Metric:
 - returned bytes
 - omitted evidence count
 - resource expansion rate
+- advertised-resource expansion rate
+- evidence-resource hit rate
 - repeated query cache hit
 - evidence recall@budget
 
@@ -294,6 +314,11 @@ Metric:
 5. 각 `references_file` fact는 `session_summary` fact를 provenance evidence로 참조한다.
 6. MCP tool로는 노출하지 않는다. session transcript file read는 사용자의 explicit CLI action으로만 수행한다.
 
+후속 확장:
+
+- raw transcript 없이 top referenced files, tool categories, failure markers, decision markers 같은 bounded synthetic facets를 summary value에 추가한다.
+- UI timeline은 이 bounded facets와 `references_file` provenance만 읽는다.
+
 ### Slice E: local UI explorer
 
 목표: agent와 사람이 같은 graph/resource contract를 본다.
@@ -319,12 +344,14 @@ Metric:
 
 | 순위 | 작업 | 왜 지금 |
 |---|---|---|
-| 1 | `agentmemory` adoption boundary를 docs에 고정 | platform sprawl을 막고 다음 구현 방향을 명확히 한다. |
-| 2 | `impact_trace_search_context` RRF design + tests | 완료. initial v1은 keyword/relation/evidence stream, `rankSignals`, tie-break regression을 고정했다. |
-| 3 | context access telemetry schema | 완료. v0는 `context_tool_runs`, `context_resource_accesses`, `impact_trace_context_telemetry`로 "context를 줄인다"는 제품 약속을 측정 가능하게 만든다. |
-| 4 | MCP allowlist/security tests | 완료. core MCP `tools/list`에서 destructive/open-world 범위와 agentmemory식 export/write/mesh surface 누수를 테스트로 고정했다. |
-| 5 | `doctor` command | 완료. `impact-trace doctor`와 `impact_trace_doctor`가 schema/index/coverage/adapter/vector/telemetry 상태를 read-only JSON으로 반환한다. |
-| 6 | opt-in session import spec | 완료. `impact-trace import-session` v0가 redacted session crystal facts와 referenced file provenance를 만든다. |
+| 1 | `impact_trace_search_context` retrieval depth pass | AI context를 줄이려면 지금의 LIKE/RRF v1을 FTS5/BM25, semanticRank, graphProximityRank까지 확장해야 한다. |
+| 2 | resource pagination + typed error envelope | UI와 MCP가 같은 contract를 쓰려면 큰 report/graph/evidence를 안전하게 나눠 읽어야 한다. |
+| 3 | explicit memory supersession | 오래된 decision/summary를 retract보다 의미 있게 대체해야 정책/제안서 impact가 stale해지지 않는다. |
+| 4 | context effectiveness benchmark | "context를 줄인다"는 목표를 Recall@budget, returned bytes, expansion rate로 측정한다. |
+| 5 | UI Explorer v0 | resource contract가 안정된 뒤 사람이 같은 evidence와 session timeline을 검증한다. |
+| 6 | workspace/contract impact | single repo + repo-local docs가 안정된 뒤 OpenAPI/protobuf/GraphQL consumer risk로 넓힌다. |
+
+이미 완료된 guardrail은 유지한다: adoption boundary doc, search RRF initial v1, telemetry v0, MCP allowlist/security tests, doctor v0, opt-in session import v0.
 
 ---
 

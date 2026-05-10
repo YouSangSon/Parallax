@@ -90,14 +90,14 @@ flowchart LR
 | [Semgrep](https://github.com/semgrep/semgrep) / [Opengrep](https://github.com/opengrep/opengrep) | 여러 언어의 source-like static rule ecosystem. | `PolicyRuleAdapter`: rule 결과를 `GOVERNS`, `REQUIRES_REVIEW`, `VERIFIES` evidence로 흡수한다. | engine clone. 라이선스와 업데이트 경계를 위해 subprocess/result import adapter가 안전하다. |
 | [SCIP](https://github.com/sourcegraph/scip), [LSIF](https://lsif.dev/), [Kythe](https://github.com/kythe/kythe) | language-server 수준의 definition/reference/implementation graph를 저장·교환하는 포맷/생태계. | optional import adapter. Java/Kotlin/TS/Go/Rust precision을 높이는 길. | core schema를 특정 포맷에 종속시키지 않는다. |
 
-이번 slice에서는 위 조사에서 공통으로 보이는 `search/read only/context budget/resource link` 패턴을 작게 가져와 `impact_trace_search_context` v0로 구현했고, 이어서 `agentmemory` 분석에서 확인한 RRF hybrid ranking을 initial v1로 반영했다. context access telemetry와 opt-in session import v0도 Impact-trace의 SQLite/provenance 경계 안에서 구현됐다. 다음 context slice는 FTS/BM25 + semantic ranking depth pass다.
+이번 slice에서는 위 조사에서 공통으로 보이는 `search/read only/context budget/resource link` 패턴을 작게 가져와 `impact_trace_search_context` v0로 구현했고, 이어서 `agentmemory` 분석에서 확인한 RRF hybrid ranking을 initial v1로 반영했다. context access telemetry와 opt-in session import v0도 Impact-trace의 SQLite/provenance 경계 안에서 구현됐다. 다음 context slice는 FTS/BM25 + semanticRank + graphProximityRank retrieval depth pass와 resource pagination이다.
 
 ### 2.2 MCP 표준에서 가져올 것
 
 | 표준/문서 | 적용 결정 |
 |---|---|
 | [MCP Tools](https://modelcontextprotocol.io/specification/2025-06-18/server/tools) | tool 응답은 작게 유지하고, structured output schema를 둔다. 큰 payload는 resource link로 넘긴다. annotation은 실제 write semantics에 맞춘다: telemetry-writing context tools는 write-capable, pure recall/query tools는 read-only. |
-| [MCP Resources](https://modelcontextprotocol.io/specification/2025-06-18/server/resources) | report, entity, evidence, graph, policy, workspace를 URI resource로 노출한다. `impact://` custom URI를 사용한다. |
+| [MCP Resources](https://modelcontextprotocol.io/specification/2025-06-18/server/resources) | report, entity, evidence, graph, policy, workspace를 URI resource로 노출한다. `impact-trace://` custom URI를 사용한다. |
 | [MCP Apps](https://modelcontextprotocol.io/extensions/apps/overview) | 장기적으로 chat 안에서 graph UI를 렌더링할 수 있다. 단, Claude/Codex CLI 호환성을 고려해 v0 UI는 local web UI로 시작한다. |
 
 ### 2.3 White Space
@@ -158,7 +158,7 @@ flowchart LR
   Brief --> Pack["Compact context pack"]
   Standard --> Pack
   Deep --> Pack
-  Pack --> Links["impact:// resources<br/>fetch only if needed"]
+  Pack --> Links["impact-trace:// resources<br/>fetch only if needed"]
 ```
 
 ### 5.1 Context를 줄이는 방식
@@ -167,7 +167,7 @@ flowchart LR
 |---|---|
 | Precomputed graph | index 단계에서 파일/심볼/문서/정책 relation을 계산해 둔다. agent turn마다 재탐색하지 않는다. |
 | Compact context pack | MCP tool은 기본적으로 요약, top impact paths, evidence refs만 반환한다. 전체 파일 내용은 주지 않는다. |
-| Resource-on-demand | 큰 report, source span, graph는 `impact://...` resource로 두고 agent가 필요할 때만 fetch한다. |
+| Resource-on-demand | 큰 report, source span, graph는 `impact-trace://...` resource로 두고 agent가 필요할 때만 fetch한다. |
 | Ranked retrieval | changed entity와 query에 가까운 것부터 top-k로 제한한다. |
 | Deduped evidence | 같은 파일/문서가 여러 path에 반복돼도 한 번만 보낸다. |
 | Progressive disclosure | `brief`, `standard`, `deep` budget을 두고 기본은 `standard`로 둔다. |
@@ -349,7 +349,7 @@ flowchart LR
 |---|---|
 | `evidence_id` | stable redacted id |
 | `entity_id` / `relation_id` | 어떤 결론을 뒷받침하는지 |
-| `source_uri` | repo-relative path, `impact://`, `git://`, 또는 외부 resource URI |
+| `source_uri` | repo-relative path, `impact-trace://`, `git://`, 또는 외부 resource URI |
 | `span` | start/end line/col. 없으면 whole-file 또는 generated evidence로 명시 |
 | `adapter_id` / `adapter_run_id` | 어떤 adapter가 만들었는지 |
 | `confidence` | `proven`, `inferred`, `heuristic`, `unknown` |
@@ -448,8 +448,8 @@ MVP의 기존 `impact_trace_analyze_diff`는 유지하고, 새 tool은 호환 la
 | `impact-trace://entities/{entity_id}` | entity profile, versions, static/dynamic facts |
 | `impact-trace://evidence/{evidence_id}` | redacted evidence detail |
 | `impact-trace://reports/{report_id}/graph/{format}` | paginated graph nodes/edges |
-| `impact://policy/{entity_id}` | policy/rule impact detail |
-| `impact://workspace/{workspace_id}` | workspace repos/contracts/services |
+| `impact-trace://policy/{entity_id}` | policy/rule impact detail |
+| `impact-trace://workspace/{workspace_id}` | workspace repos/contracts/services |
 | `impact-trace://coverage/latest` | last index coverage and adapter gaps |
 
 ### 8.3 Response shape
@@ -581,7 +581,7 @@ flowchart TB
   Indexer --> Adapters["Adapter runs<br/>Java / Kotlin / Spring Boot / Python / Go / Rust / TS / JS / Markdown"]
   Adapters --> Store[("SQLite store<br/>canonical graph + facts + evidence")]
   Analyzer --> Store
-  Store --> Resources["Reports + resources<br/>impact://..."]
+  Store --> Resources["Reports + resources<br/>impact-trace://..."]
   Resources --> Mcp
   Resources --> Http
 ```
@@ -634,6 +634,7 @@ flowchart LR
 | context budget options | `brief`/`standard`/`deep` budget이 tool schema에 포함됨 |
 | context dedupe and ranking | 반복 file/doc payload 없이 top impact paths 우선 반환 |
 | `impact_trace_search_context` | keyword/path/symbol/relation/evidence 검색으로 ranked entities와 resource link를 반환. v1 landed: deterministic SQLite keyword/relation/evidence RRF ranking, `rankSignals`, `k=10`, `includeEvidence=true`, entity/evidence resource-on-demand |
+| `impact_trace_search_context` depth pass | next: FTS5/BM25 projection, semanticRank, graphProximityRank, path/entity/relation diversification, byte/token budget |
 | `impact_trace_explain_entity` | entity 주변 relation/evidence resource 제공. v0 landed: incoming/outgoing direct relation을 direction별 cap으로 반환하고 evidence는 선택된 relation 전체에서 global cap을 적용 |
 | `impact_trace_context_telemetry` | context/search/explain/analyze tool run과 resource read가 실제로 얼마나 쓰였는지 조회. v0 landed: returned bytes, resource count, omitted counts, redacted query |
 | `impact_trace_doctor` | schema/index/coverage/adapter/vector/telemetry 상태를 read-only JSON으로 조회. v0 landed: CLI `impact-trace doctor`와 MCP tool 동시 제공 |
@@ -690,53 +691,46 @@ flowchart LR
 
 ---
 
-## 12. Post-Phase-6B MCP Context Pack Commit Plan
+## 12. Post-Agentmemory Follow-Up Commit Plan
 
-Phase 6B가 끝난 뒤 바로 이어갈 수 있는 **Phase B(MCP context pack) 작업**의 commit 단위다.
+`context_for_change`, `search_context` RRF v1, evidence resource, telemetry, doctor, session import v0는 landed 상태다. 다음 commit 단위는 agentmemory에서 확인한 retrieval/context-budget 패턴을 Impact-trace의 SQLite/provenance 경계 안에서 깊게 만드는 순서다.
 
-1. `feat(mcp): add context-for-change tool contract`
-   - query/path/symbol input schema
-   - `budget: brief|standard|deep` option
-   - compact context pack output schema
-   - stale/coverage warnings
-   - 현재 v0 landed: `changedFiles` input으로 시작하고, entity/coverage resource link만 반환한다. query/path/symbol resolver와 persisted context pack id는 다음 slice로 둔다.
+1. `docs: align agentmemory follow-up roadmap`
+   - adoption boundary, rejected platform surface, next retrieval/resource/supersession slices를 문서에 고정
+   - SECURITY wording을 "no external writes; scoped `.impact-trace` writes only"로 정정
 
-2. `feat(context): rank and dedupe context packs`
-   - changed entity proximity scoring
-   - repeated entity/evidence collapse
-   - payload byte cap and truncation warnings
-   - 현재 v0 landed: affected/evidence top-k, snippet cap, omitted counts, confidence/depth/path priority 기반 thin ranking.
+2. `feat(search): add fts bm25 context retrieval lane`
+   - entities/relation_evidence/selected facts FTS5 projection
+   - BM25 stream을 `rankSignals.keywordRank`의 source로 승격
+   - wildcard/common-query guard와 large-index cap
 
-3. `feat(mcp): add explain-entity resource flow`
-   - entity profile service 재사용
-   - incoming/outgoing relation pagination
-   - evidence link 포함
-   - 현재 v0 landed: `relationLimit=20` per direction, `evidenceLimit=10` global, `snippetChars=300` compact payload와 evidence resource link를 반환한다.
+3. `feat(search): add semantic and graph proximity rank signals`
+   - existing sqlite-vec/fact embedding path를 `semanticRank` stream으로 연결
+   - relations traversal/proximity를 `graphProximityRank` stream으로 추가
+   - path prefix/entity kind/relation kind diversification
 
-4. `feat(resources): add evidence and graph pagination`
-   - `impact-trace://evidence/{id}`
+4. `feat(context): add byte budget and retrieval bench`
+   - `brief`/`standard`/`deep`에 returned bytes / estimated tokens cap 추가
+   - Recall@5/10, Precision@5, NDCG@10, MRR, latency, returned bytes, stream ablation benchmark
+
+5. `feat(resources): paginate context resources and typed errors`
    - `impact-trace://reports/{report_id}/graph/{format}?cursor=...`
-   - huge graph guard
+   - entity/evidence/report pagination guard
+   - typed error envelope: problem / cause / fix / evidence id
 
-5. `feat(reports): persist context packs`
-   - report id와 snapshot id 연결
-   - context pack id로 같은 payload 재전송 방지
-   - UI 재사용 가능한 JSON contract
+6. `feat(memory): add explicit supersession lifecycle`
+   - `fact_provenance.kind='supersedes'` 또는 `fact_supersessions`
+   - recall/profile/trace가 superseded fact를 명시적으로 구분
+   - fuzzy auto-supersede 금지
 
-6. `test(mcp): cover context pack and resource links`
-   - MCP wire tests
-   - budget별 payload cap
-   - path validation
-   - read-only mutation 0
-
-7. `docs: document agent integration recipes`
-   - Claude Code/Codex setup
-   - "before change"와 "after change" 프롬프트 패턴
+7. `docs: document Claude/Codex agent recipes`
+   - "before change"에는 `impact_trace_context_for_change`
+   - "search before dumping files"에는 `impact_trace_search_context`
+   - "need full proof"에는 resource fetch
 
 8. `feat(ui): add local report workbench`
    - `impact-trace ui`
-   - report selector
-   - changed/affected/evidence/action panels
+   - report selector, changed/affected/evidence/action panels, session crystal timeline
 
 9. `test(ui): add Playwright smoke for workbench`
    - nonblank
@@ -847,11 +841,11 @@ UI가 들어오면 완료 전에 반드시 확인한다.
 
 ## 18. 바로 다음 액션
 
-1. Phase 6B를 이어서 Java/Kotlin/Spring Boot/Python/Go/Rust/TypeScript/JavaScript 변경 영향 답변의 신뢰도를 올린다.
-2. 이미 들어간 `impact_trace_context_for_change` v0의 `brief`/`standard`/`deep` budget, dedupe/ranking, omitted counts를 실제 agent loop에서 검증한다.
-3. 이미 들어간 `impact-trace://evidence/{id}`를 실제 agent loop에서 검증하고, `impact-trace://reports/{id}/graph/{format}` pagination으로 큰 graph payload를 필요할 때만 읽게 만든다.
-4. 그 resource contract를 그대로 읽는 `impact-trace ui` workbench v0를 만든다.
-5. Markdown policy/proposal/decision adapter를 붙여 사용자가 말한 "정책, 제안서 impact"를 실제 report에 넣는다.
+1. `impact_trace_search_context`를 FTS5/BM25 + semanticRank + graphProximityRank depth pass로 확장한다.
+2. context pack에 byte/token budget과 path/entity/relation diversification을 넣어 "더 많이 보내기"가 아니라 "더 정확히 적게 보내기"를 검증한다.
+3. `impact-trace://reports/{id}/graph/{format}` pagination과 typed error envelope로 큰 graph payload를 resource-on-demand로 고정한다.
+4. explicit supersession을 추가해 오래된 decision/summary/policy fact를 fuzzy overwrite 없이 명시적으로 대체한다.
+5. 그 resource contract를 그대로 읽는 `impact-trace ui` workbench v0를 만든다.
 6. workspace/contract resolver는 단일 repo + 문서 impact가 작동한 뒤 확장한다.
 
 이 순서가 가장 짧은 검증 경로다. "멋진 UI"보다 "agent와 사람이 같은 근거를 믿고 보는 report"가 먼저다.

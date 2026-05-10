@@ -29,7 +29,11 @@ Security-sensitive 예시:
 
 ## 보안 원칙
 
-- MCP는 MVP에서 read-only이며 report persistence도 하지 않습니다.
+- MCP는 source/external write를 하지 않습니다. 예외적으로 agent memory facts,
+  branch lifecycle, reflection/repair, context telemetry 같은 `.impact-trace/`
+  내부 repo-local writes는 명시된 tool에서만 허용합니다.
+- Impact report와 context pack은 기본적으로 tool 응답에서 compact하게 반환하고,
+  큰 payload는 resource-on-demand로 읽습니다.
 - project command execution은 MVP 범위 밖입니다.
 - 모든 file input은 realpath containment check를 거쳐야 합니다.
 - evidence는 저장 또는 출력 전에 redaction되어야 합니다.

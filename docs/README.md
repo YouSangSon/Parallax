@@ -1,8 +1,8 @@
 # Impact-Trace 문서 인덱스
 
-> *Updated 2026-05-09, Phase 6 adapter foundations landed on `main`; Phase 6B multi-language + Spring Boot adapter pack is next*
+> *Updated 2026-05-10, Phase 6B adapter pack v0 and agentmemory adoption review documented*
 
-이 폴더에는 14개 문서가 있습니다. 현재 작업과 온보딩에 필요한 문서만 남깁니다.
+이 폴더에는 15개 문서가 있습니다. 현재 작업과 온보딩에 필요한 문서만 남깁니다.
 
 ---
 
@@ -10,6 +10,7 @@
 
 - 🌟 [`vision.ko.md`](vision.ko.md) / [`vision.md`](vision.md) — **이 프로젝트가 무엇이고, 누구를 위하고, 어디로 가는지**. 새 contributor / agent의 5분 시작점.
 - 🧭 [`impact-context-layer-plan.ko.md`](impact-context-layer-plan.ko.md) — **MCP + UI + context 절감 + 코드/문서/정책/제안서 impact**를 하나의 제품 계획으로 정리한 기준 문서.
+- 🔎 [`agentmemory-adoption-review.ko.md`](agentmemory-adoption-review.ko.md) — `rohitg00/agentmemory`를 분석해 **가져올 retrieval/lifecycle 패턴과 거부할 platform surface**를 정리한 적용 경계 문서.
 - 🗺️ [`roadmap.md`](roadmap.md) — *두 축* (영향 분석 + agent memory) 통합 로드맵. 다음 작업이 뭔지 한 페이지로.
 - 📚 [`glossary.md`](glossary.md) — branch (git vs memory), entity (impact vs memory) 같은 *겹치는 어휘* disambiguate.
 
@@ -74,6 +75,7 @@
 |---|---|
 | **이 프로젝트가 뭔지 5분 안에** | `vision.ko.md` → `impact-context-layer-plan.ko.md` |
 | **AI context를 줄이는 제품 방향** | `impact-context-layer-plan.ko.md` |
+| **agentmemory에서 무엇을 가져올지** | `agentmemory-adoption-review.ko.md` |
 | **다음 작업이 뭔지** | `roadmap.md` → `phase6-design.ko.md` |
 | **두 축의 어휘 헷갈림** | `glossary.md` |
 | 처음 사용해본다 | `/README.md` → `agent-memory-cookbook.ko.md` 섹션 A |

@@ -1,9 +1,10 @@
 # Impact Trace 진행상황
 
-업데이트: 2026-05-09 (Phase 6 adapter foundations `main` 반영; Phase 6B multi-language + Spring Boot adapter pack next)
+업데이트: 2026-05-10 (Phase 6B adapter pack v0 + agentmemory adoption review)
 
 비전 / 로드맵 / 용어집: [vision.ko.md](vision.ko.md) · [roadmap.md](roadmap.md) · [glossary.md](glossary.md)
 제품 계획서: [Impact Context Layer 제품 계획](impact-context-layer-plan.ko.md) (MCP + UI + AI context 절감 + 정책/제안서 impact)
+적용성 분석: [agentmemory 적용성 분석](agentmemory-adoption-review.ko.md)
 기준 계획서: [Impact Trace 계획서](impact-trace-plan.ko.md) (영향 분석 축의 원본 P0..P4)
 사용 가이드: [agent memory cookbook](agent-memory-cookbook.ko.md)
 결정 기록: [Architecture decisions log](decisions.ko.md)
@@ -82,6 +83,7 @@ source-span evidence, git snapshot metadata를 묶어 실제 stack의 첫 high-c
 | 2026-05-10 | MCP explain entity v0 | `impact_trace_explain_entity` 추가. agent가 entity 하나의 incoming/outgoing relation과 compact evidence를 제한된 payload로 받고, full evidence는 resource link로 따라가게 한다. |
 | 2026-05-10 | MCP search context v0 | `impact_trace_search_context` 추가. keyword/path/symbol/relation/evidence snippet으로 최신 index를 검색해 ranked entities, match reasons, compact evidence, entity/evidence resource link를 반환한다. |
 | 2026-05-10 | Markdown work artifact v0 | repo-local Markdown 정책/제안서/PRD/결정 문서를 `policy`/`proposal`/`prd`/`decision` entity로 분류하고 코드 mention을 `GOVERNS`/`PROPOSES`/`REQUIRES` impact relation으로 연결한다. |
+| 2026-05-10 | agentmemory adoption review | `rohitg00/agentmemory`를 GPT-5.5 4역할 + 로컬 코드로 분석. 가져올 것: compact-first search, RRF hybrid ranking, access telemetry, explicit supersession, opt-in session import. 거부할 것: iii-engine/global memory/REST daemon/automatic hooks/51-tool surface/mesh-write surface. |
 
 ## 진행 중
 
@@ -90,6 +92,7 @@ source-span evidence, git snapshot metadata를 묶어 실제 stack의 첫 high-c
 | Phase 6 | adapter foundations | `main` 반영 완료 |
 | Phase 6B | ImpactBench + adapter pack v0 routing | `npm run bench`가 `.impact-trace/bench/impact-bench-report.json`를 생성하며 relation recall/precision, affected-file recall, evidence/span, adapter attribution, context-pack readiness를 측정. TS/JS, JVM/Spring Boot, Python, Go, Rust는 별도 adapter run으로 귀속되고 Markdown/config/system은 regex fallback으로 남는다. |
 | Phase B | MCP context pack/search v0 | `impact_trace_context_for_change`로 agent가 작업 전 compact context를 받는 첫 read-only tool 구현. evidence resource v0, explain entity v0, search context v0는 완료, report/graph pagination은 다음 slice |
+| Phase B | agentmemory-informed context lifecycle | [agentmemory 적용성 분석](agentmemory-adoption-review.ko.md)에 따라 RRF hybrid ranking, context access telemetry, explicit supersession, opt-in session import를 SQLite/provenance 경계 안에서 구현 예정 |
 | Phase 6B | Java/Kotlin/Spring Boot/Python/Go/Rust/TS/JS adapter v0 | 진행 중. 선언/import/test relation과 Spring Boot endpoint/config/persistence/client relation 정확도 개선 중 |
 | Phase 6B | source span persistence | `relation_evidence` line/col/range 저장과 analyzer evidence output은 구현됨. 현재 bench 기준 `spanCompleteness`는 regex baseline 특성상 낮으며 parser-backed depth pass에서 개선 예정 |
 | Phase 6B | snapshot-safe indexing | `index_runs` commit/dirty/branch metadata와 stale warning 구현됨. migrated legacy run false-positive warning 회귀 테스트 포함 |

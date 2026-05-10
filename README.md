@@ -119,7 +119,7 @@ graph LR
 | 5 | MemoryBench harness · topic clustering · multi-layer reflection · concurrent reflect lock · reembed cleanup | ⏳ 후보/deferred |
 | 6 | adapter interface/registry, `MultiLanguageRegexAdapter`, multi-adapter run attribution, adapter evidence/diagnostic observability, symbol hash sensitivity, relation-kind memory attribute mapping | ✅ `main` 반영 완료; 다음 slice는 multi-language + Spring Boot adapter pack v0/trusted evidence ([phase6-design.ko.md](docs/phase6-design.ko.md), [phase6b-ts-accuracy-plan.ko.md](docs/phase6b-ts-accuracy-plan.ko.md)) |
 
-**비전 한 페이지:** [docs/vision.ko.md](docs/vision.ko.md). **제품 계획:** [docs/impact-context-layer-plan.ko.md](docs/impact-context-layer-plan.ko.md) — MCP + UI + AI context 절감 + 코드/문서/정책/제안서 impact 기준 문서. **통합 로드맵:** [docs/roadmap.md](docs/roadmap.md). **두 축 어휘:** [docs/glossary.md](docs/glossary.md).
+**비전 한 페이지:** [docs/vision.ko.md](docs/vision.ko.md). **제품 계획:** [docs/impact-context-layer-plan.ko.md](docs/impact-context-layer-plan.ko.md) — MCP + UI + AI context 절감 + 코드/문서/정책/제안서 impact 기준 문서. **agentmemory 적용성 분석:** [docs/agentmemory-adoption-review.ko.md](docs/agentmemory-adoption-review.ko.md). **통합 로드맵:** [docs/roadmap.md](docs/roadmap.md). **두 축 어휘:** [docs/glossary.md](docs/glossary.md).
 자세한 사용 예시는 [docs/agent-memory-cookbook.ko.md](docs/agent-memory-cookbook.ko.md).
 현재 설계 근거: [Phase 6 설계/진행](docs/phase6-design.ko.md) · [Phase 6B multi-language + Spring Boot 계획](docs/phase6b-ts-accuracy-plan.ko.md).
 누적 결정 로그: [decisions.ko.md (D-001..D-018)](docs/decisions.ko.md).
@@ -501,6 +501,7 @@ npm audit --audit-level=high
 **설계 결정 + Phase docs:**
 
 - [Impact Context Layer 제품 계획](docs/impact-context-layer-plan.ko.md) — Claude/Codex MCP integration, local UI explorer, context budget, 정책/제안서 impact 계획
+- [agentmemory 적용성 분석](docs/agentmemory-adoption-review.ko.md) — `rohitg00/agentmemory`에서 가져올 retrieval/lifecycle 패턴과 거부할 platform surface 정리
 - [Phase 6 설계/진행 문서](docs/phase6-design.ko.md) — `main`에 반영된 adapter foundation 작업
 - [Phase 6B multi-language + Spring Boot 계획](docs/phase6b-ts-accuracy-plan.ko.md) — 현재 slice: adapter pack v0 routing + ImpactBench fixture, 다음 depth pass: parser-backed adapters, source span, git snapshot metadata
 - [Architecture decisions log (D-001..D-018)](docs/decisions.ko.md) — 누적 ADR 로그

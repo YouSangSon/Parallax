@@ -96,7 +96,7 @@ flowchart TB
   Compact --> Expand["expandIds when needed"]
 ```
 
-Impact-trace의 `impact_trace_search_context` v0는 현재 SQLite `LIKE` 기반 deterministic search다. 이미 compact evidence와 `impact-trace://entities/*`, `impact-trace://evidence/*` resource를 반환하므로 방향은 맞다. 다음 개선은 `agentmemory`처럼 **lexical, semantic, graph signal을 분리한 뒤 RRF로 합치는 것**이다.
+Impact-trace의 `impact_trace_search_context`는 v0에서 SQLite `LIKE` 기반 deterministic search와 compact evidence/resource URI 계약을 먼저 닫았다. v1은 이 계약을 유지하면서 keyword/relation/evidence stream을 분리하고 RRF rank signal을 노출한다. 다음 개선은 `agentmemory`처럼 **FTS/BM25, semantic, graph proximity signal까지 확장한 뒤 같은 RRF 계약으로 합치는 것**이다.
 
 ---
 
@@ -147,7 +147,7 @@ flowchart LR
 
 | 항목 | 이유 | 구현 위치 후보 |
 |---|---|---|
-| **RRF hybrid ranking** | 현재 search context가 deterministic이라 안정적이지만, keyword/path/symbol/evidence만으로는 "의미상 관련"과 "graph상 가까움"을 충분히 합치지 못한다. | `src/mcp.ts` search context service 분리 후 `src/search_context.ts` 신설 |
+| **RRF hybrid ranking** | initial v1은 keyword/relation/evidence stream을 fuse한다. 다음 depth pass에서 "의미상 관련"과 "graph상 가까움"까지 충분히 합쳐야 한다. | 현재 `src/mcp.ts`; 후속으로 `src/search_context.ts` 분리 |
 | **compact-first + expand-on-demand 계약 강화** | 사용자의 핵심 요구가 AI context 절감이다. tool 응답은 compact hit와 URI만 보내고, source/evidence는 resource fetch로 늦춘다. | `impact_trace_search_context`, `impact_trace_context_for_change`, resource templates |
 | **access telemetry** | 어떤 context가 실제로 agent에 의해 확장됐는지 알아야 ranking과 budget을 개선할 수 있다. | `context_access`, `context_pack_runs` 테이블 |
 | **explicit memory supersession** | 지금은 retract/currentOnly가 있지만, "이 summary/decision이 저 fact를 대체한다"를 더 명시적으로 표현할 수 있다. | `fact_provenance.kind='supersedes'` 또는 `fact_supersessions` |
@@ -219,24 +219,35 @@ Impact-trace에 필요한 guardrail:
 
 목표: `impact_trace_search_context`를 단순 weighted search에서 **multi-signal retrieval**로 바꾼다.
 
+상태: initial v1 landed. 현재 구현은 semantic/vector lane 없이 deterministic SQLite stream만 사용하지만,
+agentmemory에서 가져오려던 핵심 계약인 **compact-first result + expand-on-demand resource + RRF rank signal**을
+먼저 고정했다.
+
 ```mermaid
 flowchart LR
-  Query["query"] --> FTS["SQLite FTS5/BM25<br/>entities + snippets + facts"]
-  Query --> Vec["semantic recall<br/>fact_embeddings/sqlite-vec"]
-  Query --> Graph["relation proximity<br/>entities/relations/evidence"]
-  FTS --> Fuse["RRF fusion"]
-  Vec --> Fuse
-  Graph --> Fuse
+  Query["query"] --> Keyword["keyword stream<br/>id/display/path/symbol"]
+  Query --> Relation["relation stream<br/>kind/provenance"]
+  Query --> Evidence["evidence stream<br/>file/kind/snippet"]
+  Keyword --> Fuse["RRF fusion"]
+  Relation --> Fuse
+  Evidence --> Fuse
   Fuse --> Pack["compact ranked context"]
   Pack --> URI["impact-trace:// resources"]
 ```
 
-구현:
+구현된 것:
+
+1. `impact_trace_search_context` 내부 score를 `keywordRank`, `relationRank`, `evidenceRank`로 분리.
+2. RRF 결과를 `rankSignals`로 노출하고 기존 `reasons`/resource URI 계약은 유지.
+3. raw RRF score로 정렬하되 응답 `rrfScore`/`score`는 rounded value로 고정.
+4. stream top page 밖의 fused winner, display/entity tie-break, rounded-score collision regression test 추가.
+
+후속 depth pass:
 
 1. `entities`, `relation_evidence`, `facts`에 대한 FTS5 projection 추가.
-2. `impact_trace_search_context` 내부 score를 `keywordRank`, `semanticRank`, `graphRank`로 분리.
-3. RRF 결과와 `reasons`에 stream별 기여도를 노출.
-4. 기존 tests에 ranking fixture 추가.
+2. semantic recall/sqlite-vec stream을 `semanticRank`로 추가.
+3. relation proximity stream을 단순 relation/evidence match에서 graph-distance 기반으로 확장.
+4. large index에서 common query가 전체 stream을 materialize하지 않도록 FTS/cap/guard 추가.
 
 ### Slice B: context access telemetry
 
@@ -307,8 +318,8 @@ Metric:
 | 순위 | 작업 | 왜 지금 |
 |---|---|---|
 | 1 | `agentmemory` adoption boundary를 docs에 고정 | platform sprawl을 막고 다음 구현 방향을 명확히 한다. |
-| 2 | `impact_trace_search_context` RRF design + tests | 이미 v0가 있으므로 가장 작게 가치가 난다. |
-| 3 | context access telemetry schema | "context를 줄인다"는 제품 약속을 측정 가능하게 만든다. |
+| 2 | `impact_trace_search_context` RRF design + tests | 완료. initial v1은 keyword/relation/evidence stream, `rankSignals`, tie-break regression을 고정했다. |
+| 3 | context access telemetry schema | 다음. "context를 줄인다"는 제품 약속을 측정 가능하게 만든다. |
 | 4 | MCP allowlist/security tests | agentmemory에서 드러난 위험한 surface를 early block한다. |
 | 5 | `doctor` command | vector/index/resource 상태를 사용자와 agent가 확인하게 한다. |
 | 6 | opt-in session import spec | UI timeline과 memory lifecycle의 입력을 만든다. |

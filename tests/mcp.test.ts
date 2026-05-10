@@ -211,6 +211,156 @@ async function makeSearchEscapingRepo(): Promise<string> {
   return repoRoot;
 }
 
+async function makeSearchRankingRepo(): Promise<string> {
+  const repoRoot = await makeRepo();
+  const db = new DatabaseSync(databasePath(repoRoot));
+  try {
+    const repo = db.prepare('SELECT id FROM repos LIMIT 1').get() as { id: number };
+    const run = db
+      .prepare('SELECT id FROM index_runs WHERE repo_id = ? AND status = ? ORDER BY id DESC LIMIT 1')
+      .get(repo.id, 'completed') as { id: number };
+
+    const insertEntity = db.prepare(`
+      INSERT INTO entities (
+        id, repo_id, kind, path, symbol, language_id, display_name,
+        created_index_run_id, updated_index_run_id
+      )
+      VALUES (?, ?, 'file', ?, NULL, 'typescript', ?, ?, ?)
+    `);
+    const insertRelation = db.prepare(`
+      INSERT INTO relations (
+        id, repo_id, source_entity_id, target_entity_id, kind, confidence,
+        adapter_run_id, index_run_id, provenance
+      )
+      VALUES (?, ?, ?, ?, ?, 'medium', NULL, ?, ?)
+    `);
+    const insertEvidence = db.prepare(`
+      INSERT INTO relation_evidence (
+        id, relation_id, repo_id, file_path, kind, snippet, confidence, index_run_id
+      )
+      VALUES (?, ?, ?, ?, ?, ?, 'medium', ?)
+    `);
+
+    const addEntity = (id: string, displayName: string, pathSuffix = id): void => {
+      insertEntity.run(id, repo.id, `rank-fixture/${pathSuffix}.ts`, displayName, run.id, run.id);
+    };
+    const addRelation = (
+      entityId: string,
+      relationId: string,
+      relationKind: string,
+      evidenceKind: string,
+      snippet: string
+    ): void => {
+      insertRelation.run(relationId, repo.id, entityId, entityId, relationKind, run.id, 'rank-fixture');
+      insertEvidence.run(
+        `${relationId}:evidence`,
+        relationId,
+        repo.id,
+        `rank-fixture/${relationId}.ts`,
+        evidenceKind,
+        snippet,
+        run.id
+      );
+    };
+
+    for (const [id, displayName] of [
+      ['file:rank/relation-a.ts', 'A relation only'],
+      ['file:rank/relation-b.ts', 'B relation only'],
+      ['file:rank/fused.ts', 'M fused winner'],
+      ['file:rank/evidence-a.ts', 'A evidence only'],
+      ['file:rank/evidence-b.ts', 'B evidence only']
+    ] as const) {
+      addEntity(id, displayName);
+    }
+    addRelation('file:rank/relation-a.ts', 'rank:relation-a', 'FUSION_NEEDLE', 'plain', 'plain relation-only snippet');
+    addRelation('file:rank/relation-b.ts', 'rank:relation-b', 'FUSION_NEEDLE', 'plain', 'plain relation-only snippet');
+    addRelation('file:rank/fused.ts', 'rank:fused', 'FUSION_NEEDLE', 'FUSION_NEEDLE', 'fusion_needle evidence snippet');
+    addRelation('file:rank/evidence-a.ts', 'rank:evidence-a', 'plain', 'FUSION_NEEDLE', 'fusion_needle evidence snippet');
+    addRelation('file:rank/evidence-b.ts', 'rank:evidence-b', 'plain', 'FUSION_NEEDLE', 'fusion_needle evidence snippet');
+
+    for (const [id, displayName] of [
+      ['file:rank/tie-z-alpha.ts', 'Alpha tie candidate'],
+      ['file:rank/tie-a-beta.ts', 'Beta tie candidate'],
+      ['file:rank/tie-id-a.ts', 'Same tie candidate'],
+      ['file:rank/tie-id-b-ENTITY_ID_ONLY_MARKER.ts', 'Same tie candidate']
+    ] as const) {
+      addEntity(id, displayName);
+    }
+    addRelation(
+      'file:rank/tie-z-alpha.ts',
+      'rank:tie-alpha',
+      'DISPLAY_TIE_MARKER',
+      'plain',
+      'plain display tie snippet'
+    );
+    addRelation(
+      'file:rank/tie-a-beta.ts',
+      'rank:tie-beta',
+      'plain',
+      'DISPLAY_TIE_MARKER',
+      'display tie evidence snippet'
+    );
+    addRelation(
+      'file:rank/tie-id-a.ts',
+      'rank:tie-id-a',
+      'ENTITY_ID_ONLY_MARKER',
+      'plain',
+      'plain id tie snippet'
+    );
+
+    const rawRrfNeedle = 'RAW_RRF_NEEDLE';
+    const rawWinnerId = 'file:rank/raw-rrf-winner.ts';
+    const roundedTrapId = 'file:rank/raw-rrf-rounded-trap.ts';
+
+    for (let index = 0; index < 26; index += 1) {
+      const suffix = index.toString().padStart(3, '0');
+      addEntity(
+        `file:rank/raw-keyword-before-${suffix}.ts`,
+        `Raw RRF keyword filler ${suffix}`,
+        `raw-rrf/${rawRrfNeedle}/keyword-before-${suffix}`
+      );
+    }
+    addEntity(rawWinnerId, 'Z raw RRF winner', `raw-rrf/${rawRrfNeedle}/winner`);
+    for (let index = 0; index < 10; index += 1) {
+      const suffix = index.toString().padStart(3, '0');
+      addEntity(
+        `file:rank/raw-keyword-after-${suffix}.ts`,
+        `ZZ raw RRF keyword filler ${suffix}`,
+        `raw-rrf/${rawRrfNeedle}/keyword-after-${suffix}`
+      );
+    }
+    addEntity(roundedTrapId, `A rounded RRF trap ${rawRrfNeedle}`);
+
+    for (let index = 0; index < 34; index += 1) {
+      const suffix = index.toString().padStart(3, '0');
+      const relationId = `rank:raw-relation-before-${suffix}`;
+      const entityId = `file:rank/raw-relation-before-${suffix}.ts`;
+      addEntity(entityId, `000 raw RRF relation filler ${suffix}`);
+      addRelation(entityId, relationId, rawRrfNeedle, 'plain', 'plain raw relation filler snippet');
+    }
+    addRelation(roundedTrapId, 'rank:raw-rounded-trap-relation', rawRrfNeedle, rawRrfNeedle, 'raw RRF trap evidence');
+    addRelation(rawWinnerId, 'rank:raw-winner-relation', rawRrfNeedle, rawRrfNeedle, 'raw RRF winner evidence');
+
+    for (let index = 0; index < 34; index += 1) {
+      const suffix = index.toString().padStart(3, '0');
+      const relationId = `rank:raw-evidence-before-${suffix}`;
+      const entityId = `file:rank/raw-evidence-before-${suffix}.ts`;
+      addEntity(entityId, `000 raw RRF evidence filler ${suffix}`);
+      addRelation(entityId, relationId, 'plain', rawRrfNeedle, 'raw RRF evidence filler snippet');
+    }
+    for (let index = 0; index < 11; index += 1) {
+      const suffix = index.toString().padStart(3, '0');
+      const relationId = `rank:raw-evidence-middle-${suffix}`;
+      const entityId = `file:rank/raw-evidence-middle-${suffix}.ts`;
+      addEntity(entityId, `M raw RRF evidence filler ${suffix}`);
+      addRelation(entityId, relationId, 'plain', rawRrfNeedle, 'raw RRF evidence middle snippet');
+    }
+  } finally {
+    db.close();
+  }
+  return repoRoot;
+}
+
 function countReports(repoRoot: string): number {
   const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
   try {
@@ -482,6 +632,13 @@ test('MCP search_context returns ranked entities with optional evidence links', 
         reasons: string[];
         resourceUri: string;
         evidence: Array<{ id: string; snippet: string; resourceUri: string }>;
+        rankSignals: {
+          algorithm: 'rrf';
+          keywordRank: number | null;
+          relationRank: number | null;
+          evidenceRank: number | null;
+          rrfScore: number;
+        };
       }>;
       resources: { entities: string[]; evidence: string[] };
       limits: { k: number; includeEvidence: boolean; evidencePerEntity: number; snippetChars: number; truncated: boolean };
@@ -492,6 +649,12 @@ test('MCP search_context returns ranked entities with optional evidence links', 
     assert.equal(search.results[0]!.entity.id, 'file:src/a.ts');
     assert.equal(search.results[0]!.resourceUri, `impact-trace://entities/${encodeURIComponent('file:src/a.ts')}`);
     assert.ok(search.results[0]!.score > 0);
+    assert.equal(search.results[0]!.score, search.results[0]!.rankSignals.rrfScore);
+    assert.equal(search.results[0]!.rankSignals.algorithm, 'rrf');
+    assert.equal(search.results[0]!.rankSignals.keywordRank, 1);
+    assert.equal(search.results[0]!.rankSignals.relationRank, null);
+    assert.equal(search.results[0]!.rankSignals.evidenceRank, 1);
+    assert.ok(search.results[0]!.rankSignals.rrfScore > 0);
     assert.ok(search.results[0]!.reasons.includes('entity-id'));
     assert.ok(search.results[0]!.reasons.includes('path'));
     assert.deepEqual(search.resources.entities, [search.results[0]!.resourceUri]);
@@ -508,6 +671,38 @@ test('MCP search_context returns ranked entities with optional evidence links', 
       const evidenceJson = JSON.parse(evidenceResource.result.contents[0].text) as { id: string };
       assert.ok(search.results[0]!.evidence.some((item) => item.id === evidenceJson.id));
     }
+
+    const relationResponse = await client.request('tools/call', {
+      name: 'impact_trace_search_context',
+      arguments: { query: 'DEPENDS_ON', k: 3 }
+    });
+    assert.equal(relationResponse.error, undefined);
+    assert.equal(relationResponse.result.isError, undefined);
+    const relationSearch = JSON.parse(relationResponse.result.content[0].text) as {
+      results: Array<{
+        entity: { id: string };
+        evidence: Array<{ id: string; snippet: string; resourceUri: string }>;
+        rankSignals: {
+          algorithm: 'rrf';
+          keywordRank: number | null;
+          relationRank: number | null;
+          evidenceRank: number | null;
+          rrfScore: number;
+        };
+      }>;
+      resources: { evidence: string[] };
+      counts: { evidence: number };
+    };
+    assert.ok(relationSearch.results.length > 0);
+    assert.ok(relationSearch.results.some((item) => item.rankSignals.relationRank !== null));
+    assert.ok(relationSearch.results.some((item) => item.rankSignals.evidenceRank !== null));
+    assert.ok(relationSearch.resources.evidence.length > 0);
+    assert.equal(relationSearch.counts.evidence, relationSearch.resources.evidence.length);
+    assert.ok(
+      relationSearch.results
+        .flatMap((item) => item.evidence)
+        .every((item) => relationSearch.resources.evidence.includes(item.resourceUri))
+    );
 
     const noEvidence = await client.request('tools/call', {
       name: 'impact_trace_search_context',
@@ -575,6 +770,139 @@ test('MCP search_context treats LIKE wildcard characters as literal query text',
         `expected ${query} not to behave like a wildcard that returns plain.ts`
       );
     }
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP search_context fuses beyond the first page of each RRF stream', async () => {
+  const repoRoot = await makeSearchRankingRepo();
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+
+    const response = await client.request('tools/call', {
+      name: 'impact_trace_search_context',
+      arguments: { query: 'FUSION_NEEDLE', k: 1, includeEvidence: false }
+    });
+
+    assert.equal(response.error, undefined);
+    assert.equal(response.result.isError, undefined);
+    const search = JSON.parse(response.result.content[0].text) as {
+      results: Array<{
+        entity: { id: string };
+        rankSignals: {
+          keywordRank: number | null;
+          relationRank: number | null;
+          evidenceRank: number | null;
+          rrfScore: number;
+        };
+      }>;
+      limits: { truncated: boolean };
+      counts: { matchedEntitiesLowerBound: number };
+    };
+    assert.equal(search.results.length, 1);
+    assert.equal(search.results[0]!.entity.id, 'file:rank/fused.ts');
+    assert.equal(search.results[0]!.rankSignals.keywordRank, null);
+    assert.equal(search.results[0]!.rankSignals.relationRank, 3);
+    assert.equal(search.results[0]!.rankSignals.evidenceRank, 3);
+    assert.equal(search.limits.truncated, true);
+    assert.ok(search.counts.matchedEntitiesLowerBound >= 5);
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP search_context orders equal RRF scores by display name then entity id', async () => {
+  const repoRoot = await makeSearchRankingRepo();
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+
+    const displayTieResponse = await client.request('tools/call', {
+      name: 'impact_trace_search_context',
+      arguments: { query: 'DISPLAY_TIE_MARKER', k: 2, includeEvidence: false }
+    });
+    assert.equal(displayTieResponse.error, undefined);
+    assert.equal(displayTieResponse.result.isError, undefined);
+    const displayTie = JSON.parse(displayTieResponse.result.content[0].text) as {
+      results: Array<{ entity: { id: string; displayName: string }; score: number }>;
+    };
+    assert.deepEqual(
+      displayTie.results.map((item) => item.entity.id),
+      ['file:rank/tie-z-alpha.ts', 'file:rank/tie-a-beta.ts']
+    );
+    assert.equal(displayTie.results[0]!.score, displayTie.results[1]!.score);
+    assert.ok(displayTie.results[0]!.entity.displayName < displayTie.results[1]!.entity.displayName);
+    assert.ok(displayTie.results[0]!.entity.id > displayTie.results[1]!.entity.id);
+
+    const idTieResponse = await client.request('tools/call', {
+      name: 'impact_trace_search_context',
+      arguments: { query: 'ENTITY_ID_ONLY_MARKER', k: 2, includeEvidence: false }
+    });
+    assert.equal(idTieResponse.error, undefined);
+    assert.equal(idTieResponse.result.isError, undefined);
+    const idTie = JSON.parse(idTieResponse.result.content[0].text) as {
+      results: Array<{ entity: { id: string; displayName: string }; score: number }>;
+    };
+    assert.deepEqual(
+      idTie.results.map((item) => item.entity.id),
+      ['file:rank/tie-id-a.ts', 'file:rank/tie-id-b-ENTITY_ID_ONLY_MARKER.ts']
+    );
+    assert.equal(idTie.results[0]!.score, idTie.results[1]!.score);
+    assert.equal(idTie.results[0]!.entity.displayName, idTie.results[1]!.entity.displayName);
+    assert.ok(idTie.results[0]!.entity.id < idTie.results[1]!.entity.id);
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP search_context orders by raw RRF before rounded presentation score', async () => {
+  const repoRoot = await makeSearchRankingRepo();
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+
+    const response = await client.request('tools/call', {
+      name: 'impact_trace_search_context',
+      arguments: { query: 'RAW_RRF_NEEDLE', k: 2, includeEvidence: false }
+    });
+    assert.equal(response.error, undefined);
+    assert.equal(response.result.isError, undefined);
+    const search = JSON.parse(response.result.content[0].text) as {
+      results: Array<{
+        entity: { id: string; displayName: string };
+        score: number;
+        rankSignals: {
+          keywordRank: number | null;
+          relationRank: number | null;
+          evidenceRank: number | null;
+          rrfScore: number;
+        };
+      }>;
+    };
+
+    assert.deepEqual(
+      search.results.map((item) => item.entity.id),
+      ['file:rank/raw-rrf-winner.ts', 'file:rank/raw-rrf-rounded-trap.ts']
+    );
+    assert.ok(search.results[0]!.entity.displayName > search.results[1]!.entity.displayName);
+    assert.equal(search.results[0]!.score, search.results[1]!.score);
+    assert.equal(search.results[0]!.rankSignals.rrfScore, search.results[1]!.rankSignals.rrfScore);
+    assert.deepEqual(search.results[0]!.rankSignals, {
+      algorithm: 'rrf',
+      keywordRank: 27,
+      relationRank: 36,
+      evidenceRank: 47,
+      rrfScore: search.results[0]!.rankSignals.rrfScore
+    });
+    assert.deepEqual(search.results[1]!.rankSignals, {
+      algorithm: 'rrf',
+      keywordRank: 38,
+      relationRank: 35,
+      evidenceRank: 35,
+      rrfScore: search.results[1]!.rankSignals.rrfScore
+    });
   } finally {
     await client.close();
   }

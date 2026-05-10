@@ -74,7 +74,7 @@ security
 | CLI human output | 짧은 summary, affected count, report path |
 | CLI JSON | `reportVersion`, `schemaVersion`, `repo`, `workspace`, `diff`, `changed`, `affected`, `actions`, `evidence`, `coverage`, `graph` |
 | Exit codes | `0` clean, `1` findings/risk, `2` user/config error, `3` internal error |
-| MCP tools | read-only annotation, compact response, deterministic errors |
+| MCP tools | read-only annotation, compact response, deterministic errors, search result limit/resource link |
 | MCP resources | `impact-trace://reports/{id}`, `impact-trace://entities/{id}`, `impact-trace://reports/{id}/graph/{format}`, `impact-trace://coverage/latest`, pagination, not found error |
 | Graph export | Mermaid/DOT/JSON schema, stable node IDs, relation legend, confidence metadata |
 | Report compatibility | deprecated field와 새 field가 migration 기간에 함께 유지됨 |

@@ -45,7 +45,7 @@ MVP 구현이 들어가 있습니다.
 - system/config 파일의 path mention 기반 관계 추론
 - 변경 파일 분석 후 JSON 또는 Markdown report 생성
 - 공식 MCP SDK 기반 stdio server 제공
-- MCP impact tools 제공: `impact_trace_analyze_diff`, `impact_trace_context_for_change`
+- MCP impact tools 제공: `impact_trace_analyze_diff`, `impact_trace_context_for_change`, `impact_trace_search_context`, `impact_trace_explain_entity`
 - agent memory MCP tools 제공: `remember`, `recall`, `branch`, `trace`, `reflect` 등은 `.impact-trace/impact.db` 안에서만 동작
 - read-only MCP resources 제공: report, entity, evidence, graph, latest coverage
 - evidence output 전 secret-like 값 redaction
@@ -314,6 +314,7 @@ MCP에서 노출하는 주요 tool은 아래와 같습니다.
 |---|---|
 | `impact_trace_analyze_diff` | 변경 파일을 분석하고 CLI와 같은 report model을 반환합니다. |
 | `impact_trace_context_for_change` | 변경 파일을 기준으로 `brief`/`standard`/`deep` budget에 맞춘 compact context pack을 반환합니다. agent가 전체 report를 받지 않고 top impact paths, evidence refs, entity/coverage resource link만 받도록 합니다. |
+| `impact_trace_search_context` | keyword/path/symbol/relation/evidence snippet을 최신 index에서 검색하고 ranked entity context, match reason, compact evidence, resource link를 반환합니다. |
 | `impact_trace_explain_entity` | entity 하나의 direct relation과 compact evidence를 제한된 payload로 반환하고, full evidence resource link를 제공합니다. |
 | `impact_trace_remember` | agent의 결정/관찰을 content-addressable fact로 저장합니다 (Phase 1). |
 | `impact_trace_recall` | branch/entity/attribute 또는 semantic query로 fact를 조회합니다 (Phase 2). |
@@ -330,6 +331,8 @@ MCP에서 노출하는 주요 tool은 아래와 같습니다.
 `impact_trace_context_for_change`는 report를 persist하지 않습니다. v0는 `impact-trace://entities/{entityId}`,
 `impact-trace://evidence/{evidenceId}`, `impact-trace://coverage/latest` resource link를 반환하고,
 큰 report/graph pagination은 다음 context-pack slice에서 붙입니다.
+`impact_trace_search_context` v0는 `k=10`, `includeEvidence=true`, `evidencePerEntity=2`,
+`snippetChars=240`을 기본으로 하며, semantic/vector search가 아니라 SQLite 기반 deterministic search입니다.
 `impact_trace_explain_entity` v0는 `relationLimit=20`을 incoming/outgoing 각각에 적용하고,
 `evidenceLimit=10`, `snippetChars=300`으로 선택된 relation 전체의 evidence payload를 제한합니다.
 

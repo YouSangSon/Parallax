@@ -199,6 +199,18 @@ async function makeWideContextRepo(): Promise<string> {
   return repoRoot;
 }
 
+async function makeSearchEscapingRepo(): Promise<string> {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-mcp-search-escaping-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/percent%literal.ts'), 'export const percentLiteral = 1;\n');
+  await writeFile(path.join(repoRoot, 'src/under_score.ts'), 'export const underScore = 1;\n');
+  await writeFile(path.join(repoRoot, 'src/back\\slash.ts'), 'export const backSlash = 1;\n');
+  await writeFile(path.join(repoRoot, 'src/plain.ts'), 'export const plain = 1;\n');
+  await initProject({ repoRoot });
+  await indexProject({ repoRoot });
+  return repoRoot;
+}
+
 function countReports(repoRoot: string): number {
   const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
   try {
@@ -231,6 +243,7 @@ test('MCP stdio server initializes and exposes the full agent memory tool surfac
     for (const expected of [
       'impact_trace_analyze_diff',
       'impact_trace_context_for_change',
+      'impact_trace_search_context',
       'impact_trace_remember',
       'impact_trace_recall',
       'impact_trace_branch',
@@ -248,6 +261,7 @@ test('MCP stdio server initializes and exposes the full agent memory tool surfac
     }
     assert.equal(toolByName.get('impact_trace_analyze_diff')!.annotations?.readOnlyHint, true);
     assert.equal(toolByName.get('impact_trace_context_for_change')!.annotations?.readOnlyHint, true);
+    assert.equal(toolByName.get('impact_trace_search_context')!.annotations?.readOnlyHint, true);
     assert.equal(toolByName.get('impact_trace_recall')!.annotations?.readOnlyHint, true);
     assert.equal(toolByName.get('impact_trace_trace')!.annotations?.readOnlyHint, true);
     assert.equal(toolByName.get('impact_trace_profile')!.annotations?.readOnlyHint, true);
@@ -440,6 +454,198 @@ test('MCP context_for_change applies budget presets and validates paths', async 
     assert.equal(bad.error, undefined);
     assert.equal(bad.result.isError, true);
     assert.match(bad.result.content[0].text, /outside repo root/);
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP search_context returns ranked entities with optional evidence links', async () => {
+  const repoRoot = await makeWideContextRepo();
+  const artifactsBefore = dbArtifacts(repoRoot);
+  assert.equal(countReports(repoRoot), 0);
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+
+    const response = await client.request('tools/call', {
+      name: 'impact_trace_search_context',
+      arguments: { query: 'src/a.ts', k: 1 }
+    });
+
+    assert.equal(response.error, undefined);
+    assert.equal(response.result.isError, undefined);
+    const search = JSON.parse(response.result.content[0].text) as {
+      query: string;
+      results: Array<{
+        entity: { id: string; path?: string };
+        score: number;
+        reasons: string[];
+        resourceUri: string;
+        evidence: Array<{ id: string; snippet: string; resourceUri: string }>;
+      }>;
+      resources: { entities: string[]; evidence: string[] };
+      limits: { k: number; includeEvidence: boolean; evidencePerEntity: number; snippetChars: number; truncated: boolean };
+      counts: { returnedEntities: number; evidence: number };
+    };
+    assert.equal(search.query, 'src/a.ts');
+    assert.equal(search.results.length, 1);
+    assert.equal(search.results[0]!.entity.id, 'file:src/a.ts');
+    assert.equal(search.results[0]!.resourceUri, `impact-trace://entities/${encodeURIComponent('file:src/a.ts')}`);
+    assert.ok(search.results[0]!.score > 0);
+    assert.ok(search.results[0]!.reasons.includes('entity-id'));
+    assert.ok(search.results[0]!.reasons.includes('path'));
+    assert.deepEqual(search.resources.entities, [search.results[0]!.resourceUri]);
+    assert.equal(search.limits.k, 1);
+    assert.equal(search.limits.includeEvidence, true);
+    assert.equal(search.limits.evidencePerEntity, 2);
+    assert.equal(search.limits.snippetChars, 240);
+    assert.equal(search.limits.truncated, true);
+    assert.ok(search.resources.evidence.length > 0);
+    assert.ok(search.results[0]!.evidence.every((item) => item.snippet.length <= search.limits.snippetChars));
+    for (const uri of search.resources.evidence) {
+      const evidenceResource = await client.request('resources/read', { uri });
+      assert.equal(evidenceResource.error, undefined);
+      const evidenceJson = JSON.parse(evidenceResource.result.contents[0].text) as { id: string };
+      assert.ok(search.results[0]!.evidence.some((item) => item.id === evidenceJson.id));
+    }
+
+    const noEvidence = await client.request('tools/call', {
+      name: 'impact_trace_search_context',
+      arguments: { query: 'docs/a.md', k: 5, includeEvidence: false }
+    });
+    assert.equal(noEvidence.error, undefined);
+    const noEvidenceSearch = JSON.parse(noEvidence.result.content[0].text) as {
+      results: Array<{ evidence: unknown[] }>;
+      resources: { evidence: string[] };
+      limits: { includeEvidence: boolean };
+    };
+    assert.equal(noEvidenceSearch.limits.includeEvidence, false);
+    assert.deepEqual(noEvidenceSearch.resources.evidence, []);
+    assert.ok(noEvidenceSearch.results.every((item) => item.evidence.length === 0));
+
+    const blank = await client.request('tools/call', {
+      name: 'impact_trace_search_context',
+      arguments: { query: '   ' }
+    });
+    assert.equal(blank.error, undefined);
+    assert.equal(blank.result.isError, true);
+    assert.match(blank.result.content[0].text, /Too small|must not be empty/i);
+
+    assert.equal(countReports(repoRoot), 0);
+    const filterWalAux = (names: string[]): string[] =>
+      names.filter((name) => !/\.db-(wal|shm)$/.test(name));
+    assert.deepEqual(filterWalAux(dbArtifacts(repoRoot)), filterWalAux(artifactsBefore));
+    assert.equal(existsSync(path.join(repoRoot, '.impact-trace/reports')), false);
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP search_context treats LIKE wildcard characters as literal query text', async () => {
+  const repoRoot = await makeSearchEscapingRepo();
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+
+    for (const [query, expectedLiteral] of [
+      ['%', '%'],
+      ['_', '_'],
+      ['\\', '\\']
+    ] as const) {
+      const response = await client.request('tools/call', {
+        name: 'impact_trace_search_context',
+        arguments: { query, k: 20, includeEvidence: false }
+      });
+
+      assert.equal(response.error, undefined);
+      assert.equal(response.result.isError, undefined);
+      const search = JSON.parse(response.result.content[0].text) as {
+        results: Array<{ entity: { id: string; path?: string; displayName?: string } }>;
+      };
+      assert.ok(search.results.length > 0, `expected literal search for ${query} to find fixture rows`);
+      assert.ok(
+        search.results.every((item) =>
+          `${item.entity.id} ${item.entity.path ?? ''} ${item.entity.displayName ?? ''}`.includes(expectedLiteral)
+        ),
+        `expected ${query} to match only entities containing the literal character`
+      );
+      assert.equal(
+        search.results.some((item) => item.entity.id === 'file:src/plain.ts'),
+        false,
+        `expected ${query} not to behave like a wildcard that returns plain.ts`
+      );
+    }
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP search_context ignores entities from newer failed index runs', async () => {
+  const repoRoot = await makeRepo();
+  let completedRunId = 0;
+  let failedRunId = 0;
+  const db = new DatabaseSync(databasePath(repoRoot));
+  try {
+    const repo = db.prepare('SELECT id FROM repos LIMIT 1').get() as { id: number };
+    const completedRun = db
+      .prepare('SELECT id FROM index_runs WHERE repo_id = ? AND status = ? ORDER BY id DESC LIMIT 1')
+      .get(repo.id, 'completed') as { id: number };
+    completedRunId = completedRun.id;
+    failedRunId = Number(
+      db
+        .prepare(`
+          INSERT INTO index_runs (repo_id, status, started_at, finished_at, extractor_version)
+          VALUES (?, 'failed', datetime('now'), datetime('now'), 'failed-search-test')
+        `)
+        .run(repo.id).lastInsertRowid
+    );
+    db
+      .prepare(`
+        INSERT INTO entities (
+          id, repo_id, kind, path, symbol, language_id, display_name,
+          created_index_run_id, updated_index_run_id
+        )
+        VALUES (?, ?, 'file', ?, NULL, 'typescript', ?, ?, ?)
+      `)
+      .run(
+        'file:src/failed-only.ts',
+        repo.id,
+        'src/failed-only.ts',
+        'src/failed-only.ts',
+        failedRunId,
+        failedRunId
+      );
+  } finally {
+    db.close();
+  }
+
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+
+    const failedOnly = await client.request('tools/call', {
+      name: 'impact_trace_search_context',
+      arguments: { query: 'failed-only', k: 10 }
+    });
+    assert.equal(failedOnly.error, undefined);
+    const failedOnlySearch = JSON.parse(failedOnly.result.content[0].text) as {
+      indexRunId: number;
+      results: Array<{ entity: { id: string } }>;
+    };
+    assert.equal(failedOnlySearch.indexRunId, completedRunId);
+    assert.notEqual(failedOnlySearch.indexRunId, failedRunId);
+    assert.deepEqual(failedOnlySearch.results, []);
+
+    const completed = await client.request('tools/call', {
+      name: 'impact_trace_search_context',
+      arguments: { query: 'src/a.ts', k: 10 }
+    });
+    const completedSearch = JSON.parse(completed.result.content[0].text) as {
+      indexRunId: number;
+      results: Array<{ entity: { id: string } }>;
+    };
+    assert.equal(completedSearch.indexRunId, completedRunId);
+    assert.ok(completedSearch.results.some((item) => item.entity.id === 'file:src/a.ts'));
   } finally {
     await client.close();
   }

@@ -11,6 +11,7 @@ Impact-trace is the local-first code-aware memory layer for AI coding agents. It
 
 - "How does this change ripple?" → `analyze`
 - "Remember/recall an agent decision" → `remember` / `recall`
+- "Find relevant indexed context without reading files" → MCP `impact_trace_search_context`
 - "What does this entity directly touch?" → MCP `impact_trace_explain_entity` or CLI `profile` for memory context
 - "Summarize old episodic facts" → `reflect` (Phase 3)
 - "Trace why I decided X" → `trace`
@@ -73,12 +74,13 @@ Or via the Claude Code CLI:
 claude mcp add --transport stdio impact-trace -- impact-trace mcp serve
 ```
 
-## MCP tools surfaced (14)
+## MCP tools surfaced (15)
 
 | Tool | Read-only? | What it does |
 |---|---|---|
 | `impact_trace_analyze_diff` | ✅ | Run impact analysis for a list of changed files |
 | `impact_trace_context_for_change` | ✅ | Return a budgeted compact context pack for changed files |
+| `impact_trace_search_context` | ✅ | Search latest indexed entities by keyword/path/symbol/relation/evidence and return ranked context with resource links |
 | `impact_trace_remember` | ❌ | Persist an agent fact (entity, attribute, value) on a branch |
 | `impact_trace_recall` | ✅ | Retrieve facts by branch / entity / attribute / semantic query (sqlite-vec ANN with brute-force fallback) |
 | `impact_trace_profile` | ✅ | Three-bucket per-entity view (static / dynamic / summary) — Phase 4 P1 |

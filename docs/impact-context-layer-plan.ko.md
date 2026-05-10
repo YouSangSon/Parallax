@@ -71,16 +71,25 @@ flowchart LR
 
 ### 2.1 가까운 프로젝트
 
+2026-05-10에 다시 확인한 결론: 이미 "코드베이스를 MCP로 노출"하는 프로젝트는 많다. Impact-trace는 그들과 같은 category에 있지만, 가져올 것은 **검색/랭킹/그래프/decision/policy 패턴**이고, 그대로 가져오지 않을 것은 **cloud-first 운영, graph DB 필수화, agent editing surface, 라이선스 충돌 코드**다.
+
 | 프로젝트 | 확인한 범위 | 가져올 것 | 그대로 베끼지 않을 것 |
 |---|---|---|---|
-| [trace-mcp](https://github.com/nikolai-vysotskyi/trace-mcp) / [site](https://trace-mcp.com/) | MCP로 코드/문서 그래프를 제공하고, desktop graph explorer까지 제공한다. `get_change_impact`, decision memory, markdown vault, multi-client wiring이 특히 가깝다. | MCP-first product framing, graph를 한 번 만들고 agent가 재사용하는 모델, 반복 repo 탐색을 줄이는 context economy framing, desktop/local explorer, code + markdown one graph, decision memory linked to code. | 프레임워크 integration 수 경쟁. Impact-trace는 먼저 evidence 신뢰도, policy/proposal/business artifact impact, local SQLite contract를 좁게 믿을 수 있게 만든다. |
-| [repowise](https://github.com/repowise-dev/repowise) | 코드베이스 intelligence, auto-generated docs, git analytics, dead code, architectural decisions, MCP, dashboard를 제공한다. README는 decision staleness와 governed file 변경 감지를 강조한다. | architectural decision을 graph node에 연결, stale decision detection, ownership/hotspot/co-change analytics, generated agent context file 아이디어. | 자동 문서 생성 중심 제품. Impact-trace의 중심은 "변경 순간의 impact report"와 "agent에게 주는 context pack"이다. |
-| [Serena](https://github.com/oraios/serena) | MCP toolkit로 LSP backend를 쓰며 symbol-level retrieval, references, declarations, refactoring/editing tools를 제공한다. | LSP를 장기 adapter로 붙이는 전략. semantic lookup은 직접 전부 만들지 말고 LSP/IDE backend를 활용한다. | agent editing/refactoring surface. Impact-trace MCP는 read-only context와 recommendation부터 안정화한다. |
-| [Continue](https://github.com/continuedev/continue) | source-controlled AI checks와 CI status check 흐름을 제공한다. | repo 안에 check/rule을 저장하고 PR/CI에서 agent 검토를 돌리는 DX. Impact-trace action pack을 CI check로 연결할 수 있다. | agent check runner 자체. Impact-trace는 analyzer/context layer이고 CI runner는 projection이다. |
-| [aider](https://github.com/Aider-AI/aider) | terminal pair programming tool이며 repo map으로 큰 코드베이스 맥락을 compact하게 제공한다. | context window에 맞는 compact repo map/report summarization. | pair programmer workflow 자체와 auto-commit 중심 UX. |
-| [GraphRAG](https://github.com/microsoft/graphrag) | graph-based RAG 시스템. | 문서/제안서/회의록 같은 비정형 산출물에서 entity/relation을 뽑는 장기 패턴. | LLM 기반 추론을 source-of-truth처럼 쓰는 것. Impact-trace의 core relation은 parser/evidence 우선이다. |
-| [CodeQL](https://github.com/github/codeql) | GitHub Advanced Security 등에 쓰이는 query/library repo. | 보안/data-flow 분석을 장기 enrichment adapter로 붙인다. | 초기에 CodeQL을 필수 의존성으로 만들지 않는다. 설치 마찰과 라이선스/CLI 경계가 크다. |
-| [Semgrep](https://github.com/semgrep/semgrep) | 여러 언어의 lightweight static analysis와 source-like pattern rule을 제공한다. | policy/rule adapter, `GOVERNS`/`REQUIRES_REVIEW` relation 추출, team-specific rule integration. | Semgrep clone. rule execution 결과를 impact graph evidence로 흡수하는 쪽이 맞다. |
+| [trace-mcp](https://github.com/nikolai-vysotskyi/trace-mcp) / [listing](https://mcpservers.org/servers/nikolai-vysotskyi/trace-mcp) | `get_change_impact`, reverse dependency graph, risk score, decision memory, desktop graph explorer 방향이 Impact-trace와 가장 가깝다. | 변경 중심 framing, decision memory를 code impact와 연결하는 UX, PR comment/report automation. | 프레임워크 수 경쟁과 desktop-first 구현. Impact-trace는 먼저 evidence 신뢰도와 SQLite resource contract를 닫는다. |
+| [repowise](https://github.com/repowise-dev/repowise) / [site](https://www.repowise.dev/) | dependency graph, git history, docs, architectural decisions를 4-layer로 묶고 MCP 7 tools와 dashboard를 제공한다. GitHub README 기준 AGPL-3.0 badge가 보인다. | `get_context`/`get_risk`/`get_why` 같은 task-oriented tool 설계, decision staleness, ownership/hotspot/co-change analytics, token efficiency benchmark. | AGPL 코드 복사, auto-doc product 중심성. Impact-trace의 중심은 "변경 순간의 impact report"와 "agent에게 주는 compact context pack"이다. |
+| [Serena](https://github.com/oraios/serena) | MCP registry에 semantic code retrieval/editing tools로 등록되어 있고 LSP/IDE backend 방향이 강하다. | 장기 `LspAdapter`: references/definitions/implementations를 직접 재구현하지 않고 LSP 결과를 `entities`/`relations`로 정규화한다. | editing/refactoring tool surface. Impact-trace MCP는 read-only context와 recommendation부터 안정화한다. |
+| [CodeGraphContext](https://github.com/CodeGraphContext/CodeGraphContext) / [docs](https://codegraphcontext.github.io/) | codebase를 queryable property graph로 변환하고 CLI/MCP가 graph slice를 제공한다. | graph slice UX, portable graph bundle/export, UI에서 focused graph만 보여주는 방식. | Kuzu/Neo4j/FalkorDB를 source of truth로 요구하는 구조. Impact-trace는 SQLite canonical store를 유지한다. |
+| [zilliztech/claude-context](https://github.com/zilliztech/claude-context) | MCP `index_codebase`, `search_code`, `get_indexing_status`를 제공하고 BM25 + dense vector hybrid search, AST chunking, incremental indexing을 강조한다. | `impact_trace_search_context`의 장기 semantic lane, incremental indexing, search result ranking optimization. | Milvus/Zilliz 같은 vector DB 필수화. v0는 deterministic SQLite keyword/path/symbol/evidence search로 시작한다. |
+| [Sourcegraph MCP](https://sourcegraph.com/mcp) / [docs](https://sourcegraph.com/docs/api/mcp) | Codex/Claude Code/Cursor 등 MCP-aware agent와 호환되고 keyword/semantic search, history/diff search, file read를 제공한다. docs는 result limits와 pagination을 강조한다. | result limit, pagination, file range resource, repo permissions와 MCP access control 분리. | Sourcegraph product coupling. 장기적으로는 SCIP/LSIF import adapter가 더 이식성 좋다. |
+| [aider](https://github.com/Aider-AI/aider) / [repo map docs](https://aider.chat/docs/repomap.html) | repo map으로 중요한 class/function/signature만 LLM에 넣어 큰 repo context를 줄인다. | compact repo map 원리, graph ranking, token-budgeted selection. | pair programmer/auto-commit workflow. Impact-trace는 agent가 수정하기 전후 볼 impact context를 제공한다. |
+| [Continue](https://github.com/continuedev/continue) | IDE assistant와 MCP/context provider 생태계, source-controlled checks 방향이 강하다. | `.impact-trace/checks/` 같은 repo-local policy/check projection. | IDE assistant 자체와 check runner를 복제하지 않는다. |
+| [narsil-mcp](https://github.com/postrv/narsil-mcp) / [site](https://narsilmcp.com/) | Rust MCP server로 90 tools, 32 languages, semantic search, security scanning, call graph, SBOM, local-first를 표방한다. | CCG(Code Context Graph) 같은 portable code-intelligence export와 security/SBOM adapter ideas. | 90-tool breadth 경쟁. Impact-trace는 small tool surface + resource-on-demand로 context를 줄인다. |
+| [RepoRelay](https://github.com/chwoerz/reporelay) / [docs](https://chwoerz.github.io/reporelay/reference/mcp-tools) | self-hosted code context engine, REST API + MCP tools/resources/prompts를 제공한다. | REST/MCP를 같은 service contract 위에 얹는 구조, dashboard 후보. | server stack을 초기에 필수화. v0는 CLI/MCP/SQLite 단순성을 유지한다. |
+| [GraphRAG](https://github.com/microsoft/graphrag) | graph-based RAG. docs/README는 indexing cost를 경고한다. | proposal/meeting-note/PRD 같은 비정형 산출물에서 후보 entity/relation을 뽑는 실험 lane. | LLM extraction을 authoritative relation으로 저장하는 것. core relation은 parser/evidence 우선이다. |
+| [Semgrep](https://github.com/semgrep/semgrep) / [Opengrep](https://github.com/opengrep/opengrep) | 여러 언어의 source-like static rule ecosystem. | `PolicyRuleAdapter`: rule 결과를 `GOVERNS`, `REQUIRES_REVIEW`, `VERIFIES` evidence로 흡수한다. | engine clone. 라이선스와 업데이트 경계를 위해 subprocess/result import adapter가 안전하다. |
+| [SCIP](https://github.com/sourcegraph/scip), [LSIF](https://lsif.dev/), [Kythe](https://github.com/kythe/kythe) | language-server 수준의 definition/reference/implementation graph를 저장·교환하는 포맷/생태계. | optional import adapter. Java/Kotlin/TS/Go/Rust precision을 높이는 길. | core schema를 특정 포맷에 종속시키지 않는다. |
+
+이번 slice에서는 위 조사에서 공통으로 보이는 `search/read only/context budget/resource link` 패턴을 작게 가져와 `impact_trace_search_context` v0로 구현한다.
 
 ### 2.2 MCP 표준에서 가져올 것
 
@@ -92,7 +101,7 @@ flowchart LR
 
 ### 2.3 White Space
 
-가장 가까운 프로젝트는 `trace-mcp`와 `repowise`다. 둘 다 "코드베이스 이해 + MCP + graph/UI" 방향을 이미 보여준다. Impact-trace가 이길 수 있는 자리는 다음이다.
+가장 가까운 프로젝트는 `trace-mcp`, `repowise`, `CodeGraphContext`, `claude-context`다. 모두 "코드베이스 이해 + MCP + graph/search" 방향을 이미 보여준다. Impact-trace가 이길 수 있는 자리는 다음이다.
 
 1. **변경 순간 중심:** "repo를 이해한다"보다 "이 diff가 무엇을 깨뜨리고 무엇을 검증해야 하는가"에 집중한다.
 2. **정책/제안서/의사결정까지 1급:** code graph뿐 아니라 policy, proposal, PRD, decision, customer promise를 impact path에 넣는다.
@@ -422,7 +431,7 @@ flowchart TB
 | `impact_trace_analyze_git_diff` | `base/head` 또는 현재 worktree diff를 분석 | compact summary, top affected, actions, report resource URI |
 | `impact_trace_context_for_change` | agent가 작업 전에 query/path/symbol 기준 context를 요청 | relevant code/docs/policies/proposals/decisions context pack |
 | `impact_trace_explain_entity` | entity 하나의 relation/evidence를 설명 | entity summary, incoming/outgoing direct relations, compact evidence, resource links. v0 기본값은 `relationLimit=20` per direction, `evidenceLimit=10` global, `snippetChars=300` |
-| `impact_trace_search_context` | 자연어/keyword/path 기반 graph search | ranked entities + evidence refs |
+| `impact_trace_search_context` | keyword/path/symbol/relation/evidence 기반 graph search. v0 landed: deterministic SQLite search, `k=10`, `includeEvidence=true`, `snippetChars=240` | ranked entities, match reasons, compact evidence, entity/evidence resource links |
 | `impact_trace_get_graph` | report/entity 주변 graph metadata 요청 | paginated graph resource URI |
 | `impact_trace_action_plan` | report 기준 검증 action 생성 | tests/docs/review/security actions, 실행은 하지 않음 |
 
@@ -621,6 +630,7 @@ flowchart LR
 | `impact_trace_context_for_change` | agent가 작업 전 compact context를 받음 |
 | context budget options | `brief`/`standard`/`deep` budget이 tool schema에 포함됨 |
 | context dedupe and ranking | 반복 file/doc payload 없이 top impact paths 우선 반환 |
+| `impact_trace_search_context` | keyword/path/symbol/relation/evidence 검색으로 ranked entities와 resource link를 반환. v0 landed: deterministic SQLite search, `k=10`, `includeEvidence=true`, entity/evidence resource-on-demand |
 | `impact_trace_explain_entity` | entity 주변 relation/evidence resource 제공. v0 landed: incoming/outgoing direct relation을 direction별 cap으로 반환하고 evidence는 선택된 relation 전체에서 global cap을 적용 |
 | `impact-trace://evidence/{id}` | source span과 redacted snippet fetch 가능. v0 landed: context pack evidence id에서 resource-on-demand로 읽는다. |
 | `impact-trace://reports/{id}/graph/{format}` pagination | 큰 graph를 tool payload에 넣지 않음 |

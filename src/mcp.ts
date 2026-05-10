@@ -116,6 +116,42 @@ export function createMcpServer(context: McpContext): McpServer {
   );
 
   server.registerTool(
+    'impact_trace_search_context',
+    {
+      title: 'Search indexed context',
+      description:
+        'Search the latest Impact Trace index by keyword, path, symbol, relation provenance, or evidence snippet and return ranked entity context with resource links.',
+      inputSchema: {
+        query: z.string().trim().min(1),
+        k: z.number().int().min(1).max(50).optional(),
+        includeEvidence: z.boolean().optional()
+      },
+      annotations: {
+        title: 'Search indexed context',
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      }
+    },
+    async ({ query, k, includeEvidence }) => {
+      const result = searchContext(context, {
+        query,
+        k: k ?? 10,
+        includeEvidence: includeEvidence ?? true
+      });
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(result)
+          }
+        ]
+      };
+    }
+  );
+
+  server.registerTool(
     'impact_trace_remember',
     {
       title: 'Remember a fact',
@@ -1001,6 +1037,296 @@ type CompactEvidenceResource = {
   endCol?: number;
 };
 
+type SearchContextOptions = {
+  query: string;
+  k: number;
+  includeEvidence: boolean;
+};
+
+type SearchEntityRow = {
+  entity_id: string;
+  entity_kind: string;
+  entity_path: string | null;
+  entity_symbol: string | null;
+  entity_language_id: string | null;
+  entity_display_name: string;
+  id_match: number;
+  display_match: number;
+  path_match: number;
+  symbol_match: number;
+  relation_match_count: number;
+  evidence_match_count: number;
+};
+
+type SearchEvidenceRow = ExplainEvidenceRow & {
+  query_match: number;
+};
+
+const searchContextEvidencePerEntity = 2;
+const searchContextSnippetChars = 240;
+
+function searchContext(context: McpContext, options: SearchContextOptions): unknown {
+  const query = options.query.trim();
+  if (!query) throw new Error('search query must not be empty');
+
+  return withReadOnlyDb(context, (db, repoId) => {
+    const indexRunId = latestCompletedIndexRun(db, repoId);
+    const likeQuery = `%${escapeLike(query)}%`;
+    const candidateRows = searchEntityRows(db, repoId, indexRunId, likeQuery, options.k + 1);
+    const scoredRows = candidateRows
+      .map((row) => ({
+        row,
+        score: searchEntityScore(row),
+        reasons: searchEntityReasons(row)
+      }))
+      .sort((left, right) =>
+        numericCompare(right.score, left.score)
+        || left.row.entity_display_name.localeCompare(right.row.entity_display_name)
+        || left.row.entity_id.localeCompare(right.row.entity_id)
+      );
+    const selected = scoredRows.slice(0, options.k);
+    const evidenceByEntity = new Map<string, CompactEvidenceResource[]>();
+    const evidenceUris: string[] = [];
+
+    if (options.includeEvidence) {
+      for (const item of selected) {
+        const evidenceRows = searchEvidenceRows(
+          db,
+          repoId,
+          indexRunId,
+          item.row.entity_id,
+          likeQuery,
+          searchContextEvidencePerEntity
+        );
+        const evidence = evidenceRows.map((row) => compactEvidenceResource(row, searchContextSnippetChars));
+        evidenceByEntity.set(item.row.entity_id, evidence);
+        evidenceUris.push(...evidence.map((row) => row.resourceUri));
+      }
+    }
+
+    const results = selected.map((item) => {
+      const entity = entityFromSearchRow(item.row);
+      return {
+        entity,
+        score: item.score,
+        reasons: item.reasons,
+        resourceUri: entityResourceUri(entity),
+        evidence: evidenceByEntity.get(item.row.entity_id) ?? []
+      };
+    });
+
+    return {
+      query,
+      indexRunId,
+      results,
+      resources: {
+        entities: results.map((item) => item.resourceUri).sort(),
+        evidence: [...new Set(evidenceUris)].sort()
+      },
+      limits: {
+        k: options.k,
+        includeEvidence: options.includeEvidence,
+        evidencePerEntity: searchContextEvidencePerEntity,
+        snippetChars: searchContextSnippetChars,
+        truncated: candidateRows.length > options.k
+      },
+      counts: {
+        returnedEntities: results.length,
+        matchedEntitiesLowerBound: candidateRows.length,
+        evidence: new Set(evidenceUris).size
+      }
+    };
+  });
+}
+
+function searchEntityRows(
+  db: ReturnType<typeof openDatabase>,
+  repoId: number,
+  indexRunId: number,
+  likeQuery: string,
+  limit: number
+): SearchEntityRow[] {
+  return db
+    .prepare(`
+      SELECT
+        entities.id AS entity_id,
+        entities.kind AS entity_kind,
+        entities.path AS entity_path,
+        entities.symbol AS entity_symbol,
+        entities.language_id AS entity_language_id,
+        entities.display_name AS entity_display_name,
+        CASE WHEN entities.id LIKE ? ESCAPE '\\' THEN 1 ELSE 0 END AS id_match,
+        CASE WHEN entities.display_name LIKE ? ESCAPE '\\' THEN 1 ELSE 0 END AS display_match,
+        CASE WHEN COALESCE(entities.path, '') LIKE ? ESCAPE '\\' THEN 1 ELSE 0 END AS path_match,
+        CASE WHEN COALESCE(entities.symbol, '') LIKE ? ESCAPE '\\' THEN 1 ELSE 0 END AS symbol_match,
+        (
+          SELECT count(*)
+          FROM relations
+          WHERE relations.repo_id = entities.repo_id
+            AND relations.index_run_id = entities.updated_index_run_id
+            AND (relations.source_entity_id = entities.id OR relations.target_entity_id = entities.id)
+            AND (relations.kind LIKE ? ESCAPE '\\' OR relations.provenance LIKE ? ESCAPE '\\')
+        ) AS relation_match_count,
+        (
+          SELECT count(*)
+          FROM relations
+          INNER JOIN relation_evidence evidence
+            ON evidence.relation_id = relations.id
+           AND evidence.repo_id = relations.repo_id
+           AND evidence.index_run_id = relations.index_run_id
+          WHERE relations.repo_id = entities.repo_id
+            AND relations.index_run_id = entities.updated_index_run_id
+            AND (relations.source_entity_id = entities.id OR relations.target_entity_id = entities.id)
+            AND (
+              evidence.file_path LIKE ? ESCAPE '\\'
+              OR evidence.kind LIKE ? ESCAPE '\\'
+              OR evidence.snippet LIKE ? ESCAPE '\\'
+            )
+        ) AS evidence_match_count
+      FROM entities
+      WHERE entities.repo_id = ?
+        AND entities.updated_index_run_id = ?
+        AND (
+          entities.id LIKE ? ESCAPE '\\'
+          OR entities.display_name LIKE ? ESCAPE '\\'
+          OR COALESCE(entities.path, '') LIKE ? ESCAPE '\\'
+          OR COALESCE(entities.symbol, '') LIKE ? ESCAPE '\\'
+          OR EXISTS (
+            SELECT 1
+            FROM relations
+            WHERE relations.repo_id = entities.repo_id
+              AND relations.index_run_id = entities.updated_index_run_id
+              AND (relations.source_entity_id = entities.id OR relations.target_entity_id = entities.id)
+              AND (relations.kind LIKE ? ESCAPE '\\' OR relations.provenance LIKE ? ESCAPE '\\')
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM relations
+            INNER JOIN relation_evidence evidence
+              ON evidence.relation_id = relations.id
+             AND evidence.repo_id = relations.repo_id
+             AND evidence.index_run_id = relations.index_run_id
+            WHERE relations.repo_id = entities.repo_id
+              AND relations.index_run_id = entities.updated_index_run_id
+              AND (relations.source_entity_id = entities.id OR relations.target_entity_id = entities.id)
+              AND (
+                evidence.file_path LIKE ? ESCAPE '\\'
+                OR evidence.kind LIKE ? ESCAPE '\\'
+                OR evidence.snippet LIKE ? ESCAPE '\\'
+              )
+          )
+        )
+      ORDER BY
+        id_match DESC,
+        path_match DESC,
+        display_match DESC,
+        symbol_match DESC,
+        relation_match_count DESC,
+        evidence_match_count DESC,
+        entities.display_name,
+        entities.id
+      LIMIT ?
+    `)
+    .all(
+      likeQuery,
+      likeQuery,
+      likeQuery,
+      likeQuery,
+      likeQuery,
+      likeQuery,
+      likeQuery,
+      likeQuery,
+      likeQuery,
+      repoId,
+      indexRunId,
+      likeQuery,
+      likeQuery,
+      likeQuery,
+      likeQuery,
+      likeQuery,
+      likeQuery,
+      likeQuery,
+      likeQuery,
+      likeQuery,
+      limit
+    ) as SearchEntityRow[];
+}
+
+function searchEvidenceRows(
+  db: ReturnType<typeof openDatabase>,
+  repoId: number,
+  indexRunId: number,
+  entityId: string,
+  likeQuery: string,
+  limit: number
+): SearchEvidenceRow[] {
+  if (limit <= 0) return [];
+  const spanColumns = evidenceSpanColumnSelect(db, 'evidence');
+  return db
+    .prepare(`
+      SELECT
+        evidence.id AS evidence_id,
+        evidence.relation_id AS relation_id,
+        evidence.file_path AS evidence_file_path,
+        evidence.kind AS evidence_kind,
+        evidence.snippet AS evidence_snippet,
+        evidence.confidence AS evidence_confidence,
+        ${spanColumns},
+        CASE
+          WHEN evidence.file_path LIKE ? ESCAPE '\\'
+            OR evidence.kind LIKE ? ESCAPE '\\'
+            OR evidence.snippet LIKE ? ESCAPE '\\'
+          THEN 1 ELSE 0
+        END AS query_match
+      FROM relation_evidence evidence
+      INNER JOIN relations
+        ON relations.id = evidence.relation_id
+       AND relations.repo_id = evidence.repo_id
+       AND relations.index_run_id = evidence.index_run_id
+      WHERE evidence.repo_id = ?
+        AND evidence.index_run_id = ?
+        AND (relations.source_entity_id = ? OR relations.target_entity_id = ?)
+      ORDER BY query_match DESC, evidence.file_path, evidence.kind, evidence.id
+      LIMIT ?
+    `)
+    .all(likeQuery, likeQuery, likeQuery, repoId, indexRunId, entityId, entityId, limit) as SearchEvidenceRow[];
+}
+
+function searchEntityScore(row: SearchEntityRow): number {
+  return row.id_match * 6
+    + row.path_match * 5
+    + row.display_match * 4
+    + row.symbol_match * 3
+    + Math.min(row.relation_match_count, 3) * 2
+    + Math.min(row.evidence_match_count, 3);
+}
+
+function searchEntityReasons(row: SearchEntityRow): string[] {
+  const reasons: string[] = [];
+  if (row.id_match > 0) reasons.push('entity-id');
+  if (row.path_match > 0) reasons.push('path');
+  if (row.display_match > 0) reasons.push('display-name');
+  if (row.symbol_match > 0) reasons.push('symbol');
+  if (row.relation_match_count > 0) reasons.push(`relations:${row.relation_match_count}`);
+  if (row.evidence_match_count > 0) reasons.push(`evidence:${row.evidence_match_count}`);
+  return reasons;
+}
+
+function entityFromSearchRow(row: SearchEntityRow): EntityRef {
+  return {
+    id: row.entity_id,
+    kind: row.entity_kind as EntityRef['kind'],
+    ...(row.entity_path !== null ? { path: row.entity_path } : {}),
+    ...(row.entity_symbol !== null ? { symbol: row.entity_symbol } : {}),
+    ...(row.entity_language_id !== null ? { languageId: row.entity_language_id } : {}),
+    displayName: row.entity_display_name
+  };
+}
+
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, (character) => `\\${character}`);
+}
+
 function explainEntity(context: McpContext, options: EntityExplainOptions): unknown {
   return withReadOnlyDb(context, (db, repoId) => {
     const indexRunId = latestCompletedIndexRun(db, repoId);
@@ -1175,12 +1501,12 @@ function explainRelation(
   };
 }
 
-function compactEvidenceResource(row: ExplainEvidenceRow): CompactEvidenceResource {
+function compactEvidenceResource(row: ExplainEvidenceRow, snippetChars = 300): CompactEvidenceResource {
   return {
     id: row.evidence_id,
     file: row.evidence_file_path,
     kind: row.evidence_kind,
-    snippet: truncateSnippet(redactSecrets(row.evidence_snippet), 300),
+    snippet: truncateSnippet(redactSecrets(row.evidence_snippet), snippetChars),
     confidence: asConfidence(row.evidence_confidence),
     resourceUri: evidenceResourceUri(row.evidence_id),
     ...(row.evidence_start_line !== null ? { startLine: row.evidence_start_line } : {}),

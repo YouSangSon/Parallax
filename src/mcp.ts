@@ -367,6 +367,35 @@ export function createMcpServer(context: McpContext): McpServer {
   );
 
   server.registerTool(
+    'impact_trace_explain_entity',
+    {
+      title: 'Explain an entity',
+      description:
+        'Return compact direct relation and evidence context for one indexed entity, with resource links for full evidence details.',
+      inputSchema: {
+        entity: z.string().min(1),
+        relationLimit: z.number().int().min(1).max(100).optional(),
+        evidenceLimit: z.number().int().min(0).max(50).optional()
+      },
+      annotations: {
+        title: 'Explain an entity',
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      }
+    },
+    async ({ entity, relationLimit, evidenceLimit }) => {
+      const result = explainEntity(context, {
+        entityId: entity,
+        relationLimit: relationLimit ?? 20,
+        evidenceLimit: evidenceLimit ?? 10
+      });
+      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+    }
+  );
+
+  server.registerTool(
     'impact_trace_repair_reflections',
     {
       title: 'Repair orphan reflection facts',
@@ -911,6 +940,283 @@ type EvidenceResourceRow = {
   target_language_id: string | null;
   target_display_name: string | null;
 };
+
+type EntityExplainOptions = {
+  entityId: string;
+  relationLimit: number;
+  evidenceLimit: number;
+};
+
+type ExplainEntityRow = {
+  id: string;
+  kind: string;
+  path: string | null;
+  symbol: string | null;
+  language_id: string | null;
+  display_name: string;
+};
+
+type ExplainRelationRow = {
+  relation_id: string;
+  relation_kind: string;
+  relation_confidence: string;
+  relation_provenance: string;
+  source_id: string;
+  source_kind: string;
+  source_path: string | null;
+  source_symbol: string | null;
+  source_language_id: string | null;
+  source_display_name: string;
+  target_id: string;
+  target_kind: string;
+  target_path: string | null;
+  target_symbol: string | null;
+  target_language_id: string | null;
+  target_display_name: string;
+};
+
+type ExplainEvidenceRow = {
+  evidence_id: string;
+  relation_id: string;
+  evidence_file_path: string;
+  evidence_kind: string;
+  evidence_snippet: string;
+  evidence_confidence: string;
+  evidence_start_line: number | null;
+  evidence_end_line: number | null;
+  evidence_start_col: number | null;
+  evidence_end_col: number | null;
+};
+
+type CompactEvidenceResource = {
+  id: string;
+  file: string;
+  kind: string;
+  snippet: string;
+  confidence: Confidence;
+  resourceUri: string;
+  startLine?: number;
+  endLine?: number;
+  startCol?: number;
+  endCol?: number;
+};
+
+function explainEntity(context: McpContext, options: EntityExplainOptions): unknown {
+  return withReadOnlyDb(context, (db, repoId) => {
+    const indexRunId = latestCompletedIndexRun(db, repoId);
+    const entity = db
+      .prepare(`
+        SELECT id, kind, path, symbol, language_id, display_name
+        FROM entities
+        WHERE repo_id = ? AND id = ? AND updated_index_run_id = ?
+      `)
+      .get(repoId, options.entityId, indexRunId) as ExplainEntityRow | undefined;
+    if (!entity) throw new Error(`impact entity not found: ${options.entityId}`);
+
+    const incomingCount = relationCount(db, repoId, indexRunId, 'target_entity_id', options.entityId);
+    const outgoingCount = relationCount(db, repoId, indexRunId, 'source_entity_id', options.entityId);
+    const incomingRows = explainRelationRows(db, repoId, indexRunId, 'target_entity_id', options.entityId, options.relationLimit);
+    const outgoingRows = explainRelationRows(db, repoId, indexRunId, 'source_entity_id', options.entityId, options.relationLimit);
+    const selectedRelationIds = [...incomingRows, ...outgoingRows].map((row) => row.relation_id);
+    const evidenceRows = explainEvidenceRows(db, repoId, indexRunId, selectedRelationIds, options.evidenceLimit + 1);
+    const evidenceCount = explainEvidenceCount(db, repoId, indexRunId, selectedRelationIds);
+    const selectedEvidenceRows = evidenceRows.slice(0, options.evidenceLimit);
+    const evidenceByRelation = new Map<string, CompactEvidenceResource[]>();
+    for (const row of selectedEvidenceRows) {
+      const item = compactEvidenceResource(row);
+      const bucket = evidenceByRelation.get(row.relation_id) ?? [];
+      bucket.push(item);
+      evidenceByRelation.set(row.relation_id, bucket);
+    }
+    const evidenceUris = selectedEvidenceRows.map((row) => evidenceResourceUri(row.evidence_id));
+
+    return {
+      entity: entityFromExplainRow(entity),
+      indexRunId,
+      relations: {
+        incoming: incomingRows.map((row) => explainRelation(row, evidenceByRelation)),
+        outgoing: outgoingRows.map((row) => explainRelation(row, evidenceByRelation))
+      },
+      resources: {
+        entity: entityResourceUri(entityFromExplainRow(entity)),
+        evidence: [...new Set(evidenceUris)].sort()
+      },
+      limits: {
+        relationLimit: options.relationLimit,
+        evidenceLimit: options.evidenceLimit,
+        snippetChars: 300,
+        incomingTruncated: incomingCount > options.relationLimit,
+        outgoingTruncated: outgoingCount > options.relationLimit,
+        evidenceTruncated: evidenceCount > options.evidenceLimit
+      },
+      counts: {
+        incoming: incomingCount,
+        outgoing: outgoingCount,
+        evidence: evidenceCount
+      }
+    };
+  });
+}
+
+function relationCount(
+  db: ReturnType<typeof openDatabase>,
+  repoId: number,
+  indexRunId: number,
+  column: 'source_entity_id' | 'target_entity_id',
+  entityId: string
+): number {
+  const row = db
+    .prepare(`SELECT count(*) AS count FROM relations WHERE repo_id = ? AND index_run_id = ? AND ${column} = ?`)
+    .get(repoId, indexRunId, entityId) as { count: number };
+  return row.count;
+}
+
+function explainRelationRows(
+  db: ReturnType<typeof openDatabase>,
+  repoId: number,
+  indexRunId: number,
+  column: 'source_entity_id' | 'target_entity_id',
+  entityId: string,
+  limit: number
+): ExplainRelationRow[] {
+  return db
+    .prepare(`
+      SELECT
+        relations.id AS relation_id,
+        relations.kind AS relation_kind,
+        relations.confidence AS relation_confidence,
+        relations.provenance AS relation_provenance,
+        source.id AS source_id,
+        source.kind AS source_kind,
+        source.path AS source_path,
+        source.symbol AS source_symbol,
+        source.language_id AS source_language_id,
+        source.display_name AS source_display_name,
+        target.id AS target_id,
+        target.kind AS target_kind,
+        target.path AS target_path,
+        target.symbol AS target_symbol,
+        target.language_id AS target_language_id,
+        target.display_name AS target_display_name
+      FROM relations
+      INNER JOIN entities source ON source.id = relations.source_entity_id AND source.repo_id = relations.repo_id
+      INNER JOIN entities target ON target.id = relations.target_entity_id AND target.repo_id = relations.repo_id
+      WHERE relations.repo_id = ?
+        AND relations.index_run_id = ?
+        AND relations.${column} = ?
+      ORDER BY relations.kind, source.display_name, target.display_name, relations.id
+      LIMIT ?
+    `)
+    .all(repoId, indexRunId, entityId, limit) as ExplainRelationRow[];
+}
+
+function explainEvidenceRows(
+  db: ReturnType<typeof openDatabase>,
+  repoId: number,
+  indexRunId: number,
+  relationIds: string[],
+  limit: number
+): ExplainEvidenceRow[] {
+  if (relationIds.length === 0 || limit <= 0) return [];
+  const placeholders = relationIds.map(() => '?').join(', ');
+  const spanColumns = evidenceSpanColumnSelect(db, 'evidence');
+  return db
+    .prepare(`
+      SELECT
+        evidence.id AS evidence_id,
+        evidence.relation_id AS relation_id,
+        evidence.file_path AS evidence_file_path,
+        evidence.kind AS evidence_kind,
+        evidence.snippet AS evidence_snippet,
+        evidence.confidence AS evidence_confidence,
+        ${spanColumns}
+      FROM relation_evidence evidence
+      WHERE evidence.repo_id = ?
+        AND evidence.index_run_id = ?
+        AND evidence.relation_id IN (${placeholders})
+      ORDER BY evidence.file_path, evidence.kind, evidence.id
+      LIMIT ?
+    `)
+    .all(repoId, indexRunId, ...relationIds, limit) as ExplainEvidenceRow[];
+}
+
+function explainEvidenceCount(
+  db: ReturnType<typeof openDatabase>,
+  repoId: number,
+  indexRunId: number,
+  relationIds: string[]
+): number {
+  if (relationIds.length === 0) return 0;
+  const placeholders = relationIds.map(() => '?').join(', ');
+  const row = db
+    .prepare(`
+      SELECT count(*) AS count
+      FROM relation_evidence
+      WHERE repo_id = ?
+        AND index_run_id = ?
+        AND relation_id IN (${placeholders})
+    `)
+    .get(repoId, indexRunId, ...relationIds) as { count: number };
+  return row.count;
+}
+
+function explainRelation(
+  row: ExplainRelationRow,
+  evidenceByRelation: ReadonlyMap<string, CompactEvidenceResource[]>
+): unknown {
+  return {
+    id: row.relation_id,
+    kind: row.relation_kind,
+    confidence: asConfidence(row.relation_confidence),
+    provenance: row.relation_provenance,
+    sourceEntity: entityFromExplainRelationRow(row, 'source'),
+    targetEntity: entityFromExplainRelationRow(row, 'target'),
+    evidence: evidenceByRelation.get(row.relation_id) ?? []
+  };
+}
+
+function compactEvidenceResource(row: ExplainEvidenceRow): CompactEvidenceResource {
+  return {
+    id: row.evidence_id,
+    file: row.evidence_file_path,
+    kind: row.evidence_kind,
+    snippet: truncateSnippet(redactSecrets(row.evidence_snippet), 300),
+    confidence: asConfidence(row.evidence_confidence),
+    resourceUri: evidenceResourceUri(row.evidence_id),
+    ...(row.evidence_start_line !== null ? { startLine: row.evidence_start_line } : {}),
+    ...(row.evidence_end_line !== null ? { endLine: row.evidence_end_line } : {}),
+    ...(row.evidence_start_col !== null ? { startCol: row.evidence_start_col } : {}),
+    ...(row.evidence_end_col !== null ? { endCol: row.evidence_end_col } : {})
+  };
+}
+
+function entityFromExplainRow(row: ExplainEntityRow): EntityRef {
+  return {
+    id: row.id,
+    kind: row.kind as EntityRef['kind'],
+    ...(row.path !== null ? { path: row.path } : {}),
+    ...(row.symbol !== null ? { symbol: row.symbol } : {}),
+    ...(row.language_id !== null ? { languageId: row.language_id } : {}),
+    displayName: row.display_name
+  };
+}
+
+function entityFromExplainRelationRow(row: ExplainRelationRow, prefix: 'source' | 'target'): EntityRef {
+  const id = prefix === 'source' ? row.source_id : row.target_id;
+  const kind = prefix === 'source' ? row.source_kind : row.target_kind;
+  const filePath = prefix === 'source' ? row.source_path : row.target_path;
+  const symbol = prefix === 'source' ? row.source_symbol : row.target_symbol;
+  const languageId = prefix === 'source' ? row.source_language_id : row.target_language_id;
+  const displayName = prefix === 'source' ? row.source_display_name : row.target_display_name;
+  return {
+    id,
+    kind: kind as EntityRef['kind'],
+    ...(filePath !== null ? { path: filePath } : {}),
+    ...(symbol !== null ? { symbol } : {}),
+    ...(languageId !== null ? { languageId } : {}),
+    displayName
+  };
+}
 
 function readEvidence(context: McpContext, evidenceId: string): unknown {
   return withReadOnlyDb(context, (db, repoId) => {

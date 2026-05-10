@@ -314,6 +314,7 @@ MCP에서 노출하는 주요 tool은 아래와 같습니다.
 |---|---|
 | `impact_trace_analyze_diff` | 변경 파일을 분석하고 CLI와 같은 report model을 반환합니다. |
 | `impact_trace_context_for_change` | 변경 파일을 기준으로 `brief`/`standard`/`deep` budget에 맞춘 compact context pack을 반환합니다. agent가 전체 report를 받지 않고 top impact paths, evidence refs, entity/coverage resource link만 받도록 합니다. |
+| `impact_trace_explain_entity` | entity 하나의 direct relation과 compact evidence를 제한된 payload로 반환하고, full evidence resource link를 제공합니다. |
 | `impact_trace_remember` | agent의 결정/관찰을 content-addressable fact로 저장합니다 (Phase 1). |
 | `impact_trace_recall` | branch/entity/attribute 또는 semantic query로 fact를 조회합니다 (Phase 2). |
 | `impact_trace_branch` | 새 branch를 기존 branch에서 fork합니다. 데이터 복사 없음. |
@@ -329,6 +330,8 @@ MCP에서 노출하는 주요 tool은 아래와 같습니다.
 `impact_trace_context_for_change`는 report를 persist하지 않습니다. v0는 `impact-trace://entities/{entityId}`,
 `impact-trace://evidence/{evidenceId}`, `impact-trace://coverage/latest` resource link를 반환하고,
 큰 report/graph pagination은 다음 context-pack slice에서 붙입니다.
+`impact_trace_explain_entity` v0는 `relationLimit=20`을 incoming/outgoing 각각에 적용하고,
+`evidenceLimit=10`, `snippetChars=300`으로 선택된 relation 전체의 evidence payload를 제한합니다.
 
 agent memory 툴(`remember`/`branch`)은 DB에 쓰지만 모두 *현재 저장소의*
 `.impact-trace/impact.db` 안에서만 동작합니다. Obsidian export 같은 외부 시스템

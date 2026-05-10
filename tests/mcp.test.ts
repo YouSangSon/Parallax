@@ -240,6 +240,7 @@ test('MCP stdio server initializes and exposes the full agent memory tool surfac
       'impact_trace_abandon_branch',
       'impact_trace_gc_branches',
       'impact_trace_profile',
+      'impact_trace_explain_entity',
       'impact_trace_repair_reflections',
       'impact_trace_restore_branch'
     ]) {
@@ -250,6 +251,7 @@ test('MCP stdio server initializes and exposes the full agent memory tool surfac
     assert.equal(toolByName.get('impact_trace_recall')!.annotations?.readOnlyHint, true);
     assert.equal(toolByName.get('impact_trace_trace')!.annotations?.readOnlyHint, true);
     assert.equal(toolByName.get('impact_trace_profile')!.annotations?.readOnlyHint, true);
+    assert.equal(toolByName.get('impact_trace_explain_entity')!.annotations?.readOnlyHint, true);
     assert.equal(toolByName.get('impact_trace_remember')!.annotations?.readOnlyHint, false);
     assert.equal(toolByName.get('impact_trace_branch')!.annotations?.readOnlyHint, false);
     assert.equal(toolByName.get('impact_trace_merge')!.annotations?.readOnlyHint, false);
@@ -530,6 +532,82 @@ test('MCP exposes report, entity, evidence, graph, and coverage resources', asyn
     const coverageJson = JSON.parse(coverageResource.result.contents[0].text) as { coverage: unknown[]; truncated: boolean };
     assert.ok(coverageJson.coverage.length > 0);
     assert.equal(coverageJson.truncated, false);
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP explain_entity returns capped relation context with resolvable evidence links', async () => {
+  const repoRoot = await makeWideContextRepo();
+  const artifactsBefore = dbArtifacts(repoRoot);
+  assert.equal(countReports(repoRoot), 0);
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+    const response = await client.request('tools/call', {
+      name: 'impact_trace_explain_entity',
+      arguments: {
+        entity: 'file:src/a.ts',
+        relationLimit: 2,
+        evidenceLimit: 2
+      }
+    });
+
+    assert.equal(response.error, undefined);
+    assert.equal(response.result.isError, undefined);
+    const explanation = JSON.parse(response.result.content[0].text) as {
+      entity: { id: string };
+      relations: {
+        incoming: Array<{ id: string; evidence: Array<{ id: string; snippet: string; resourceUri: string }> }>;
+        outgoing: Array<{ id: string; evidence: Array<{ id: string; snippet: string; resourceUri: string }> }>;
+      };
+      resources: { entity: string; evidence: string[] };
+      limits: {
+        relationLimit: number;
+        evidenceLimit: number;
+        snippetChars: number;
+        incomingTruncated: boolean;
+        evidenceTruncated: boolean;
+      };
+      counts: { incoming: number; evidence: number };
+    };
+    assert.equal(explanation.entity.id, 'file:src/a.ts');
+    assert.equal(explanation.resources.entity, `impact-trace://entities/${encodeURIComponent('file:src/a.ts')}`);
+    assert.equal(explanation.relations.incoming.length, 2);
+    assert.equal(explanation.limits.relationLimit, 2);
+    assert.equal(explanation.limits.evidenceLimit, 2);
+    assert.equal(explanation.limits.incomingTruncated, true);
+    assert.equal(explanation.limits.evidenceTruncated, true);
+    assert.ok(explanation.counts.incoming > explanation.relations.incoming.length);
+    assert.ok(explanation.counts.evidence > explanation.resources.evidence.length);
+    assert.equal(explanation.resources.evidence.length, 2);
+    assert.ok(
+      [...explanation.relations.incoming, ...explanation.relations.outgoing]
+        .flatMap((relation) => relation.evidence)
+        .every((item) => item.snippet.length <= explanation.limits.snippetChars)
+    );
+    for (const uri of explanation.resources.evidence) {
+      const evidenceResource = await client.request('resources/read', { uri });
+      assert.equal(evidenceResource.error, undefined);
+      const evidenceJson = JSON.parse(evidenceResource.result.contents[0].text) as { id: string };
+      assert.ok(
+        [...explanation.relations.incoming, ...explanation.relations.outgoing]
+          .flatMap((relation) => relation.evidence)
+          .some((item) => item.id === evidenceJson.id)
+      );
+    }
+    assert.equal(countReports(repoRoot), 0);
+    const filterWalAux = (names: string[]): string[] =>
+      names.filter((name) => !/\.db-(wal|shm)$/.test(name));
+    assert.deepEqual(filterWalAux(dbArtifacts(repoRoot)), filterWalAux(artifactsBefore));
+
+    const missing = await client.request('tools/call', {
+      name: 'impact_trace_explain_entity',
+      arguments: { entity: 'file:missing.ts' }
+    });
+    assert.equal(missing.error, undefined);
+    assert.equal(missing.result.isError, true);
+    assert.match(missing.result.content[0].text, /impact entity not found/);
   } finally {
     await client.close();
   }

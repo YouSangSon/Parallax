@@ -11,7 +11,7 @@ Impact-trace is the local-first code-aware memory layer for AI coding agents. It
 
 - "How does this change ripple?" → `analyze`
 - "Remember/recall an agent decision" → `remember` / `recall`
-- "What does the system know about file:X?" → `profile` (Phase 4)
+- "What does this entity directly touch?" → MCP `impact_trace_explain_entity` or CLI `profile` for memory context
 - "Summarize old episodic facts" → `reflect` (Phase 3)
 - "Trace why I decided X" → `trace`
 - "Mark this experiment branch dead and clean it up" → `branch --abandon` then `gc-branches` (Phase 3)
@@ -73,14 +73,16 @@ Or via the Claude Code CLI:
 claude mcp add --transport stdio impact-trace -- impact-trace mcp serve
 ```
 
-## MCP tools surfaced (12)
+## MCP tools surfaced (14)
 
 | Tool | Read-only? | What it does |
 |---|---|---|
 | `impact_trace_analyze_diff` | ✅ | Run impact analysis for a list of changed files |
+| `impact_trace_context_for_change` | ✅ | Return a budgeted compact context pack for changed files |
 | `impact_trace_remember` | ❌ | Persist an agent fact (entity, attribute, value) on a branch |
 | `impact_trace_recall` | ✅ | Retrieve facts by branch / entity / attribute / semantic query (sqlite-vec ANN with brute-force fallback) |
 | `impact_trace_profile` | ✅ | Three-bucket per-entity view (static / dynamic / summary) — Phase 4 P1 |
+| `impact_trace_explain_entity` | ✅ | Compact direct incoming/outgoing relation and evidence view for one indexed entity |
 | `impact_trace_branch` | ❌ | Fork a new branch from an existing branch (no data copy) |
 | `impact_trace_merge` | ❌ | Multi-parent merge transaction joining two branch heads |
 | `impact_trace_abandon_branch` | ❌ | Mark a branch state='abandoned' (idempotent, main protected) |
@@ -90,7 +92,7 @@ claude mcp add --transport stdio impact-trace -- impact-trace mcp serve
 | `impact_trace_repair_reflections` | ❌ | Reconcile orphan summary facts left by SAVEPOINT atomicity gap (Phase 4 P2) |
 | `impact_trace_trace` | ✅ | Walk fact_provenance edges back to evidence sources |
 
-Read-only resources: `impact-trace://reports/{id}`, `impact-trace://entities/{id}`, `impact-trace://reports/{id}/graph/{format}`, `impact-trace://coverage/latest`.
+Read-only resources: `impact-trace://reports/{id}`, `impact-trace://entities/{id}`, `impact-trace://evidence/{id}`, `impact-trace://reports/{id}/graph/{format}`, `impact-trace://coverage/latest`.
 
 ## Identity and invariants
 

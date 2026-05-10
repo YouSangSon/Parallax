@@ -48,6 +48,7 @@ MVP 구현이 들어가 있습니다.
 - 변경 파일 분석 후 JSON 또는 Markdown report 생성
 - 공식 MCP SDK 기반 stdio server 제공
 - MCP impact tools 제공: `impact_trace_analyze_diff`, `impact_trace_context_for_change`, `impact_trace_search_context`, `impact_trace_explain_entity`
+- health/diagnostic surface 제공: `impact-trace doctor`, `impact_trace_doctor`
 - agent memory MCP tools 제공: `remember`, `recall`, `branch`, `trace`, `reflect` 등은 `.impact-trace/impact.db` 안에서만 동작
 - read-only MCP resources 제공: report, entity, evidence, graph, latest coverage
 - evidence output 전 secret-like 값 redaction
@@ -293,6 +294,19 @@ impact-trace trace --fact-id <sha256-hex> --depth 5
 
 자세한 흐름·패턴: [docs/agent-memory-cookbook.ko.md](docs/agent-memory-cookbook.ko.md).
 
+### `doctor`
+
+현재 저장소의 `.impact-trace/impact.db`를 read-only로 열어 agent가 쓰기 전에 확인해야 할
+상태를 JSON으로 반환합니다. schema version, 최신 index run, coverage, adapter run,
+sqlite-vec 상태, embedding rows, context telemetry table/count를 한 번에 보여줍니다.
+
+```bash
+impact-trace doctor
+```
+
+`doctor`는 workspace 파일을 만들지 않습니다. database가 없거나 schema가 오래된 경우 stdout에는
+진단 JSON을 출력하고 exit code는 1이 됩니다.
+
 ## MCP
 
 Impact Trace는 공식 MCP SDK 기반의 stdio server를 제공합니다. stdio는 로컬
@@ -322,6 +336,7 @@ MCP에서 노출하는 주요 tool은 아래와 같습니다.
 | `impact_trace_search_context` | keyword/path/symbol/relation/evidence snippet을 최신 index에서 검색하고 RRF-ranked entity context, stream별 rank signal, match reason, compact evidence, resource link를 반환합니다. |
 | `impact_trace_explain_entity` | entity 하나의 direct relation과 compact evidence를 제한된 payload로 반환하고, full evidence resource link를 제공합니다. |
 | `impact_trace_context_telemetry` | compact context tool run과 resource fetch를 repo-local telemetry로 요약해 context 절감이 실제로 작동했는지 확인합니다. |
+| `impact_trace_doctor` | schema/index/coverage/adapter/vector/telemetry 상태를 read-only JSON report로 반환해 agent가 불필요한 탐색 없이 현재 repo 상태를 파악하게 합니다. |
 | `impact_trace_remember` | agent의 결정/관찰을 content-addressable fact로 저장합니다 (Phase 1). |
 | `impact_trace_recall` | branch/entity/attribute 또는 semantic query로 fact를 조회합니다 (Phase 2). |
 | `impact_trace_branch` | 새 branch를 기존 branch에서 fork합니다. 데이터 복사 없음. |
@@ -348,6 +363,8 @@ MCP에서 노출하는 주요 tool은 아래와 같습니다.
 tool run 수, resource fetch 수, 반환 byte, 광고된 resource 수를 요약합니다. query는 저장 전에
 secret redaction을 거치며, telemetry write는 외부 시스템이 아니라 현재 repo의 `.impact-trace/impact.db`
 안에서만 append-only로 발생합니다.
+`impact_trace_doctor` v0는 telemetry row를 추가하지 않는 순수 read-only health surface입니다.
+database가 없을 때도 `.impact-trace` 디렉터리를 만들지 않고 `database_missing` finding을 반환합니다.
 
 agent memory 툴(`remember`/`branch`)은 DB에 쓰지만 모두 *현재 저장소의*
 `.impact-trace/impact.db` 안에서만 동작합니다. Obsidian export 같은 외부 시스템

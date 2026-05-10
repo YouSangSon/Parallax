@@ -20,6 +20,8 @@ export { analyzeDiff } from './analyzer.js';
 export { exportImpactGraph } from './graph.js';
 export { indexProject } from './indexer.js';
 export { initProject } from './init.js';
+export { doctorProject, hasDoctorErrors, redactDoctorReportForMcp, REQUIRED_SCHEMA_VERSION } from './doctor.js';
+export type { DoctorFinding, DoctorOptions, DoctorReport } from './doctor.js';
 export { createMcpServer, serveMcp } from './mcp.js';
 export { computeEmbedding, computeEmbeddingSync, STUB_MODEL_NAME } from './embeddings.js';
 export type { EmbeddingResult } from './embeddings.js';

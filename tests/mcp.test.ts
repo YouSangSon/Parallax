@@ -457,8 +457,17 @@ test('MCP stdio server initializes and exposes the full agent memory tool surfac
 
     const response = await client.request('tools/list', {});
     assert.equal(response.error, undefined);
-    const toolByName = new Map<string, { name: string; annotations?: { readOnlyHint?: boolean; idempotentHint?: boolean } }>(
-      (response.result.tools as Array<{ name: string; annotations?: { readOnlyHint?: boolean; idempotentHint?: boolean } }>).map((tool) => [tool.name, tool])
+    const tools = response.result.tools as Array<{
+      name: string;
+      annotations?: {
+        readOnlyHint?: boolean;
+        destructiveHint?: boolean;
+        idempotentHint?: boolean;
+        openWorldHint?: boolean;
+      };
+    }>;
+    const toolByName = new Map<string, (typeof tools)[number]>(
+      tools.map((tool) => [tool.name, tool])
     );
     for (const expected of [
       'impact_trace_analyze_diff',
@@ -476,7 +485,8 @@ test('MCP stdio server initializes and exposes the full agent memory tool surfac
       'impact_trace_explain_entity',
       'impact_trace_repair_reflections',
       'impact_trace_restore_branch',
-      'impact_trace_context_telemetry'
+      'impact_trace_context_telemetry',
+      'impact_trace_doctor'
     ]) {
       assert.ok(toolByName.has(expected), `expected MCP tool ${expected} to be advertised`);
     }
@@ -493,6 +503,8 @@ test('MCP stdio server initializes and exposes the full agent memory tool surfac
     assert.equal(toolByName.get('impact_trace_explain_entity')!.annotations?.idempotentHint, false);
     assert.equal(toolByName.get('impact_trace_context_telemetry')!.annotations?.readOnlyHint, true);
     assert.equal(toolByName.get('impact_trace_context_telemetry')!.annotations?.idempotentHint, true);
+    assert.equal(toolByName.get('impact_trace_doctor')!.annotations?.readOnlyHint, true);
+    assert.equal(toolByName.get('impact_trace_doctor')!.annotations?.idempotentHint, true);
     assert.equal(toolByName.get('impact_trace_remember')!.annotations?.readOnlyHint, false);
     assert.equal(toolByName.get('impact_trace_branch')!.annotations?.readOnlyHint, false);
     assert.equal(toolByName.get('impact_trace_merge')!.annotations?.readOnlyHint, false);
@@ -501,7 +513,62 @@ test('MCP stdio server initializes and exposes the full agent memory tool surfac
     assert.equal(toolByName.get('impact_trace_gc_branches')!.annotations?.readOnlyHint, false);
     assert.equal(toolByName.get('impact_trace_repair_reflections')!.annotations?.readOnlyHint, false);
     assert.equal(toolByName.get('impact_trace_restore_branch')!.annotations?.readOnlyHint, false);
-    assert.equal(response.result.tools.some((tool: { name: string }) => tool.name.includes('obsidian')), false);
+    for (const tool of tools) {
+      assert.equal(tool.annotations?.destructiveHint, false, `${tool.name} must not advertise destructive MCP access`);
+      if (tool.name !== 'impact_trace_reflect') {
+        assert.equal(tool.annotations?.openWorldHint, false, `${tool.name} must not advertise open-world MCP access`);
+      }
+    }
+    for (const forbiddenSurface of [
+      'obsidian',
+      'compress_file',
+      'export',
+      'mesh',
+      'team',
+      'heal',
+      'routine',
+      'signal',
+      'lease',
+      'snapshot',
+      'write_file',
+      'delete_file'
+    ]) {
+      assert.equal(
+        tools.some((tool) => tool.name.includes(forbiddenSurface)),
+        false,
+        `forbidden MCP surface leaked into tools/list: ${forbiddenSurface}`
+      );
+    }
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP doctor returns the local health report without telemetry writes', async () => {
+  const repoRoot = await makeRepo();
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+
+    const response = await client.request('tools/call', {
+      name: 'impact_trace_doctor',
+      arguments: {}
+    });
+
+    assert.equal(response.error, undefined);
+    const report = JSON.parse(response.result.content[0].text) as {
+      version: number;
+      repoRoot: string;
+      database: { path: string; schemaVersion: number };
+      index: { latestCompletedRun: { status: string } | null };
+      telemetry: { toolRuns: number };
+    };
+    assert.equal(report.version, 0);
+    assert.equal(report.repoRoot, '[REPO_ROOT]');
+    assert.equal(report.database.path, '.impact-trace/impact.db');
+    assert.equal(report.database.schemaVersion, 10);
+    assert.equal(report.index.latestCompletedRun?.status, 'completed');
+    assert.equal(report.telemetry.toolRuns, 0);
   } finally {
     await client.close();
   }

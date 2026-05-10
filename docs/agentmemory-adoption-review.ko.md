@@ -152,7 +152,7 @@ flowchart LR
 | **access telemetry** | 어떤 context가 실제로 agent에 의해 확장됐는지 알아야 ranking과 budget을 개선할 수 있다. | v0: `context_tool_runs`, `context_resource_accesses`, `impact_trace_context_telemetry` |
 | **explicit memory supersession** | 지금은 retract/currentOnly가 있지만, "이 summary/decision이 저 fact를 대체한다"를 더 명시적으로 표현할 수 있다. | `fact_provenance.kind='supersedes'` 또는 `fact_supersessions` |
 | **session import/replay UX** | Codex/Claude가 이미 수정한 흐름을 영향 그래프와 연결하면 "왜 이 변경이 일어났는가"를 UI에서 볼 수 있다. | `impact-trace import-session --format codex|claude` |
-| **diagnose/doctor command** | vector dimension, stale vec table, index coverage, resource truncation을 사용자가 확인할 수 있어야 한다. | `impact-trace doctor` |
+| **diagnose/doctor command** | vector dimension, stale vec table, index coverage, resource truncation을 사용자가 확인할 수 있어야 한다. | landed: `impact-trace doctor`, `impact_trace_doctor` |
 
 ### 4.2 Adapt
 
@@ -320,8 +320,8 @@ Metric:
 | 1 | `agentmemory` adoption boundary를 docs에 고정 | platform sprawl을 막고 다음 구현 방향을 명확히 한다. |
 | 2 | `impact_trace_search_context` RRF design + tests | 완료. initial v1은 keyword/relation/evidence stream, `rankSignals`, tie-break regression을 고정했다. |
 | 3 | context access telemetry schema | 완료. v0는 `context_tool_runs`, `context_resource_accesses`, `impact_trace_context_telemetry`로 "context를 줄인다"는 제품 약속을 측정 가능하게 만든다. |
-| 4 | MCP allowlist/security tests | agentmemory에서 드러난 위험한 surface를 early block한다. |
-| 5 | `doctor` command | vector/index/resource 상태를 사용자와 agent가 확인하게 한다. |
+| 4 | MCP allowlist/security tests | 완료. core MCP `tools/list`에서 destructive/open-world 범위와 agentmemory식 export/write/mesh surface 누수를 테스트로 고정했다. |
+| 5 | `doctor` command | 완료. `impact-trace doctor`와 `impact_trace_doctor`가 schema/index/coverage/adapter/vector/telemetry 상태를 read-only JSON으로 반환한다. |
 | 6 | opt-in session import spec | UI timeline과 memory lifecycle의 입력을 만든다. |
 
 ---

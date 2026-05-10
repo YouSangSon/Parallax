@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { createBranch, mergeBranches, recallOnRepo, rememberOnRepo, trace } from './agent_memory.js';
 import type { RememberValue } from './agent_memory.js';
 import { abandonBranch, gcBranches, restoreBranch } from './branch_gc.js';
+import { doctorProject, redactDoctorReportForMcp } from './doctor.js';
 import { reflectFacts, repairReflections } from './reflection.js';
 import { profileEntity } from './profile.js';
 import { normalizeRepoRoot, redactSecrets } from './security.js';
@@ -450,6 +451,27 @@ export function createMcpServer(context: McpContext): McpServer {
     async ({ limit }) => {
       const telemetry = contextTelemetry(context, limit ?? 20);
       return { content: [{ type: 'text', text: JSON.stringify(telemetry) }] };
+    }
+  );
+
+  server.registerTool(
+    'impact_trace_doctor',
+    {
+      title: 'Inspect Impact Trace health',
+      description:
+        'Return a read-only local health report covering database schema, latest index, coverage, adapter runs, vector state, and context telemetry availability.',
+      inputSchema: {},
+      annotations: {
+        title: 'Inspect Impact Trace health',
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      }
+    },
+    async () => {
+      const report = doctorProject({ repoRoot: context.repoRoot });
+      return { content: [{ type: 'text', text: JSON.stringify(redactDoctorReportForMcp(report)) }] };
     }
   );
 

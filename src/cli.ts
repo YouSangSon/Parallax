@@ -26,6 +26,14 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === 'doctor') {
+    const { doctorProject, hasDoctorErrors } = await import('./index.js');
+    const report = doctorProject({ repoRoot });
+    console.log(JSON.stringify(report, null, 2));
+    process.exitCode = hasDoctorErrors(report) ? 1 : 0;
+    return;
+  }
+
   if (command === 'analyze') {
     const { analyzeDiff } = await import('./index.js');
     const changedFiles = parseChangedFiles(args, repoRoot);
@@ -365,6 +373,7 @@ function printHelp(): void {
 Commands:
   impact-trace init
   impact-trace index [--max-file-bytes 1000000]
+  impact-trace doctor
   impact-trace analyze --changed src/file.ts [--depth 2] [--json]
   impact-trace analyze --base main [--head HEAD] [--depth 2] [--json]
   impact-trace graph export --report <id> [--format mermaid|json|dot]

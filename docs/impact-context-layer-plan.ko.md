@@ -434,6 +434,7 @@ flowchart TB
 | `impact_trace_explain_entity` | entity 하나의 relation/evidence를 설명 | entity summary, incoming/outgoing direct relations, compact evidence, resource links. v0 기본값은 `relationLimit=20` per direction, `evidenceLimit=10` global, `snippetChars=300` |
 | `impact_trace_search_context` | keyword/path/symbol/relation/evidence 기반 graph search. v1 landed: deterministic SQLite keyword/relation/evidence streams + RRF `rankSignals`, `k=10`, `includeEvidence=true`, `snippetChars=240` | ranked entities, stream rank signals, match reasons, compact evidence, entity/evidence resource links |
 | `impact_trace_context_telemetry` | context tool run과 resource read 사용량을 조회 | v0 landed: `context_tool_runs`, `context_resource_accesses` 기반 summary, recent tool/resource rows, redacted query |
+| `impact_trace_doctor` | agent가 작업 전 repo-local index/schema/vector/telemetry 상태를 확인 | v0 landed: read-only health JSON, missing DB에도 workspace 파일 생성 없음 |
 | `impact_trace_get_graph` | report/entity 주변 graph metadata 요청 | paginated graph resource URI |
 | `impact_trace_action_plan` | report 기준 검증 action 생성 | tests/docs/review/security actions, 실행은 하지 않음 |
 
@@ -635,6 +636,7 @@ flowchart LR
 | `impact_trace_search_context` | keyword/path/symbol/relation/evidence 검색으로 ranked entities와 resource link를 반환. v1 landed: deterministic SQLite keyword/relation/evidence RRF ranking, `rankSignals`, `k=10`, `includeEvidence=true`, entity/evidence resource-on-demand |
 | `impact_trace_explain_entity` | entity 주변 relation/evidence resource 제공. v0 landed: incoming/outgoing direct relation을 direction별 cap으로 반환하고 evidence는 선택된 relation 전체에서 global cap을 적용 |
 | `impact_trace_context_telemetry` | context/search/explain/analyze tool run과 resource read가 실제로 얼마나 쓰였는지 조회. v0 landed: returned bytes, resource count, omitted counts, redacted query |
+| `impact_trace_doctor` | schema/index/coverage/adapter/vector/telemetry 상태를 read-only JSON으로 조회. v0 landed: CLI `impact-trace doctor`와 MCP tool 동시 제공 |
 | `impact-trace://evidence/{id}` | source span과 redacted snippet fetch 가능. v0 landed: context pack evidence id에서 resource-on-demand로 읽는다. |
 | `impact-trace://reports/{id}/graph/{format}` pagination | 큰 graph를 tool payload에 넣지 않음 |
 | typed error envelope | problem/cause/fix/evidence id 구조화 |

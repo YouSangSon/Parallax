@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 
 import { analyzeDiff, indexProject, initProject } from '../src/index.js';
+import { searchContextForRepo } from '../src/mcp.js';
 import {
   GO_SEMANTIC_ADAPTER_ID,
   JVM_SPRING_SEMANTIC_ADAPTER_ID,
@@ -15,12 +16,13 @@ import {
 } from '../src/adapters/multi-language-regex.js';
 
 const fixtureId = 'phase6b-multilanguage-v0';
-const schemaVersion = 1;
+const schemaVersion = 2;
 const defaultOutputPath = '.impact-trace/bench/impact-bench-report.json';
 const regexAdapterId = MULTI_LANG_REGEX_ADAPTER_ID;
+const retrievalFixtureId = 'search-context-retrieval-v0';
 
 export type ImpactBenchReport = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   fixtureId: typeof fixtureId;
   summary: {
     passed: boolean;
@@ -46,6 +48,7 @@ export type ImpactBenchReport = {
     expectedAffectedFiles: string[];
     matchedAffectedFiles: string[];
   };
+  retrieval: RetrievalBenchReport;
   outputPath: string;
 };
 
@@ -86,6 +89,62 @@ type RelationMatch = {
   expected: ExpectedRelation;
   actual?: ActualRelation;
 };
+
+type RetrievalBenchReport = {
+  fixtureId: typeof retrievalFixtureId;
+  summary: RetrievalMetrics;
+  budgets: {
+    brief: {
+      maxReturnedBytes: number;
+      budgetExceededCount: number;
+    };
+  };
+  streamAblations: {
+    all: RetrievalMetrics;
+    withoutEvidenceFts: RetrievalMetrics;
+    withoutFactsFts: RetrievalMetrics;
+  };
+  queries: RetrievalQueryReport[];
+};
+
+type RetrievalMetrics = {
+  recallAt5: number;
+  recallAt10: number;
+  precisionAt5: number;
+  mrr: number;
+  ndcgAt10: number;
+};
+
+type RetrievalQuerySpec = {
+  id: string;
+  query: string;
+  expectedEntityIds: string[];
+};
+
+type RetrievalQueryReport = RetrievalQuerySpec & RetrievalMetrics & {
+  returnedEntityIds: string[];
+  resourceUris: string[];
+  returnedBytes: number;
+  budgetExceeded: boolean;
+};
+
+type SearchContextBenchResult = {
+  results: Array<{ entity: { id: string }; resourceUri: string }>;
+  limits: { returnedBytes: number; budgetExceeded: boolean };
+};
+
+const retrievalQueries: readonly RetrievalQuerySpec[] = [
+  {
+    id: 'evidence-fts-policy',
+    query: 'credential nonce validator',
+    expectedEntityIds: ['file:bench/evidence-policy.ts']
+  },
+  {
+    id: 'facts-fts-policy',
+    query: 'checkout retry policy',
+    expectedEntityIds: ['file:bench/fact-policy.ts']
+  }
+];
 
 const expectedRelations: readonly ExpectedRelation[] = [
   languageRelation('DEPENDS_ON', 'src/ts/type-only.ts', 'src/ts/session.ts', 'TS type-only import reaches session'),
@@ -154,6 +213,7 @@ export async function runImpactBench(options: RunImpactBenchOptions = {}): Promi
     await writeFixture(fixtureRoot);
     await initProject({ repoRoot: fixtureRoot });
     const index = await indexProject({ repoRoot: fixtureRoot });
+    seedRetrievalFixture(fixtureRoot, index.indexRunId);
     const analyzeReport = await analyzeDiff({
       repoRoot: fixtureRoot,
       changedFiles: [...changedFiles],
@@ -206,6 +266,7 @@ export async function runImpactBench(options: RunImpactBenchOptions = {}): Promi
       && Buffer.byteLength(JSON.stringify(analyzeReport.evidence.slice(0, 20)), 'utf8') < 20_000
       ? 1
       : 0;
+    const retrieval = await runRetrievalBench(fixtureRoot);
 
     const scores = {
       relationRecall,
@@ -245,6 +306,7 @@ export async function runImpactBench(options: RunImpactBenchOptions = {}): Promi
         expectedAffectedFiles: [...expectedAffectedFiles],
         matchedAffectedFiles
       },
+      retrieval,
       outputPath: outputPathForReport
     };
 
@@ -256,6 +318,133 @@ export async function runImpactBench(options: RunImpactBenchOptions = {}): Promi
       await rm(fixtureRoot, { recursive: true, force: true });
     }
   }
+}
+
+function seedRetrievalFixture(repoRoot: string, indexRunId: number): void {
+  const db = new DatabaseSync(path.join(repoRoot, '.impact-trace/impact.db'));
+  try {
+    db.exec('PRAGMA foreign_keys = ON;');
+    const repo = db.prepare('SELECT id FROM repos LIMIT 1').get() as { id: number };
+    const insertEntity = db.prepare(`
+      INSERT OR REPLACE INTO entities (
+        id, repo_id, kind, path, symbol, language_id, display_name,
+        created_index_run_id, updated_index_run_id
+      )
+      VALUES (?, ?, 'file', ?, NULL, 'typescript', ?, ?, ?)
+    `);
+    insertEntity.run(
+      'file:bench/evidence-policy.ts',
+      repo.id,
+      'bench/evidence-policy.ts',
+      'Bench Evidence Policy',
+      indexRunId,
+      indexRunId
+    );
+    insertEntity.run(
+      'file:bench/fact-policy.ts',
+      repo.id,
+      'bench/fact-policy.ts',
+      'Bench Fact Policy',
+      indexRunId,
+      indexRunId
+    );
+    db.prepare(`
+      INSERT OR REPLACE INTO relations (
+        id, repo_id, source_entity_id, target_entity_id, kind, confidence,
+        adapter_run_id, index_run_id, provenance
+      )
+      VALUES (?, ?, ?, ?, 'DOCUMENTS', 'medium', NULL, ?, 'impact-bench-retrieval')
+    `).run(
+      'bench:evidence-policy',
+      repo.id,
+      'file:bench/evidence-policy.ts',
+      'file:bench/evidence-policy.ts',
+      indexRunId
+    );
+    db.prepare(`
+      INSERT OR REPLACE INTO relation_evidence (
+        id, relation_id, repo_id, file_path, kind, snippet, confidence, index_run_id
+      )
+      VALUES (?, ?, ?, ?, 'DOCUMENTS', ?, 'medium', ?)
+    `).run(
+      'bench:evidence-policy:0',
+      'bench:evidence-policy',
+      repo.id,
+      'bench/evidence-policy.ts',
+      'rotating credential validator rejects stale nonce during handoff',
+      indexRunId
+    );
+
+    db.prepare(`
+      INSERT OR IGNORE INTO attribute_defs (name, value_type, is_code_relation, description)
+      VALUES ('session_summary', 'json', 0, 'Bench retrieval memory fact')
+    `).run();
+    db.prepare(`
+      INSERT OR IGNORE INTO transactions (id, parent_tx_id, branch_id, ts, agent, index_run_id)
+      VALUES ('tx_bench_retrieval', NULL, 'br_main', datetime('now'), 'impact-bench', ?)
+    `).run(indexRunId);
+    db.prepare(`
+      INSERT OR REPLACE INTO facts (id, entity_id, attribute, value_blob, op, tx_id, redacted)
+      VALUES (?, ?, 'session_summary', ?, 'assert', 'tx_bench_retrieval', 0)
+    `).run(
+      'bench:fact-policy',
+      'file:bench/fact-policy.ts',
+      JSON.stringify('checkout retry owner escalation policy')
+    );
+  } finally {
+    db.close();
+  }
+}
+
+async function runRetrievalBench(repoRoot: string): Promise<RetrievalBenchReport> {
+  const all = await runRetrievalQueries(repoRoot, []);
+  const withoutEvidenceFts = await runRetrievalQueries(repoRoot, ['evidenceFts']);
+  const withoutFactsFts = await runRetrievalQueries(repoRoot, ['factsFts']);
+
+  return {
+    fixtureId: retrievalFixtureId,
+    summary: summarizeRetrieval(all),
+    budgets: {
+      brief: {
+        maxReturnedBytes: Math.max(...all.map((query) => query.returnedBytes)),
+        budgetExceededCount: all.filter((query) => query.budgetExceeded).length
+      }
+    },
+    streamAblations: {
+      all: summarizeRetrieval(all),
+      withoutEvidenceFts: summarizeRetrieval(withoutEvidenceFts),
+      withoutFactsFts: summarizeRetrieval(withoutFactsFts)
+    },
+    queries: all
+  };
+}
+
+async function runRetrievalQueries(
+  repoRoot: string,
+  disabledStreams: Array<'evidenceFts' | 'factsFts'>
+): Promise<RetrievalQueryReport[]> {
+  const reports: RetrievalQueryReport[] = [];
+  for (const spec of [...retrievalQueries].sort((left, right) => left.id.localeCompare(right.id))) {
+    const result = await searchContextForRepo({
+      repoRoot,
+      query: spec.query,
+      k: 10,
+      includeEvidence: false,
+      budget: 'brief',
+      disabledStreams
+    }) as SearchContextBenchResult;
+    const returnedEntityIds = result.results.map((item) => item.entity.id);
+    const metrics = retrievalMetrics(returnedEntityIds, spec.expectedEntityIds);
+    reports.push({
+      ...spec,
+      ...metrics,
+      returnedEntityIds,
+      resourceUris: result.results.map((item) => item.resourceUri),
+      returnedBytes: result.limits.returnedBytes,
+      budgetExceeded: result.limits.budgetExceeded
+    });
+  }
+  return reports;
 }
 
 function languageRelation(
@@ -802,6 +991,51 @@ function languageIdForPath(filePath: string): string | undefined {
 function ratio(numerator: number, denominator: number): number {
   if (denominator === 0) return 1;
   return round(numerator / denominator);
+}
+
+function retrievalMetrics(returnedEntityIds: readonly string[], expectedEntityIds: readonly string[]): RetrievalMetrics {
+  const expected = new Set(expectedEntityIds);
+  const relevantRanks = returnedEntityIds
+    .map((entityId, index) => expected.has(entityId) ? index + 1 : null)
+    .filter((rank): rank is number => rank !== null);
+  const recallAt5 = ratio(
+    returnedEntityIds.slice(0, 5).filter((entityId) => expected.has(entityId)).length,
+    expected.size
+  );
+  const recallAt10 = ratio(
+    returnedEntityIds.slice(0, 10).filter((entityId) => expected.has(entityId)).length,
+    expected.size
+  );
+  const precisionAt5 = ratio(
+    returnedEntityIds.slice(0, 5).filter((entityId) => expected.has(entityId)).length,
+    5
+  );
+  const mrr = relevantRanks.length > 0 ? round(1 / relevantRanks[0]!) : 0;
+  const dcgAt10 = returnedEntityIds.slice(0, 10).reduce((total, entityId, index) => {
+    if (!expected.has(entityId)) return total;
+    return total + 1 / Math.log2(index + 2);
+  }, 0);
+  const idealDcgAt10 = Array.from({ length: Math.min(expected.size, 10) }).reduce<number>(
+    (total, _unused, index) => total + 1 / Math.log2(index + 2),
+    0
+  );
+  const ndcgAt10 = idealDcgAt10 === 0 ? 1 : round(dcgAt10 / idealDcgAt10);
+  return { recallAt5, recallAt10, precisionAt5, mrr, ndcgAt10 };
+}
+
+function summarizeRetrieval(reports: readonly RetrievalQueryReport[]): RetrievalMetrics {
+  return {
+    recallAt5: averageMetric(reports, 'recallAt5'),
+    recallAt10: averageMetric(reports, 'recallAt10'),
+    precisionAt5: averageMetric(reports, 'precisionAt5'),
+    mrr: averageMetric(reports, 'mrr'),
+    ndcgAt10: averageMetric(reports, 'ndcgAt10')
+  };
+}
+
+function averageMetric(reports: readonly RetrievalQueryReport[], key: keyof RetrievalMetrics): number {
+  if (reports.length === 0) return 1;
+  return round(reports.reduce((total, report) => total + report[key], 0) / reports.length);
 }
 
 function weightedScore(scores: ImpactBenchReport['scores']): number {

@@ -49,7 +49,7 @@ test('doctorProject reports initialized repos before the first index', async () 
   const report = doctorProject({ repoRoot });
 
   assert.equal(report.database.exists, true);
-  assert.equal(report.database.schemaVersion, 10);
+  assert.equal(report.database.schemaVersion, 11);
   assert.equal(report.database.tables.contextToolRuns, true);
   assert.equal(report.database.tables.contextResourceAccesses, true);
   assert.equal(report.index.latestRun, null);
@@ -67,7 +67,7 @@ test('doctorProject reports latest completed index, coverage, adapters, and vect
   const report = doctorProject({ repoRoot });
 
   assert.equal(report.database.exists, true);
-  assert.equal(report.database.schemaVersion, 10);
+  assert.equal(report.database.schemaVersion, 11);
   assert.equal(report.index.latestCompletedRun?.id, index.indexRunId);
   assert.equal(report.index.latestCompletedRun?.status, 'completed');
   assert.ok((report.index.coverage?.indexedPaths ?? 0) >= 2);
@@ -82,7 +82,7 @@ test('doctorProject handles pre-v10 databases without querying missing telemetry
   const db = new DatabaseSync(databasePath(repoRoot));
   try {
     db.exec(`
-      DELETE FROM schema_versions WHERE version = 10;
+      DELETE FROM schema_versions WHERE version >= 10;
       DROP TABLE context_tool_runs;
       DROP TABLE context_resource_accesses;
     `);
@@ -208,7 +208,7 @@ test('CLI doctor prints the doctor report as JSON', async () => {
   assert.equal(result.status, 0, result.stderr);
   const report = JSON.parse(result.stdout) as Awaited<ReturnType<typeof doctorProject>>;
   assert.equal(report.version, 0);
-  assert.equal(report.database.schemaVersion, 10);
+  assert.equal(report.database.schemaVersion, 11);
   assert.equal(report.index.latestCompletedRun?.status, 'completed');
 });
 

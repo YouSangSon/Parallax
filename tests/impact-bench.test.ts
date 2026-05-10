@@ -25,7 +25,7 @@ test('ImpactBench runner writes deterministic report shape', async () => {
     assert.equal(serializedReport.includes(workspaceRoot), false);
     assert.equal(serializedReport.includes(tmpdir()), false);
     assert.equal(serializedReport.includes('impact-bench-fixture-'), false);
-    assert.equal(report.schemaVersion, 1);
+    assert.equal(report.schemaVersion, 2);
     assert.equal(report.fixtureId, 'phase6b-multilanguage-v0');
     assert.equal(report.outputPath, '.impact-trace/bench/impact-bench-report.json');
     assert.equal(report.summary.passed, true);
@@ -37,6 +37,32 @@ test('ImpactBench runner writes deterministic report shape', async () => {
     assert.equal(report.scores.adapterAttribution, 1);
     assert.equal(report.scores.contextPackReadiness, 1);
     assert.ok(report.summary.score >= 0.9);
+    assert.equal(report.retrieval.fixtureId, 'search-context-retrieval-v0');
+    assert.deepEqual(
+      report.retrieval.queries.map((query) => query.id),
+      [...report.retrieval.queries.map((query) => query.id)].sort()
+    );
+    assert.equal(report.retrieval.summary.recallAt5, 1);
+    assert.equal(report.retrieval.summary.recallAt10, 1);
+    assert.equal(report.retrieval.summary.mrr, 1);
+    assert.equal(report.retrieval.summary.ndcgAt10, 1);
+    assert.ok(report.retrieval.summary.precisionAt5 > 0);
+    assert.ok(report.retrieval.budgets.brief.maxReturnedBytes <= 5_000);
+    assert.equal(report.retrieval.budgets.brief.budgetExceededCount, 0);
+    assert.ok(
+      report.retrieval.streamAblations.all.recallAt5
+        > report.retrieval.streamAblations.withoutEvidenceFts.recallAt5
+    );
+    assert.ok(
+      report.retrieval.streamAblations.all.recallAt5
+        > report.retrieval.streamAblations.withoutFactsFts.recallAt5
+    );
+    for (const query of report.retrieval.queries) {
+      assert.equal(query.returnedBytes <= 5_000, true);
+      for (const uri of query.resourceUris) {
+        assert.match(uri, /^impact-trace:\/\//);
+      }
+    }
     assert.deepEqual(report.missingRelations, []);
     assert.deepEqual(report.unexpectedRelations, []);
     for (const requiredLabel of [

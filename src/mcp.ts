@@ -142,6 +142,7 @@ export function createMcpServer(context: McpContext): McpServer {
         k: k ?? 10,
         includeEvidence: includeEvidence ?? true,
         budget: normalizedBudget,
+        disabledStreams: new Set(),
         semanticEmbedding
       });
       const telemetry = searchContextTelemetry(result);
@@ -1425,7 +1426,19 @@ type SearchContextOptions = {
   k: number;
   includeEvidence: boolean;
   budget: ContextBudget | null;
+  disabledStreams: ReadonlySet<SearchContextDisabledStream>;
   semanticEmbedding: EmbeddingResult | null;
+};
+
+type SearchContextDisabledStream = 'evidenceFts' | 'factsFts';
+
+export type SearchContextForRepoOptions = {
+  repoRoot: string;
+  query: string;
+  k?: number;
+  includeEvidence?: boolean;
+  budget?: ContextBudget | null;
+  disabledStreams?: SearchContextDisabledStream[];
 };
 
 type SearchEntityRow = {
@@ -1442,6 +1455,7 @@ type SearchEntityRow = {
   symbol_match: number;
   relation_match_count: number;
   evidence_match_count: number;
+  fact_match_count: number;
 };
 
 type SearchEvidenceRow = ExplainEvidenceRow & {
@@ -1527,6 +1541,19 @@ async function searchContextSemanticEmbedding(context: McpContext, query: string
   }
 }
 
+export async function searchContextForRepo(options: SearchContextForRepoOptions): Promise<unknown> {
+  const context = { repoRoot: normalizeRepoRoot(options.repoRoot) };
+  const semanticEmbedding = await searchContextSemanticEmbedding(context, options.query);
+  return searchContext(context, {
+    query: options.query,
+    k: options.k ?? 10,
+    includeEvidence: options.includeEvidence ?? true,
+    budget: options.budget ?? null,
+    disabledStreams: new Set(options.disabledStreams ?? []),
+    semanticEmbedding
+  });
+}
+
 function searchContext(context: McpContext, options: SearchContextOptions): unknown {
   const query = options.query.trim();
   if (!query) throw new Error('search query must not be empty');
@@ -1534,7 +1561,16 @@ function searchContext(context: McpContext, options: SearchContextOptions): unkn
   return withReadOnlyDb(context, (db, repoId) => {
     const indexRunId = latestCompletedIndexRun(db, repoId);
     const likeQuery = `%${escapeLike(query)}%`;
-    const ranking = searchRankedEntities(db, repoId, indexRunId, query, likeQuery, options.k, options.semanticEmbedding);
+    const ranking = searchRankedEntities(
+      db,
+      repoId,
+      indexRunId,
+      query,
+      likeQuery,
+      options.k,
+      options.semanticEmbedding,
+      options.disabledStreams
+    );
     const selected = diversifyRankedRows(ranking.rankedRows, options.k).slice(0, options.k);
     const evidenceByEntity = new Map<string, CompactEvidenceResource[]>();
     const evidenceUris: string[] = [];
@@ -1746,11 +1782,14 @@ function searchRankedEntities(
   query: string,
   likeQuery: string,
   k: number,
-  semanticEmbedding: EmbeddingResult | null
+  semanticEmbedding: EmbeddingResult | null,
+  disabledStreams: ReadonlySet<SearchContextDisabledStream>
 ): SearchRanking {
   const keywordRows = searchKeywordEntityRows(db, repoId, indexRunId, query, likeQuery);
   const relationRows = searchRelationEntityRows(db, repoId, indexRunId, likeQuery);
-  const evidenceRows = searchEvidenceEntityRows(db, repoId, indexRunId, likeQuery);
+  const evidenceRows = searchEvidenceEntityRows(db, repoId, indexRunId, query, likeQuery, disabledStreams);
+  const factRows = searchFactEntityRows(db, repoId, indexRunId, query, disabledStreams);
+  const contextEvidenceRows = [...evidenceRows, ...factRows];
   const semanticRows = semanticEmbedding
     ? searchSemanticEntityRows(db, repoId, indexRunId, semanticEmbedding)
     : [];
@@ -1758,14 +1797,14 @@ function searchRankedEntities(
     db,
     repoId,
     indexRunId,
-    [...keywordRows, ...relationRows, ...evidenceRows, ...semanticRows],
+    [...keywordRows, ...relationRows, ...contextEvidenceRows, ...semanticRows],
     k
   );
   const candidates = new Map<string, SearchCandidate>();
 
   mergeSearchStream(candidates, keywordRows, 'keywordRank');
   mergeSearchStream(candidates, relationRows, 'relationRank');
-  mergeSearchStream(candidates, evidenceRows, 'evidenceRank');
+  mergeSearchStream(candidates, contextEvidenceRows, 'evidenceRank');
   mergeSearchStream(candidates, semanticRows, 'semanticRank');
   mergeSearchStream(candidates, graphRows, 'graphProximityRank');
 
@@ -1815,8 +1854,9 @@ function mergeSearchStream(
     candidate.row.symbol_match = Math.max(candidate.row.symbol_match, row.symbol_match);
     candidate.row.relation_match_count = Math.max(candidate.row.relation_match_count, row.relation_match_count);
     candidate.row.evidence_match_count = Math.max(candidate.row.evidence_match_count, row.evidence_match_count);
+    candidate.row.fact_match_count = Math.max(candidate.row.fact_match_count, row.fact_match_count);
     candidate.row.relation_kind_bucket = candidate.row.relation_kind_bucket ?? row.relation_kind_bucket;
-    candidate[rankField] = index + 1;
+    candidate[rankField] = candidate[rankField] === null ? index + 1 : Math.min(candidate[rankField], index + 1);
     candidates.set(row.entity_id, candidate);
   });
 }
@@ -1895,7 +1935,8 @@ function searchFtsKeywordEntityRows(
           CASE WHEN COALESCE(entities.path, '') LIKE ? ESCAPE '\\' THEN 1 ELSE 0 END AS path_match,
           CASE WHEN COALESCE(entities.symbol, '') LIKE ? ESCAPE '\\' THEN 1 ELSE 0 END AS symbol_match,
           0 AS relation_match_count,
-          0 AS evidence_match_count
+          0 AS evidence_match_count,
+          0 AS fact_match_count
         FROM temp.search_context_entities_fts fts
         INNER JOIN entities
           ON entities.id = fts.entity_id
@@ -1932,7 +1973,8 @@ function searchLikeKeywordEntityRows(
         CASE WHEN COALESCE(entities.path, '') LIKE ? ESCAPE '\\' THEN 1 ELSE 0 END AS path_match,
         CASE WHEN COALESCE(entities.symbol, '') LIKE ? ESCAPE '\\' THEN 1 ELSE 0 END AS symbol_match,
         0 AS relation_match_count,
-        0 AS evidence_match_count
+        0 AS evidence_match_count,
+        0 AS fact_match_count
       FROM entities
       WHERE entities.repo_id = ?
         AND entities.updated_index_run_id = ?
@@ -2001,7 +2043,8 @@ function searchRelationEntityRows(
         0 AS path_match,
         0 AS symbol_match,
         count(relations.id) AS relation_match_count,
-        0 AS evidence_match_count
+        0 AS evidence_match_count,
+        0 AS fact_match_count
       FROM entities
       INNER JOIN relations
         ON relations.repo_id = entities.repo_id
@@ -2018,6 +2061,76 @@ function searchRelationEntityRows(
 }
 
 function searchEvidenceEntityRows(
+  db: ReturnType<typeof openDatabase>,
+  repoId: number,
+  indexRunId: number,
+  query: string,
+  likeQuery: string,
+  disabledStreams: ReadonlySet<SearchContextDisabledStream>
+): SearchEntityRow[] {
+  const ftsRows = disabledStreams.has('evidenceFts')
+    ? []
+    : searchEvidenceFtsEntityRows(db, repoId, indexRunId, query);
+  if (ftsRows.length > 0) return ftsRows;
+  return searchEvidenceLikeEntityRows(db, repoId, indexRunId, likeQuery);
+}
+
+function searchEvidenceFtsEntityRows(
+  db: ReturnType<typeof openDatabase>,
+  repoId: number,
+  indexRunId: number,
+  query: string
+): SearchEntityRow[] {
+  if (!mcpHasTable(db, 'search_relation_evidence_fts')) return [];
+  const ftsQuery = ftsMatchExpression(query);
+  if (!ftsQuery) return [];
+  try {
+    return db
+      .prepare(`
+        WITH matches AS (
+          SELECT evidence_id
+          FROM search_relation_evidence_fts
+          WHERE search_relation_evidence_fts MATCH ?
+        )
+        SELECT
+          entities.id AS entity_id,
+          entities.kind AS entity_kind,
+          entities.path AS entity_path,
+          entities.symbol AS entity_symbol,
+          entities.language_id AS entity_language_id,
+          entities.display_name AS entity_display_name,
+          min(relations.kind) AS relation_kind_bucket,
+          0 AS id_match,
+          0 AS display_match,
+          0 AS path_match,
+          0 AS symbol_match,
+          0 AS relation_match_count,
+          count(DISTINCT evidence.id) AS evidence_match_count,
+          0 AS fact_match_count
+        FROM matches
+        INNER JOIN relation_evidence evidence
+          ON evidence.id = matches.evidence_id
+        INNER JOIN relations
+          ON relations.id = evidence.relation_id
+         AND relations.repo_id = evidence.repo_id
+         AND relations.index_run_id = evidence.index_run_id
+        INNER JOIN entities
+          ON entities.repo_id = relations.repo_id
+         AND entities.updated_index_run_id = relations.index_run_id
+         AND (entities.id = relations.source_entity_id OR entities.id = relations.target_entity_id)
+        WHERE evidence.repo_id = ?
+          AND evidence.index_run_id = ?
+        GROUP BY entities.id
+        ORDER BY evidence_match_count DESC, entities.display_name, entities.id
+        LIMIT ?
+      `)
+      .all(ftsQuery, repoId, indexRunId, searchContextStreamLimit) as SearchEntityRow[];
+  } catch {
+    return [];
+  }
+}
+
+function searchEvidenceLikeEntityRows(
   db: ReturnType<typeof openDatabase>,
   repoId: number,
   indexRunId: number,
@@ -2038,7 +2151,8 @@ function searchEvidenceEntityRows(
         0 AS path_match,
         0 AS symbol_match,
         0 AS relation_match_count,
-        count(evidence.id) AS evidence_match_count
+        count(evidence.id) AS evidence_match_count,
+        0 AS fact_match_count
       FROM entities
       INNER JOIN relations
         ON relations.repo_id = entities.repo_id
@@ -2060,6 +2174,62 @@ function searchEvidenceEntityRows(
       LIMIT ?
     `)
     .all(likeQuery, likeQuery, likeQuery, repoId, indexRunId, searchContextStreamLimit) as SearchEntityRow[];
+}
+
+function searchFactEntityRows(
+  db: ReturnType<typeof openDatabase>,
+  repoId: number,
+  indexRunId: number,
+  query: string,
+  disabledStreams: ReadonlySet<SearchContextDisabledStream>
+): SearchEntityRow[] {
+  if (disabledStreams.has('factsFts')) return [];
+  if (!mcpHasTable(db, 'search_facts_fts')) return [];
+  const ftsQuery = ftsMatchExpression(query);
+  if (!ftsQuery) return [];
+  try {
+    return db
+      .prepare(`
+        WITH matches AS (
+          SELECT fact_id
+          FROM search_facts_fts
+          WHERE search_facts_fts MATCH ?
+        )
+        SELECT
+          entities.id AS entity_id,
+          entities.kind AS entity_kind,
+          entities.path AS entity_path,
+          entities.symbol AS entity_symbol,
+          entities.language_id AS entity_language_id,
+          entities.display_name AS entity_display_name,
+          NULL AS relation_kind_bucket,
+          0 AS id_match,
+          0 AS display_match,
+          0 AS path_match,
+          0 AS symbol_match,
+          0 AS relation_match_count,
+          0 AS evidence_match_count,
+          count(DISTINCT facts.id) AS fact_match_count
+        FROM matches
+        INNER JOIN facts
+          ON facts.id = matches.fact_id
+        INNER JOIN transactions
+          ON transactions.id = facts.tx_id
+        INNER JOIN entities
+          ON entities.id = facts.entity_id
+         AND entities.repo_id = ?
+         AND entities.updated_index_run_id = ?
+        WHERE facts.op = 'assert'
+          AND facts.redacted = 0
+          AND transactions.archived = 0
+        GROUP BY entities.id
+        ORDER BY fact_match_count DESC, entities.display_name, entities.id
+        LIMIT ?
+      `)
+      .all(ftsQuery, repoId, indexRunId, searchContextStreamLimit) as SearchEntityRow[];
+  } catch {
+    return [];
+  }
 }
 
 function searchSemanticEntityRows(
@@ -2119,7 +2289,8 @@ function searchSemanticEntityRows(
           path_match: 0,
           symbol_match: 0,
           relation_match_count: 0,
-          evidence_match_count: 0
+          evidence_match_count: 0,
+          fact_match_count: 0
         },
         score
       });
@@ -2159,7 +2330,9 @@ function searchGraphProximityEntityRows(
         neighbor.language_id AS entity_language_id,
         neighbor.display_name AS entity_display_name,
         min(relations.kind) AS relation_kind_bucket,
-        count(relations.id) AS relation_match_count
+        count(relations.id) AS relation_match_count,
+        0 AS evidence_match_count,
+        0 AS fact_match_count
       FROM relations
       INNER JOIN entities seed
         ON seed.repo_id = relations.repo_id
@@ -2199,7 +2372,8 @@ function searchGraphProximityEntityRows(
             display_match: 0,
             path_match: 0,
             symbol_match: 0,
-            evidence_match_count: 0
+            evidence_match_count: 0,
+            fact_match_count: 0
           },
           seedRank: index,
           relationCount
@@ -2282,6 +2456,7 @@ function searchEntityReasons(candidate: SearchCandidate): string[] {
   if (row.symbol_match > 0) reasons.push('symbol');
   if (row.relation_match_count > 0) reasons.push(`relations:${row.relation_match_count}`);
   if (row.evidence_match_count > 0) reasons.push(`evidence:${row.evidence_match_count}`);
+  if (row.fact_match_count > 0) reasons.push(`facts:${row.fact_match_count}`);
   if (candidate.semanticRank !== null) reasons.push('semantic');
   if (candidate.graphProximityRank !== null) reasons.push('graph-proximity');
   return reasons;

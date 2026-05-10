@@ -90,7 +90,7 @@ flowchart LR
 | [Semgrep](https://github.com/semgrep/semgrep) / [Opengrep](https://github.com/opengrep/opengrep) | 여러 언어의 source-like static rule ecosystem. | `PolicyRuleAdapter`: rule 결과를 `GOVERNS`, `REQUIRES_REVIEW`, `VERIFIES` evidence로 흡수한다. | engine clone. 라이선스와 업데이트 경계를 위해 subprocess/result import adapter가 안전하다. |
 | [SCIP](https://github.com/sourcegraph/scip), [LSIF](https://lsif.dev/), [Kythe](https://github.com/kythe/kythe) | language-server 수준의 definition/reference/implementation graph를 저장·교환하는 포맷/생태계. | optional import adapter. Java/Kotlin/TS/Go/Rust precision을 높이는 길. | core schema를 특정 포맷에 종속시키지 않는다. |
 
-이번 slice에서는 위 조사에서 공통으로 보이는 `search/read only/context budget/resource link` 패턴을 작게 가져와 `impact_trace_search_context` v0로 구현했고, 이어서 `agentmemory` 분석에서 확인한 RRF hybrid ranking을 initial v1로 반영했다. context access telemetry와 opt-in session import v0도 Impact-trace의 SQLite/provenance 경계 안에서 구현됐다. retrieval depth v0는 natural-language query용 read-only temp FTS5/BM25 entity lane, 기존 `fact_embeddings` 기반 `semanticRank`, matched seed의 1-hop `graphProximityRank`까지 추가했다. budget/diversification v0는 optional `brief`/`standard`/`deep` budget으로 returned bytes / estimated tokens / omitted counts를 노출하고 `k>=3` 결과를 path prefix/entity kind/relation kind bucket으로 interleave한다. 다음 context slice는 persistent FTS projection, retrieval effectiveness benchmark, resource pagination이다.
+이번 slice에서는 위 조사에서 공통으로 보이는 `search/read only/context budget/resource link` 패턴을 작게 가져와 `impact_trace_search_context` v0로 구현했고, 이어서 `agentmemory` 분석에서 확인한 RRF hybrid ranking을 initial v1로 반영했다. context access telemetry와 opt-in session import v0도 Impact-trace의 SQLite/provenance 경계 안에서 구현됐다. retrieval depth v0는 natural-language query용 read-only temp FTS5/BM25 entity lane, 기존 `fact_embeddings` 기반 `semanticRank`, matched seed의 1-hop `graphProximityRank`까지 추가했다. budget/diversification v0는 optional `brief`/`standard`/`deep` budget으로 returned bytes / estimated tokens / omitted counts를 노출하고 `k>=3` 결과를 path prefix/entity kind/relation kind bucket으로 interleave한다. persistent retrieval v0는 schema v11 `relation_evidence`/selected `facts` FTS projection과 ImpactBench schema v2 Recall@budget/ablation report를 추가했다. 다음 context slice는 resource pagination, typed errors, explicit supersession이다.
 
 ### 2.2 MCP 표준에서 가져올 것
 
@@ -636,7 +636,7 @@ flowchart LR
 | `impact_trace_search_context` | keyword/path/symbol/relation/evidence 검색으로 ranked entities와 resource link를 반환. v1 landed: deterministic SQLite keyword/relation/evidence RRF ranking, `rankSignals`, `k=10`, `includeEvidence=true`, entity/evidence resource-on-demand |
 | `impact_trace_search_context` depth pass | v0 landed: read-only temp FTS5/BM25 entity lane for natural-language terms, LIKE fallback for path/literal queries, `semanticRank` from existing fact embeddings, `graphProximityRank` for 1-hop relation neighbors |
 | `impact_trace_search_context` budget pass | v0 landed: optional `brief`/`standard`/`deep`, returned bytes / estimated token limits, omitted entity/evidence counts, path prefix/entity kind/relation kind interleaving for `k>=3` |
-| `impact_trace_search_context` persistent retrieval pass | next: persistent relation_evidence/facts FTS projection and retrieval effectiveness benchmark |
+| `impact_trace_search_context` persistent retrieval pass | v0 landed: schema v11 persistent relation_evidence/facts FTS projection, evidence/fact FTS stream, ImpactBench schema v2 Recall@5/10, Precision@5, NDCG@10, MRR, returned bytes, stream ablation metrics |
 | `impact_trace_explain_entity` | entity 주변 relation/evidence resource 제공. v0 landed: incoming/outgoing direct relation을 direction별 cap으로 반환하고 evidence는 선택된 relation 전체에서 global cap을 적용 |
 | `impact_trace_context_telemetry` | context/search/explain/analyze tool run과 resource read가 실제로 얼마나 쓰였는지 조회. v0 landed: returned bytes, resource count, omitted counts, redacted query |
 | `impact_trace_doctor` | schema/index/coverage/adapter/vector/telemetry 상태를 read-only JSON으로 조회. v0 landed: CLI `impact-trace doctor`와 MCP tool 동시 제공 |
@@ -712,7 +712,7 @@ flowchart LR
 
 4. `feat(search): add persistent fts retrieval bench`
    - relation_evidence/facts persistent FTS projection
-   - Recall@5/10, Precision@5, NDCG@10, MRR, latency, returned bytes, stream ablation benchmark
+   - Recall@5/10, Precision@5, NDCG@10, MRR, returned bytes, stream ablation benchmark
 
 5. `feat(resources): paginate context resources and typed errors`
    - `impact-trace://reports/{report_id}/graph/{format}?cursor=...`
@@ -842,10 +842,10 @@ UI가 들어오면 완료 전에 반드시 확인한다.
 
 ## 18. 바로 다음 액션
 
-1. relation_evidence/facts persistent FTS projection과 retrieval bench를 추가해 temp FTS/semantic/graph/budget v0를 large-index 기준으로 검증한다.
-2. `impact-trace://reports/{id}/graph/{format}` pagination과 typed error envelope로 큰 graph payload를 resource-on-demand로 고정한다.
-3. explicit supersession을 추가해 오래된 decision/summary/policy fact를 fuzzy overwrite 없이 명시적으로 대체한다.
+1. `impact-trace://reports/{id}/graph/{format}` pagination과 typed error envelope로 큰 graph payload를 resource-on-demand로 고정한다.
+2. explicit supersession을 추가해 오래된 decision/summary/policy fact를 fuzzy overwrite 없이 명시적으로 대체한다.
+3. entity persistent FTS projection과 sqlite-vec ANN lane으로 temp entity FTS / brute-force semantic path를 줄인다.
 4. 그 resource contract를 그대로 읽는 `impact-trace ui` workbench v0를 만든다.
-6. workspace/contract resolver는 단일 repo + 문서 impact가 작동한 뒤 확장한다.
+5. workspace/contract resolver는 단일 repo + 문서 impact가 작동한 뒤 확장한다.
 
 이 순서가 가장 짧은 검증 경로다. "멋진 UI"보다 "agent와 사람이 같은 근거를 믿고 보는 report"가 먼저다.

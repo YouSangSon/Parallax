@@ -443,6 +443,35 @@ async function makeSearchDepthRepo(): Promise<string> {
     );
 
     insertEntity.run(
+      'file:depth/evidence.ts',
+      repo.id,
+      'file',
+      'depth/evidence.ts',
+      null,
+      'Evidence Target',
+      run.id,
+      run.id
+    );
+    insertRelation.run(
+      'depth:evidence-self',
+      repo.id,
+      'file:depth/evidence.ts',
+      'file:depth/evidence.ts',
+      'DOCUMENTS',
+      run.id,
+      'depth-fixture'
+    );
+    insertEvidence.run(
+      'depth:evidence-self:evidence',
+      'depth:evidence-self',
+      repo.id,
+      'depth/evidence.ts',
+      'DOCUMENTS',
+      'rotation handles stale policy checkpoints',
+      run.id
+    );
+
+    insertEntity.run(
       'file:depth/semantic.ts',
       repo.id,
       'file',
@@ -453,6 +482,26 @@ async function makeSearchDepthRepo(): Promise<string> {
       run.id
     );
     db.prepare("INSERT OR IGNORE INTO attribute_defs (name, value_type, is_code_relation, description) VALUES ('session_summary', 'json', 0, '')").run();
+    insertEntity.run(
+      'file:depth/fact.ts',
+      repo.id,
+      'file',
+      'depth/fact.ts',
+      null,
+      'Fact Target',
+      run.id,
+      run.id
+    );
+    db.prepare(
+      'INSERT OR IGNORE INTO facts (id, entity_id, attribute, value_blob, op, tx_id, redacted) VALUES (?, ?, ?, ?, ?, ?, 0)'
+    ).run(
+      'depth-fact-fts',
+      'file:depth/fact.ts',
+      'session_summary',
+      JSON.stringify('operator memory keeps retention guard'),
+      'assert',
+      branch.head_tx_id
+    );
     db.prepare(
       'INSERT OR IGNORE INTO facts (id, entity_id, attribute, value_blob, op, tx_id, redacted) VALUES (?, ?, ?, ?, ?, ?, 0)'
     ).run(
@@ -778,7 +827,7 @@ function removeTelemetrySchema(repoRoot: string): void {
   try {
     db.prepare('DROP TABLE IF EXISTS context_tool_runs').run();
     db.prepare('DROP TABLE IF EXISTS context_resource_accesses').run();
-    db.prepare('DELETE FROM schema_versions WHERE version = 10').run();
+    db.prepare('DELETE FROM schema_versions WHERE version >= 10').run();
   } finally {
     db.close();
   }
@@ -911,7 +960,7 @@ test('MCP doctor returns the local health report without telemetry writes', asyn
     assert.equal(report.version, 0);
     assert.equal(report.repoRoot, '[REPO_ROOT]');
     assert.equal(report.database.path, '.impact-trace/impact.db');
-    assert.equal(report.database.schemaVersion, 10);
+    assert.equal(report.database.schemaVersion, 11);
     assert.equal(report.index.latestCompletedRun?.status, 'completed');
     assert.equal(report.telemetry.toolRuns, 0);
   } finally {
@@ -1718,6 +1767,54 @@ test('MCP search_context fuses FTS, semantic, and graph proximity rank signals',
     assert.equal(semantic.rankSignals.keywordRank, null);
     assert.equal(semantic.rankSignals.semanticRank, 1);
     assert.ok(semantic.reasons.includes('semantic'));
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP search_context searches persistent evidence and fact FTS projections', async () => {
+  const repoRoot = await makeSearchDepthRepo();
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+
+    const evidenceResponse = await client.request('tools/call', {
+      name: 'impact_trace_search_context',
+      arguments: { query: 'rotation policy', k: 3, includeEvidence: false }
+    });
+    assert.equal(evidenceResponse.error, undefined);
+    assert.equal(evidenceResponse.result.isError, undefined);
+    const evidenceSearch = JSON.parse(evidenceResponse.result.content[0].text) as {
+      results: Array<{
+        entity: { id: string };
+        reasons: string[];
+        rankSignals: { keywordRank: number | null; evidenceRank: number | null };
+      }>;
+    };
+    const evidenceMatch = evidenceSearch.results.find((item) => item.entity.id === 'file:depth/evidence.ts');
+    assert.ok(evidenceMatch, 'persistent evidence FTS should match non-contiguous evidence terms');
+    assert.equal(evidenceMatch.rankSignals.keywordRank, null);
+    assert.equal(evidenceMatch.rankSignals.evidenceRank, 1);
+    assert.ok(evidenceMatch.reasons.includes('evidence:1'));
+
+    const factResponse = await client.request('tools/call', {
+      name: 'impact_trace_search_context',
+      arguments: { query: 'operator retention', k: 3, includeEvidence: false }
+    });
+    assert.equal(factResponse.error, undefined);
+    assert.equal(factResponse.result.isError, undefined);
+    const factSearch = JSON.parse(factResponse.result.content[0].text) as {
+      results: Array<{
+        entity: { id: string };
+        reasons: string[];
+        rankSignals: { keywordRank: number | null; evidenceRank: number | null };
+      }>;
+    };
+    const factMatch = factSearch.results.find((item) => item.entity.id === 'file:depth/fact.ts');
+    assert.ok(factMatch, 'persistent facts FTS should match non-contiguous fact terms');
+    assert.equal(factMatch.rankSignals.keywordRank, null);
+    assert.equal(factMatch.rankSignals.evidenceRank, 1);
+    assert.ok(factMatch.reasons.includes('facts:1'));
   } finally {
     await client.close();
   }

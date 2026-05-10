@@ -355,7 +355,7 @@ MCP에서 노출하는 주요 tool은 아래와 같습니다.
 |---|---|
 | `impact_trace_analyze_diff` | 변경 파일을 분석하고 CLI와 같은 report model을 반환합니다. |
 | `impact_trace_context_for_change` | 변경 파일을 기준으로 `brief`/`standard`/`deep` budget에 맞춘 compact context pack을 반환합니다. agent가 전체 report를 받지 않고 top impact paths, evidence refs, entity/coverage resource link만 받도록 합니다. |
-| `impact_trace_search_context` | keyword/path/symbol/relation/evidence snippet을 최신 index에서 검색하고 RRF-ranked entity context, stream별 rank signal, match reason, compact evidence, resource link를 반환합니다. |
+| `impact_trace_search_context` | keyword/path/symbol/relation/evidence/fact text를 최신 index에서 검색하고 RRF-ranked entity context, stream별 rank signal, match reason, compact evidence, resource link를 반환합니다. |
 | `impact_trace_explain_entity` | entity 하나의 direct relation과 compact evidence를 제한된 payload로 반환하고, full evidence resource link를 제공합니다. |
 | `impact_trace_context_telemetry` | compact context tool run과 resource fetch를 repo-local telemetry로 요약해 context 절감이 실제로 작동했는지 확인합니다. |
 | `impact_trace_doctor` | schema/index/coverage/adapter/vector/telemetry 상태를 read-only JSON report로 반환해 agent가 불필요한 탐색 없이 현재 repo 상태를 파악하게 합니다. |
@@ -377,8 +377,10 @@ MCP에서 노출하는 주요 tool은 아래와 같습니다.
 `impact_trace_search_context` v1은 `k=10`, `includeEvidence=true`, `evidencePerEntity=2`,
 `snippetChars=240`을 기본으로 하며, keyword/relation/evidence stream을 RRF로 fuse합니다.
 응답의 각 result는 `rankSignals.algorithm='rrf'`, `keywordRank`, `relationRank`, `evidenceRank`,
-`rrfScore`를 포함합니다. 현재 v1은 semantic/vector search가 아니라 deterministic SQLite stream으로
-동작하며, FTS/BM25와 semantic recall fusion은 다음 ranking depth pass입니다.
+`rrfScore`를 포함합니다. natural-language entity query는 FTS5/BM25를 우선 사용하고,
+relation evidence와 non-redacted asserted facts는 schema v11 persistent FTS projection으로 검색합니다.
+기존 `fact_embeddings`가 있으면 semantic lane도 RRF에 fuse되며, FTS table이 없는 legacy DB나
+path/literal query는 LIKE fallback을 유지합니다.
 `impact_trace_explain_entity` v0는 `relationLimit=20`을 incoming/outgoing 각각에 적용하고,
 `evidenceLimit=10`, `snippetChars=300`으로 선택된 relation 전체의 evidence payload를 제한합니다.
 `impact_trace_context_telemetry` v0는 `context_tool_runs`, `context_resource_accesses`를 읽어

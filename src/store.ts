@@ -646,6 +646,110 @@ function migrate(db: Db): void {
     INSERT OR IGNORE INTO schema_versions (version, applied_at)
     VALUES (10, datetime('now'));
   `);
+
+  // Schema v11: persistent FTS projections for context search. These
+  // projections make relation evidence and selected memory facts searchable
+  // from read-only MCP calls without rebuilding temp FTS tables per query.
+  const searchFtsNeedsBackfill =
+    maxAppliedSchemaVersion(db) < 11
+    || !tableExists(db, 'search_relation_evidence_fts')
+    || !tableExists(db, 'search_facts_fts');
+
+  db.exec(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS search_relation_evidence_fts
+    USING fts5(
+      evidence_id UNINDEXED,
+      relation_id UNINDEXED,
+      repo_id UNINDEXED,
+      index_run_id UNINDEXED,
+      file_path,
+      kind,
+      snippet
+    );
+
+    CREATE VIRTUAL TABLE IF NOT EXISTS search_facts_fts
+    USING fts5(
+      fact_id UNINDEXED,
+      entity_id UNINDEXED,
+      tx_id UNINDEXED,
+      attribute,
+      value_blob
+    );
+
+    CREATE TRIGGER IF NOT EXISTS trg_relation_evidence_fts_ai
+    AFTER INSERT ON relation_evidence
+    BEGIN
+      DELETE FROM search_relation_evidence_fts WHERE evidence_id = new.id;
+      INSERT INTO search_relation_evidence_fts (
+        evidence_id, relation_id, repo_id, index_run_id, file_path, kind, snippet
+      )
+      VALUES (
+        new.id, new.relation_id, new.repo_id, new.index_run_id, new.file_path, new.kind, new.snippet
+      );
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_relation_evidence_fts_ad
+    AFTER DELETE ON relation_evidence
+    BEGIN
+      DELETE FROM search_relation_evidence_fts WHERE evidence_id = old.id;
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_relation_evidence_fts_au
+    AFTER UPDATE ON relation_evidence
+    BEGIN
+      DELETE FROM search_relation_evidence_fts WHERE evidence_id = old.id;
+      INSERT INTO search_relation_evidence_fts (
+        evidence_id, relation_id, repo_id, index_run_id, file_path, kind, snippet
+      )
+      VALUES (
+        new.id, new.relation_id, new.repo_id, new.index_run_id, new.file_path, new.kind, new.snippet
+      );
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_facts_fts_ai
+    AFTER INSERT ON facts
+    BEGIN
+      DELETE FROM search_facts_fts WHERE fact_id = new.id;
+      INSERT INTO search_facts_fts (fact_id, entity_id, tx_id, attribute, value_blob)
+      SELECT new.id, new.entity_id, new.tx_id, new.attribute, new.value_blob
+      WHERE new.op = 'assert' AND new.redacted = 0;
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_facts_fts_ad
+    AFTER DELETE ON facts
+    BEGIN
+      DELETE FROM search_facts_fts WHERE fact_id = old.id;
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_facts_fts_au
+    AFTER UPDATE ON facts
+    BEGIN
+      DELETE FROM search_facts_fts WHERE fact_id = old.id;
+      INSERT INTO search_facts_fts (fact_id, entity_id, tx_id, attribute, value_blob)
+      SELECT new.id, new.entity_id, new.tx_id, new.attribute, new.value_blob
+      WHERE new.op = 'assert' AND new.redacted = 0;
+    END;
+
+    INSERT OR IGNORE INTO schema_versions (version, applied_at)
+    VALUES (11, datetime('now'));
+  `);
+
+  if (searchFtsNeedsBackfill) {
+    db.exec(`
+      DELETE FROM search_relation_evidence_fts;
+      INSERT INTO search_relation_evidence_fts (
+        evidence_id, relation_id, repo_id, index_run_id, file_path, kind, snippet
+      )
+      SELECT id, relation_id, repo_id, index_run_id, file_path, kind, snippet
+      FROM relation_evidence;
+
+      DELETE FROM search_facts_fts;
+      INSERT INTO search_facts_fts (fact_id, entity_id, tx_id, attribute, value_blob)
+      SELECT id, entity_id, tx_id, attribute, value_blob
+      FROM facts
+      WHERE op = 'assert' AND redacted = 0;
+    `);
+  }
 }
 
 // Identifier allowlists guard the only place in this codebase that
@@ -684,6 +788,17 @@ function tryAddColumn(db: Db, table: string, column: string, definition: string)
   if (!exists) {
     db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
   }
+}
+
+function tableExists(db: Db, name: string): boolean {
+  return db
+    .prepare("SELECT 1 AS one FROM sqlite_master WHERE type = 'table' AND name = ?")
+    .get(name) !== undefined;
+}
+
+function maxAppliedSchemaVersion(db: Db): number {
+  const row = db.prepare('SELECT max(version) AS version FROM schema_versions').get() as { version: number | null };
+  return row.version ?? 0;
 }
 
 export function ensureRepo(db: Db, repoRoot: string): number {

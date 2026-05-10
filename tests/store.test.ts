@@ -21,14 +21,14 @@ function withTempDb<T>(callback: (db: Db) => T): T {
   }
 }
 
-test('migrate records schema_versions through v10', () => {
+test('migrate records schema_versions through v11', () => {
   withTempDb((db) => {
     const versions = db
       .prepare('SELECT version FROM schema_versions ORDER BY version')
       .all() as Array<{ version: number }>;
     assert.deepEqual(
       versions.map((row) => row.version),
-      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     );
   });
 });
@@ -46,7 +46,9 @@ test('migrate creates the agent memory tables and later extension tables', () =>
       'fact_embeddings',
       'reflections',
       'context_tool_runs',
-      'context_resource_accesses'
+      'context_resource_accesses',
+      'search_relation_evidence_fts',
+      'search_facts_fts'
     ];
     for (const name of expected) {
       const row = db
@@ -54,6 +56,200 @@ test('migrate creates the agent memory tables and later extension tables', () =>
         .get(name);
       assert.ok(row, `expected table ${name} to exist`);
     }
+  });
+});
+
+test('migrate v11 adds persistent search FTS projection triggers', () => {
+  withTempDb((db) => {
+    for (const name of [
+      'trg_relation_evidence_fts_ai',
+      'trg_relation_evidence_fts_ad',
+      'trg_relation_evidence_fts_au',
+      'trg_facts_fts_ai',
+      'trg_facts_fts_ad',
+      'trg_facts_fts_au'
+    ]) {
+      const row = db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name = ?")
+        .get(name);
+      assert.ok(row, `expected trigger ${name} to exist`);
+    }
+  });
+});
+
+test('migrate v11 maintains persistent search FTS projections', () => {
+  withTempDb((db) => {
+    db.prepare("INSERT INTO repos (id, root, config_hash) VALUES (1, '/repo', 'v1')").run();
+    db.prepare(`
+      INSERT INTO index_runs (id, repo_id, status, started_at, finished_at, extractor_version)
+      VALUES (1, 1, 'completed', datetime('now'), datetime('now'), 'test')
+    `).run();
+    db.prepare(`
+      INSERT INTO entities (
+        id, repo_id, kind, path, symbol, language_id, display_name,
+        created_index_run_id, updated_index_run_id
+      )
+      VALUES ('file:source.ts', 1, 'file', 'source.ts', NULL, 'typescript', 'Source', 1, 1)
+    `).run();
+    db.prepare(`
+      INSERT INTO relations (
+        id, repo_id, source_entity_id, target_entity_id, kind, confidence,
+        adapter_run_id, index_run_id, provenance
+      )
+      VALUES ('rel:source', 1, 'file:source.ts', 'file:source.ts', 'DOCUMENTS', 'medium', NULL, 1, 'test')
+    `).run();
+
+    db.prepare(`
+      INSERT INTO relation_evidence (
+        id, relation_id, repo_id, file_path, kind, snippet, confidence, index_run_id
+      )
+      VALUES ('ev:source', 'rel:source', 1, 'policy.md', 'DOCUMENTS', 'rotation policy signal', 'medium', 1)
+    `).run();
+    assert.deepEqual(
+      db
+        .prepare("SELECT evidence_id FROM search_relation_evidence_fts WHERE search_relation_evidence_fts MATCH 'rotation'")
+        .all()
+        .map((row) => (row as { evidence_id: string }).evidence_id),
+      ['ev:source']
+    );
+    db.prepare("UPDATE relation_evidence SET snippet = 'retention signal' WHERE id = 'ev:source'").run();
+    assert.deepEqual(
+      db
+        .prepare("SELECT evidence_id FROM search_relation_evidence_fts WHERE search_relation_evidence_fts MATCH 'rotation'")
+        .all()
+        .map((row) => (row as { evidence_id: string }).evidence_id),
+      []
+    );
+    assert.deepEqual(
+      db
+        .prepare("SELECT evidence_id FROM search_relation_evidence_fts WHERE search_relation_evidence_fts MATCH 'retention'")
+        .all()
+        .map((row) => (row as { evidence_id: string }).evidence_id),
+      ['ev:source']
+    );
+    db.prepare(`
+      INSERT OR REPLACE INTO relation_evidence (
+        id, relation_id, repo_id, file_path, kind, snippet, confidence, index_run_id
+      )
+      VALUES ('ev:source', 'rel:source', 1, 'policy.md', 'DOCUMENTS', 'replacement signal', 'medium', 1)
+    `).run();
+    assert.deepEqual(
+      db
+        .prepare("SELECT evidence_id FROM search_relation_evidence_fts WHERE search_relation_evidence_fts MATCH 'retention'")
+        .all()
+        .map((row) => (row as { evidence_id: string }).evidence_id),
+      []
+    );
+    assert.deepEqual(
+      db
+        .prepare("SELECT evidence_id FROM search_relation_evidence_fts WHERE search_relation_evidence_fts MATCH 'replacement'")
+        .all()
+        .map((row) => (row as { evidence_id: string }).evidence_id),
+      ['ev:source']
+    );
+
+    db.prepare(`
+      INSERT INTO transactions (id, parent_tx_id, branch_id, ts, agent, index_run_id)
+      VALUES ('tx:fts', NULL, 'br_main', datetime('now'), 'test', 1)
+    `).run();
+    db.prepare(`
+      INSERT INTO facts (id, entity_id, attribute, value_blob, op, tx_id, redacted)
+      VALUES ('fact:source', 'file:source.ts', 'imports', '"operator memory signal"', 'assert', 'tx:fts', 0)
+    `).run();
+    db.prepare(`
+      INSERT INTO facts (id, entity_id, attribute, value_blob, op, tx_id, redacted)
+      VALUES ('fact:redacted', 'file:source.ts', 'imports', '"secret projection marker"', 'assert', 'tx:fts', 1)
+    `).run();
+    db.prepare(`
+      INSERT INTO facts (id, entity_id, attribute, value_blob, op, tx_id, redacted)
+      VALUES ('fact:retract', 'file:source.ts', 'imports', '"retracted projection marker"', 'retract', 'tx:fts', 0)
+    `).run();
+    assert.deepEqual(
+      db
+        .prepare("SELECT fact_id FROM search_facts_fts WHERE search_facts_fts MATCH 'operator'")
+        .all()
+        .map((row) => (row as { fact_id: string }).fact_id),
+      ['fact:source']
+    );
+    assert.deepEqual(
+      db
+        .prepare("SELECT fact_id FROM search_facts_fts WHERE search_facts_fts MATCH 'secret'")
+        .all()
+        .map((row) => (row as { fact_id: string }).fact_id),
+      []
+    );
+    assert.deepEqual(
+      db
+        .prepare("SELECT fact_id FROM search_facts_fts WHERE search_facts_fts MATCH 'retracted'")
+        .all()
+        .map((row) => (row as { fact_id: string }).fact_id),
+      []
+    );
+    db.prepare("UPDATE facts SET redacted = 1 WHERE id = 'fact:source'").run();
+    assert.deepEqual(
+      db
+        .prepare("SELECT fact_id FROM search_facts_fts WHERE search_facts_fts MATCH 'operator'")
+        .all()
+        .map((row) => (row as { fact_id: string }).fact_id),
+      []
+    );
+    db.prepare("UPDATE facts SET redacted = 0 WHERE id = 'fact:source'").run();
+    db.prepare("UPDATE facts SET value_blob = '\"session retention marker\"' WHERE id = 'fact:source'").run();
+    assert.deepEqual(
+      db
+        .prepare("SELECT fact_id FROM search_facts_fts WHERE search_facts_fts MATCH 'operator'")
+        .all()
+        .map((row) => (row as { fact_id: string }).fact_id),
+      []
+    );
+    assert.deepEqual(
+      db
+        .prepare("SELECT fact_id FROM search_facts_fts WHERE search_facts_fts MATCH 'session'")
+        .all()
+        .map((row) => (row as { fact_id: string }).fact_id),
+      ['fact:source']
+    );
+    db.prepare(`
+      INSERT OR REPLACE INTO facts (id, entity_id, attribute, value_blob, op, tx_id, redacted)
+      VALUES ('fact:source', 'file:source.ts', 'imports', '"secret replacement marker"', 'assert', 'tx:fts', 1)
+    `).run();
+    assert.deepEqual(
+      db
+        .prepare("SELECT fact_id FROM search_facts_fts WHERE search_facts_fts MATCH 'session'")
+        .all()
+        .map((row) => (row as { fact_id: string }).fact_id),
+      []
+    );
+    assert.deepEqual(
+      db
+        .prepare("SELECT fact_id FROM search_facts_fts WHERE search_facts_fts MATCH 'secret'")
+        .all()
+        .map((row) => (row as { fact_id: string }).fact_id),
+      []
+    );
+    db.prepare(`
+      INSERT OR REPLACE INTO facts (id, entity_id, attribute, value_blob, op, tx_id, redacted)
+      VALUES ('fact:source', 'file:source.ts', 'imports', '"retract replacement marker"', 'retract', 'tx:fts', 0)
+    `).run();
+    assert.deepEqual(
+      db
+        .prepare("SELECT fact_id FROM search_facts_fts WHERE search_facts_fts MATCH 'retract'")
+        .all()
+        .map((row) => (row as { fact_id: string }).fact_id),
+      []
+    );
+    db.prepare(`
+      INSERT OR REPLACE INTO facts (id, entity_id, attribute, value_blob, op, tx_id, redacted)
+      VALUES ('fact:source', 'file:source.ts', 'imports', '"final projection marker"', 'assert', 'tx:fts', 0)
+    `).run();
+    db.prepare("DELETE FROM facts WHERE id = 'fact:source'").run();
+    assert.deepEqual(
+      db
+        .prepare("SELECT fact_id FROM search_facts_fts WHERE search_facts_fts MATCH 'final'")
+        .all()
+        .map((row) => (row as { fact_id: string }).fact_id),
+      []
+    );
   });
 });
 
@@ -123,7 +319,7 @@ test('migrate is idempotent across re-runs', () => {
         .all() as Array<{ version: number }>;
       assert.deepEqual(
         versions.map((row) => row.version),
-        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
       );
     } finally {
       second.close();
@@ -147,9 +343,12 @@ test('migrate upgrades a synthetic v6 schema by adding v7/v8/v9 columns and tabl
       seed.prepare('DELETE FROM schema_versions WHERE version = 8').run();
       seed.prepare('DELETE FROM schema_versions WHERE version = 9').run();
       seed.prepare('DELETE FROM schema_versions WHERE version = 10').run();
+      seed.prepare('DELETE FROM schema_versions WHERE version = 11').run();
       seed.prepare('DROP TABLE IF EXISTS reflections').run();
       seed.prepare('DROP TABLE IF EXISTS context_tool_runs').run();
       seed.prepare('DROP TABLE IF EXISTS context_resource_accesses').run();
+      seed.prepare('DROP TABLE IF EXISTS search_relation_evidence_fts').run();
+      seed.prepare('DROP TABLE IF EXISTS search_facts_fts').run();
       seed.prepare('CREATE TABLE branches_v6_only AS SELECT id, name, head_tx_id, parent_branch_id, created_at FROM branches').run();
       seed.prepare('DROP TABLE branches').run();
       seed
@@ -261,11 +460,15 @@ test('migrate upgrades a synthetic v6 schema by adding v7/v8/v9 columns and tabl
       const versions = upgraded
         .prepare('SELECT max(version) AS v FROM schema_versions')
         .get() as { v: number };
-      assert.equal(versions.v, 10);
+      assert.equal(versions.v, 11);
       const telemetry = upgraded
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'context_tool_runs'")
         .get();
       assert.ok(telemetry, 'context_tool_runs table must exist after upgrade');
+      const searchFts = upgraded
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'search_relation_evidence_fts'")
+        .get();
+      assert.ok(searchFts, 'search_relation_evidence_fts table must exist after upgrade');
     } finally {
       upgraded.close();
     }

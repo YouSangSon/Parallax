@@ -76,6 +76,7 @@ source-span evidence, git snapshot metadata를 묶어 실제 stack의 첫 high-c
 | 2026-05-09 | Phase 6B autoplan | `/autoplan` + `/team-builder` 결과를 사용자 실제 stack에 맞춰 multi-language + Spring Boot adapter pack v0/trusted evidence로 정정. [phase6b-ts-accuracy-plan.ko.md](phase6b-ts-accuracy-plan.ko.md) 추가. |
 | 2026-05-09 | 제품 계획 | [impact-context-layer-plan.ko.md](impact-context-layer-plan.ko.md) 추가. Claude/Codex MCP integration, local UI explorer, AI context budget 절감, 코드/문서/정책/제안서 impact를 제품 기준으로 정리. |
 | 2026-05-10 | Phase 6B ImpactBench | `bench/impact-bench.ts` + `npm run bench` 추가. TS/JS, Java/Kotlin/Spring Boot, Python, Go, Rust, Markdown/workflow/Dockerfile fixture를 deterministic JSON report로 채점해 adapter accuracy와 context-pack readiness 기준선을 만든다. |
+| 2026-05-10 | Phase 6B adapter pack v0 routing | 기본 registry가 TS/JS, JVM/Spring Boot, Python, Go, Rust v0 adapter를 regex fallback보다 먼저 라우팅. ImpactBench가 TS alias/re-export, Spring `@ConfigurationProperties`, `application.properties`, JPA/Spring Data, `@DataJpaTest`, Feign/WebClient/RestTemplate expected relation과 adapter attribution을 직접 검증한다. |
 | 2026-05-10 | MCP context pack v0 | `impact_trace_context_for_change` 추가. `brief`/`standard`/`deep` budget으로 top impact paths, compact evidence, actions, omitted counts, entity/coverage resource links를 반환하며 full report는 persist하지 않는다. |
 | 2026-05-10 | MCP evidence resource v0 | `impact-trace://evidence/{evidenceId}` resource 추가. context pack의 compact evidence가 필요할 때만 redacted snippet, source span, relation/source/target entity를 다시 읽게 한다. |
 | 2026-05-10 | MCP explain entity v0 | `impact_trace_explain_entity` 추가. agent가 entity 하나의 incoming/outgoing relation과 compact evidence를 제한된 payload로 받고, full evidence는 resource link로 따라가게 한다. |
@@ -87,7 +88,7 @@ source-span evidence, git snapshot metadata를 묶어 실제 stack의 첫 high-c
 | 단계 | 작업 | 상태 |
 |---|---|---|
 | Phase 6 | adapter foundations | `main` 반영 완료 |
-| Phase 6B | ImpactBench thin spine | `npm run bench`가 `.impact-trace/bench/impact-bench-report.json`를 생성하며 relation recall/precision, affected-file recall, evidence/span, adapter attribution, context-pack readiness를 측정 |
+| Phase 6B | ImpactBench + adapter pack v0 routing | `npm run bench`가 `.impact-trace/bench/impact-bench-report.json`를 생성하며 relation recall/precision, affected-file recall, evidence/span, adapter attribution, context-pack readiness를 측정. TS/JS, JVM/Spring Boot, Python, Go, Rust는 별도 adapter run으로 귀속되고 Markdown/config/system은 regex fallback으로 남는다. |
 | Phase B | MCP context pack/search v0 | `impact_trace_context_for_change`로 agent가 작업 전 compact context를 받는 첫 read-only tool 구현. evidence resource v0, explain entity v0, search context v0는 완료, report/graph pagination은 다음 slice |
 | Phase 6B | Java/Kotlin/Spring Boot/Python/Go/Rust/TS/JS adapter v0 | 진행 중. 선언/import/test relation과 Spring Boot endpoint/config/persistence/client relation 정확도 개선 중 |
 | Phase 6B | source span persistence | `relation_evidence` line/col/range 저장과 analyzer evidence output은 구현됨. 현재 bench 기준 `spanCompleteness`는 regex baseline 특성상 낮으며 parser-backed depth pass에서 개선 예정 |
@@ -101,8 +102,12 @@ source-span evidence, git snapshot metadata를 묶어 실제 stack의 첫 high-c
 
 | 날짜 | 명령 | 결과 |
 |---|---|---|
+| 2026-05-10 | `npm test` | **164개 테스트 통과** |
+| 2026-05-10 | `npm run check` | 통과 |
+| 2026-05-10 | `npm run docs:lint` | 통과 |
 | 2026-05-09 | `npm test` | **144개 테스트 통과** (`main` @ `3cba0a2`) |
-| 2026-05-10 | `npm run bench` | **통과** — score 0.9579, expected relations 19/19, affected-file recall 1.0 |
+| 2026-05-10 | `npm run bench` | **통과** — score 0.9603, expected relations 39/39, unexpected relations 0, affected-file recall 1.0, adapter attribution 1.0 |
+| 2026-05-10 | `npm audit --audit-level=high` | 실패 — 기존 advisories: `fast-uri` high, `hono` moderate, `ip-address` moderate via `express-rate-limit` |
 | 2026-05-04 | `npm run check` | 통과 |
 | 2026-05-04 | `npm audit --audit-level=high` | 취약점 0개 |
 | 2026-04-29 | `npm run lint` | 통과 (Phase 3 완료 후) |

@@ -793,7 +793,7 @@ function entityKindForPath(relativePath: string, languageId: string | undefined)
   if (path.posix.basename(relativePath) === 'CODEOWNERS') return 'policy';
   if (languageId === 'yaml' && relativePath.startsWith('.github/workflows/')) return 'workflow';
   if (languageId === 'dockerfile' || languageId === 'terraform') return 'resource';
-  if (languageId === 'yaml' || languageId === 'json' || languageId === 'toml' || languageId === 'shell' || languageId === 'makefile') return 'config';
+  if (languageId === 'yaml' || languageId === 'json' || languageId === 'toml' || languageId === 'properties' || languageId === 'shell' || languageId === 'makefile') return 'config';
   if (languageId === 'protobuf' || languageId === 'graphql') return 'contract';
   return 'file';
 }
@@ -819,6 +819,7 @@ function languageIdForPath(relativePath: string): string | undefined {
   if (ext === '.yaml' || ext === '.yml') return 'yaml';
   if (ext === '.json') return 'json';
   if (ext === '.toml') return 'toml';
+  if (ext === '.properties') return 'properties';
   if (ext === '.tf') return 'terraform';
   if (ext === '.proto') return 'protobuf';
   if (ext === '.graphql' || ext === '.gql') return 'graphql';

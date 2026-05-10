@@ -8,7 +8,10 @@ import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
 
 import { AdapterRegistry } from '../src/adapters/registry.js';
-import { MultiLanguageRegexAdapter } from '../src/adapters/multi-language-regex.js';
+import {
+  MultiLanguageRegexAdapter,
+  TS_JS_SEMANTIC_ADAPTER_ID
+} from '../src/adapters/multi-language-regex.js';
 import type { AdapterRun, ExtractCtx, IndexEvent, SemanticAdapter } from '../src/adapters/types.js';
 import { analyzeDiff, exportImpactGraph, indexProject, initProject, profileEntity } from '../src/index.js';
 import { indexProjectWithRegistryForTest } from '../src/indexer.js';
@@ -272,12 +275,20 @@ test('indexProject writes canonical entity graph and broad language file entitie
 
   assert.ok(index.entitiesIndexed && index.entitiesIndexed >= index.filesIndexed);
   assert.ok(index.relationsIndexed && index.relationsIndexed > 0);
-  assert.ok(index.adaptersUsed?.[0]?.languageIds.includes('java'));
-  assert.ok(index.adaptersUsed?.[0]?.languageIds.includes('kotlin'));
-  assert.ok(index.adaptersUsed?.[0]?.languageIds.includes('csharp'));
-  assert.ok(index.adaptersUsed?.[0]?.languageIds.includes('cpp'));
-  assert.ok(index.adaptersUsed?.[0]?.languageIds.includes('dockerfile'));
-  assert.ok(index.adaptersUsed?.[0]?.languageIds.includes('protobuf'));
+  const indexedLanguageIds = new Set(index.adaptersUsed?.flatMap((adapter) => adapter.languageIds));
+  for (const languageId of ['java', 'kotlin', 'python', 'go', 'rust', 'csharp', 'cpp', 'dockerfile', 'protobuf']) {
+    assert.ok(indexedLanguageIds.has(languageId), `missing indexed language ${languageId}`);
+  }
+  const adapterIds = new Set(index.adaptersUsed?.map((adapter) => adapter.id));
+  for (const adapterId of [
+    'jvm-spring-semantic-v0',
+    'python-semantic-v0',
+    'go-semantic-v0',
+    'rust-semantic-v0',
+    'multi-language-regex-mvp'
+  ]) {
+    assert.ok(adapterIds.has(adapterId), `missing default adapter ${adapterId}`);
+  }
 
   const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
   try {
@@ -297,7 +308,7 @@ test('indexProject writes canonical entity graph and broad language file entitie
     assert.match(indexedLanguages.languages, /cpp/);
     assert.match(indexedLanguages.languages, /dockerfile/);
     assert.match(indexedLanguages.languages, /protobuf/);
-    assert.equal(adapterRuns.count, 1);
+    assert.ok(adapterRuns.count >= 5);
   } finally {
     db.close();
   }
@@ -1109,6 +1120,88 @@ test('indexProject lets adapter relation extraction resolve against all indexed 
       count: number;
     };
     assert.equal(relation.count, 1);
+  } finally {
+    db.close();
+  }
+});
+
+test('indexProject resolves nested JSONC tsconfig path aliases relative to the owning package', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-nested-tsconfig-alias-'));
+  await mkdir(path.join(repoRoot, 'packages/app/src'), { recursive: true });
+  await writeFile(
+    path.join(repoRoot, 'packages/app/tsconfig.json'),
+    [
+      '{',
+      '  // package-local aliases use JSONC syntax',
+      '  "compilerOptions": {',
+      '    "baseUrl": "src",',
+      '    "paths": {',
+      '      "@app/*": ["*",],',
+      '    },',
+      '  },',
+      '}',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(repoRoot, 'packages/app/src/session.ts'),
+    'export function validateSession(): boolean { return true; }\n'
+  );
+  await writeFile(
+    path.join(repoRoot, 'packages/app/src/consumer.ts'),
+    'import { validateSession } from "@app/session";\nexport const ok = validateSession();\n'
+  );
+  await initProject({ repoRoot });
+
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const relation = db
+      .prepare(
+        `SELECT ar.adapter_id
+         FROM relations r
+         INNER JOIN adapter_runs ar ON ar.id = r.adapter_run_id
+         WHERE r.index_run_id = ?
+           AND r.kind = ?
+           AND r.source_entity_id = ?
+           AND r.target_entity_id = ?`
+      )
+      .get(
+        index.indexRunId,
+        'DEPENDS_ON',
+        'file:packages/app/src/consumer.ts',
+        'file:packages/app/src/session.ts'
+      ) as { adapter_id: string } | undefined;
+    assert.equal(relation?.adapter_id, TS_JS_SEMANTIC_ADAPTER_ID);
+  } finally {
+    db.close();
+  }
+});
+
+test('indexProject records a diagnostic when tsconfig path alias parsing fails', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-invalid-tsconfig-'));
+  await mkdir(path.join(repoRoot, 'packages/bad/src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'packages/bad/tsconfig.json'), '{ "compilerOptions": ');
+  await writeFile(path.join(repoRoot, 'packages/bad/src/app.ts'), 'export const app = 1;\n');
+  await initProject({ repoRoot });
+
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const diagnostic = db
+      .prepare(
+        `SELECT reason
+         FROM index_coverage
+         WHERE index_run_id = ?
+           AND path LIKE ?
+           AND status = ?`
+      )
+      .get(index.indexRunId, 'packages/bad/tsconfig.json#diagnostic:warn:%', 'skipped') as
+      | { reason: string }
+      | undefined;
+    assert.match(diagnostic?.reason ?? '', /diagnostic warning: tsconfig path alias parse failed/);
   } finally {
     db.close();
   }

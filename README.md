@@ -30,8 +30,9 @@ MVP 구현이 들어가 있습니다.
 - 언어 중립 report model: `changed`, `affected`, `actions`, `evidence`
 - legacy `files/symbols/edges`와 canonical `entities/relations/relation_evidence` 동시 저장
 - adapter run과 index coverage metadata 저장
-- 현재 내장 adapter로 TypeScript, JavaScript, Markdown 파일 인덱싱
-- Python, Go, Rust, Java, Kotlin, C#, C, C++ 파일과 기본 symbol/dependency 휴리스틱 인덱싱
+- 기본 registry가 TypeScript/JavaScript, JVM/Spring Boot, Python, Go, Rust v0 adapter를 regex fallback보다 먼저 적용
+- Markdown과 system/config/contract 파일은 regex fallback adapter로 인덱싱
+- C#, C, C++ 파일은 fallback 휴리스틱으로 기본 symbol/dependency 인덱싱
 - shell, YAML, JSON, TOML, Dockerfile, Makefile, Terraform, protobuf, GraphQL, CODEOWNERS 파일을 config/system/contract 후보로 인덱싱
 - 분석 시 canonical `relations`를 우선 사용하고 legacy `edges`는 fallback으로 사용
 - bounded multi-hop traversal, cycle protection, depth/fan-out 제한
@@ -53,11 +54,12 @@ MVP 구현이 들어가 있습니다.
 - repo root 밖으로 나가는 path 거절
 - workspace, contract, cross-repo link, work artifact 확장용 SQLite schema
 
-중요한 점: Impact Trace의 목표는 TS/JS 전용 도구가 아닙니다. MVP의 첫 extractor가
-TS/JS와 Markdown일 뿐이고, 공개 report model은 언어별 문자열보다 `EntityRef`,
-`ImpactTarget`, `ImpactAction` 같은 언어 중립 구조를 우선합니다. Python, Go, Rust,
-Java, Kotlin, C#, C, C++ 같은 언어는 Tree-sitter, LSP, CodeQL, build-system adapter를
-통해 추가하는 방향입니다.
+중요한 점: Impact Trace의 목표는 TS/JS 전용 도구가 아닙니다. 현재 v0 adapter pack은
+TS/JS, JVM/Spring Boot, Python, Go, Rust를 별도 adapter run으로 라우팅하고,
+Markdown/config/system/contract와 아직 깊게 다루지 않는 언어는 regex fallback으로 둡니다.
+공개 report model은 언어별 문자열보다 `EntityRef`, `ImpactTarget`, `ImpactAction` 같은
+언어 중립 구조를 우선합니다. 이후 Tree-sitter, LSP, CodeQL, build-system adapter로 깊이를
+더하는 방향입니다.
 
 이번 MVP에 없는 것:
 
@@ -500,7 +502,7 @@ npm audit --audit-level=high
 
 - [Impact Context Layer 제품 계획](docs/impact-context-layer-plan.ko.md) — Claude/Codex MCP integration, local UI explorer, context budget, 정책/제안서 impact 계획
 - [Phase 6 설계/진행 문서](docs/phase6-design.ko.md) — `main`에 반영된 adapter foundation 작업
-- [Phase 6B multi-language + Spring Boot 계획](docs/phase6b-ts-accuracy-plan.ko.md) — 다음 slice: Java/Kotlin/Spring Boot/Python/Go/Rust/TS/JS adapter v0, source span evidence, git snapshot metadata
+- [Phase 6B multi-language + Spring Boot 계획](docs/phase6b-ts-accuracy-plan.ko.md) — 현재 slice: adapter pack v0 routing + ImpactBench fixture, 다음 depth pass: parser-backed adapters, source span, git snapshot metadata
 - [Architecture decisions log (D-001..D-018)](docs/decisions.ko.md) — 누적 ADR 로그
 - [Agent memory cookbook](docs/agent-memory-cookbook.ko.md)
 
@@ -522,8 +524,8 @@ npm audit --audit-level=high
 1. `entities`, `relations`, `relation_evidence`, `adapter_runs`, `index_coverage` 기반 canonical schema 추가
 2. running index와 completed index를 분리해 snapshot-safe analysis 보장
 3. `--base`, `--head` 기반 git diff 분석과 stale-index detection 추가
-4. Java/Kotlin/Spring Boot/Python/Go/Rust/TS/JS adapter v0와 source-span evidence 추가
-5. Spring Boot endpoint/config/persistence/test/client relation 강화 (`@RestController`, mapping annotations, `@Service`, `@Repository`, `@Configuration/@Bean`, `@ConfigurationProperties`, `application.yml/properties`, Spring tests, JPA, Spring Data, Feign/WebClient/RestTemplate)
+4. Java/Kotlin/Spring Boot/Python/Go/Rust/TS/JS adapter v0 라우팅과 ImpactBench coverage 유지
+5. parser-backed adapter depth pass와 source-span evidence 확대
 6. C#/.NET, C/C++ adapter와 Maven/Gradle/dotnet/CMake/Bazel build-system resolver 추가
 7. shell, YAML/JSON/TOML, CI, Docker, Kubernetes, Terraform, OpenAPI/protobuf/GraphQL/AsyncAPI, CODEOWNERS/policy adapter 추가
 8. workspace catalog와 cross-repo API/gRPC/event contract impact 분석 추가

@@ -39,7 +39,7 @@
 최근/활성 설계 문서:
 
 - 📐 [`phase6-design.ko.md`](phase6-design.ko.md) — `main`에 들어온 adapter interface/registry, regex adapter extraction, multi-adapter run attribution, adapter evidence/diagnostics observability, content-sensitive symbol hashes, relation-kind attribute mapping 기록.
-- 📐 [`phase6b-ts-accuracy-plan.ko.md`](phase6b-ts-accuracy-plan.ko.md) — **현재 next work 진입점**. Java/Kotlin/Spring Boot/Python/Go/Rust/TS/JS adapter v0, source span persistence, git snapshot metadata, 얇은 ImpactBench 계획.
+- 📐 [`phase6b-ts-accuracy-plan.ko.md`](phase6b-ts-accuracy-plan.ko.md) — **현재 next work 진입점**. Java/Kotlin/Spring Boot/Python/Go/Rust/TS/JS adapter pack v0 routing, ImpactBench fixture, 다음 depth pass(source span persistence, git snapshot metadata) 계획.
 
 ---
 

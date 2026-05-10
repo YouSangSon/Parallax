@@ -3,7 +3,15 @@ import { closeSync, openSync, readFileSync, readdirSync, readSync, statSync } fr
 import path from 'node:path';
 
 import { AdapterRegistry } from './adapters/registry.js';
-import { MultiLanguageRegexAdapter, isTestFile } from './adapters/multi-language-regex.js';
+import {
+  GoSemanticAdapter,
+  JvmSpringSemanticAdapter,
+  MultiLanguageRegexAdapter,
+  PythonSemanticAdapter,
+  RustSemanticAdapter,
+  TypeScriptJavaScriptSemanticAdapter,
+  isTestFile
+} from './adapters/multi-language-regex.js';
 import { entityKindForMarkdownPath } from './artifacts.js';
 import { readGitSnapshot } from './git-snapshot.js';
 import type {
@@ -56,6 +64,7 @@ const languageByExtension = new Map<string, string>([
   ['.yml', 'yaml'],
   ['.json', 'json'],
   ['.toml', 'toml'],
+  ['.properties', 'properties'],
   ['.tf', 'terraform'],
   ['.proto', 'protobuf'],
   ['.graphql', 'graphql'],
@@ -875,6 +884,11 @@ async function indexProjectInternal(
 
 function createDefaultRegistry(): AdapterRegistry {
   const registry = new AdapterRegistry();
+  registry.register(new TypeScriptJavaScriptSemanticAdapter());
+  registry.register(new JvmSpringSemanticAdapter());
+  registry.register(new PythonSemanticAdapter());
+  registry.register(new GoSemanticAdapter());
+  registry.register(new RustSemanticAdapter());
   registry.register(new MultiLanguageRegexAdapter());
   return registry;
 }
@@ -1607,6 +1621,7 @@ function fileKind(relativePath: string, languageId: string): EntityKind {
     languageId === 'yaml' ||
     languageId === 'json' ||
     languageId === 'toml' ||
+    languageId === 'properties' ||
     languageId === 'shell' ||
     languageId === 'makefile'
   ) {

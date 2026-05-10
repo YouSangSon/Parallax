@@ -5,11 +5,19 @@ import { pathToFileURL } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 
 import { analyzeDiff, indexProject, initProject } from '../src/index.js';
+import {
+  GO_SEMANTIC_ADAPTER_ID,
+  JVM_SPRING_SEMANTIC_ADAPTER_ID,
+  MULTI_LANG_REGEX_ADAPTER_ID,
+  PYTHON_SEMANTIC_ADAPTER_ID,
+  RUST_SEMANTIC_ADAPTER_ID,
+  TS_JS_SEMANTIC_ADAPTER_ID
+} from '../src/adapters/multi-language-regex.js';
 
 const fixtureId = 'phase6b-multilanguage-v0';
 const schemaVersion = 1;
 const defaultOutputPath = '.impact-trace/bench/impact-bench-report.json';
-const regexAdapterId = 'multi-language-regex-mvp';
+const regexAdapterId = MULTI_LANG_REGEX_ADAPTER_ID;
 
 export type ImpactBenchReport = {
   schemaVersion: 1;
@@ -32,6 +40,7 @@ export type ImpactBenchReport = {
   };
   missingRelations: string[];
   unexpectedRelations: string[];
+  expectedRelationLabels: string[];
   analyzeDiff: {
     changedFiles: string[];
     expectedAffectedFiles: string[];
@@ -79,25 +88,45 @@ type RelationMatch = {
 };
 
 const expectedRelations: readonly ExpectedRelation[] = [
-  relation('DEPENDS_ON', 'src/ts/private.ts', 'src/ts/session.ts', 'TS private route imports session'),
-  relation('DEPENDS_ON', 'src/ts/widget.tsx', 'src/ts/session.ts', 'TSX widget imports session'),
-  relation('DEPENDS_ON', 'src/js/legacy.js', 'src/ts/session.ts', 'JS require reaches TS session'),
-  relation('DEPENDS_ON', 'tests/session.test.ts', 'src/ts/session.ts', 'TS test imports session'),
-  relation('VERIFIES', 'tests/session.test.ts', 'src/ts/session.ts', 'TS test verifies session'),
-  relation('DOCUMENTS', 'README.md', 'src/ts/session.ts', 'Markdown documents session'),
-  relation('CONFIGURES', '.github/workflows/ci.yml', 'src/ts/session.ts', 'Workflow config references session'),
+  languageRelation('DEPENDS_ON', 'src/ts/type-only.ts', 'src/ts/session.ts', 'TS type-only import reaches session'),
+  languageRelation('DEPENDS_ON', 'src/ts/namespace-consumer.ts', 'src/ts/session.ts', 'TS namespace import reaches session'),
+  languageRelation('DEPENDS_ON', 'src/ts/private.ts', 'src/ts/session.ts', 'TS private route imports session'),
+  languageRelation('DEPENDS_ON', 'src/ts/widget.tsx', 'src/ts/session.ts', 'TSX dynamic import reaches session'),
+  languageRelation('DEPENDS_ON', 'src/ts/static-widget.tsx', 'src/ts/session.ts', 'TSX static import reaches session'),
+  languageRelation('DEPENDS_ON', 'src/ts/barrel.ts', 'src/ts/session.ts', 'TS re-export barrel reaches session'),
+  languageRelation('DEPENDS_ON', 'src/ts/alias-consumer.ts', 'src/ts/session.ts', 'TS path alias import reaches session'),
+  languageRelation('DEPENDS_ON', 'src/js/legacy.js', 'src/ts/session.ts', 'JS require reaches TS session'),
+  languageRelation('DEPENDS_ON', 'tests/session.test.ts', 'src/ts/session.ts', 'TS test imports session'),
+  languageRelation('VERIFIES', 'tests/session.test.ts', 'src/ts/session.ts', 'TS test verifies session'),
+  fallbackRelation('DOCUMENTS', 'README.md', 'src/ts/session.ts', 'Markdown documents session'),
+  fallbackRelation('CONFIGURES', '.github/workflows/ci.yml', 'src/ts/session.ts', 'Workflow config references session'),
   endpointRelation('src/main/java/com/example/UserController.java', 'GET /api/users', 'Spring Java GET endpoint'),
   endpointRelation('src/main/java/com/example/UserController.java', 'POST /api/users', 'Spring Java POST endpoint'),
-  relation('VERIFIES', 'src/test/java/com/example/UserControllerTest.java', 'src/main/java/com/example/UserController.java', 'Spring MVC test verifies controller'),
+  languageRelation('DEPENDS_ON', 'src/main/java/com/example/UserController.java', 'src/main/java/com/example/UserService.java', 'Spring controller imports service'),
+  languageRelation('DEPENDS_ON', 'src/test/java/com/example/UserControllerTest.java', 'src/main/java/com/example/UserController.java', 'Spring @WebMvcTest imports controller'),
+  languageRelation('VERIFIES', 'src/test/java/com/example/UserControllerTest.java', 'src/main/java/com/example/UserController.java', 'Spring @WebMvcTest verifies controller'),
   endpointRelation('src/main/kotlin/com/example/AuditController.kt', 'GET /api/audits', 'Spring Kotlin GET endpoint'),
-  relation('VERIFIES', 'src/test/kotlin/com/example/AuditControllerTest.kt', 'src/main/kotlin/com/example/AuditController.kt', 'Kotlin test verifies controller'),
-  relation('CONFIGURES', 'src/main/resources/application.yml', 'src/main/java/com/example/UserService.java', 'Spring config references service'),
-  relation('DEPENDS_ON', 'Dockerfile', 'src/main/java/com/example/UserController.java', 'Dockerfile COPY dependency'),
-  relation('CONFIGURES', 'Dockerfile', 'src/main/java/com/example/UserController.java', 'Dockerfile copies controller'),
-  relation('DEPENDS_ON', 'src/python/app.py', 'src/python/util.py', 'Python module imports util'),
-  relation('VERIFIES', 'tests/python/test_util.py', 'src/python/util.py', 'Pytest verifies util'),
-  relation('VERIFIES', 'src/go/calc_test.go', 'src/go/calc.go', 'Go test verifies calc'),
-  relation('VERIFIES', 'src/rust/lib_test.rs', 'src/rust/lib.rs', 'Rust test verifies lib')
+  languageRelation('DEPENDS_ON', 'src/test/kotlin/com/example/AuditControllerTest.kt', 'src/main/kotlin/com/example/AuditController.kt', 'Kotlin @SpringBootTest imports controller'),
+  languageRelation('VERIFIES', 'src/test/kotlin/com/example/AuditControllerTest.kt', 'src/main/kotlin/com/example/AuditController.kt', 'Kotlin @SpringBootTest verifies controller'),
+  springDeclareRelation('src/main/java/com/example/AppConfig.java', 'AppConfig', 'Spring @Configuration declares config class'),
+  springDeclareRelation('src/main/java/com/example/AppConfig.java', 'auditClock', 'Spring @Bean declares bean method'),
+  springDeclareRelation('src/main/java/com/example/AppProperties.java', 'AppProperties', 'Spring @ConfigurationProperties declares properties class'),
+  fallbackRelation('CONFIGURES', 'src/main/resources/application.yml', 'src/main/java/com/example/UserService.java', 'Spring application.yml references service'),
+  fallbackRelation('CONFIGURES', 'src/main/resources/application.properties', 'src/main/java/com/example/AppProperties.java', 'Spring application.properties references configuration properties'),
+  springDeclareRelation('src/main/java/com/example/User.java', 'User', 'JPA @Entity declares persistence entity'),
+  springDeclareRelation('src/main/java/com/example/UserRepository.java', 'UserRepository', 'Spring Data repository declares repository'),
+  languageRelation('DEPENDS_ON', 'src/main/java/com/example/UserRepository.java', 'src/main/java/com/example/User.java', 'Spring Data repository imports entity'),
+  languageRelation('DEPENDS_ON', 'src/test/java/com/example/UserRepositoryTest.java', 'src/main/java/com/example/UserRepository.java', 'Spring @DataJpaTest imports repository'),
+  languageRelation('VERIFIES', 'src/test/java/com/example/UserRepositoryTest.java', 'src/main/java/com/example/UserRepository.java', 'Spring @DataJpaTest verifies repository'),
+  springDeclareRelation('src/main/java/com/example/CatalogClient.java', 'CatalogClient', 'Spring Feign @FeignClient declares client'),
+  externalRelation('DEPENDS_ON', 'src/main/java/com/example/UserClient.java', 'org.springframework.web.reactive.function.client.WebClient', 'Spring WebClient import declares client dependency'),
+  externalRelation('DEPENDS_ON', 'src/main/java/com/example/AdminClient.java', 'org.springframework.web.client.RestTemplate', 'Spring RestTemplate import declares client dependency'),
+  fallbackRelation('DEPENDS_ON', 'Dockerfile', 'src/main/java/com/example/UserController.java', 'Dockerfile COPY dependency'),
+  fallbackRelation('CONFIGURES', 'Dockerfile', 'src/main/java/com/example/UserController.java', 'Dockerfile copies controller'),
+  languageRelation('DEPENDS_ON', 'src/python/app.py', 'src/python/util.py', 'Python module imports util'),
+  languageRelation('VERIFIES', 'tests/python/test_util.py', 'src/python/util.py', 'Pytest verifies util'),
+  languageRelation('VERIFIES', 'src/go/calc_test.go', 'src/go/calc.go', 'Go test verifies calc'),
+  languageRelation('VERIFIES', 'src/rust/lib_test.rs', 'src/rust/lib.rs', 'Rust test verifies lib')
 ];
 
 const changedFiles = ['src/ts/session.ts'] as const;
@@ -105,7 +134,12 @@ const expectedAffectedFiles = [
   '.github/workflows/ci.yml',
   'README.md',
   'src/js/legacy.js',
+  'src/ts/alias-consumer.ts',
+  'src/ts/barrel.ts',
+  'src/ts/namespace-consumer.ts',
   'src/ts/private.ts',
+  'src/ts/static-widget.tsx',
+  'src/ts/type-only.ts',
   'src/ts/widget.tsx',
   'tests/session.test.ts'
 ] as const;
@@ -205,6 +239,7 @@ export async function runImpactBench(options: RunImpactBenchOptions = {}): Promi
       scores,
       missingRelations,
       unexpectedRelations,
+      expectedRelationLabels: expectedRelations.map((relation) => relation.label).sort(),
       analyzeDiff: {
         changedFiles: [...changedFiles],
         expectedAffectedFiles: [...expectedAffectedFiles],
@@ -223,7 +258,24 @@ export async function runImpactBench(options: RunImpactBenchOptions = {}): Promi
   }
 }
 
-function relation(
+function languageRelation(
+  kind: string,
+  sourcePath: string,
+  targetPath: string,
+  label: string
+): ExpectedRelation {
+  return {
+    kind,
+    sourceKind: fileKindForPath(sourcePath),
+    sourcePath,
+    targetKind: fileKindForPath(targetPath),
+    targetPath,
+    adapterId: adapterIdForPath(sourcePath),
+    label
+  };
+}
+
+function fallbackRelation(
   kind: string,
   sourcePath: string,
   targetPath: string,
@@ -240,6 +292,40 @@ function relation(
   };
 }
 
+function springDeclareRelation(
+  sourcePath: string,
+  targetSymbol: string,
+  label: string
+): ExpectedRelation {
+  return {
+    kind: 'DECLARES',
+    sourceKind: 'file',
+    sourcePath,
+    targetKind: 'symbol',
+    targetPath: sourcePath,
+    targetSymbol,
+    adapterId: JVM_SPRING_SEMANTIC_ADAPTER_ID,
+    label
+  };
+}
+
+function externalRelation(
+  kind: string,
+  sourcePath: string,
+  targetDisplayName: string,
+  label: string
+): ExpectedRelation {
+  return {
+    kind,
+    sourceKind: 'file',
+    sourcePath,
+    targetKind: 'external_entity',
+    targetDisplayName,
+    adapterId: adapterIdForPath(sourcePath),
+    label
+  };
+}
+
 function endpointRelation(
   sourcePath: string,
   targetDisplayName: string,
@@ -251,9 +337,19 @@ function endpointRelation(
     sourcePath,
     targetKind: 'endpoint',
     targetDisplayName,
-    adapterId: regexAdapterId,
+    adapterId: JVM_SPRING_SEMANTIC_ADAPTER_ID,
     label
   };
+}
+
+function adapterIdForPath(relativePath: string): string {
+  const language = languageIdForPath(relativePath);
+  if (language === 'typescript' || language === 'javascript') return TS_JS_SEMANTIC_ADAPTER_ID;
+  if (language === 'java' || language === 'kotlin') return JVM_SPRING_SEMANTIC_ADAPTER_ID;
+  if (language === 'python') return PYTHON_SEMANTIC_ADAPTER_ID;
+  if (language === 'go') return GO_SEMANTIC_ADAPTER_ID;
+  if (language === 'rust') return RUST_SEMANTIC_ADAPTER_ID;
+  return regexAdapterId;
 }
 
 async function writeFixture(repoRoot: string): Promise<void> {
@@ -273,6 +369,14 @@ async function writeFixture(repoRoot: string): Promise<void> {
   ];
   await Promise.all(dirs.map((dir) => mkdir(path.join(repoRoot, dir), { recursive: true })));
 
+  await writeFile(path.join(repoRoot, 'tsconfig.json'), JSON.stringify({
+    compilerOptions: {
+      baseUrl: '.',
+      paths: {
+        '@app/*': ['src/ts/*']
+      }
+    }
+  }, null, 2));
   await writeFile(path.join(repoRoot, 'src/ts/session.ts'), [
     'export type Session = { token: string };',
     'export function validateSession(token: string): boolean {',
@@ -281,23 +385,47 @@ async function writeFixture(repoRoot: string): Promise<void> {
     ''
   ].join('\n'));
   await writeFile(path.join(repoRoot, 'src/ts/types.ts'), 'export type RouteMode = "private";\n');
-  await writeFile(path.join(repoRoot, 'src/ts/private.ts'), [
+  await writeFile(path.join(repoRoot, 'src/ts/type-only.ts'), [
     'import type { Session } from "./session";',
+    'export type SessionToken = Session["token"];',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/ts/namespace-consumer.ts'), [
     'import * as session from "./session";',
-    'export function privateRoute(input: Session): string {',
-    '  return session.validateSession(input.token) ? "ok" : "no";',
+    'export function namespaceConsumer(token: string): boolean {',
+    '  return session.validateSession(token);',
+    '}',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/ts/private.ts'), [
+    'import { validateSession } from "./session";',
+    'export function privateRoute(token: string): string {',
+    '  return validateSession(token) ? "ok" : "no";',
     '}',
     ''
   ].join('\n'));
   await writeFile(path.join(repoRoot, 'src/ts/widget.tsx'), [
-    'import { validateSession } from "./session";',
-    'export function Widget() {',
+    'export async function Widget() {',
     '  void import("./session");',
+    '  return <span>dynamic</span>;',
+    '}',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/ts/static-widget.tsx'), [
+    'import { validateSession } from "./session";',
+    'export function StaticWidget() {',
     '  return <span>{validateSession("demo") ? "ok" : "no"}</span>;',
     '}',
     ''
   ].join('\n'));
   await writeFile(path.join(repoRoot, 'src/ts/barrel.ts'), 'export { validateSession } from "./session";\n');
+  await writeFile(path.join(repoRoot, 'src/ts/alias-consumer.ts'), [
+    'import { validateSession } from "@app/session";',
+    'export function aliasConsumer(): boolean {',
+    '  return validateSession("alias");',
+    '}',
+    ''
+  ].join('\n'));
   await writeFile(path.join(repoRoot, 'src/js/legacy.js'), [
     'const { validateSession } = require("../ts/session");',
     'exports.legacyRoute = function legacyRoute(token) {',
@@ -372,6 +500,15 @@ async function writeFixture(repoRoot: string): Promise<void> {
     'public interface UserRepository extends JpaRepository<User, Long> {}',
     ''
   ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/main/java/com/example/AppProperties.java'), [
+    'package com.example;',
+    'import org.springframework.boot.context.properties.ConfigurationProperties;',
+    '@ConfigurationProperties(prefix = "impact")',
+    'public class AppProperties {',
+    '  private String owner;',
+    '}',
+    ''
+  ].join('\n'));
   await writeFile(path.join(repoRoot, 'src/main/java/com/example/AppConfig.java'), [
     'package com.example;',
     'import java.time.Clock;',
@@ -381,6 +518,32 @@ async function writeFixture(repoRoot: string): Promise<void> {
     'public class AppConfig {',
     '  @Bean',
     '  public Clock auditClock() { return Clock.systemUTC(); }',
+    '}',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/main/java/com/example/CatalogClient.java'), [
+    'package com.example;',
+    'import org.springframework.cloud.openfeign.FeignClient;',
+    '@FeignClient(name = "catalog")',
+    'public interface CatalogClient {',
+    '}',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/main/java/com/example/UserClient.java'), [
+    'package com.example;',
+    'import org.springframework.web.reactive.function.client.WebClient;',
+    'public class UserClient {',
+    '  private final WebClient webClient;',
+    '  public UserClient(WebClient webClient) { this.webClient = webClient; }',
+    '}',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/main/java/com/example/AdminClient.java'), [
+    'package com.example;',
+    'import org.springframework.web.client.RestTemplate;',
+    'public class AdminClient {',
+    '  private final RestTemplate restTemplate;',
+    '  public AdminClient(RestTemplate restTemplate) { this.restTemplate = restTemplate; }',
     '}',
     ''
   ].join('\n'));
@@ -396,9 +559,25 @@ async function writeFixture(repoRoot: string): Promise<void> {
     '}',
     ''
   ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/test/java/com/example/UserRepositoryTest.java'), [
+    'package com.example;',
+    'import org.junit.jupiter.api.Test;',
+    'import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;',
+    'import com.example.UserRepository;',
+    '@DataJpaTest',
+    'public class UserRepositoryTest {',
+    '  @Test',
+    '  void verifiesRepository() {}',
+    '}',
+    ''
+  ].join('\n'));
   await writeFile(path.join(repoRoot, 'src/main/resources/application.yml'), [
     'impact:',
     '  owner: src/main/java/com/example/UserService.java',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/main/resources/application.properties'), [
+    'impact.properties=src/main/java/com/example/AppProperties.java',
     ''
   ].join('\n'));
 
@@ -519,6 +698,11 @@ function matchExpectedRelations(actualRelations: readonly ActualRelation[]): Rel
 
 function findUnexpectedRelations(actualRelations: readonly ActualRelation[]): string[] {
   const expectedKeys = new Set(expectedRelations.map((expected) => relationKey(expected)));
+  const externalScoredSourcePaths = new Set(
+    expectedRelations
+      .filter((expected) => expected.targetKind === 'external_entity')
+      .map((expected) => expected.sourcePath)
+  );
   const expectedPaths = new Set(
     expectedRelations.flatMap((expected) =>
       [expected.sourcePath, expected.targetPath].filter((file): file is string => Boolean(file))
@@ -527,7 +711,12 @@ function findUnexpectedRelations(actualRelations: readonly ActualRelation[]): st
   return actualRelations
     .filter((actual) => {
       if (actual.kind === 'DECLARES') return false;
-      if (actual.targetKind === 'external_entity') return false;
+      if (
+        actual.targetKind === 'external_entity' &&
+        (!actual.sourcePath || !externalScoredSourcePaths.has(actual.sourcePath))
+      ) {
+        return false;
+      }
       if (actual.sourceKind === 'symbol') return false;
       if (!actual.sourcePath || !expectedPaths.has(actual.sourcePath)) return false;
       if (actual.targetPath && !expectedPaths.has(actual.targetPath)) return false;
@@ -589,8 +778,25 @@ function fileKindForPath(filePath: string): string {
   }
   if (filePath.startsWith('.github/workflows/')) return 'workflow';
   if (filePath === 'Dockerfile') return 'resource';
-  if (filePath.endsWith('.yml') || filePath.endsWith('.yaml')) return 'config';
+  if (filePath.endsWith('.yml') || filePath.endsWith('.yaml') || filePath.endsWith('.properties')) return 'config';
   return 'file';
+}
+
+function languageIdForPath(filePath: string): string | undefined {
+  const basename = path.posix.basename(filePath);
+  if (basename === 'Dockerfile' || basename === 'Containerfile') return 'dockerfile';
+  const ext = path.posix.extname(filePath);
+  if (ext === '.ts' || ext === '.tsx') return 'typescript';
+  if (ext === '.js' || ext === '.jsx' || ext === '.mjs' || ext === '.cjs') return 'javascript';
+  if (ext === '.java') return 'java';
+  if (ext === '.kt' || ext === '.kts') return 'kotlin';
+  if (ext === '.py') return 'python';
+  if (ext === '.go') return 'go';
+  if (ext === '.rs') return 'rust';
+  if (ext === '.yml' || ext === '.yaml') return 'yaml';
+  if (ext === '.properties') return 'properties';
+  if (ext === '.md') return 'markdown';
+  return undefined;
 }
 
 function ratio(numerator: number, denominator: number): number {

@@ -14,7 +14,12 @@ import type {
 } from './types.js';
 
 export const MULTI_LANG_REGEX_ADAPTER_ID = 'multi-language-regex-mvp';
-export const MULTI_LANG_REGEX_ADAPTER_VERSION = '2';
+export const MULTI_LANG_REGEX_ADAPTER_VERSION = '3';
+export const TS_JS_SEMANTIC_ADAPTER_ID = 'typescript-javascript-semantic-v0';
+export const JVM_SPRING_SEMANTIC_ADAPTER_ID = 'jvm-spring-semantic-v0';
+export const PYTHON_SEMANTIC_ADAPTER_ID = 'python-semantic-v0';
+export const GO_SEMANTIC_ADAPTER_ID = 'go-semantic-v0';
+export const RUST_SEMANTIC_ADAPTER_ID = 'rust-semantic-v0';
 
 const capabilities: readonly AdapterCapability[] = ['imports', 'symbols', 'docrefs', 'tests'];
 
@@ -60,6 +65,60 @@ const springComponentAnnotations = new Map<string, string>([
   ['FeignClient', 'FeignClient']
 ]);
 
+abstract class RegexBackedSemanticAdapter implements SemanticAdapter {
+  readonly version = MULTI_LANG_REGEX_ADAPTER_VERSION;
+  readonly capabilities = capabilities;
+
+  constructor(
+    readonly id: string,
+    private readonly supportedLanguageIds: ReadonlySet<string>
+  ) {}
+
+  supports(file: ScannedFile): boolean {
+    return this.supportedLanguageIds.has(file.language);
+  }
+
+  start(ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun {
+    const filePathSet = new Set(ctx.indexedFiles.map((f) => f.relativePath));
+    const importResolver = createImportResolver(ctx.indexedFiles);
+    return {
+      async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
+        yield* extractEvents(file, filePathSet, importResolver);
+      }
+    };
+  }
+}
+
+export class TypeScriptJavaScriptSemanticAdapter extends RegexBackedSemanticAdapter {
+  constructor() {
+    super(TS_JS_SEMANTIC_ADAPTER_ID, new Set(['typescript', 'javascript']));
+  }
+}
+
+export class JvmSpringSemanticAdapter extends RegexBackedSemanticAdapter {
+  constructor() {
+    super(JVM_SPRING_SEMANTIC_ADAPTER_ID, new Set(['java', 'kotlin']));
+  }
+}
+
+export class PythonSemanticAdapter extends RegexBackedSemanticAdapter {
+  constructor() {
+    super(PYTHON_SEMANTIC_ADAPTER_ID, new Set(['python']));
+  }
+}
+
+export class GoSemanticAdapter extends RegexBackedSemanticAdapter {
+  constructor() {
+    super(GO_SEMANTIC_ADAPTER_ID, new Set(['go']));
+  }
+}
+
+export class RustSemanticAdapter extends RegexBackedSemanticAdapter {
+  constructor() {
+    super(RUST_SEMANTIC_ADAPTER_ID, new Set(['rust']));
+  }
+}
+
 export class MultiLanguageRegexAdapter implements SemanticAdapter {
   readonly id = MULTI_LANG_REGEX_ADAPTER_ID;
   readonly version = MULTI_LANG_REGEX_ADAPTER_VERSION;
@@ -71,17 +130,25 @@ export class MultiLanguageRegexAdapter implements SemanticAdapter {
 
   start(ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun {
     const filePathSet = new Set(ctx.indexedFiles.map((f) => f.relativePath));
+    const importResolver = createImportResolver(ctx.indexedFiles);
     return {
       async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
-        yield* extractEvents(file, filePathSet);
+        yield* extractEvents(file, filePathSet, importResolver);
       }
     };
   }
 }
 
+type ImportResolver = (sourcePath: string, specifier: string) => readonly string[];
+type ImportResolverWithDiagnostics = {
+  resolve: ImportResolver;
+  diagnosticsForFile(relativePath: string): readonly string[];
+};
+
 async function* extractEvents(
   file: ScannedFile,
-  filePathSet: ReadonlySet<string>
+  filePathSet: ReadonlySet<string>,
+  importResolver: ImportResolverWithDiagnostics
 ): AsyncIterable<IndexEvent> {
   const fileDescriptor: EntityDescriptor = {
     kind: 'file',
@@ -91,6 +158,15 @@ async function* extractEvents(
   };
   const evidenceSnippet = file.content;
   const evidenceFile = file.relativePath;
+
+  for (const message of importResolver.diagnosticsForFile(file.relativePath)) {
+    yield {
+      kind: 'diagnostic',
+      level: 'warn',
+      message,
+      file: file.relativePath
+    };
+  }
 
   for (const symbol of extractSymbols(file)) {
     const symbolDescriptor: EntityDescriptor = {
@@ -124,7 +200,7 @@ async function* extractEvents(
   }
 
   for (const imported of extractImports(file)) {
-    const resolved = resolveImportPath(file.relativePath, imported, filePathSet);
+    const resolved = resolveImportPath(file.relativePath, imported, filePathSet, importResolver.resolve);
     if (resolved) {
       yield {
         kind: 'relation',
@@ -164,7 +240,7 @@ async function* extractEvents(
   }
 
   if (isTestSource(file)) {
-    for (const sourcePath of inferTestTargets(file.relativePath, file.content, file.language, filePathSet)) {
+    for (const sourcePath of inferTestTargets(file.relativePath, file.content, file.language, filePathSet, importResolver.resolve)) {
       yield {
         kind: 'relation',
         relation: makeRelation({
@@ -709,7 +785,8 @@ function extractImports(file: ScannedFile): string[] {
     patterns.push(
       /import\s+[^'"]*from\s+['"]([^'"]+)['"]/g,
       /import\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
-      /require\s*\(\s*['"]([^'"]+)['"]\s*\)/g
+      /require\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
+      /export\s+(?:[^'"]*\s+from\s+)?['"]([^'"]+)['"]/g
     );
   } else if (file.language === 'python') {
     patterns.push(/^\s*from\s+([A-Za-z_][\w.]*)\s+import\b/gm, /^\s*import\s+([A-Za-z_][\w.]*)/gm);
@@ -742,12 +819,21 @@ function extractImports(file: ScannedFile): string[] {
 function resolveImportPath(
   sourcePath: string,
   specifier: string,
-  filePathSet: ReadonlySet<string>
+  filePathSet: ReadonlySet<string>,
+  importResolver?: ImportResolver
 ): string | undefined {
   const dirname = path.posix.dirname(sourcePath);
   const bases = specifier.startsWith('.')
     ? [path.posix.normalize(path.posix.join(dirname, specifier))]
-    : [path.posix.normalize(path.posix.join(dirname, specifier)), specifier];
+    : [
+        path.posix.normalize(path.posix.join(dirname, specifier)),
+        specifier,
+        specifier.replace(/\./g, '/'),
+        `src/${specifier.replace(/\./g, '/')}`,
+        `src/main/java/${specifier.replace(/\./g, '/')}`,
+        `src/main/kotlin/${specifier.replace(/\./g, '/')}`,
+        ...(importResolver?.(sourcePath, specifier) ?? [])
+      ];
   const candidates = bases.flatMap((base) => [
     base,
     `${base}.ts`,
@@ -780,6 +866,170 @@ function resolveImportPath(
   return candidates.find((candidate) => filePathSet.has(candidate));
 }
 
+function createImportResolver(files: readonly Readonly<ScannedFile>[]): ImportResolverWithDiagnostics {
+  const aliases: TsconfigAlias[] = [];
+  const diagnostics = new Map<string, string[]>();
+  for (const file of files) {
+    if (path.posix.basename(file.relativePath) !== 'tsconfig.json') continue;
+    const parsed = parseTsconfigPathAliases(file);
+    aliases.push(...parsed.aliases);
+    if (parsed.error) {
+      diagnostics.set(file.relativePath, [
+        `tsconfig path alias parse failed: ${parsed.error}`
+      ]);
+    }
+  }
+  return {
+    resolve(sourcePath: string, specifier: string): readonly string[] {
+      const resolved = aliases
+        .filter((alias) => isAliasInScope(alias, sourcePath))
+        .flatMap((alias) => expandTsconfigAlias(alias, specifier));
+      if (resolved.length > 0) return resolved;
+      const bareAlias = specifier.match(/^@[^/]+\/(.+)$/)?.[1] ?? specifier.match(/^~\/(.+)$/)?.[1];
+      if (!bareAlias) return [];
+      const packageRoot = packageRootForSource(sourcePath);
+      return [
+        joinPosix(packageRoot, 'src', bareAlias),
+        joinPosix(packageRoot, 'src/ts', bareAlias),
+        `src/${bareAlias}`,
+        `src/ts/${bareAlias}`
+      ];
+    },
+    diagnosticsForFile(relativePath: string): readonly string[] {
+      return diagnostics.get(relativePath) ?? [];
+    }
+  };
+}
+
+type TsconfigAlias = {
+  configDir: string;
+  baseUrl: string;
+  pattern: string;
+  targets: readonly string[];
+};
+
+function parseTsconfigPathAliases(
+  file: Readonly<ScannedFile>
+): { aliases: TsconfigAlias[]; error?: string } {
+  try {
+    const parsed = JSON.parse(stripJsonCommentsAndTrailingCommas(file.content)) as {
+      compilerOptions?: { baseUrl?: unknown; paths?: Record<string, string[]> };
+    };
+    const paths = parsed.compilerOptions?.paths;
+    if (!paths || typeof paths !== 'object') return { aliases: [] };
+    const configDir = path.posix.dirname(file.relativePath);
+    const baseUrl =
+      typeof parsed.compilerOptions?.baseUrl === 'string'
+        ? parsed.compilerOptions.baseUrl
+        : '.';
+    return {
+      aliases: Object.entries(paths)
+        .filter((entry): entry is [string, string[]] => Array.isArray(entry[1]))
+        .map(([pattern, targets]) => ({
+          configDir,
+          baseUrl,
+          pattern,
+          targets: targets.filter((target) => typeof target === 'string')
+        }))
+    };
+  } catch (error) {
+    return {
+      aliases: [],
+      error: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
+function expandTsconfigAlias(alias: TsconfigAlias, specifier: string): string[] {
+  const starIndex = alias.pattern.indexOf('*');
+  if (starIndex === -1) {
+    return alias.pattern === specifier
+      ? alias.targets.map((target) => normalizeTsconfigTarget(alias.configDir, alias.baseUrl, target))
+      : [];
+  }
+  const prefix = alias.pattern.slice(0, starIndex);
+  const suffix = alias.pattern.slice(starIndex + 1);
+  if (!specifier.startsWith(prefix) || !specifier.endsWith(suffix)) return [];
+  const captured = specifier.slice(prefix.length, specifier.length - suffix.length);
+  return alias.targets.map((target) =>
+    normalizeTsconfigTarget(alias.configDir, alias.baseUrl, target.replace('*', captured))
+  );
+}
+
+function normalizeTsconfigTarget(configDir: string, baseUrl: string, target: string): string {
+  const relativeTarget = target.replace(/^\.?\//, '');
+  const relativeBaseUrl = baseUrl.replace(/^\.?\//, '');
+  return joinPosix(configDir, relativeBaseUrl, relativeTarget);
+}
+
+function isAliasInScope(alias: TsconfigAlias, sourcePath: string): boolean {
+  return alias.configDir === '.' || sourcePath === alias.configDir || sourcePath.startsWith(`${alias.configDir}/`);
+}
+
+function packageRootForSource(sourcePath: string): string {
+  const segments = sourcePath.split('/');
+  const srcIndex = segments.indexOf('src');
+  return srcIndex > 0 ? segments.slice(0, srcIndex).join('/') : '';
+}
+
+function joinPosix(...parts: readonly string[]): string {
+  return path.posix.normalize(parts.filter(Boolean).join('/'));
+}
+
+function stripJsonCommentsAndTrailingCommas(content: string): string {
+  let output = '';
+  let mode: 'normal' | 'string' | 'line-comment' | 'block-comment' = 'normal';
+  for (let index = 0; index < content.length; index++) {
+    const char = content[index]!;
+    const next = content[index + 1];
+
+    if (mode === 'line-comment') {
+      if (char === '\n' || char === '\r') {
+        mode = 'normal';
+        output += char;
+      }
+      continue;
+    }
+    if (mode === 'block-comment') {
+      if (char === '*' && next === '/') {
+        mode = 'normal';
+        index++;
+      } else if (char === '\n' || char === '\r') {
+        output += char;
+      }
+      continue;
+    }
+    if (mode === 'string') {
+      output += char;
+      if (char === '\\') {
+        index++;
+        output += content[index] ?? '';
+      } else if (char === '"') {
+        mode = 'normal';
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      mode = 'string';
+      output += char;
+      continue;
+    }
+    if (char === '/' && next === '/') {
+      mode = 'line-comment';
+      index++;
+      continue;
+    }
+    if (char === '/' && next === '*') {
+      mode = 'block-comment';
+      index++;
+      continue;
+    }
+    output += char;
+  }
+  return output.replace(/,\s*([}\]])/g, '$1');
+}
+
 export function isTestFile(relativePath: string): boolean {
   const basename = path.posix.basename(relativePath);
   return (
@@ -800,7 +1050,8 @@ function inferTestTargets(
   relativePath: string,
   content: string,
   language: string,
-  filePathSet: ReadonlySet<string>
+  filePathSet: ReadonlySet<string>,
+  importResolver?: ImportResolver
 ): string[] {
   const imported = extractImports({
     absolutePath: '',
@@ -809,7 +1060,7 @@ function inferTestTargets(
     hash: '',
     language
   }).flatMap((specifier) => {
-    const resolved = resolveImportPath(relativePath, specifier, filePathSet);
+    const resolved = resolveImportPath(relativePath, specifier, filePathSet, importResolver);
     return resolved ? [resolved] : inferUnresolvedImportTargets(specifier, language, filePathSet);
   });
   return [...new Set([...imported, ...inferFilenameTestTargets(relativePath, language, filePathSet)])]
@@ -948,12 +1199,17 @@ function inferTextTargets(
     const stem = path.posix.basename(file).replace(/\.[^.]+$/, '').toLowerCase();
     if (
       normalizedContent.includes(file.toLowerCase()) ||
-      (stem.length >= 4 && normalizedContent.includes(stem))
+      (stem.length >= 4 && contentContainsToken(normalizedContent, stem))
     ) {
       targets.push(file);
     }
   }
   return targets.sort();
+}
+
+function contentContainsToken(normalizedContent: string, token: string): boolean {
+  const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|[^a-z0-9_-])${escaped}($|[^a-z0-9_-])`).test(normalizedContent);
 }
 
 export function isSystemOrContractLanguage(languageId: string): boolean {
@@ -967,6 +1223,7 @@ export function isSystemOrContractLanguage(languageId: string): boolean {
     'terraform',
     'protobuf',
     'graphql',
+    'properties',
     'policy'
   ].includes(languageId);
 }
@@ -978,7 +1235,8 @@ function relationKindForSystemReference(languageId: string): string {
     languageId === 'terraform' ||
     languageId === 'yaml' ||
     languageId === 'json' ||
-    languageId === 'toml'
+    languageId === 'toml' ||
+    languageId === 'properties'
   ) {
     return 'CONFIGURES';
   }

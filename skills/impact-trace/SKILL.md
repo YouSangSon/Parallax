@@ -129,7 +129,7 @@ For deep architecture details, see `references/architecture.md`.
 For the full design rationale and decision log, see:
 - `docs/vision.md` / `docs/vision.ko.md` — one-page thesis (start here)
 - `docs/impact-context-layer-plan.ko.md` — MCP context layer, local UI explorer, context budget, code/docs/policies/proposals impact
-- `docs/phase6b-ts-accuracy-plan.ko.md` — current next slice: multi-language + Spring Boot adapter pack v0 + trusted evidence
+- `docs/phase6b-ts-accuracy-plan.ko.md` — current next slice: multi-language + Spring Boot adapter pack v0 routing, ImpactBench, and trusted evidence depth pass
 - `docs/phase6-design.ko.md` — adapter foundation that landed on main
 - `docs/roadmap.md` — unified roadmap across both axes (impact analysis + agent memory)
 - `docs/glossary.md` — disambiguates branch/entity/transaction across the two axes

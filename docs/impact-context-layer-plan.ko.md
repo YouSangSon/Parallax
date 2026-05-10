@@ -615,8 +615,8 @@ flowchart LR
 
 | 포함 | 완료 기준 |
 |---|---|
-| Java/Kotlin/Spring Boot/Python/Go/Rust/TS/JS adapter v0 | 각 언어의 선언/import/test relation이 regex보다 정확 |
-| Spring Boot adapter v0 | endpoint/config/persistence/test/client relation을 first-class로 노출 |
+| Java/Kotlin/Spring Boot/Python/Go/Rust/TS/JS adapter v0 | landed: 각 언어가 별도 adapter run으로 라우팅되고 ImpactBench가 adapter attribution을 검증 |
+| Spring Boot adapter v0 | landed: endpoint/config/persistence/test/client fixture가 ImpactBench expected relation에 포함 |
 | source span persistence | report/MCP evidence가 line/col range를 노출 |
 | git snapshot metadata | stale index warning이 commit/branch/dirty state 기준 |
 | thin ImpactBench | `npm run bench` deterministic JSON 생성 |

@@ -29,6 +29,7 @@ test('ImpactBench runner writes deterministic report shape', async () => {
     assert.equal(report.fixtureId, 'phase6b-multilanguage-v0');
     assert.equal(report.outputPath, '.impact-trace/bench/impact-bench-report.json');
     assert.equal(report.summary.passed, true);
+    assert.equal(report.summary.expectedRelations, 39);
     assert.equal(report.summary.expectedRelations, report.summary.matchedRelations);
     assert.equal(report.summary.unexpectedRelations, 0);
     assert.equal(report.scores.affectedFileRecall, 1);
@@ -38,6 +39,26 @@ test('ImpactBench runner writes deterministic report shape', async () => {
     assert.ok(report.summary.score >= 0.9);
     assert.deepEqual(report.missingRelations, []);
     assert.deepEqual(report.unexpectedRelations, []);
+    for (const requiredLabel of [
+      'TS type-only import reaches session',
+      'TS namespace import reaches session',
+      'TSX dynamic import reaches session',
+      'TSX static import reaches session',
+      'TS re-export barrel reaches session',
+      'TS path alias import reaches session',
+      'Spring @ConfigurationProperties declares properties class',
+      'Spring application.properties references configuration properties',
+      'Spring Data repository imports entity',
+      'Spring @DataJpaTest verifies repository',
+      'Spring Feign @FeignClient declares client',
+      'Spring WebClient import declares client dependency',
+      'Spring RestTemplate import declares client dependency'
+    ]) {
+      assert.ok(
+        report.expectedRelationLabels.includes(requiredLabel),
+        `missing fixture coverage label: ${requiredLabel}`
+      );
+    }
     assert.deepEqual(report.analyzeDiff.changedFiles, ['src/ts/session.ts']);
     assert.ok(report.analyzeDiff.expectedAffectedFiles.includes('src/ts/private.ts'));
     assert.ok(report.analyzeDiff.expectedAffectedFiles.includes('tests/session.test.ts'));

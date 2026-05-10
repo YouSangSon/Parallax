@@ -151,7 +151,7 @@ flowchart LR
 | **compact-first + expand-on-demand 계약 강화** | 사용자의 핵심 요구가 AI context 절감이다. tool 응답은 compact hit와 URI만 보내고, source/evidence는 resource fetch로 늦춘다. | `impact_trace_search_context`, `impact_trace_context_for_change`, resource templates |
 | **access telemetry** | 어떤 context가 실제로 agent에 의해 확장됐는지 알아야 ranking과 budget을 개선할 수 있다. | v0: `context_tool_runs`, `context_resource_accesses`, `impact_trace_context_telemetry` |
 | **explicit memory supersession** | 지금은 retract/currentOnly가 있지만, "이 summary/decision이 저 fact를 대체한다"를 더 명시적으로 표현할 수 있다. | `fact_provenance.kind='supersedes'` 또는 `fact_supersessions` |
-| **session import/replay UX** | Codex/Claude가 이미 수정한 흐름을 영향 그래프와 연결하면 "왜 이 변경이 일어났는가"를 UI에서 볼 수 있다. | `impact-trace import-session --format codex|claude` |
+| **session import/replay UX** | Codex/Claude가 이미 수정한 흐름을 영향 그래프와 연결하면 "왜 이 변경이 일어났는가"를 UI에서 볼 수 있다. | landed: `impact-trace import-session --file <path> --format codex|claude` |
 | **diagnose/doctor command** | vector dimension, stale vec table, index coverage, resource truncation을 사용자가 확인할 수 있어야 한다. | landed: `impact-trace doctor`, `impact_trace_doctor` |
 
 ### 4.2 Adapt
@@ -285,12 +285,14 @@ Metric:
 
 목표: Claude/Codex session log를 repo-local episodic memory로 import하되, privacy와 containment를 지킨다.
 
-구현:
+구현 상태: v0 landed. 새 schema 없이 agent memory facts를 사용한다.
 
 1. `impact-trace import-session --file <path> --format codex|claude`.
-2. 기본은 repo 내부 또는 사용자가 명시한 단일 파일만 허용한다.
-3. prompt/tool output 원문 전체를 저장하지 않고, redacted structured summary와 referenced files만 저장한다.
-4. import 결과를 `session_crystals` 또는 `facts(attribute=session_summary)`로 저장하고, file entity와 provenance 연결.
+2. relative path는 repo 내부 realpath-contained 파일만 허용하고, absolute path는 explicit 단일 파일일 때만 허용한다.
+3. prompt/tool output 원문 전체를 저장하지 않고, bounded/redacted structured summary와 referenced files만 저장한다.
+4. import 결과는 `session:<format>:<hash>` entity의 `session_summary` fact와 `references_file=file:<repo-relative-path>` fact로 저장한다.
+5. 각 `references_file` fact는 `session_summary` fact를 provenance evidence로 참조한다.
+6. MCP tool로는 노출하지 않는다. session transcript file read는 사용자의 explicit CLI action으로만 수행한다.
 
 ### Slice E: local UI explorer
 
@@ -322,7 +324,7 @@ Metric:
 | 3 | context access telemetry schema | 완료. v0는 `context_tool_runs`, `context_resource_accesses`, `impact_trace_context_telemetry`로 "context를 줄인다"는 제품 약속을 측정 가능하게 만든다. |
 | 4 | MCP allowlist/security tests | 완료. core MCP `tools/list`에서 destructive/open-world 범위와 agentmemory식 export/write/mesh surface 누수를 테스트로 고정했다. |
 | 5 | `doctor` command | 완료. `impact-trace doctor`와 `impact_trace_doctor`가 schema/index/coverage/adapter/vector/telemetry 상태를 read-only JSON으로 반환한다. |
-| 6 | opt-in session import spec | UI timeline과 memory lifecycle의 입력을 만든다. |
+| 6 | opt-in session import spec | 완료. `impact-trace import-session` v0가 redacted session crystal facts와 referenced file provenance를 만든다. |
 
 ---
 

@@ -90,7 +90,7 @@ flowchart LR
 | [Semgrep](https://github.com/semgrep/semgrep) / [Opengrep](https://github.com/opengrep/opengrep) | 여러 언어의 source-like static rule ecosystem. | `PolicyRuleAdapter`: rule 결과를 `GOVERNS`, `REQUIRES_REVIEW`, `VERIFIES` evidence로 흡수한다. | engine clone. 라이선스와 업데이트 경계를 위해 subprocess/result import adapter가 안전하다. |
 | [SCIP](https://github.com/sourcegraph/scip), [LSIF](https://lsif.dev/), [Kythe](https://github.com/kythe/kythe) | language-server 수준의 definition/reference/implementation graph를 저장·교환하는 포맷/생태계. | optional import adapter. Java/Kotlin/TS/Go/Rust precision을 높이는 길. | core schema를 특정 포맷에 종속시키지 않는다. |
 
-이번 slice에서는 위 조사에서 공통으로 보이는 `search/read only/context budget/resource link` 패턴을 작게 가져와 `impact_trace_search_context` v0로 구현했고, 이어서 `agentmemory` 분석에서 확인한 RRF hybrid ranking을 initial v1로 반영했다. 다음 context slice는 access telemetry, opt-in session import, FTS/BM25 + semantic ranking depth pass를 Impact-trace의 SQLite/provenance 경계 안에서 구현한다.
+이번 slice에서는 위 조사에서 공통으로 보이는 `search/read only/context budget/resource link` 패턴을 작게 가져와 `impact_trace_search_context` v0로 구현했고, 이어서 `agentmemory` 분석에서 확인한 RRF hybrid ranking을 initial v1로 반영했다. context access telemetry와 opt-in session import v0도 Impact-trace의 SQLite/provenance 경계 안에서 구현됐다. 다음 context slice는 FTS/BM25 + semantic ranking depth pass다.
 
 ### 2.2 MCP 표준에서 가져올 것
 
@@ -637,6 +637,7 @@ flowchart LR
 | `impact_trace_explain_entity` | entity 주변 relation/evidence resource 제공. v0 landed: incoming/outgoing direct relation을 direction별 cap으로 반환하고 evidence는 선택된 relation 전체에서 global cap을 적용 |
 | `impact_trace_context_telemetry` | context/search/explain/analyze tool run과 resource read가 실제로 얼마나 쓰였는지 조회. v0 landed: returned bytes, resource count, omitted counts, redacted query |
 | `impact_trace_doctor` | schema/index/coverage/adapter/vector/telemetry 상태를 read-only JSON으로 조회. v0 landed: CLI `impact-trace doctor`와 MCP tool 동시 제공 |
+| `impact-trace import-session` | Claude/Codex transcript 단일 파일을 explicit CLI action으로 import. v0 landed: raw transcript 전체 저장 없이 `session_summary`, `references_file` facts와 provenance 생성. MCP tool로는 노출하지 않음 |
 | `impact-trace://evidence/{id}` | source span과 redacted snippet fetch 가능. v0 landed: context pack evidence id에서 resource-on-demand로 읽는다. |
 | `impact-trace://reports/{id}/graph/{format}` pagination | 큰 graph를 tool payload에 넣지 않음 |
 | typed error envelope | problem/cause/fix/evidence id 구조화 |

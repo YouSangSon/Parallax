@@ -49,6 +49,7 @@ MVP 구현이 들어가 있습니다.
 - 공식 MCP SDK 기반 stdio server 제공
 - MCP impact tools 제공: `impact_trace_analyze_diff`, `impact_trace_context_for_change`, `impact_trace_search_context`, `impact_trace_explain_entity`
 - health/diagnostic surface 제공: `impact-trace doctor`, `impact_trace_doctor`
+- opt-in session import 제공: `impact-trace import-session --file <path> --format codex|claude`
 - agent memory MCP tools 제공: `remember`, `recall`, `branch`, `trace`, `reflect` 등은 `.impact-trace/impact.db` 안에서만 동작
 - read-only MCP resources 제공: report, entity, evidence, graph, latest coverage
 - evidence output 전 secret-like 값 redaction
@@ -307,6 +308,27 @@ impact-trace doctor
 `doctor`는 workspace 파일을 만들지 않습니다. database가 없거나 schema가 오래된 경우 stdout에는
 진단 JSON을 출력하고 exit code는 1이 됩니다.
 
+### `import-session`
+
+Claude/Codex transcript를 사용자가 명시한 단일 파일에서만 가져와 repo-local episodic memory로
+저장합니다. v0는 자동 hook이나 directory scan을 하지 않고, raw prompt/tool output 전체를 저장하지 않습니다.
+대신 redacted structured summary와 실제 repo 안에 존재하는 referenced file만 `facts`로 남깁니다.
+
+```bash
+impact-trace import-session --file sessions/codex.jsonl --format codex
+impact-trace import-session --file /absolute/path/to/claude.jsonl --format claude
+```
+
+저장 계약:
+
+- entity: `session:<format>:<hash>`
+- `session_summary`: format, source kind, counts, referenced files, compact summary, `rawContentStored=false`
+- `references_file`: `file:<repo-relative-path>`
+- 각 `references_file` fact는 `session_summary` fact를 provenance evidence로 참조
+
+외부 절대 경로는 explicit `--file` 값일 때만 단일 파일로 허용되며, persisted value에는 절대 경로를 저장하지 않습니다.
+이 기능은 파일 읽기 + memory write를 수행하므로 v0에서는 MCP tool로 노출하지 않습니다.
+
 ## MCP
 
 Impact Trace는 공식 MCP SDK 기반의 stdio server를 제공합니다. stdio는 로컬
@@ -369,6 +391,8 @@ database가 없을 때도 `.impact-trace` 디렉터리를 만들지 않고 `data
 agent memory 툴(`remember`/`branch`)은 DB에 쓰지만 모두 *현재 저장소의*
 `.impact-trace/impact.db` 안에서만 동작합니다. Obsidian export 같은 외부 시스템
 write는 여전히 별도 권한 모델과 리뷰를 거친 뒤 추가합니다.
+`import-session`도 의도적으로 MCP `tools/list`에 노출하지 않습니다. session transcript 파일 읽기는
+사용자의 explicit CLI action으로만 수행합니다.
 
 MVP에서 노출하는 resource는 read-only입니다.
 

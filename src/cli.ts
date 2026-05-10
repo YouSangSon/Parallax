@@ -34,6 +34,23 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === 'import-session') {
+    const { importSession } = await import('./index.js');
+    const file = parseRequiredArg(args, '--file');
+    const format = parseSessionImportFormat(parseRequiredArg(args, '--format'));
+    const branch = parseOptionalArg(args, '--branch');
+    const agent = parseOptionalArg(args, '--agent');
+    const result = await importSession({
+      repoRoot,
+      file,
+      format,
+      ...(branch !== undefined ? { branch } : {}),
+      ...(agent !== undefined ? { agent } : {})
+    });
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
   if (command === 'analyze') {
     const { analyzeDiff } = await import('./index.js');
     const changedFiles = parseChangedFiles(args, repoRoot);
@@ -340,7 +357,7 @@ function parseIntegerArg(args: string[], name: string): number | undefined {
 function parsePositionals(args: string[]): string[] {
   const valueFlags = new Set([
     '--changed', '--base', '--head', '--depth', '--max-fanout', '--max-file-bytes',
-    '--report', '--format',
+    '--report', '--format', '--file',
     '--entity', '--attribute', '--value', '--branch', '--agent', '--evidence-fact-ids',
     '--name', '--from', '--fact-id', '--k', '--op', '--as-of-tx',
     '--target', '--source', '--query', '--model',
@@ -374,6 +391,7 @@ Commands:
   impact-trace init
   impact-trace index [--max-file-bytes 1000000]
   impact-trace doctor
+  impact-trace import-session --file <path> --format codex|claude [--branch <name>]
   impact-trace analyze --changed src/file.ts [--depth 2] [--json]
   impact-trace analyze --base main [--head HEAD] [--depth 2] [--json]
   impact-trace graph export --report <id> [--format mermaid|json|dot]
@@ -409,6 +427,11 @@ function parseAgentMemoryValue(raw: string): unknown {
   } catch {
     return raw;
   }
+}
+
+function parseSessionImportFormat(raw: string): 'codex' | 'claude' {
+  if (raw === 'codex' || raw === 'claude') return raw;
+  throw new Error('import-session --format must be codex or claude');
 }
 
 main().catch((error: unknown) => {

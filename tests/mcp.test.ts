@@ -523,6 +523,8 @@ test('MCP stdio server initializes and exposes the full agent memory tool surfac
       'obsidian',
       'compress_file',
       'export',
+      'import_session',
+      'session_import',
       'mesh',
       'team',
       'heal',

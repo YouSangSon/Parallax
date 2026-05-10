@@ -77,6 +77,7 @@ source-span evidence, git snapshot metadata를 묶어 실제 stack의 첫 high-c
 | 2026-05-09 | 제품 계획 | [impact-context-layer-plan.ko.md](impact-context-layer-plan.ko.md) 추가. Claude/Codex MCP integration, local UI explorer, AI context budget 절감, 코드/문서/정책/제안서 impact를 제품 기준으로 정리. |
 | 2026-05-10 | Phase 6B ImpactBench | `bench/impact-bench.ts` + `npm run bench` 추가. TS/JS, Java/Kotlin/Spring Boot, Python, Go, Rust, Markdown/workflow/Dockerfile fixture를 deterministic JSON report로 채점해 adapter accuracy와 context-pack readiness 기준선을 만든다. |
 | 2026-05-10 | MCP context pack v0 | `impact_trace_context_for_change` 추가. `brief`/`standard`/`deep` budget으로 top impact paths, compact evidence, actions, omitted counts, entity/coverage resource links를 반환하며 full report는 persist하지 않는다. |
+| 2026-05-10 | MCP evidence resource v0 | `impact-trace://evidence/{evidenceId}` resource 추가. context pack의 compact evidence가 필요할 때만 redacted snippet, source span, relation/source/target entity를 다시 읽게 한다. |
 
 ## 진행 중
 
@@ -84,7 +85,7 @@ source-span evidence, git snapshot metadata를 묶어 실제 stack의 첫 high-c
 |---|---|---|
 | Phase 6 | adapter foundations | `main` 반영 완료 |
 | Phase 6B | ImpactBench thin spine | `npm run bench`가 `.impact-trace/bench/impact-bench-report.json`를 생성하며 relation recall/precision, affected-file recall, evidence/span, adapter attribution, context-pack readiness를 측정 |
-| Phase B | MCP context pack v0 | `impact_trace_context_for_change`로 agent가 작업 전 compact context를 받는 첫 read-only tool 구현. report/graph/evidence pagination은 다음 slice |
+| Phase B | MCP context pack v0 | `impact_trace_context_for_change`로 agent가 작업 전 compact context를 받는 첫 read-only tool 구현. evidence resource v0는 완료, report/graph pagination은 다음 slice |
 | Phase 6B | Java/Kotlin/Spring Boot/Python/Go/Rust/TS/JS adapter v0 | 진행 중. 선언/import/test relation과 Spring Boot endpoint/config/persistence/client relation 정확도 개선 중 |
 | Phase 6B | source span persistence | `relation_evidence` line/col/range 저장과 analyzer evidence output은 구현됨. 현재 bench 기준 `spanCompleteness`는 regex baseline 특성상 낮으며 parser-backed depth pass에서 개선 예정 |
 | Phase 6B | snapshot-safe indexing | `index_runs` commit/dirty/branch metadata와 stale warning 구현됨. migrated legacy run false-positive warning 회귀 테스트 포함 |

@@ -212,6 +212,7 @@ export type ContextPackEvidence = {
   kind: string;
   snippet: string;
   confidence: Confidence;
+  resourceUri?: string;
   startLine?: number;
   endLine?: number;
   startCol?: number;
@@ -232,6 +233,7 @@ export type ContextPack = {
   resources: {
     coverage: 'impact-trace://coverage/latest';
     entities: string[];
+    evidence: string[];
   };
   omittedCounts: {
     affected: number;

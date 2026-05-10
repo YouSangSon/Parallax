@@ -31,13 +31,13 @@
 미수입 (Phase 6 scope, 아직 완료 아님):
 
 - ❌ Multi-language + Spring Boot adapter pack v0
-- ❌ Persisted source span (file:line:col + range) on `relation_evidence` and report/MCP output
-- ❌ Commit SHA / dirty state on `index_runs` — snapshot-safe indexing 미흡
+- ✅ Persisted source span (file:line:col + range) on `relation_evidence` and report/MCP output
+- ✅ Commit SHA / dirty state on `index_runs` — snapshot-safe indexing warning 구현
 - 🟡 Workspace catalog — DDL은 있으나 writer 0건 (loader는 Phase 6, resolver는 Phase 7)
 
 미수입 (Phase 6 scope **외** — Phase 7 이후):
 
-- Phase 7: contract baseline + breaking-change classifier · cross-repo resolver · MCP `impact://entity|evidence|workspace|contract` block · `explain` CLI
+- Phase 7: contract baseline + breaking-change classifier · cross-repo resolver · MCP `impact-trace://entities|evidence|workspace|contract` block · `explain` CLI
 - Phase 8: deep language adapters beyond v0, .NET/native, LSP/CodeQL enrichment
 - Phase 9: work-artifacts (Markdown vault → external connectors)
 - DROP (이유: D-001/local-first 위반 또는 demand 부재): 별도 graph DB · web explorer · supermemory `fact_provenance.kind` 확장 · Notion/Gmail 커넥터

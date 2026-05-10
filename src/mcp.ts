@@ -7,7 +7,7 @@ import type { RememberValue } from './agent_memory.js';
 import { abandonBranch, gcBranches, restoreBranch } from './branch_gc.js';
 import { reflectFacts, repairReflections } from './reflection.js';
 import { profileEntity } from './profile.js';
-import { normalizeRepoRoot } from './security.js';
+import { normalizeRepoRoot, redactSecrets } from './security.js';
 import { getRepoId, latestCompletedIndexRun, openDatabase } from './store.js';
 import type {
   Confidence,
@@ -477,6 +477,22 @@ export function createMcpServer(context: McpContext): McpServer {
   );
 
   server.registerResource(
+    'impact_trace_evidence',
+    new ResourceTemplate('impact-trace://evidence/{evidenceId}', {
+      list: () => ({ resources: listEvidenceResources(context) })
+    }),
+    {
+      title: 'Impact Trace Evidence',
+      description: 'Relation evidence with source span, redacted snippet, and source/target relation context.',
+      mimeType: 'application/json'
+    },
+    async (uri, variables) => {
+      const evidenceId = decodeURIComponent(String(variables.evidenceId));
+      return jsonResource(uri.toString(), readEvidence(context, evidenceId));
+    }
+  );
+
+  server.registerResource(
     'impact_trace_graphs',
     new ResourceTemplate('impact-trace://reports/{reportId}/graph/{format}', {
       list: () => ({ resources: listGraphResources(context) })
@@ -605,6 +621,7 @@ function buildContextPack(report: ImpactReport, budget: ContextBudget): ContextP
     ...report.changed.map(entityResourceUri),
     ...contextItems.map((item) => item.resourceUri)
   ];
+  const evidenceLinks = selectedEvidence.flatMap((item) => item.resourceUri ? [item.resourceUri] : []);
   return {
     version: 0,
     budget,
@@ -619,7 +636,8 @@ function buildContextPack(report: ImpactReport, budget: ContextBudget): ContextP
     evidence: selectedEvidence,
     resources: {
       coverage: 'impact-trace://coverage/latest',
-      entities: [...new Set(entityLinks)].sort()
+      entities: [...new Set(entityLinks)].sort(),
+      evidence: [...new Set(evidenceLinks)].sort()
     },
     omittedCounts: {
       affected: Math.max(report.affectedFiles.length - selectedAffected.length, 0),
@@ -683,12 +701,14 @@ function compareEvidence(
 }
 
 function compactEvidence(evidence: Evidence, snippetChars: number): ContextPackEvidence {
+  const resourceUri = persistedEvidenceResourceUri(evidence);
   return {
     id: evidence.id,
     file: evidence.file,
     kind: evidence.kind,
     snippet: truncateSnippet(evidence.snippet, snippetChars),
     confidence: evidence.confidence,
+    ...(resourceUri ? { resourceUri } : {}),
     ...(evidence.startLine !== undefined ? { startLine: evidence.startLine } : {}),
     ...(evidence.endLine !== undefined ? { endLine: evidence.endLine } : {}),
     ...(evidence.startCol !== undefined ? { startCol: evidence.startCol } : {}),
@@ -740,6 +760,24 @@ function entityResourceUri(entity: EntityRef): string {
   return `impact-trace://entities/${encodeURIComponent(entity.id)}`;
 }
 
+function evidenceResourceUri(evidenceId: string): string {
+  return `impact-trace://evidence/${encodeURIComponent(evidenceId)}`;
+}
+
+function persistedEvidenceResourceUri(evidence: Evidence): string | undefined {
+  // Relation evidence IDs are produced by indexer relationEvidenceId().
+  // Synthetic changed-file and legacy fallback evidence use shorter IDs and
+  // are not individually readable through the relation_evidence resource.
+  if (
+    evidence.extractorId === 'canonical-entity-graph' &&
+    evidence.relationKind &&
+    /^[0-9a-f]{20}$/.test(evidence.id)
+  ) {
+    return evidenceResourceUri(evidence.id);
+  }
+  return undefined;
+}
+
 function numericCompare(left: number, right: number): number {
   return left === right ? 0 : left < right ? -1 : 1;
 }
@@ -772,6 +810,26 @@ function listEntityResources(context: McpContext): Array<{ uri: string; name: st
     return rows.map((row) => ({
       uri: `impact-trace://entities/${encodeURIComponent(row.id)}`,
       name: row.display_name,
+      mimeType: 'application/json'
+    }));
+  });
+}
+
+function listEvidenceResources(context: McpContext): Array<{ uri: string; name: string; mimeType: string }> {
+  return withReadOnlyDb(context, (db, repoId) => {
+    const indexRunId = latestCompletedIndexRun(db, repoId);
+    const rows = db
+      .prepare(`
+        SELECT id, file_path, kind
+        FROM relation_evidence
+        WHERE repo_id = ? AND index_run_id = ?
+        ORDER BY file_path, kind, id
+        LIMIT 50
+      `)
+      .all(repoId, indexRunId) as Array<{ id: string; file_path: string; kind: string }>;
+    return rows.map((row) => ({
+      uri: evidenceResourceUri(row.id),
+      name: `${row.kind} evidence in ${row.file_path}`,
       mimeType: 'application/json'
     }));
   });
@@ -823,6 +881,135 @@ function readEntity(context: McpContext, entityId: string): unknown {
       }
     };
   });
+}
+
+type EvidenceResourceRow = {
+  evidence_id: string;
+  evidence_file_path: string;
+  evidence_kind: string;
+  evidence_snippet: string;
+  evidence_confidence: string;
+  evidence_index_run_id: number;
+  evidence_start_line: number | null;
+  evidence_end_line: number | null;
+  evidence_start_col: number | null;
+  evidence_end_col: number | null;
+  relation_id: string;
+  relation_kind: string;
+  relation_confidence: string;
+  relation_provenance: string;
+  source_id: string | null;
+  source_kind: string | null;
+  source_path: string | null;
+  source_symbol: string | null;
+  source_language_id: string | null;
+  source_display_name: string | null;
+  target_id: string | null;
+  target_kind: string | null;
+  target_path: string | null;
+  target_symbol: string | null;
+  target_language_id: string | null;
+  target_display_name: string | null;
+};
+
+function readEvidence(context: McpContext, evidenceId: string): unknown {
+  return withReadOnlyDb(context, (db, repoId) => {
+    const spanColumns = evidenceSpanColumnSelect(db, 'evidence');
+    const row = db
+      .prepare(`
+        SELECT
+          evidence.id AS evidence_id,
+          evidence.file_path AS evidence_file_path,
+          evidence.kind AS evidence_kind,
+          evidence.snippet AS evidence_snippet,
+          evidence.confidence AS evidence_confidence,
+          evidence.index_run_id AS evidence_index_run_id,
+          ${spanColumns},
+          relations.id AS relation_id,
+          relations.kind AS relation_kind,
+          relations.confidence AS relation_confidence,
+          relations.provenance AS relation_provenance,
+          source.id AS source_id,
+          source.kind AS source_kind,
+          source.path AS source_path,
+          source.symbol AS source_symbol,
+          source.language_id AS source_language_id,
+          source.display_name AS source_display_name,
+          target.id AS target_id,
+          target.kind AS target_kind,
+          target.path AS target_path,
+          target.symbol AS target_symbol,
+          target.language_id AS target_language_id,
+          target.display_name AS target_display_name
+        FROM relation_evidence evidence
+        INNER JOIN relations ON relations.id = evidence.relation_id AND relations.repo_id = evidence.repo_id
+        LEFT JOIN entities source ON source.id = relations.source_entity_id AND source.repo_id = evidence.repo_id
+        LEFT JOIN entities target ON target.id = relations.target_entity_id AND target.repo_id = evidence.repo_id
+        WHERE evidence.repo_id = ? AND evidence.id = ?
+      `)
+      .get(repoId, evidenceId) as EvidenceResourceRow | undefined;
+    if (!row) throw new Error(`impact evidence not found: ${evidenceId}`);
+    return {
+      id: row.evidence_id,
+      file: row.evidence_file_path,
+      kind: row.evidence_kind,
+      snippet: redactSecrets(row.evidence_snippet),
+      confidence: asConfidence(row.evidence_confidence),
+      ...(row.evidence_start_line !== null ? { startLine: row.evidence_start_line } : {}),
+      ...(row.evidence_end_line !== null ? { endLine: row.evidence_end_line } : {}),
+      ...(row.evidence_start_col !== null ? { startCol: row.evidence_start_col } : {}),
+      ...(row.evidence_end_col !== null ? { endCol: row.evidence_end_col } : {}),
+      relation: {
+        id: row.relation_id,
+        kind: row.relation_kind,
+        confidence: asConfidence(row.relation_confidence),
+        provenance: row.relation_provenance
+      },
+      sourceEntity: row.source_id ? entityFromEvidenceRow(row, 'source') : null,
+      targetEntity: row.target_id ? entityFromEvidenceRow(row, 'target') : null,
+      indexRunId: row.evidence_index_run_id
+    };
+  });
+}
+
+function evidenceSpanColumnSelect(db: ReturnType<typeof openDatabase>, alias: string): string {
+  if (!mcpHasColumn(db, 'relation_evidence', 'start_line')) {
+    return [
+      'NULL AS evidence_start_line',
+      'NULL AS evidence_end_line',
+      'NULL AS evidence_start_col',
+      'NULL AS evidence_end_col'
+    ].join(',\n          ');
+  }
+  return [
+    `${alias}.start_line AS evidence_start_line`,
+    `${alias}.end_line AS evidence_end_line`,
+    `${alias}.start_col AS evidence_start_col`,
+    `${alias}.end_col AS evidence_end_col`
+  ].join(',\n          ');
+}
+
+function mcpHasColumn(db: ReturnType<typeof openDatabase>, table: string, column: string): boolean {
+  return db
+    .prepare('SELECT 1 AS one FROM pragma_table_info(?) WHERE name = ?')
+    .get(table, column) !== undefined;
+}
+
+function entityFromEvidenceRow(row: EvidenceResourceRow, prefix: 'source' | 'target'): EntityRef {
+  const id = prefix === 'source' ? row.source_id! : row.target_id!;
+  const kind = prefix === 'source' ? row.source_kind! : row.target_kind!;
+  const path = prefix === 'source' ? row.source_path : row.target_path;
+  const symbol = prefix === 'source' ? row.source_symbol : row.target_symbol;
+  const languageId = prefix === 'source' ? row.source_language_id : row.target_language_id;
+  const displayName = prefix === 'source' ? row.source_display_name : row.target_display_name;
+  return {
+    id,
+    kind: kind as EntityRef['kind'],
+    ...(path !== null ? { path } : {}),
+    ...(symbol !== null ? { symbol } : {}),
+    ...(languageId !== null ? { languageId } : {}),
+    displayName: displayName ?? id
+  };
 }
 
 function readLatestCoverage(context: McpContext): unknown {
@@ -878,4 +1065,9 @@ function jsonResource(uri: string, value: unknown): { contents: Array<{ uri: str
 function parseGraphFormat(value: string): GraphExportFormat {
   if (value === 'json' || value === 'mermaid' || value === 'dot') return value;
   throw new Error('graph resource format must be mermaid, json, or dot');
+}
+
+function asConfidence(value: string): Confidence {
+  if (value === 'proven' || value === 'inferred' || value === 'heuristic' || value === 'unknown') return value;
+  return 'unknown';
 }

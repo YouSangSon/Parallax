@@ -335,8 +335,8 @@ test('MCP context_for_change returns budgeted compact context without persisting
       budget: string;
       changed: Array<{ entity: { id: string }; resourceUri: string }>;
       context: Array<{ path: string; resourceUri: string; relations: string[] }>;
-      evidence: Array<{ snippet: string; file: string }>;
-      resources: { coverage: string; entities: string[] };
+      evidence: Array<{ id: string; snippet: string; file: string; resourceUri?: string }>;
+      resources: { coverage: string; entities: string[]; evidence: string[] };
       limits: { affectedLimit: number; evidenceLimit: number; snippetChars: number };
       omittedCounts: { affected: number; evidence: number; actions: number };
     };
@@ -349,8 +349,22 @@ test('MCP context_for_change returns budgeted compact context without persisting
     assert.ok(pack.context.every((item) => item.relations.length > 0));
     assert.ok(pack.evidence.length > 0);
     assert.ok(pack.evidence.every((item) => item.snippet.length <= pack.limits.snippetChars));
+    assert.ok(pack.resources.evidence.length > 0);
+    assert.ok(pack.evidence.some((item) => item.resourceUri));
+    assert.ok(pack.evidence.every((item) =>
+      item.resourceUri === undefined || item.resourceUri === `impact-trace://evidence/${encodeURIComponent(item.id)}`
+    ));
     assert.equal(pack.resources.coverage, 'impact-trace://coverage/latest');
     assert.ok(pack.resources.entities.includes(`impact-trace://entities/${encodeURIComponent('file:src/a.ts')}`));
+    assert.ok(pack.resources.evidence.every((uri) =>
+      pack.evidence.some((item) => item.resourceUri === uri)
+    ));
+    for (const uri of pack.resources.evidence) {
+      const evidenceResource = await client.request('resources/read', { uri });
+      assert.equal(evidenceResource.error, undefined);
+      const evidenceJson = JSON.parse(evidenceResource.result.contents[0].text) as { id: string };
+      assert.ok(pack.evidence.some((item) => item.id === evidenceJson.id));
+    }
     assert.equal(pack.limits.affectedLimit, 5);
     assert.equal(pack.limits.evidenceLimit, 5);
     assert.equal(pack.omittedCounts.affected, 0);
@@ -429,9 +443,11 @@ test('MCP context_for_change applies budget presets and validates paths', async 
   }
 });
 
-test('MCP exposes report, entity, graph, and coverage resources', async () => {
+test('MCP exposes report, entity, evidence, graph, and coverage resources', async () => {
   const repoRoot = await makeRepo();
   const report = await analyzeDiff({ repoRoot, changedFiles: ['src/a.ts'] });
+  const evidence = report.evidence.find((item) => item.relationKind);
+  assert.ok(evidence, 'fixture should produce relation evidence');
   const client = new McpProcessClient(repoRoot);
   try {
     await client.initialize();
@@ -441,12 +457,14 @@ test('MCP exposes report, entity, graph, and coverage resources', async () => {
     const templateUris = templates.result.resourceTemplates.map((item: { uriTemplate: string }) => item.uriTemplate);
     assert.ok(templateUris.includes('impact-trace://reports/{reportId}'));
     assert.ok(templateUris.includes('impact-trace://entities/{entityId}'));
+    assert.ok(templateUris.includes('impact-trace://evidence/{evidenceId}'));
     assert.ok(templateUris.includes('impact-trace://reports/{reportId}/graph/{format}'));
 
     const resources = await client.request('resources/list', {});
     assert.equal(resources.error, undefined);
     const resourceUris = resources.result.resources.map((item: { uri: string }) => item.uri);
     assert.ok(resourceUris.includes(`impact-trace://reports/${report.id}`));
+    assert.ok(resourceUris.includes(`impact-trace://evidence/${encodeURIComponent(evidence.id)}`));
     assert.ok(resourceUris.includes(`impact-trace://reports/${report.id}/graph/dot`));
     assert.ok(resourceUris.includes('impact-trace://coverage/latest'));
 
@@ -470,6 +488,34 @@ test('MCP exposes report, entity, graph, and coverage resources', async () => {
     assert.ok(entityJson.incoming.length > 0);
     assert.equal(entityJson.limits.incomingTruncated, false);
     assert.equal(entityJson.limits.outgoingTruncated, false);
+
+    const evidenceResource = await client.request('resources/read', {
+      uri: `impact-trace://evidence/${encodeURIComponent(evidence.id)}`
+    });
+    assert.equal(evidenceResource.error, undefined);
+    const evidenceJson = JSON.parse(evidenceResource.result.contents[0].text) as {
+      id: string;
+      snippet: string;
+      file: string;
+      relation: { id: string; kind: string; confidence: string; provenance: string };
+      sourceEntity: { id: string } | null;
+      targetEntity: { id: string } | null;
+      indexRunId: number;
+    };
+    assert.equal(evidenceJson.id, evidence.id);
+    assert.equal(evidenceJson.file, evidence.file);
+    assert.equal(evidenceJson.snippet.includes('SECRET_ACCESS_TOKEN'), false);
+    assert.equal(evidenceJson.relation.kind, evidence.relationKind);
+    assert.ok(evidenceJson.relation.provenance.length > 0);
+    assert.ok(evidenceJson.sourceEntity?.id);
+    assert.ok(evidenceJson.targetEntity?.id);
+    assert.equal(evidenceJson.indexRunId, report.indexRunId);
+
+    const missingEvidence = await client.request('resources/read', {
+      uri: 'impact-trace://evidence/not-found'
+    });
+    assert.ok(missingEvidence.error);
+    assert.match(missingEvidence.error.message, /impact evidence not found/);
 
     const graphResource = await client.request('resources/read', {
       uri: `impact-trace://reports/${report.id}/graph/dot`

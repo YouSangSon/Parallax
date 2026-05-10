@@ -47,7 +47,7 @@ MVP 구현이 들어가 있습니다.
 - 공식 MCP SDK 기반 stdio server 제공
 - MCP impact tools 제공: `impact_trace_analyze_diff`, `impact_trace_context_for_change`
 - agent memory MCP tools 제공: `remember`, `recall`, `branch`, `trace`, `reflect` 등은 `.impact-trace/impact.db` 안에서만 동작
-- read-only MCP resources 제공: report, entity, graph, latest coverage
+- read-only MCP resources 제공: report, entity, evidence, graph, latest coverage
 - evidence output 전 secret-like 값 redaction
 - repo root 밖으로 나가는 path 거절
 - workspace, contract, cross-repo link, work artifact 확장용 SQLite schema
@@ -66,7 +66,7 @@ Java, Kotlin, C#, C, C++ 같은 언어는 Tree-sitter, LSP, CodeQL, build-system
 - web graph explorer
 - CodeQL adapter
 - 모든 언어의 full semantic analysis
-- line/source-span evidence
+- parser-backed full source-span coverage
 - 에이전트가 직접 코드를 수정하는 기능
 
 ## Direction: agent memory layer
@@ -326,9 +326,9 @@ MCP에서 노출하는 주요 tool은 아래와 같습니다.
 | `impact_trace_repair_reflections` | orphan summary fact를 보정합니다 (Phase 4 P2). |
 | `impact_trace_restore_branch` | abandoned branch의 state + tx archived를 복구합니다 (Phase 4 P3). |
 
-`impact_trace_context_for_change`는 report를 persist하지 않습니다. v0는 `impact-trace://entities/{entityId}`와
-`impact-trace://coverage/latest` resource link를 반환하고, 큰 report/graph/evidence pagination은 다음
-context-pack slice에서 붙입니다.
+`impact_trace_context_for_change`는 report를 persist하지 않습니다. v0는 `impact-trace://entities/{entityId}`,
+`impact-trace://evidence/{evidenceId}`, `impact-trace://coverage/latest` resource link를 반환하고,
+큰 report/graph pagination은 다음 context-pack slice에서 붙입니다.
 
 agent memory 툴(`remember`/`branch`)은 DB에 쓰지만 모두 *현재 저장소의*
 `.impact-trace/impact.db` 안에서만 동작합니다. Obsidian export 같은 외부 시스템
@@ -340,6 +340,7 @@ MVP에서 노출하는 resource는 read-only입니다.
 |---|---|
 | `impact-trace://reports/{reportId}` | 저장된 report JSON을 읽습니다. |
 | `impact-trace://entities/{entityId}` | 최신 index의 entity와 incoming/outgoing relation을 읽습니다. |
+| `impact-trace://evidence/{evidenceId}` | relation evidence의 redacted snippet, source span, source/target entity를 읽습니다. |
 | `impact-trace://reports/{reportId}/graph/{format}` | Mermaid, JSON, DOT graph projection을 읽습니다. |
 | `impact-trace://coverage/latest` | 최신 index coverage를 읽습니다. |
 

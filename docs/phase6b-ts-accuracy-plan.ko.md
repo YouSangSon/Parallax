@@ -237,8 +237,8 @@ full MemoryBench가 아니라 adapter accuracy용 얇은 evaluation spine을 먼
 
 Phase 6B가 끝나면 다음 제품 slice는 둘 중 하나다.
 
-1. **MCP context pack:** `impact_trace_context_for_change`, `impact_trace_explain_entity`, `impact://evidence/{id}`, `impact://graph/{id}`를 agent-friendly pagination과 typed error envelope로 완성한다.
-   - `brief`/`standard`/`deep` context budget, dedupe, ranking을 포함해 agent가 받는 context 양을 통제한다.
+1. **MCP context pack:** 이미 들어간 `impact_trace_context_for_change`와 `impact-trace://evidence/{id}` v0를 기반으로 `impact_trace_explain_entity`, graph pagination, typed error envelope를 완성한다.
+   - `brief`/`standard`/`deep` context budget, dedupe, ranking은 v0에 포함됐고, 다음은 agent loop 검증과 graph/resource pagination이다.
    - multi-language adapter 결과는 language/framework별 top impact path로 압축되어 AI context 사용량을 줄인다.
 2. **UI explorer v0:** 저장된 report/graph JSON을 읽어 changed/affected/evidence/action을 필터링해 보여주는 read-only local UI를 만든다.
 

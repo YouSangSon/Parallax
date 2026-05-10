@@ -306,7 +306,7 @@ git diff or changed input
 | Mermaid export | P1 | PR 설명, Markdown report, Obsidian note에 붙일 수 있는 작은 영향 그래프를 만든다. |
 | DOT/Graphviz export | P1 | 큰 그래프를 레이아웃하거나 CI artifact로 저장할 수 있게 한다. |
 | JSON graph export | P1 | 웹 UI, D3, Cytoscape, Gephi 같은 외부 도구가 읽을 수 있는 안정 contract다. |
-| MCP graph resource | P3 | 에이전트가 `impact://graph/{id}`로 관계 그래프를 페이지 단위로 읽는다. |
+| MCP graph resource | P3 | 에이전트가 `impact-trace://reports/{id}/graph/{format}`로 관계 그래프를 페이지 단위로 읽는다. |
 | Web graph explorer | P4 | entity, repo, contract, confidence, coverage gap을 필터링하는 선택 UI다. |
 
 시각화 기본 필터는 `changed`, `affected`, `tests`, `deploy`, `contract`, `unknown` 그룹이다.
@@ -326,8 +326,8 @@ impact-trace analyze --base origin/main --head HEAD
 impact-trace analyze --workspace --base origin/main --head HEAD
 impact-trace analyze --changed src/file.ts --json
 impact-trace graph export --report <id> --format mermaid
-impact-trace graph export --entity impact://entity/{id} --depth 2 --format json
-impact-trace explain impact://entity/{id}
+impact-trace graph export --entity impact-trace://entities/{id} --depth 2 --format json
+impact-trace explain impact-trace://entities/{id}
 impact-trace mcp serve
 ```
 
@@ -345,13 +345,13 @@ impact-trace mcp serve
 
 | URI | 상태 | 설명 |
 |---|---|---|
-| `impact://report/{id}` | P1 | 전체 report를 pagination 가능한 resource로 노출한다. |
-| `impact://evidence/{id}` | P1 | redacted evidence span과 provenance를 노출한다. |
-| `impact://entity/{id}` | P1 | entity metadata와 direct relations를 노출한다. |
-| `impact://coverage/{indexRunId}` | P1 | missing adapter와 skipped file을 노출한다. |
+| `impact-trace://reports/{id}` | P1 | 전체 report를 pagination 가능한 resource로 노출한다. |
+| `impact-trace://evidence/{id}` | P1 | redacted evidence span과 provenance를 노출한다. |
+| `impact-trace://entities/{id}` | P1 | entity metadata와 direct relations를 노출한다. |
+| `impact-trace://coverage/{indexRunId}` | P1 | missing adapter와 skipped file을 노출한다. |
 | `impact://workspace/{id}` | P3 | workspace repo/service catalog와 coverage를 노출한다. |
 | `impact://contract/{id}` | P3 | contract version, producer, consumer, compatibility evidence를 노출한다. |
-| `impact://graph/{id}` | P3 | 시각화용 graph nodes/edges, filters, legend를 pagination으로 노출한다. |
+| `impact-trace://reports/{id}/graph/{format}` | P3 | 시각화용 graph nodes/edges, filters, legend를 pagination으로 노출한다. |
 
 MCP tool 응답은 작고 agent-friendly해야 한다. 큰 report는 resource로 분리한다.
 

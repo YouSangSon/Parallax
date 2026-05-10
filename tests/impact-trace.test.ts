@@ -1114,6 +1114,208 @@ test('indexProject lets adapter relation extraction resolve against all indexed 
   }
 });
 
+test('indexProject surfaces markdown policy, proposal, PRD, and decision impact relations', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-work-artifacts-'));
+  await mkdir(path.join(repoRoot, 'src/auth'), { recursive: true });
+  await mkdir(path.join(repoRoot, 'policies'), { recursive: true });
+  await mkdir(path.join(repoRoot, 'docs/proposals'), { recursive: true });
+  await mkdir(path.join(repoRoot, 'docs/prd'), { recursive: true });
+  await mkdir(path.join(repoRoot, 'docs/decisions'), { recursive: true });
+
+  await writeFile(path.join(repoRoot, 'src/auth/session.ts'), 'export const session = "auth";\n');
+  await writeFile(
+    path.join(repoRoot, 'policies/security-auth.md'),
+    '# Security auth policy\n\nChanges to src/auth/session.ts require security review.\n'
+  );
+  await writeFile(
+    path.join(repoRoot, 'docs/proposals/payment-retry.md'),
+    '# Payment retry proposal\n\nThe proposed retry flow updates src/auth/session.ts.\n'
+  );
+  await writeFile(
+    path.join(repoRoot, 'docs/prd/auth-context.md'),
+    '# Auth context PRD\n\nThe product requirement depends on src/auth/session.ts.\n'
+  );
+  await writeFile(
+    path.join(repoRoot, 'docs/decisions/auth-session.md'),
+    '# ADR auth session\n\nDecision record for src/auth/session.ts.\n'
+  );
+  await writeFile(
+    path.join(repoRoot, 'docs/proposals/security-rfc.md'),
+    '# Security RFC\n\nA security proposal that still updates src/auth/session.ts.\n'
+  );
+  await writeFile(
+    path.join(repoRoot, 'docs/prd/security.md'),
+    '# Security PRD\n\nA security PRD that still requires src/auth/session.ts.\n'
+  );
+  await writeFile(
+    path.join(repoRoot, 'docs/decisions/security.md'),
+    '# Security decision\n\nA security decision that still governs src/auth/session.ts.\n'
+  );
+  await writeFile(
+    path.join(repoRoot, 'docs/security-guide.md'),
+    '# Security guide\n\nA generic security guide documents src/auth/session.ts.\n'
+  );
+  await writeFile(
+    path.join(repoRoot, 'docs/compliance-notes.md'),
+    '# Compliance notes\n\nGeneric compliance notes document src/auth/session.ts.\n'
+  );
+  await initProject({ repoRoot });
+
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const entities = db
+      .prepare(
+        `SELECT id, kind
+         FROM entities
+         WHERE id IN (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ORDER BY id`
+      )
+      .all(
+        'file:docs/compliance-notes.md',
+        'file:docs/decisions/auth-session.md',
+        'file:docs/decisions/security.md',
+        'file:docs/prd/auth-context.md',
+        'file:docs/prd/security.md',
+        'file:docs/proposals/payment-retry.md',
+        'file:docs/proposals/security-rfc.md',
+        'file:docs/security-guide.md',
+        'file:policies/security-auth.md'
+      ) as Array<{ id: string; kind: string }>;
+    assert.deepEqual(
+      entities.map((row) => ({ id: row.id, kind: row.kind })),
+      [
+        { id: 'file:docs/compliance-notes.md', kind: 'doc' },
+        { id: 'file:docs/decisions/auth-session.md', kind: 'decision' },
+        { id: 'file:docs/decisions/security.md', kind: 'decision' },
+        { id: 'file:docs/prd/auth-context.md', kind: 'prd' },
+        { id: 'file:docs/prd/security.md', kind: 'prd' },
+        { id: 'file:docs/proposals/payment-retry.md', kind: 'proposal' },
+        { id: 'file:docs/proposals/security-rfc.md', kind: 'proposal' },
+        { id: 'file:docs/security-guide.md', kind: 'doc' },
+        { id: 'file:policies/security-auth.md', kind: 'policy' }
+      ]
+    );
+
+    const relations = db
+      .prepare(
+        `SELECT source_entity_id, target_entity_id, kind, provenance
+         FROM relations
+         WHERE index_run_id = ?
+           AND target_entity_id = ?
+         ORDER BY source_entity_id`
+      )
+      .all(index.indexRunId, 'file:src/auth/session.ts') as Array<{
+      source_entity_id: string;
+      target_entity_id: string;
+      kind: RelationKind;
+      provenance: string;
+    }>;
+    assert.deepEqual(
+      relations.map((row) => ({
+        source: row.source_entity_id,
+        target: row.target_entity_id,
+        kind: row.kind,
+        provenance: row.provenance
+      })),
+      [
+        {
+          source: 'file:docs/compliance-notes.md',
+          target: 'file:src/auth/session.ts',
+          kind: 'DOCUMENTS',
+          provenance: 'doc mention'
+        },
+        {
+          source: 'file:docs/decisions/auth-session.md',
+          target: 'file:src/auth/session.ts',
+          kind: 'GOVERNS',
+          provenance: 'decision mention'
+        },
+        {
+          source: 'file:docs/decisions/security.md',
+          target: 'file:src/auth/session.ts',
+          kind: 'GOVERNS',
+          provenance: 'decision mention'
+        },
+        {
+          source: 'file:docs/prd/auth-context.md',
+          target: 'file:src/auth/session.ts',
+          kind: 'REQUIRES',
+          provenance: 'prd mention'
+        },
+        {
+          source: 'file:docs/prd/security.md',
+          target: 'file:src/auth/session.ts',
+          kind: 'REQUIRES',
+          provenance: 'prd mention'
+        },
+        {
+          source: 'file:docs/proposals/payment-retry.md',
+          target: 'file:src/auth/session.ts',
+          kind: 'PROPOSES',
+          provenance: 'proposal mention'
+        },
+        {
+          source: 'file:docs/proposals/security-rfc.md',
+          target: 'file:src/auth/session.ts',
+          kind: 'PROPOSES',
+          provenance: 'proposal mention'
+        },
+        {
+          source: 'file:docs/security-guide.md',
+          target: 'file:src/auth/session.ts',
+          kind: 'DOCUMENTS',
+          provenance: 'doc mention'
+        },
+        {
+          source: 'file:policies/security-auth.md',
+          target: 'file:src/auth/session.ts',
+          kind: 'GOVERNS',
+          provenance: 'policy mention'
+        }
+      ]
+    );
+  } finally {
+    db.close();
+  }
+
+  const report = await analyzeDiff({
+    repoRoot,
+    changedFiles: ['src/auth/session.ts']
+  });
+  assert.ok(report.affectedFiles.some((file) =>
+    file.path === 'policies/security-auth.md' && file.reason === 'governs src/auth/session.ts'
+  ));
+  assert.ok(report.affectedFiles.some((file) =>
+    file.path === 'docs/proposals/payment-retry.md' && file.reason === 'proposes src/auth/session.ts'
+  ));
+  assert.ok(report.affectedFiles.some((file) =>
+    file.path === 'docs/prd/auth-context.md' && file.reason === 'requires src/auth/session.ts'
+  ));
+  assert.ok(report.affectedFiles.some((file) =>
+    file.path === 'docs/security-guide.md' && file.reason === 'documents src/auth/session.ts'
+  ));
+  assert.ok(report.affected.some((target) => target.target.kind === 'policy'));
+  assert.ok(report.affected.some((target) => target.target.kind === 'proposal'));
+  assert.ok(report.affected.some((target) => target.target.kind === 'prd'));
+  assert.ok(report.affected.some((target) => target.target.kind === 'decision'));
+
+  const graph = await exportImpactGraph({ repoRoot, reportId: report.id, format: 'json' });
+  const parsedGraph = JSON.parse(graph.rendered) as {
+    nodes: Array<{ id: string; kind: string }>;
+  };
+  assert.ok(parsedGraph.nodes.some((node) =>
+    node.id === 'file:docs/proposals/payment-retry.md' && node.kind === 'proposal'
+  ));
+  assert.ok(parsedGraph.nodes.some((node) =>
+    node.id === 'file:docs/prd/auth-context.md' && node.kind === 'prd'
+  ));
+  assert.ok(parsedGraph.nodes.some((node) =>
+    node.id === 'file:docs/security-guide.md' && node.kind === 'doc'
+  ));
+});
+
 test('indexProject gives each adapter an immutable indexedFiles snapshot', async () => {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-indexed-files-snapshot-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
@@ -3285,6 +3487,8 @@ test('indexProject maps adapter relation kinds to static memory attributes', asy
     { kind: 'CALLS', target: 'src/callee.ts', expectedAttribute: 'calls' },
     { kind: 'VERIFIES', target: 'src/verified.ts', expectedAttribute: 'tests' },
     { kind: 'REFERENCES', target: 'src/referenced.ts', expectedAttribute: 'references' },
+    { kind: 'PROPOSES', target: 'src/proposed.ts', expectedAttribute: 'proposes' },
+    { kind: 'REQUIRES', target: 'src/required.ts', expectedAttribute: 'requires' },
     {
       kind: 'BREAKS_COMPATIBILITY_WITH',
       target: 'src/legacy-api.ts',

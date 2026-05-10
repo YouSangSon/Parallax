@@ -80,6 +80,7 @@ source-span evidence, git snapshot metadata를 묶어 실제 stack의 첫 high-c
 | 2026-05-10 | MCP evidence resource v0 | `impact-trace://evidence/{evidenceId}` resource 추가. context pack의 compact evidence가 필요할 때만 redacted snippet, source span, relation/source/target entity를 다시 읽게 한다. |
 | 2026-05-10 | MCP explain entity v0 | `impact_trace_explain_entity` 추가. agent가 entity 하나의 incoming/outgoing relation과 compact evidence를 제한된 payload로 받고, full evidence는 resource link로 따라가게 한다. |
 | 2026-05-10 | MCP search context v0 | `impact_trace_search_context` 추가. keyword/path/symbol/relation/evidence snippet으로 최신 index를 검색해 ranked entities, match reasons, compact evidence, entity/evidence resource link를 반환한다. |
+| 2026-05-10 | Markdown work artifact v0 | repo-local Markdown 정책/제안서/PRD/결정 문서를 `policy`/`proposal`/`prd`/`decision` entity로 분류하고 코드 mention을 `GOVERNS`/`PROPOSES`/`REQUIRES` impact relation으로 연결한다. |
 
 ## 진행 중
 
@@ -91,6 +92,7 @@ source-span evidence, git snapshot metadata를 묶어 실제 stack의 첫 high-c
 | Phase 6B | Java/Kotlin/Spring Boot/Python/Go/Rust/TS/JS adapter v0 | 진행 중. 선언/import/test relation과 Spring Boot endpoint/config/persistence/client relation 정확도 개선 중 |
 | Phase 6B | source span persistence | `relation_evidence` line/col/range 저장과 analyzer evidence output은 구현됨. 현재 bench 기준 `spanCompleteness`는 regex baseline 특성상 낮으며 parser-backed depth pass에서 개선 예정 |
 | Phase 6B | snapshot-safe indexing | `index_runs` commit/dirty/branch metadata와 stale warning 구현됨. migrated legacy run false-positive warning 회귀 테스트 포함 |
+| Phase D | repo-local Markdown work artifact adapter | 정책/제안서/PRD/결정 파일 path classifier + relation inference v0 완료. frontmatter/heading metadata와 freshness 계산은 후속 |
 | Phase 6/7 | workspace/cross-repo resolver | schema는 준비, 실제 catalog loading과 contract diff는 예정 |
 | Phase 9 | 회사 업무 artifact adapter | schema와 entity kind는 준비, Google Drive/Obsidian/Markdown vault adapter는 예정 |
 | Agent Memory Phase 5 | 후보 backlog | MemoryBench, topic clustering, multi-layer reflection, concurrent reflect lock, reembed cleanup은 deferred |

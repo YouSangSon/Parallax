@@ -655,8 +655,9 @@ flowchart LR
 | 포함 | 완료 기준 |
 |---|---|
 | Markdown proposal/PRD parser | headings/frontmatter/links/code refs 추출 |
-| policy adapter | CODEOWNERS, security policy, rule files를 `GOVERNS`로 연결 |
-| decision adapter | ADR/meeting decision을 `decision` entity로 연결 |
+| policy adapter | CODEOWNERS, security policy, rule files를 `GOVERNS`로 연결. v0 landed: `policies/*.md`, `docs/policies/*.md`, `security.md` 계열 Markdown이 `policy` entity로 분류되고 코드 mention은 `GOVERNS` relation이 된다. |
+| proposal/PRD adapter | repo-local proposal/PRD Markdown을 `proposal`/`prd` entity로 연결. v0 landed: `docs/proposals/*`는 `PROPOSES`, `docs/prd/*`는 `REQUIRES` relation을 만든다. |
+| decision adapter | ADR/meeting decision을 `decision` entity로 연결. v0 landed: `docs/decisions/*`, `adr/*` 계열 Markdown이 `decision` entity로 분류되고 코드 mention은 `GOVERNS` relation이 된다. |
 | document freshness | governed code 변경 시 stale doc/decision 후보 표시 |
 
 이 단계에서 사용자가 말한 "정책, 제안서"가 first-class가 된다.

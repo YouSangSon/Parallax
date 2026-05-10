@@ -42,6 +42,7 @@ MVP 구현이 들어가 있습니다.
 - TS/JS import edge 추출
 - import 기반 관련 테스트 추론
 - Markdown mention 기반 관련 문서 추론
+- Markdown policy/proposal/PRD/decision 파일을 first-class work artifact로 분류하고 `GOVERNS`/`PROPOSES`/`REQUIRES` impact relation 추론
 - system/config 파일의 path mention 기반 관계 추론
 - 변경 파일 분석 후 JSON 또는 Markdown report 생성
 - 공식 MCP SDK 기반 stdio server 제공

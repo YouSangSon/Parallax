@@ -4,6 +4,7 @@ import path from 'node:path';
 
 import { AdapterRegistry } from './adapters/registry.js';
 import { MultiLanguageRegexAdapter, isTestFile } from './adapters/multi-language-regex.js';
+import { entityKindForMarkdownPath } from './artifacts.js';
 import { readGitSnapshot } from './git-snapshot.js';
 import type {
   EntityDescriptor,
@@ -1410,6 +1411,10 @@ const fileEntityIdKinds = new Set<EntityKind>([
   'doc',
   'config',
   'policy',
+  'proposal',
+  'prd',
+  'requirement',
+  'decision',
   'workflow',
   'resource',
   'contract'
@@ -1594,7 +1599,7 @@ function fileEntityId(relativePath: string): string {
 
 function fileKind(relativePath: string, languageId: string): EntityKind {
   if (isTestFile(relativePath)) return 'test';
-  if (languageId === 'markdown') return 'doc';
+  if (languageId === 'markdown') return entityKindForMarkdownPath(relativePath);
   if (languageId === 'policy') return 'policy';
   if (languageId === 'yaml' && relativePath.startsWith('.github/workflows/')) return 'workflow';
   if (languageId === 'dockerfile' || languageId === 'terraform') return 'resource';
@@ -1775,7 +1780,9 @@ const relationAttributeByKind: Record<RelationKind, string> = {
   BREAKS_COMPATIBILITY_WITH: 'breaks_compat',
   REFERENCES: 'references',
   DECLARES: 'declares',
-  GOVERNS: 'governs'
+  GOVERNS: 'governs',
+  PROPOSES: 'proposes',
+  REQUIRES: 'requires'
 };
 
 function relationKindToAttribute(kind: string): string {

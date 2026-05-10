@@ -10,6 +10,7 @@ Impact-trace is the local-first code-aware memory layer for AI coding agents. It
 ## When to invoke
 
 - "How does this change ripple?" → `analyze`
+- "Which policies/proposals/decisions mention this code?" → analyze or MCP context tools after indexing repo-local Markdown work artifacts
 - "Remember/recall an agent decision" → `remember` / `recall`
 - "Find relevant indexed context without reading files" → MCP `impact_trace_search_context`
 - "What does this entity directly touch?" → MCP `impact_trace_explain_entity` or CLI `profile` for memory context

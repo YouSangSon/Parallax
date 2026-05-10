@@ -76,6 +76,8 @@ export type EntityKind =
   | 'doc'
   | 'config'
   | 'policy'
+  | 'proposal'
+  | 'prd'
   | 'workflow'
   | 'resource'
   | 'endpoint'
@@ -109,7 +111,9 @@ export type RelationKind =
   | 'REFERENCES'
   | 'DECLARES'
   | 'VERIFIES'
-  | 'GOVERNS';
+  | 'GOVERNS'
+  | 'PROPOSES'
+  | 'REQUIRES';
 
 export type ScannedFile = {
   absolutePath: string;

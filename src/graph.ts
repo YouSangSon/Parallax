@@ -1,3 +1,4 @@
+import { entityKindForMarkdownPath } from './artifacts.js';
 import { getRepoId, openDatabase } from './store.js';
 import { normalizeRepoRoot } from './security.js';
 import type {
@@ -294,7 +295,7 @@ function kindForPath(path: string): EntityKind {
   ) {
     return 'test';
   }
-  if (path.toLowerCase().endsWith('.md')) return 'doc';
+  if (path.toLowerCase().endsWith('.md')) return entityKindForMarkdownPath(path);
   return 'file';
 }
 
@@ -308,6 +309,8 @@ function isEntityKind(value: string): value is EntityKind {
     'doc',
     'config',
     'policy',
+    'proposal',
+    'prd',
     'workflow',
     'resource',
     'endpoint',

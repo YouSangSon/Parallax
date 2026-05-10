@@ -1,5 +1,6 @@
 import path from 'node:path';
 
+import { markdownEntityKindForPath } from '../artifacts.js';
 import type { Confidence, RelationKind, ScannedFile } from '../types.js';
 import type {
   AdapterCapability,
@@ -180,15 +181,16 @@ async function* extractEvents(
   }
 
   if (file.relativePath.toLowerCase().endsWith('.md')) {
+    const relationKind = relationKindForMarkdownReference(file.relativePath);
     for (const sourcePath of inferDocTargets(file.content, filePathSet)) {
       yield {
         kind: 'relation',
         relation: makeRelation({
           source: fileDescriptor,
           target: { kind: 'file', path: sourcePath },
-          kind: 'DOCUMENTS',
+          kind: relationKind,
           confidence: 'heuristic',
-          provenance: 'doc mention',
+          provenance: `${markdownEntityKindForPath(file.relativePath)} mention`,
           evidenceFile,
           evidenceSnippet
         })
@@ -924,6 +926,14 @@ function findFilesByStem(
 
 function inferDocTargets(content: string, filePathSet: ReadonlySet<string>): string[] {
   return inferTextTargets('', content, filePathSet);
+}
+
+function relationKindForMarkdownReference(relativePath: string): RelationKind {
+  const kind = markdownEntityKindForPath(relativePath);
+  if (kind === 'policy' || kind === 'decision') return 'GOVERNS';
+  if (kind === 'proposal') return 'PROPOSES';
+  if (kind === 'prd' || kind === 'requirement') return 'REQUIRES';
+  return 'DOCUMENTS';
 }
 
 function inferTextTargets(

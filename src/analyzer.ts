@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
+import { entityKindForMarkdownPath } from './artifacts.js';
 import { readGitSnapshot } from './git-snapshot.js';
 import { ensureRepo, getRepoId, latestCompletedIndexRun, openDatabase } from './store.js';
 import { normalizeRepoRoot, redactSecrets, resolveInsideRoot, toRelativePath } from './security.js';
@@ -538,6 +539,8 @@ function relationVerb(kind: string): string {
   if (kind === 'DEPENDS_ON') return 'depends on';
   if (kind === 'VERIFIES') return 'verifies';
   if (kind === 'DOCUMENTS') return 'documents';
+  if (kind === 'PROPOSES') return 'proposes';
+  if (kind === 'REQUIRES') return 'requires';
   if (kind === 'CONFIGURES') return 'configures';
   if (kind === 'DEPLOYS') return 'deploys';
   if (kind === 'CALLS') return 'calls';
@@ -603,6 +606,8 @@ function reasonForCanonicalRelation(kind: string, changedFile: string): string {
   if (kind === 'DEPENDS_ON') return `depends on ${changedFile}`;
   if (kind === 'VERIFIES') return `verifies ${changedFile}`;
   if (kind === 'DOCUMENTS') return `documents ${changedFile}`;
+  if (kind === 'PROPOSES') return `proposes ${changedFile}`;
+  if (kind === 'REQUIRES') return `requires ${changedFile}`;
   if (kind === 'CONFIGURES') return `configures ${changedFile}`;
   if (kind === 'DEPLOYS') return `deploys ${changedFile}`;
   if (kind === 'REFERENCES') return `references ${changedFile}`;
@@ -618,6 +623,8 @@ function reasonForLegacyRelation(kind: string, changedFile: string): string {
   if (kind === 'IMPORTS') return `imports ${changedFile}`;
   if (kind === 'TESTS') return `tests ${changedFile}`;
   if (kind === 'DOCUMENTS') return `documents ${changedFile}`;
+  if (kind === 'PROPOSES') return `proposes ${changedFile}`;
+  if (kind === 'REQUIRES') return `requires ${changedFile}`;
   if (kind === 'REFERENCES') return `references ${changedFile}`;
   if (kind === 'CONFIGURES') return `configures ${changedFile}`;
   if (kind === 'CALLS') return `calls ${changedFile}`;
@@ -642,6 +649,8 @@ function isEntityKind(value: string): value is EntityKind {
     'doc',
     'config',
     'policy',
+    'proposal',
+    'prd',
     'workflow',
     'resource',
     'endpoint',
@@ -780,7 +789,7 @@ function entityForPath(relativePath: string): EntityRef {
 
 function entityKindForPath(relativePath: string, languageId: string | undefined): EntityKind {
   if (isTestPath(relativePath)) return 'test';
-  if (languageId === 'markdown') return 'doc';
+  if (languageId === 'markdown') return entityKindForMarkdownPath(relativePath);
   if (path.posix.basename(relativePath) === 'CODEOWNERS') return 'policy';
   if (languageId === 'yaml' && relativePath.startsWith('.github/workflows/')) return 'workflow';
   if (languageId === 'dockerfile' || languageId === 'terraform') return 'resource';

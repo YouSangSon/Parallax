@@ -77,6 +77,7 @@ security
 | MCP tools | read-only annotation, compact response, deterministic errors, search result limit/resource link |
 | MCP resources | `impact-trace://reports/{id}`, `impact-trace://entities/{id}`, `impact-trace://reports/{id}/graph/{format}`, `impact-trace://coverage/latest`, pagination, not found error |
 | Graph export | Mermaid/DOT/JSON schema, stable node IDs, relation legend, confidence metadata |
+| Work artifact impact | Markdown policy/proposal/PRD/decision classifier, `GOVERNS`/`PROPOSES`/`REQUIRES` relation, analyze/MCP context inclusion |
 | Report compatibility | deprecated field와 새 field가 migration 기간에 함께 유지됨 |
 
 ## Security Tests

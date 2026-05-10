@@ -7,6 +7,8 @@ import { createBranch, mergeBranches, recallOnRepo, rememberOnRepo, trace } from
 import type { RememberValue } from './agent_memory.js';
 import { abandonBranch, gcBranches, restoreBranch } from './branch_gc.js';
 import { doctorProject, redactDoctorReportForMcp } from './doctor.js';
+import { computeEmbedding, selectedEmbeddingModel } from './embeddings.js';
+import type { EmbeddingResult } from './embeddings.js';
 import { reflectFacts, repairReflections } from './reflection.js';
 import { profileEntity } from './profile.js';
 import { normalizeRepoRoot, redactSecrets } from './security.js';
@@ -132,10 +134,12 @@ export function createMcpServer(context: McpContext): McpServer {
       }
     },
     async ({ query, k, includeEvidence }) => {
+      const semanticEmbedding = await searchContextSemanticEmbedding(context, query);
       const result = searchContext(context, {
         query,
         k: k ?? 10,
-        includeEvidence: includeEvidence ?? true
+        includeEvidence: includeEvidence ?? true,
+        semanticEmbedding
       });
       const telemetry = searchContextTelemetry(result);
       return toolJsonResponse(context, 'impact_trace_search_context', result, {
@@ -1416,6 +1420,7 @@ type SearchContextOptions = {
   query: string;
   k: number;
   includeEvidence: boolean;
+  semanticEmbedding: EmbeddingResult | null;
 };
 
 type SearchEntityRow = {
@@ -1442,6 +1447,8 @@ type SearchRankSignals = {
   keywordRank: number | null;
   relationRank: number | null;
   evidenceRank: number | null;
+  semanticRank: number | null;
+  graphProximityRank: number | null;
   rrfScore: number;
 };
 
@@ -1464,11 +1471,44 @@ type SearchCandidate = {
   keywordRank: number | null;
   relationRank: number | null;
   evidenceRank: number | null;
+  semanticRank: number | null;
+  graphProximityRank: number | null;
 };
 
 const searchContextEvidencePerEntity = 2;
 const searchContextSnippetChars = 240;
 const searchContextRrfK = 60;
+const searchContextStreamLimit = 500;
+const searchContextGraphSeedLimit = 25;
+
+async function searchContextSemanticEmbedding(context: McpContext, query: string): Promise<EmbeddingResult | null> {
+  const model = selectedEmbeddingModel();
+  const hasEmbeddings = withReadOnlyDb(context, (db, repoId) => {
+    if (!mcpHasTable(db, 'fact_embeddings')) return false;
+    const row = db
+      .prepare(`
+        SELECT 1 AS one
+        FROM fact_embeddings fe
+        INNER JOIN facts f ON f.id = fe.fact_id
+        INNER JOIN transactions t ON t.id = f.tx_id
+        INNER JOIN entities e ON e.id = f.entity_id
+        WHERE fe.model = ?
+          AND t.archived = 0
+          AND f.op = 'assert'
+          AND f.redacted = 0
+          AND e.repo_id = ?
+        LIMIT 1
+      `)
+      .get(model, repoId) as { one: number } | undefined;
+    return row !== undefined;
+  });
+  if (!hasEmbeddings) return null;
+  try {
+    return await computeEmbedding(query);
+  } catch {
+    return null;
+  }
+}
 
 function searchContext(context: McpContext, options: SearchContextOptions): unknown {
   const query = options.query.trim();
@@ -1477,7 +1517,7 @@ function searchContext(context: McpContext, options: SearchContextOptions): unkn
   return withReadOnlyDb(context, (db, repoId) => {
     const indexRunId = latestCompletedIndexRun(db, repoId);
     const likeQuery = `%${escapeLike(query)}%`;
-    const ranking = searchRankedEntities(db, repoId, indexRunId, likeQuery, options.k);
+    const ranking = searchRankedEntities(db, repoId, indexRunId, query, likeQuery, options.k, options.semanticEmbedding);
     const selected = ranking.rankedRows.slice(0, options.k);
     const evidenceByEntity = new Map<string, CompactEvidenceResource[]>();
     const evidenceUris: string[] = [];
@@ -1538,17 +1578,31 @@ function searchRankedEntities(
   db: ReturnType<typeof openDatabase>,
   repoId: number,
   indexRunId: number,
+  query: string,
   likeQuery: string,
-  k: number
+  k: number,
+  semanticEmbedding: EmbeddingResult | null
 ): SearchRanking {
-  const keywordRows = searchKeywordEntityRows(db, repoId, indexRunId, likeQuery);
+  const keywordRows = searchKeywordEntityRows(db, repoId, indexRunId, query, likeQuery);
   const relationRows = searchRelationEntityRows(db, repoId, indexRunId, likeQuery);
   const evidenceRows = searchEvidenceEntityRows(db, repoId, indexRunId, likeQuery);
+  const semanticRows = semanticEmbedding
+    ? searchSemanticEntityRows(db, repoId, indexRunId, semanticEmbedding)
+    : [];
+  const graphRows = searchGraphProximityEntityRows(
+    db,
+    repoId,
+    indexRunId,
+    [...keywordRows, ...relationRows, ...evidenceRows, ...semanticRows],
+    k
+  );
   const candidates = new Map<string, SearchCandidate>();
 
   mergeSearchStream(candidates, keywordRows, 'keywordRank');
   mergeSearchStream(candidates, relationRows, 'relationRank');
   mergeSearchStream(candidates, evidenceRows, 'evidenceRank');
+  mergeSearchStream(candidates, semanticRows, 'semanticRank');
+  mergeSearchStream(candidates, graphRows, 'graphProximityRank');
 
   const rankedRows = [...candidates.values()]
     .map((candidate) => {
@@ -1558,7 +1612,7 @@ function searchRankedEntities(
         row: candidate.row,
         score: rankSignals.rrfScore,
         rawScore,
-        reasons: searchEntityReasons(candidate.row),
+        reasons: searchEntityReasons(candidate),
         rankSignals
       };
     })
@@ -1578,7 +1632,7 @@ function searchRankedEntities(
 function mergeSearchStream(
   candidates: Map<string, SearchCandidate>,
   rows: SearchEntityRow[],
-  rankField: 'keywordRank' | 'relationRank' | 'evidenceRank'
+  rankField: 'keywordRank' | 'relationRank' | 'evidenceRank' | 'semanticRank' | 'graphProximityRank'
 ): void {
   rows.forEach((row, index) => {
     const existing = candidates.get(row.entity_id);
@@ -1586,7 +1640,9 @@ function mergeSearchStream(
       row: { ...row },
       keywordRank: null,
       relationRank: null,
-      evidenceRank: null
+      evidenceRank: null,
+      semanticRank: null,
+      graphProximityRank: null
     };
     candidate.row.id_match = Math.max(candidate.row.id_match, row.id_match);
     candidate.row.display_match = Math.max(candidate.row.display_match, row.display_match);
@@ -1602,7 +1658,9 @@ function mergeSearchStream(
 function searchRawRrfScore(candidate: SearchCandidate): number {
   return reciprocalRank(candidate.keywordRank)
     + reciprocalRank(candidate.relationRank)
-    + reciprocalRank(candidate.evidenceRank);
+    + reciprocalRank(candidate.evidenceRank)
+    + reciprocalRank(candidate.semanticRank)
+    + reciprocalRank(candidate.graphProximityRank);
 }
 
 function searchRankSignals(candidate: SearchCandidate, rawScore: number): SearchRankSignals {
@@ -1611,6 +1669,8 @@ function searchRankSignals(candidate: SearchCandidate, rawScore: number): Search
     keywordRank: candidate.keywordRank,
     relationRank: candidate.relationRank,
     evidenceRank: candidate.evidenceRank,
+    semanticRank: candidate.semanticRank,
+    graphProximityRank: candidate.graphProximityRank,
     rrfScore: Number(rawScore.toFixed(8))
   };
 }
@@ -1620,6 +1680,71 @@ function reciprocalRank(rank: number | null): number {
 }
 
 function searchKeywordEntityRows(
+  db: ReturnType<typeof openDatabase>,
+  repoId: number,
+  indexRunId: number,
+  query: string,
+  likeQuery: string
+): SearchEntityRow[] {
+  const ftsRows = searchFtsKeywordEntityRows(db, repoId, indexRunId, query, likeQuery);
+  if (ftsRows.length > 0) return ftsRows;
+  return searchLikeKeywordEntityRows(db, repoId, indexRunId, likeQuery);
+}
+
+function searchFtsKeywordEntityRows(
+  db: ReturnType<typeof openDatabase>,
+  repoId: number,
+  indexRunId: number,
+  query: string,
+  likeQuery: string
+): SearchEntityRow[] {
+  const ftsQuery = ftsMatchExpression(query);
+  if (!ftsQuery) return [];
+  try {
+    db.exec(`
+      DROP TABLE IF EXISTS temp.search_context_entities_fts;
+      CREATE VIRTUAL TABLE temp.search_context_entities_fts
+      USING fts5(entity_id UNINDEXED, id_text, display_name, path, symbol);
+    `);
+    db
+      .prepare(`
+        INSERT INTO temp.search_context_entities_fts (entity_id, id_text, display_name, path, symbol)
+        SELECT id, id, display_name, COALESCE(path, ''), COALESCE(symbol, '')
+        FROM entities
+        WHERE repo_id = ? AND updated_index_run_id = ?
+      `)
+      .run(repoId, indexRunId);
+    return db
+      .prepare(`
+        SELECT
+          entities.id AS entity_id,
+          entities.kind AS entity_kind,
+          entities.path AS entity_path,
+          entities.symbol AS entity_symbol,
+          entities.language_id AS entity_language_id,
+          entities.display_name AS entity_display_name,
+          CASE WHEN entities.id LIKE ? ESCAPE '\\' THEN 1 ELSE 0 END AS id_match,
+          CASE WHEN entities.display_name LIKE ? ESCAPE '\\' THEN 1 ELSE 0 END AS display_match,
+          CASE WHEN COALESCE(entities.path, '') LIKE ? ESCAPE '\\' THEN 1 ELSE 0 END AS path_match,
+          CASE WHEN COALESCE(entities.symbol, '') LIKE ? ESCAPE '\\' THEN 1 ELSE 0 END AS symbol_match,
+          0 AS relation_match_count,
+          0 AS evidence_match_count
+        FROM temp.search_context_entities_fts fts
+        INNER JOIN entities
+          ON entities.id = fts.entity_id
+         AND entities.repo_id = ?
+         AND entities.updated_index_run_id = ?
+        WHERE search_context_entities_fts MATCH ?
+        ORDER BY bm25(search_context_entities_fts), entities.display_name, entities.id
+        LIMIT ?
+      `)
+      .all(likeQuery, likeQuery, likeQuery, likeQuery, repoId, indexRunId, ftsQuery, searchContextStreamLimit) as SearchEntityRow[];
+  } catch {
+    return [];
+  }
+}
+
+function searchLikeKeywordEntityRows(
   db: ReturnType<typeof openDatabase>,
   repoId: number,
   indexRunId: number,
@@ -1659,6 +1784,7 @@ function searchKeywordEntityRows(
         CASE WHEN entities.kind = 'file' THEN 1 ELSE 0 END DESC,
         entities.display_name,
         entities.id
+      LIMIT ?
     `)
     .all(
       likeQuery,
@@ -1670,8 +1796,20 @@ function searchKeywordEntityRows(
       likeQuery,
       likeQuery,
       likeQuery,
-      likeQuery
+      likeQuery,
+      searchContextStreamLimit
     ) as SearchEntityRow[];
+}
+
+function ftsMatchExpression(query: string): string | null {
+  if (/[\\%_./:]/.test(query)) return null;
+  const terms = query
+    .toLocaleLowerCase()
+    .match(/[a-z0-9]+/g)
+    ?.filter((term) => term.length > 0)
+    .slice(0, 8);
+  if (!terms || terms.length === 0) return null;
+  return terms.map((term) => `${term}*`).join(' AND ');
 }
 
 function searchRelationEntityRows(
@@ -1705,8 +1843,9 @@ function searchRelationEntityRows(
         AND entities.updated_index_run_id = ?
       GROUP BY entities.id
       ORDER BY relation_match_count DESC, entities.display_name, entities.id
+      LIMIT ?
     `)
-    .all(likeQuery, likeQuery, repoId, indexRunId) as SearchEntityRow[];
+    .all(likeQuery, likeQuery, repoId, indexRunId, searchContextStreamLimit) as SearchEntityRow[];
 }
 
 function searchEvidenceEntityRows(
@@ -1748,8 +1887,176 @@ function searchEvidenceEntityRows(
         AND entities.updated_index_run_id = ?
       GROUP BY entities.id
       ORDER BY evidence_match_count DESC, entities.display_name, entities.id
+      LIMIT ?
     `)
-    .all(likeQuery, likeQuery, likeQuery, repoId, indexRunId) as SearchEntityRow[];
+    .all(likeQuery, likeQuery, likeQuery, repoId, indexRunId, searchContextStreamLimit) as SearchEntityRow[];
+}
+
+function searchSemanticEntityRows(
+  db: ReturnType<typeof openDatabase>,
+  repoId: number,
+  indexRunId: number,
+  queryEmbedding: EmbeddingResult
+): SearchEntityRow[] {
+  if (!mcpHasTable(db, 'fact_embeddings')) return [];
+  const rows = db
+    .prepare(`
+      SELECT
+        entities.id AS entity_id,
+        entities.kind AS entity_kind,
+        entities.path AS entity_path,
+        entities.symbol AS entity_symbol,
+        entities.language_id AS entity_language_id,
+        entities.display_name AS entity_display_name,
+        fact_embeddings.vector AS vector
+      FROM fact_embeddings
+      INNER JOIN facts
+        ON facts.id = fact_embeddings.fact_id
+      INNER JOIN transactions
+        ON transactions.id = facts.tx_id
+      INNER JOIN entities
+        ON entities.id = facts.entity_id
+       AND entities.repo_id = ?
+       AND entities.updated_index_run_id = ?
+      WHERE fact_embeddings.model = ?
+        AND fact_embeddings.dim = ?
+        AND facts.op = 'assert'
+        AND facts.redacted = 0
+        AND transactions.archived = 0
+    `)
+    .all(repoId, indexRunId, queryEmbedding.model, queryEmbedding.dim) as Array<
+      SearchEntityRow & { vector: Buffer }
+    >;
+
+  const queryVector = int8Vector(queryEmbedding.vector);
+  const bestByEntity = new Map<string, { row: SearchEntityRow; score: number }>();
+  for (const row of rows) {
+    const score = int8DotScore(queryVector, int8Vector(row.vector));
+    const existing = bestByEntity.get(row.entity_id);
+    if (!existing || score > existing.score) {
+      bestByEntity.set(row.entity_id, {
+        row: {
+          entity_id: row.entity_id,
+          entity_kind: row.entity_kind,
+          entity_path: row.entity_path,
+          entity_symbol: row.entity_symbol,
+          entity_language_id: row.entity_language_id,
+          entity_display_name: row.entity_display_name,
+          id_match: 0,
+          display_match: 0,
+          path_match: 0,
+          symbol_match: 0,
+          relation_match_count: 0,
+          evidence_match_count: 0
+        },
+        score
+      });
+    }
+  }
+
+  return [...bestByEntity.values()]
+    .sort((left, right) =>
+      numericCompare(right.score, left.score)
+      || left.row.entity_display_name.localeCompare(right.row.entity_display_name)
+      || left.row.entity_id.localeCompare(right.row.entity_id)
+    )
+    .slice(0, searchContextStreamLimit)
+    .map((entry) => entry.row);
+}
+
+function searchGraphProximityEntityRows(
+  db: ReturnType<typeof openDatabase>,
+  repoId: number,
+  indexRunId: number,
+  seedRows: SearchEntityRow[],
+  k: number
+): SearchEntityRow[] {
+  const seedIds = [...new Set(seedRows.map((row) => row.entity_id))].slice(0, searchContextGraphSeedLimit);
+  if (seedIds.length === 0) return [];
+
+  const best = new Map<string, { row: SearchEntityRow; seedRank: number; relationCount: number }>();
+  const neighborRows = db
+    .prepare(`
+      SELECT
+        relations.source_entity_id AS source_id,
+        relations.target_entity_id AS target_id,
+        neighbor.id AS entity_id,
+        neighbor.kind AS entity_kind,
+        neighbor.path AS entity_path,
+        neighbor.symbol AS entity_symbol,
+        neighbor.language_id AS entity_language_id,
+        neighbor.display_name AS entity_display_name,
+        count(relations.id) AS relation_match_count
+      FROM relations
+      INNER JOIN entities seed
+        ON seed.repo_id = relations.repo_id
+       AND seed.updated_index_run_id = relations.index_run_id
+       AND (seed.id = relations.source_entity_id OR seed.id = relations.target_entity_id)
+      INNER JOIN entities neighbor
+        ON neighbor.repo_id = relations.repo_id
+       AND neighbor.updated_index_run_id = relations.index_run_id
+       AND neighbor.id = CASE
+         WHEN seed.id = relations.source_entity_id THEN relations.target_entity_id
+         ELSE relations.source_entity_id
+       END
+      WHERE relations.repo_id = ?
+        AND relations.index_run_id = ?
+        AND seed.id = ?
+        AND neighbor.id <> seed.id
+      GROUP BY neighbor.id
+      ORDER BY relation_match_count DESC, neighbor.display_name, neighbor.id
+      LIMIT ?
+    `);
+
+  seedIds.forEach((seedId, index) => {
+    const rows = neighborRows.all(repoId, indexRunId, seedId, Math.max(k * 3, 10)) as Array<SearchEntityRow>;
+    for (const row of rows) {
+      if (seedIds.includes(row.entity_id)) continue;
+      const existing = best.get(row.entity_id);
+      const relationCount = row.relation_match_count;
+      if (
+        !existing
+        || index < existing.seedRank
+        || (index === existing.seedRank && relationCount > existing.relationCount)
+      ) {
+        best.set(row.entity_id, {
+          row: {
+            ...row,
+            id_match: 0,
+            display_match: 0,
+            path_match: 0,
+            symbol_match: 0,
+            evidence_match_count: 0
+          },
+          seedRank: index,
+          relationCount
+        });
+      }
+    }
+  });
+
+  return [...best.values()]
+    .sort((left, right) =>
+      numericCompare(left.seedRank, right.seedRank)
+      || numericCompare(right.relationCount, left.relationCount)
+      || left.row.entity_display_name.localeCompare(right.row.entity_display_name)
+      || left.row.entity_id.localeCompare(right.row.entity_id)
+    )
+    .slice(0, searchContextStreamLimit)
+    .map((entry) => entry.row);
+}
+
+function int8Vector(value: Buffer): Int8Array {
+  return new Int8Array(value.buffer, value.byteOffset, value.byteLength);
+}
+
+function int8DotScore(left: Int8Array, right: Int8Array): number {
+  const len = Math.min(left.length, right.length);
+  let total = 0;
+  for (let index = 0; index < len; index += 1) {
+    total += (left[index] ?? 0) * (right[index] ?? 0);
+  }
+  return total;
 }
 
 function searchEvidenceRows(
@@ -1792,14 +2099,18 @@ function searchEvidenceRows(
     .all(likeQuery, likeQuery, likeQuery, repoId, indexRunId, entityId, entityId, limit) as SearchEvidenceRow[];
 }
 
-function searchEntityReasons(row: SearchEntityRow): string[] {
+function searchEntityReasons(candidate: SearchCandidate): string[] {
+  const row = candidate.row;
   const reasons: string[] = [];
+  if (candidate.keywordRank !== null) reasons.push('keyword');
   if (row.id_match > 0) reasons.push('entity-id');
   if (row.path_match > 0) reasons.push('path');
   if (row.display_match > 0) reasons.push('display-name');
   if (row.symbol_match > 0) reasons.push('symbol');
   if (row.relation_match_count > 0) reasons.push(`relations:${row.relation_match_count}`);
   if (row.evidence_match_count > 0) reasons.push(`evidence:${row.evidence_match_count}`);
+  if (candidate.semanticRank !== null) reasons.push('semantic');
+  if (candidate.graphProximityRank !== null) reasons.push('graph-proximity');
   return reasons;
 }
 

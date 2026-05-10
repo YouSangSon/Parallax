@@ -9,6 +9,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
 
 import { analyzeDiff, indexProject, initProject } from '../src/index.js';
+import { computeEmbeddingSync } from '../src/embeddings.js';
 import { databasePath } from '../src/store.js';
 
 // Force the deterministic SHA-256 stub so spawned MCP subprocesses don't
@@ -364,6 +365,200 @@ async function makeSearchRankingRepo(): Promise<string> {
       const entityId = `file:rank/raw-evidence-middle-${suffix}.ts`;
       addEntity(entityId, `M raw RRF evidence filler ${suffix}`);
       addRelation(entityId, relationId, 'plain', rawRrfNeedle, 'raw RRF evidence middle snippet');
+    }
+  } finally {
+    db.close();
+  }
+  return repoRoot;
+}
+
+async function makeSearchDepthRepo(): Promise<string> {
+  const repoRoot = await makeRepo();
+  const db = new DatabaseSync(databasePath(repoRoot));
+  try {
+    const repo = db.prepare('SELECT id FROM repos LIMIT 1').get() as { id: number };
+    const run = db
+      .prepare('SELECT id FROM index_runs WHERE repo_id = ? AND status = ? ORDER BY id DESC LIMIT 1')
+      .get(repo.id, 'completed') as { id: number };
+    const branch = db.prepare("SELECT head_tx_id FROM branches WHERE name = 'main'").get() as { head_tx_id: string };
+
+    const insertEntity = db.prepare(`
+      INSERT INTO entities (
+        id, repo_id, kind, path, symbol, language_id, display_name,
+        created_index_run_id, updated_index_run_id
+      )
+      VALUES (?, ?, ?, ?, ?, 'typescript', ?, ?, ?)
+    `);
+    const insertRelation = db.prepare(`
+      INSERT INTO relations (
+        id, repo_id, source_entity_id, target_entity_id, kind, confidence,
+        adapter_run_id, index_run_id, provenance
+      )
+      VALUES (?, ?, ?, ?, ?, 'medium', NULL, ?, ?)
+    `);
+    const insertEvidence = db.prepare(`
+      INSERT INTO relation_evidence (
+        id, relation_id, repo_id, file_path, kind, snippet, confidence, index_run_id
+      )
+      VALUES (?, ?, ?, ?, ?, ?, 'medium', ?)
+    `);
+
+    insertEntity.run(
+      'file:depth/root.ts',
+      repo.id,
+      'file',
+      'depth/root.ts',
+      null,
+      'Token Refresh Validator',
+      run.id,
+      run.id
+    );
+    insertEntity.run(
+      'file:depth/session.ts',
+      repo.id,
+      'file',
+      'depth/session.ts',
+      null,
+      'Session Gate',
+      run.id,
+      run.id
+    );
+    insertRelation.run(
+      'depth:root-session',
+      repo.id,
+      'file:depth/root.ts',
+      'file:depth/session.ts',
+      'CALLS',
+      run.id,
+      'depth-fixture'
+    );
+    insertEvidence.run(
+      'depth:root-session:evidence',
+      'depth:root-session',
+      repo.id,
+      'depth/root.ts',
+      'CALLS',
+      'plain graph edge evidence',
+      run.id
+    );
+
+    insertEntity.run(
+      'file:depth/semantic.ts',
+      repo.id,
+      'file',
+      'depth/semantic.ts',
+      null,
+      'Checkout Worker',
+      run.id,
+      run.id
+    );
+    db.prepare("INSERT OR IGNORE INTO attribute_defs (name, value_type, is_code_relation, description) VALUES ('session_summary', 'json', 0, '')").run();
+    db.prepare(
+      'INSERT OR IGNORE INTO facts (id, entity_id, attribute, value_blob, op, tx_id, redacted) VALUES (?, ?, ?, ?, ?, ?, 0)'
+    ).run(
+      'depth-semantic-fact',
+      'file:depth/semantic.ts',
+      'session_summary',
+      JSON.stringify('retry idempotent checkout signal'),
+      'assert',
+      branch.head_tx_id
+    );
+    const embedding = computeEmbeddingSync('retry idempotent checkout signal');
+    db.prepare(
+      "INSERT OR REPLACE INTO fact_embeddings (fact_id, model, vector, dim, created_at) VALUES (?, ?, ?, ?, datetime('now'))"
+    ).run('depth-semantic-fact', embedding.model, embedding.vector, embedding.dim);
+  } finally {
+    db.close();
+  }
+  return repoRoot;
+}
+
+async function makeLargeSemanticRepo(): Promise<string> {
+  const repoRoot = await makeRepo();
+  const db = new DatabaseSync(databasePath(repoRoot));
+  try {
+    const repo = db.prepare('SELECT id FROM repos LIMIT 1').get() as { id: number };
+    const run = db
+      .prepare('SELECT id FROM index_runs WHERE repo_id = ? AND status = ? ORDER BY id DESC LIMIT 1')
+      .get(repo.id, 'completed') as { id: number };
+    const branch = db.prepare("SELECT head_tx_id FROM branches WHERE name = 'main'").get() as { head_tx_id: string };
+    const insertEntity = db.prepare(`
+      INSERT INTO entities (
+        id, repo_id, kind, path, symbol, language_id, display_name,
+        created_index_run_id, updated_index_run_id
+      )
+      VALUES (?, ?, 'file', ?, NULL, 'typescript', ?, ?, ?)
+    `);
+    const insertFact = db.prepare(
+      'INSERT OR IGNORE INTO facts (id, entity_id, attribute, value_blob, op, tx_id, redacted) VALUES (?, ?, ?, ?, ?, ?, 0)'
+    );
+    const insertEmbedding = db.prepare(
+      "INSERT OR REPLACE INTO fact_embeddings (fact_id, model, vector, dim, created_at) VALUES (?, ?, ?, ?, datetime('now'))"
+    );
+    db.prepare("INSERT OR IGNORE INTO attribute_defs (name, value_type, is_code_relation, description) VALUES ('session_summary', 'json', 0, '')").run();
+
+    for (let index = 0; index < 520; index += 1) {
+      const suffix = index.toString().padStart(3, '0');
+      const entityId = `file:semantic/filler-${suffix}.ts`;
+      const factId = `semantic-filler-${suffix}`;
+      const value = `unrelated semantic filler ${suffix}`;
+      insertEntity.run(entityId, repo.id, `semantic/filler-${suffix}.ts`, `Semantic filler ${suffix}`, run.id, run.id);
+      insertFact.run(factId, entityId, 'session_summary', JSON.stringify(value), 'assert', branch.head_tx_id);
+      const embedding = computeEmbeddingSync(value);
+      insertEmbedding.run(factId, embedding.model, embedding.vector, embedding.dim);
+    }
+
+    const targetValue = 'late semantic target exact checkout vector';
+    const targetEmbedding = computeEmbeddingSync(targetValue);
+    insertEntity.run(
+      'file:semantic/late-target.ts',
+      repo.id,
+      'semantic/late-target.ts',
+      'Late Semantic Target',
+      run.id,
+      run.id
+    );
+    insertFact.run(
+      'semantic-late-target',
+      'file:semantic/late-target.ts',
+      'session_summary',
+      JSON.stringify(targetValue),
+      'assert',
+      branch.head_tx_id
+    );
+    insertEmbedding.run('semantic-late-target', targetEmbedding.model, targetEmbedding.vector, targetEmbedding.dim);
+  } finally {
+    db.close();
+  }
+  return repoRoot;
+}
+
+async function makeBroadSearchRepo(): Promise<string> {
+  const repoRoot = await makeRepo();
+  const db = new DatabaseSync(databasePath(repoRoot));
+  try {
+    const repo = db.prepare('SELECT id FROM repos LIMIT 1').get() as { id: number };
+    const run = db
+      .prepare('SELECT id FROM index_runs WHERE repo_id = ? AND status = ? ORDER BY id DESC LIMIT 1')
+      .get(repo.id, 'completed') as { id: number };
+    const insertEntity = db.prepare(`
+      INSERT INTO entities (
+        id, repo_id, kind, path, symbol, language_id, display_name,
+        created_index_run_id, updated_index_run_id
+      )
+      VALUES (?, ?, 'file', ?, NULL, 'typescript', ?, ?, ?)
+    `);
+
+    for (let index = 0; index < 520; index += 1) {
+      const suffix = index.toString().padStart(3, '0');
+      insertEntity.run(
+        `file:broad/BROAD_CAP_${suffix}.ts`,
+        repo.id,
+        `broad/BROAD_CAP_${suffix}.ts`,
+        `Broad cap ${suffix}`,
+        run.id,
+        run.id
+      );
     }
   } finally {
     db.close();
@@ -1301,6 +1496,8 @@ test('MCP search_context orders by raw RRF before rounded presentation score', a
       keywordRank: 27,
       relationRank: 36,
       evidenceRank: 47,
+      semanticRank: null,
+      graphProximityRank: null,
       rrfScore: search.results[0]!.rankSignals.rrfScore
     });
     assert.deepEqual(search.results[1]!.rankSignals, {
@@ -1308,8 +1505,122 @@ test('MCP search_context orders by raw RRF before rounded presentation score', a
       keywordRank: 38,
       relationRank: 35,
       evidenceRank: 35,
+      semanticRank: null,
+      graphProximityRank: null,
       rrfScore: search.results[1]!.rankSignals.rrfScore
     });
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP search_context fuses FTS, semantic, and graph proximity rank signals', async () => {
+  const repoRoot = await makeSearchDepthRepo();
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+
+    const ftsResponse = await client.request('tools/call', {
+      name: 'impact_trace_search_context',
+      arguments: { query: 'token validator', k: 5, includeEvidence: false }
+    });
+    assert.equal(ftsResponse.error, undefined);
+    assert.equal(ftsResponse.result.isError, undefined);
+    const ftsSearch = JSON.parse(ftsResponse.result.content[0].text) as {
+      results: Array<{
+        entity: { id: string };
+        reasons: string[];
+        rankSignals: {
+          keywordRank: number | null;
+          semanticRank: number | null;
+          graphProximityRank: number | null;
+        };
+      }>;
+    };
+    const root = ftsSearch.results.find((item) => item.entity.id === 'file:depth/root.ts');
+    assert.ok(root, 'FTS should match non-contiguous query terms that LIKE misses');
+    assert.equal(root.rankSignals.keywordRank, 1);
+    assert.ok(root.reasons.includes('keyword'));
+
+    const neighbor = ftsSearch.results.find((item) => item.entity.id === 'file:depth/session.ts');
+    assert.ok(neighbor, 'graph proximity should pull one-hop neighbors of keyword hits');
+    assert.equal(neighbor.rankSignals.keywordRank, null);
+    assert.ok(neighbor.rankSignals.graphProximityRank !== null);
+    assert.ok(neighbor.reasons.includes('graph-proximity'));
+
+    const semanticResponse = await client.request('tools/call', {
+      name: 'impact_trace_search_context',
+      arguments: { query: 'retry idempotent checkout signal', k: 5, includeEvidence: false }
+    });
+    assert.equal(semanticResponse.error, undefined);
+    assert.equal(semanticResponse.result.isError, undefined);
+    const semanticSearch = JSON.parse(semanticResponse.result.content[0].text) as {
+      results: Array<{
+        entity: { id: string };
+        reasons: string[];
+        rankSignals: {
+          keywordRank: number | null;
+          semanticRank: number | null;
+          graphProximityRank: number | null;
+        };
+      }>;
+    };
+    const semantic = semanticSearch.results.find((item) => item.entity.id === 'file:depth/semantic.ts');
+    assert.ok(semantic, 'semantic lane should map embedded facts back to indexed entities');
+    assert.equal(semantic.rankSignals.keywordRank, null);
+    assert.equal(semantic.rankSignals.semanticRank, 1);
+    assert.ok(semantic.reasons.includes('semantic'));
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP search_context semantic lane scores beyond the stream cap before ranking', async () => {
+  const repoRoot = await makeLargeSemanticRepo();
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+
+    const response = await client.request('tools/call', {
+      name: 'impact_trace_search_context',
+      arguments: { query: 'late semantic target exact checkout vector', k: 1, includeEvidence: false }
+    });
+
+    assert.equal(response.error, undefined);
+    assert.equal(response.result.isError, undefined);
+    const search = JSON.parse(response.result.content[0].text) as {
+      results: Array<{
+        entity: { id: string };
+        rankSignals: { keywordRank: number | null; semanticRank: number | null };
+      }>;
+    };
+    assert.equal(search.results[0]!.entity.id, 'file:semantic/late-target.ts');
+    assert.equal(search.results[0]!.rankSignals.keywordRank, null);
+    assert.equal(search.results[0]!.rankSignals.semanticRank, 1);
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP search_context caps broad LIKE candidate streams before final RRF fusion', async () => {
+  const repoRoot = await makeBroadSearchRepo();
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+
+    const response = await client.request('tools/call', {
+      name: 'impact_trace_search_context',
+      arguments: { query: 'BROAD_CAP', k: 1, includeEvidence: false }
+    });
+
+    assert.equal(response.error, undefined);
+    assert.equal(response.result.isError, undefined);
+    const search = JSON.parse(response.result.content[0].text) as {
+      counts: { matchedEntitiesLowerBound: number };
+      limits: { truncated: boolean };
+    };
+    assert.equal(search.counts.matchedEntitiesLowerBound, 500);
+    assert.equal(search.limits.truncated, true);
   } finally {
     await client.close();
   }

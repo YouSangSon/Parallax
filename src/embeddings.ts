@@ -24,6 +24,10 @@ function selectedModel(): string {
   return process.env.IMPACT_TRACE_EMBEDDING_MODEL ?? DEFAULT_REAL_MODEL;
 }
 
+export function selectedEmbeddingModel(): string {
+  return selectedModel();
+}
+
 async function getOrCreatePipeline(modelId: string): Promise<FeatureExtractionPipeline> {
   if (!pipelinePromise || cachedModelName !== modelId) {
     cachedModelName = modelId;

@@ -123,7 +123,8 @@ export function createMcpServer(context: McpContext): McpServer {
       inputSchema: {
         query: z.string().trim().min(1),
         k: z.number().int().min(1).max(50).optional(),
-        includeEvidence: z.boolean().optional()
+        includeEvidence: z.boolean().optional(),
+        budget: z.enum(['brief', 'standard', 'deep']).optional()
       },
       annotations: {
         title: 'Search indexed context',
@@ -133,18 +134,21 @@ export function createMcpServer(context: McpContext): McpServer {
         openWorldHint: false
       }
     },
-    async ({ query, k, includeEvidence }) => {
+    async ({ query, k, includeEvidence, budget }) => {
+      const normalizedBudget = budget === undefined ? null : normalizeContextBudget(budget);
       const semanticEmbedding = await searchContextSemanticEmbedding(context, query);
       const result = searchContext(context, {
         query,
         k: k ?? 10,
         includeEvidence: includeEvidence ?? true,
+        budget: normalizedBudget,
         semanticEmbedding
       });
       const telemetry = searchContextTelemetry(result);
       return toolJsonResponse(context, 'impact_trace_search_context', result, {
         indexRunId: telemetry.indexRunId,
         query,
+        budget: normalizedBudget,
         resourceCount: telemetry.resourceCount
       });
     }
@@ -1420,6 +1424,7 @@ type SearchContextOptions = {
   query: string;
   k: number;
   includeEvidence: boolean;
+  budget: ContextBudget | null;
   semanticEmbedding: EmbeddingResult | null;
 };
 
@@ -1430,6 +1435,7 @@ type SearchEntityRow = {
   entity_symbol: string | null;
   entity_language_id: string | null;
   entity_display_name: string;
+  relation_kind_bucket: string | null;
   id_match: number;
   display_match: number;
   path_match: number;
@@ -1481,6 +1487,17 @@ const searchContextRrfK = 60;
 const searchContextStreamLimit = 500;
 const searchContextGraphSeedLimit = 25;
 
+type SearchContextBudgetPreset = {
+  returnedBytesLimit: number;
+  estimatedTokensLimit: number;
+};
+
+const searchContextBudgetPresets: Record<ContextBudget, SearchContextBudgetPreset> = {
+  brief: { returnedBytesLimit: 5_000, estimatedTokensLimit: 1_250 },
+  standard: { returnedBytesLimit: 12_000, estimatedTokensLimit: 3_000 },
+  deep: { returnedBytesLimit: 30_000, estimatedTokensLimit: 7_500 }
+};
+
 async function searchContextSemanticEmbedding(context: McpContext, query: string): Promise<EmbeddingResult | null> {
   const model = selectedEmbeddingModel();
   const hasEmbeddings = withReadOnlyDb(context, (db, repoId) => {
@@ -1518,7 +1535,7 @@ function searchContext(context: McpContext, options: SearchContextOptions): unkn
     const indexRunId = latestCompletedIndexRun(db, repoId);
     const likeQuery = `%${escapeLike(query)}%`;
     const ranking = searchRankedEntities(db, repoId, indexRunId, query, likeQuery, options.k, options.semanticEmbedding);
-    const selected = ranking.rankedRows.slice(0, options.k);
+    const selected = diversifyRankedRows(ranking.rankedRows, options.k).slice(0, options.k);
     const evidenceByEntity = new Map<string, CompactEvidenceResource[]>();
     const evidenceUris: string[] = [];
 
@@ -1538,7 +1555,7 @@ function searchContext(context: McpContext, options: SearchContextOptions): unkn
       }
     }
 
-    const results = selected.map((item) => {
+    const unbudgetedResults = selected.map((item) => {
       const entity = entityFromSearchRow(item.row);
       return {
         entity,
@@ -1549,29 +1566,177 @@ function searchContext(context: McpContext, options: SearchContextOptions): unkn
         evidence: evidenceByEntity.get(item.row.entity_id) ?? []
       };
     });
-
-    return {
+    const budgeted = applySearchContextBudget({
       query,
       indexRunId,
-      results,
-      resources: {
-        entities: results.map((item) => item.resourceUri).sort(),
-        evidence: [...new Set(evidenceUris)].sort()
-      },
-      limits: {
-        k: options.k,
-        includeEvidence: options.includeEvidence,
-        evidencePerEntity: searchContextEvidencePerEntity,
-        snippetChars: searchContextSnippetChars,
-        truncated: ranking.truncated
-      },
-      counts: {
-        returnedEntities: results.length,
-        matchedEntitiesLowerBound: ranking.matchedEntitiesLowerBound,
-        evidence: new Set(evidenceUris).size
-      }
-    };
+      results: unbudgetedResults,
+      budget: options.budget,
+      k: options.k,
+      includeEvidence: options.includeEvidence,
+      ranking,
+      evidenceUris
+    });
+
+    return budgeted;
   });
+}
+
+function applySearchContextBudget(input: {
+  query: string;
+  indexRunId: number;
+  results: Array<{
+    entity: EntityRef;
+    score: number;
+    reasons: string[];
+    rankSignals: SearchRankSignals;
+    resourceUri: string;
+    evidence: CompactEvidenceResource[];
+  }>;
+  budget: ContextBudget | null;
+  k: number;
+  includeEvidence: boolean;
+  ranking: SearchRanking;
+  evidenceUris: string[];
+}): unknown {
+  const preset = input.budget ? searchContextBudgetPresets[input.budget] : null;
+  let results = input.results;
+  let evidenceUris = input.evidenceUris;
+  let omittedEntities = Math.max(input.ranking.matchedEntitiesLowerBound - results.length, 0);
+  let omittedEvidence = 0;
+
+  const build = (currentResults: typeof results, currentEvidenceUris: string[]) => ({
+    query: input.query,
+    indexRunId: input.indexRunId,
+    results: currentResults,
+    resources: {
+      entities: currentResults.map((item) => item.resourceUri).sort(),
+      evidence: [...new Set(currentEvidenceUris)].sort()
+    },
+    limits: {
+      k: input.k,
+      includeEvidence: input.includeEvidence,
+      evidencePerEntity: searchContextEvidencePerEntity,
+      snippetChars: searchContextSnippetChars,
+      truncated: input.ranking.truncated || omittedEntities > 0,
+      budget: input.budget,
+      returnedBytes: 0,
+      returnedBytesLimit: preset?.returnedBytesLimit ?? null,
+      estimatedTokens: 0,
+      estimatedTokensLimit: preset?.estimatedTokensLimit ?? null,
+      budgetExceeded: false
+    },
+    counts: {
+      returnedEntities: currentResults.length,
+      matchedEntitiesLowerBound: input.ranking.matchedEntitiesLowerBound,
+      evidence: new Set(currentEvidenceUris).size
+    },
+    omittedCounts: {
+      entities: omittedEntities,
+      evidence: omittedEvidence
+    }
+  });
+
+  if (preset) {
+    let current = build(results, evidenceUris);
+    stabilizeSearchContextSize(current);
+    let returnedBytes = current.limits.returnedBytes;
+    while (returnedBytes > preset.returnedBytesLimit && results.some((item) => item.evidence.length > 0)) {
+      for (let index = results.length - 1; index >= 0; index -= 1) {
+        const item = results[index]!;
+        if (item.evidence.length === 0) continue;
+        omittedEvidence += item.evidence.length;
+        results = results.map((result, resultIndex) =>
+          resultIndex === index ? { ...result, evidence: [] } : result
+        );
+        break;
+      }
+      const keptEvidenceIds = new Set(results.flatMap((item) => item.evidence.map((evidence) => evidence.resourceUri)));
+      evidenceUris = evidenceUris.filter((uri) => keptEvidenceIds.has(uri));
+      current = build(results, evidenceUris);
+      stabilizeSearchContextSize(current);
+      returnedBytes = current.limits.returnedBytes;
+    }
+    while (returnedBytes > preset.returnedBytesLimit && results.length > 1) {
+      const removed = results[results.length - 1]!;
+      omittedEntities += 1;
+      omittedEvidence += removed.evidence.length;
+      results = results.slice(0, -1);
+      const keptEvidenceIds = new Set(results.flatMap((item) => item.evidence.map((evidence) => evidence.resourceUri)));
+      evidenceUris = evidenceUris.filter((uri) => keptEvidenceIds.has(uri));
+      current = build(results, evidenceUris);
+      stabilizeSearchContextSize(current);
+      returnedBytes = current.limits.returnedBytes;
+    }
+  }
+
+  const finalResult = build(results, evidenceUris);
+  finalizeSearchContextSize(finalResult, preset);
+  return finalResult;
+}
+
+function stabilizeSearchContextSize(result: { limits: { returnedBytes: number; estimatedTokens: number } }): void {
+  for (let index = 0; index < 8; index += 1) {
+    const returnedBytes = byteLength(JSON.stringify(result));
+    const estimatedTokens = Math.ceil(returnedBytes / 4);
+    if (result.limits.returnedBytes === returnedBytes && result.limits.estimatedTokens === estimatedTokens) {
+      return;
+    }
+    result.limits.returnedBytes = returnedBytes;
+    result.limits.estimatedTokens = estimatedTokens;
+  }
+}
+
+function finalizeSearchContextSize(
+  result: { limits: { returnedBytes: number; returnedBytesLimit: number | null; estimatedTokens: number; budgetExceeded: boolean } },
+  preset: { returnedBytesLimit: number } | null
+): void {
+  stabilizeSearchContextSize(result);
+  if (!preset) return;
+
+  const withinBudgetRepresentationFits = result.limits.returnedBytes <= preset.returnedBytesLimit;
+  if (withinBudgetRepresentationFits) return;
+
+  result.limits.budgetExceeded = true;
+  stabilizeSearchContextSize(result);
+}
+
+function diversifyRankedRows(rows: RankedSearchEntity[], k: number): RankedSearchEntity[] {
+  if (k < 3 || rows.length <= 1) return rows;
+  const buckets = new Map<string, RankedSearchEntity[]>();
+  for (const row of rows) {
+    const key = searchDiversityBucket(row.row);
+    const bucket = buckets.get(key) ?? [];
+    bucket.push(row);
+    buckets.set(key, bucket);
+  }
+  if (buckets.size <= 1) return rows;
+
+  const diversified: RankedSearchEntity[] = [];
+  const queues = [...buckets.values()];
+  while (diversified.length < rows.length) {
+    let moved = false;
+    for (const queue of queues) {
+      const next = queue.shift();
+      if (!next) continue;
+      diversified.push(next);
+      moved = true;
+    }
+    if (!moved) break;
+  }
+  return diversified;
+}
+
+function searchDiversityBucket(row: SearchEntityRow): string {
+  return [
+    pathPrefixBucket(row.entity_path),
+    row.entity_kind,
+    row.relation_kind_bucket ?? 'no-relation'
+  ].join('|');
+}
+
+function pathPrefixBucket(filePath: string | null): string {
+  if (!filePath) return '[no-path]';
+  return filePath.split('/')[0] || filePath;
 }
 
 function searchRankedEntities(
@@ -1650,6 +1815,7 @@ function mergeSearchStream(
     candidate.row.symbol_match = Math.max(candidate.row.symbol_match, row.symbol_match);
     candidate.row.relation_match_count = Math.max(candidate.row.relation_match_count, row.relation_match_count);
     candidate.row.evidence_match_count = Math.max(candidate.row.evidence_match_count, row.evidence_match_count);
+    candidate.row.relation_kind_bucket = candidate.row.relation_kind_bucket ?? row.relation_kind_bucket;
     candidate[rankField] = index + 1;
     candidates.set(row.entity_id, candidate);
   });
@@ -1723,6 +1889,7 @@ function searchFtsKeywordEntityRows(
           entities.symbol AS entity_symbol,
           entities.language_id AS entity_language_id,
           entities.display_name AS entity_display_name,
+          NULL AS relation_kind_bucket,
           CASE WHEN entities.id LIKE ? ESCAPE '\\' THEN 1 ELSE 0 END AS id_match,
           CASE WHEN entities.display_name LIKE ? ESCAPE '\\' THEN 1 ELSE 0 END AS display_match,
           CASE WHEN COALESCE(entities.path, '') LIKE ? ESCAPE '\\' THEN 1 ELSE 0 END AS path_match,
@@ -1759,6 +1926,7 @@ function searchLikeKeywordEntityRows(
         entities.symbol AS entity_symbol,
         entities.language_id AS entity_language_id,
         entities.display_name AS entity_display_name,
+        NULL AS relation_kind_bucket,
         CASE WHEN entities.id LIKE ? ESCAPE '\\' THEN 1 ELSE 0 END AS id_match,
         CASE WHEN entities.display_name LIKE ? ESCAPE '\\' THEN 1 ELSE 0 END AS display_match,
         CASE WHEN COALESCE(entities.path, '') LIKE ? ESCAPE '\\' THEN 1 ELSE 0 END AS path_match,
@@ -1827,6 +1995,7 @@ function searchRelationEntityRows(
         entities.symbol AS entity_symbol,
         entities.language_id AS entity_language_id,
         entities.display_name AS entity_display_name,
+        min(relations.kind) AS relation_kind_bucket,
         0 AS id_match,
         0 AS display_match,
         0 AS path_match,
@@ -1863,6 +2032,7 @@ function searchEvidenceEntityRows(
         entities.symbol AS entity_symbol,
         entities.language_id AS entity_language_id,
         entities.display_name AS entity_display_name,
+        min(relations.kind) AS relation_kind_bucket,
         0 AS id_match,
         0 AS display_match,
         0 AS path_match,
@@ -1908,6 +2078,7 @@ function searchSemanticEntityRows(
         entities.symbol AS entity_symbol,
         entities.language_id AS entity_language_id,
         entities.display_name AS entity_display_name,
+        NULL AS relation_kind_bucket,
         fact_embeddings.vector AS vector
       FROM fact_embeddings
       INNER JOIN facts
@@ -1942,6 +2113,7 @@ function searchSemanticEntityRows(
           entity_symbol: row.entity_symbol,
           entity_language_id: row.entity_language_id,
           entity_display_name: row.entity_display_name,
+          relation_kind_bucket: null,
           id_match: 0,
           display_match: 0,
           path_match: 0,
@@ -1986,6 +2158,7 @@ function searchGraphProximityEntityRows(
         neighbor.symbol AS entity_symbol,
         neighbor.language_id AS entity_language_id,
         neighbor.display_name AS entity_display_name,
+        min(relations.kind) AS relation_kind_bucket,
         count(relations.id) AS relation_match_count
       FROM relations
       INNER JOIN entities seed

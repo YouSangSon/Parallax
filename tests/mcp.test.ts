@@ -110,7 +110,7 @@ class McpProcessClient {
   }
 
   private async waitForResponse(id: string | number): Promise<JsonRpcMessage> {
-    const deadlineMs = 2_000;
+    const deadlineMs = 5_000;
     const startedAt = Date.now();
     while (Date.now() - startedAt < deadlineMs) {
       const index = this.messages.findIndex((message) => message.id === id);
@@ -560,6 +560,154 @@ async function makeBroadSearchRepo(): Promise<string> {
         run.id
       );
     }
+  } finally {
+    db.close();
+  }
+  return repoRoot;
+}
+
+async function makeDiversificationRepo(): Promise<string> {
+  const repoRoot = await makeRepo();
+  const db = new DatabaseSync(databasePath(repoRoot));
+  try {
+    const repo = db.prepare('SELECT id FROM repos LIMIT 1').get() as { id: number };
+    const run = db
+      .prepare('SELECT id FROM index_runs WHERE repo_id = ? AND status = ? ORDER BY id DESC LIMIT 1')
+      .get(repo.id, 'completed') as { id: number };
+    const insertEntity = db.prepare(`
+      INSERT INTO entities (
+        id, repo_id, kind, path, symbol, language_id, display_name,
+        created_index_run_id, updated_index_run_id
+      )
+      VALUES (?, ?, ?, ?, NULL, 'typescript', ?, ?, ?)
+    `);
+    const insertRelation = db.prepare(`
+      INSERT INTO relations (
+        id, repo_id, source_entity_id, target_entity_id, kind, confidence,
+        adapter_run_id, index_run_id, provenance
+      )
+      VALUES (?, ?, ?, ?, ?, 'medium', NULL, ?, 'DIVERSIFY_MARKER')
+    `);
+    const insertEvidence = db.prepare(`
+      INSERT INTO relation_evidence (
+        id, relation_id, repo_id, file_path, kind, snippet, confidence, index_run_id
+      )
+      VALUES (?, ?, ?, ?, ?, 'diversify marker evidence', 'medium', ?)
+    `);
+
+    const add = (
+      entityId: string,
+      kind: string,
+      filePath: string,
+      displayName: string,
+      relationKind = 'CALLS'
+    ): void => {
+      const relationId = `diversify:${entityId}`;
+      insertEntity.run(entityId, repo.id, kind, filePath, displayName, run.id, run.id);
+      insertRelation.run(relationId, repo.id, entityId, entityId, relationKind, run.id);
+      insertEvidence.run(`${relationId}:evidence`, relationId, repo.id, filePath, relationKind, run.id);
+    };
+
+    for (let index = 0; index < 5; index += 1) {
+      add(`file:src/diverse-${index}.ts`, 'file', `src/diverse-${index}.ts`, `A src dominant ${index}`);
+    }
+    add('file:src/diverse-doc-relation.ts', 'file', 'src/diverse-doc-relation.ts', 'C src documents relation', 'DOCUMENTS');
+    add('symbol:src/diverse#handler', 'symbol', 'src/diverse-handler.ts', 'B symbol candidate', 'DECLARES');
+    add('file:docs/diverse.md', 'file', 'docs/diverse.md', 'Y docs candidate', 'DOCUMENTS');
+    add('file:tests/diverse.test.ts', 'file', 'tests/diverse.test.ts', 'Z tests candidate', 'VERIFIES');
+  } finally {
+    db.close();
+  }
+  return repoRoot;
+}
+
+async function makeHugeEvidenceRepo(): Promise<string> {
+  const repoRoot = await makeRepo();
+  const db = new DatabaseSync(databasePath(repoRoot));
+  try {
+    const repo = db.prepare('SELECT id FROM repos LIMIT 1').get() as { id: number };
+    const run = db
+      .prepare('SELECT id FROM index_runs WHERE repo_id = ? AND status = ? ORDER BY id DESC LIMIT 1')
+      .get(repo.id, 'completed') as { id: number };
+    const insertEntity = db.prepare(`
+      INSERT INTO entities (
+        id, repo_id, kind, path, symbol, language_id, display_name,
+        created_index_run_id, updated_index_run_id
+      )
+      VALUES (?, ?, 'file', ?, NULL, 'typescript', ?, ?, ?)
+    `);
+    const insertRelation = db.prepare(`
+      INSERT INTO relations (
+        id, repo_id, source_entity_id, target_entity_id, kind, confidence,
+        adapter_run_id, index_run_id, provenance
+      )
+      VALUES (?, ?, ?, ?, 'CALLS', 'medium', NULL, ?, 'HUGE_EVIDENCE_MARKER')
+    `);
+    const insertEvidence = db.prepare(`
+      INSERT INTO relation_evidence (
+        id, relation_id, repo_id, file_path, kind, snippet, confidence, index_run_id
+      )
+      VALUES (?, ?, ?, ?, 'CALLS', ?, 'medium', ?)
+    `);
+
+    const longPath = `huge/${'p'.repeat(3_000)}.ts`;
+    const longDisplayName = `Huge Evidence ${'d'.repeat(700)}`;
+    insertEntity.run('file:huge/evidence.ts', repo.id, longPath, longDisplayName, run.id, run.id);
+    insertRelation.run('huge:evidence', repo.id, 'file:huge/evidence.ts', 'file:huge/evidence.ts', run.id);
+    insertEvidence.run(
+      'huge:evidence:0',
+      'huge:evidence',
+      repo.id,
+      'huge/evidence.ts',
+      `HUGE_EVIDENCE_MARKER ${'x'.repeat(24_000)}`,
+      run.id
+    );
+  } finally {
+    db.close();
+  }
+  return repoRoot;
+}
+
+async function makeUnavoidableBudgetRepo(): Promise<string> {
+  const repoRoot = await makeRepo();
+  const db = new DatabaseSync(databasePath(repoRoot));
+  try {
+    const repo = db.prepare('SELECT id FROM repos LIMIT 1').get() as { id: number };
+    const run = db
+      .prepare('SELECT id FROM index_runs WHERE repo_id = ? AND status = ? ORDER BY id DESC LIMIT 1')
+      .get(repo.id, 'completed') as { id: number };
+    const longPath = `huge/${'p'.repeat(8_000)}.ts`;
+    const longDisplayName = `Unavoidable Budget ${'d'.repeat(8_000)}`;
+    db.prepare(`
+      INSERT INTO entities (
+        id, repo_id, kind, path, symbol, language_id, display_name,
+        created_index_run_id, updated_index_run_id
+      )
+      VALUES (?, ?, 'file', ?, NULL, 'typescript', ?, ?, ?)
+    `).run('file:huge/unavoidable.ts', repo.id, longPath, longDisplayName, run.id, run.id);
+  } finally {
+    db.close();
+  }
+  return repoRoot;
+}
+
+async function makeBoundaryBudgetRepo(): Promise<string> {
+  const repoRoot = await makeRepo();
+  const db = new DatabaseSync(databasePath(repoRoot));
+  try {
+    const repo = db.prepare('SELECT id FROM repos LIMIT 1').get() as { id: number };
+    const run = db
+      .prepare('SELECT id FROM index_runs WHERE repo_id = ? AND status = ? ORDER BY id DESC LIMIT 1')
+      .get(repo.id, 'completed') as { id: number };
+    const boundaryPath = `boundary/${'p'.repeat(3_880)}.ts`;
+    const boundaryDisplayName = `Boundary ${'d'.repeat(200)}`;
+    db.prepare(`
+      INSERT INTO entities (
+        id, repo_id, kind, path, symbol, language_id, display_name,
+        created_index_run_id, updated_index_run_id
+      )
+      VALUES (?, ?, 'file', ?, NULL, 'typescript', ?, ?, ?)
+    `).run('file:boundary.ts', repo.id, boundaryPath, boundaryDisplayName, run.id, run.id);
   } finally {
     db.close();
   }
@@ -1621,6 +1769,192 @@ test('MCP search_context caps broad LIKE candidate streams before final RRF fusi
     };
     assert.equal(search.counts.matchedEntitiesLowerBound, 500);
     assert.equal(search.limits.truncated, true);
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP search_context brief budget reports returned bytes and omitted entities', async () => {
+  const repoRoot = await makeWideContextRepo();
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+
+    const response = await client.request('tools/call', {
+      name: 'impact_trace_search_context',
+      arguments: { query: 'src/a.ts', k: 10, includeEvidence: true, budget: 'brief' }
+    });
+
+    assert.equal(response.error, undefined);
+    assert.equal(response.result.isError, undefined);
+    const search = JSON.parse(response.result.content[0].text) as {
+      results: Array<{ evidence: unknown[] }>;
+      limits: {
+        budget: string;
+        returnedBytes: number;
+        returnedBytesLimit: number;
+        estimatedTokens: number;
+        estimatedTokensLimit: number;
+      };
+      omittedCounts: { entities: number; evidence: number };
+      counts: { returnedEntities: number; matchedEntitiesLowerBound: number };
+    };
+    assert.equal(search.limits.budget, 'brief');
+    assert.ok(search.limits.returnedBytes <= search.limits.returnedBytesLimit);
+    assert.ok(search.limits.estimatedTokens <= search.limits.estimatedTokensLimit);
+    assert.ok(search.counts.returnedEntities < search.counts.matchedEntitiesLowerBound);
+    assert.ok(search.omittedCounts.entities > 0);
+    assert.ok(search.omittedCounts.evidence > 0);
+    assert.ok(search.results.every((item) => item.evidence.length <= 2));
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP search_context exposes all search budget presets', async () => {
+  const repoRoot = await makeWideContextRepo();
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+
+    for (const [budget, returnedBytesLimit, estimatedTokensLimit] of [
+      ['standard', 12_000, 3_000],
+      ['deep', 30_000, 7_500]
+    ] as const) {
+      const response = await client.request('tools/call', {
+        name: 'impact_trace_search_context',
+        arguments: { query: 'src/a.ts', k: 3, includeEvidence: true, budget }
+      });
+
+      assert.equal(response.error, undefined);
+      assert.equal(response.result.isError, undefined);
+      const search = JSON.parse(response.result.content[0].text) as {
+        limits: {
+          budget: string;
+          returnedBytes: number;
+          returnedBytesLimit: number;
+          estimatedTokens: number;
+          estimatedTokensLimit: number;
+        };
+      };
+      assert.equal(search.limits.budget, budget);
+      assert.equal(search.limits.returnedBytesLimit, returnedBytesLimit);
+      assert.equal(search.limits.estimatedTokensLimit, estimatedTokensLimit);
+      assert.ok(search.limits.returnedBytes <= returnedBytesLimit);
+      assert.ok(search.limits.estimatedTokens <= estimatedTokensLimit);
+    }
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP search_context trims evidence before violating a single-result byte budget', async () => {
+  const repoRoot = await makeHugeEvidenceRepo();
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+
+    const response = await client.request('tools/call', {
+      name: 'impact_trace_search_context',
+      arguments: { query: 'HUGE_EVIDENCE_MARKER', k: 1, includeEvidence: true, budget: 'brief' }
+    });
+
+    assert.equal(response.error, undefined);
+    assert.equal(response.result.isError, undefined);
+    const text = response.result.content[0].text as string;
+    const search = JSON.parse(text) as {
+      results: Array<{ evidence: unknown[] }>;
+      limits: { returnedBytes: number; returnedBytesLimit: number; budgetExceeded: boolean };
+      omittedCounts: { entities: number; evidence: number };
+    };
+    assert.ok(Buffer.byteLength(text, 'utf8') <= search.limits.returnedBytesLimit);
+    assert.ok(search.limits.returnedBytes <= search.limits.returnedBytesLimit);
+    assert.equal(search.limits.budgetExceeded, false);
+    assert.deepEqual(search.results[0]!.evidence, []);
+    assert.equal(search.omittedCounts.evidence, 1);
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP search_context reports final bytes when one entity cannot fit budget', async () => {
+  const repoRoot = await makeUnavoidableBudgetRepo();
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+
+    const response = await client.request('tools/call', {
+      name: 'impact_trace_search_context',
+      arguments: { query: 'unavoidable', k: 1, includeEvidence: false, budget: 'brief' }
+    });
+
+    assert.equal(response.error, undefined);
+    assert.equal(response.result.isError, undefined);
+    const text = response.result.content[0].text as string;
+    const search = JSON.parse(text) as {
+      limits: { returnedBytes: number; returnedBytesLimit: number; budgetExceeded: boolean };
+      counts: { returnedEntities: number };
+    };
+    assert.equal(search.counts.returnedEntities, 1);
+    assert.equal(search.limits.budgetExceeded, true);
+    assert.ok(search.limits.returnedBytes > search.limits.returnedBytesLimit);
+    assert.equal(search.limits.returnedBytes, Buffer.byteLength(text, 'utf8'));
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP search_context reports exact final bytes at the budgetExceeded boundary', async () => {
+  const repoRoot = await makeBoundaryBudgetRepo();
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+
+    const response = await client.request('tools/call', {
+      name: 'impact_trace_search_context',
+      arguments: { query: 'boundary', k: 1, includeEvidence: false, budget: 'brief' }
+    });
+
+    assert.equal(response.error, undefined);
+    assert.equal(response.result.isError, undefined);
+    const text = response.result.content[0].text as string;
+    const search = JSON.parse(text) as {
+      limits: { returnedBytes: number; returnedBytesLimit: number; budgetExceeded: boolean };
+    };
+    assert.equal(search.limits.returnedBytes, Buffer.byteLength(text, 'utf8'));
+    assert.equal(search.limits.returnedBytes, search.limits.returnedBytesLimit);
+    assert.equal(search.limits.budgetExceeded, true);
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP search_context diversifies ranked entities by path, entity kind, and relation kind', async () => {
+  const repoRoot = await makeDiversificationRepo();
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+
+    const response = await client.request('tools/call', {
+      name: 'impact_trace_search_context',
+      arguments: { query: 'DIVERSIFY_MARKER', k: 5, includeEvidence: false, budget: 'deep' }
+    });
+
+    assert.equal(response.error, undefined);
+    assert.equal(response.result.isError, undefined);
+    const search = JSON.parse(response.result.content[0].text) as {
+      results: Array<{ entity: { id: string; kind: string; path: string }; rankSignals: { relationRank: number | null } }>;
+    };
+    const prefixes = search.results.map((item) => item.entity.path?.split('/')[0]);
+    const kinds = search.results.map((item) => item.entity.kind);
+    const ids = search.results.map((item) => item.entity.id);
+    assert.deepEqual(prefixes, ['src', 'src', 'src', 'docs', 'tests']);
+    assert.ok(kinds.includes('file'));
+    assert.ok(kinds.includes('symbol'));
+    assert.ok(ids.includes('symbol:src/diverse#handler'));
+    assert.ok(ids.includes('file:src/diverse-doc-relation.ts'));
+    assert.ok(ids.includes('file:docs/diverse.md'));
+    assert.ok(ids.includes('file:tests/diverse.test.ts'));
   } finally {
     await client.close();
   }

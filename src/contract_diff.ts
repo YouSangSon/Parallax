@@ -2,6 +2,15 @@ import { createHash } from 'node:crypto';
 import { readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 
+import {
+  extractOpenApiJsonCompatibility,
+  OPENAPI_COMPAT_ANALYZER_ID,
+  OPENAPI_COMPAT_SCHEMA_VERSION,
+  type OpenApiCompatibilityOperation,
+  type OpenApiCompatibilitySignature,
+  type OpenApiObjectSchemaSignature,
+  type OpenApiResponseSignature
+} from './openapi_compat.js';
 import { normalizeRepoRoot, resolveInsideRoot } from './security.js';
 import { contentHash, ensureRepo, getRepoId, latestCompletedIndexRun, openDatabase } from './store.js';
 import { listWorkspaces, type WorkspaceSummary } from './workspace.js';
@@ -12,6 +21,11 @@ export type ContractDiffClassification = 'breaking' | 'non-breaking' | 'unknown'
 export type ContractDiffChangeKind =
   | 'removed_endpoint'
   | 'added_endpoint'
+  | 'removed_response_status'
+  | 'removed_response_required_property'
+  | 'changed_response_property_type'
+  | 'added_request_required_property'
+  | 'changed_request_property_type'
   | 'unreadable_current_contract'
   | 'unparsed_current_contract'
   | 'changed_contract_without_endpoint_delta';
@@ -48,6 +62,11 @@ export type ContractDiffChange = {
   routePath?: string;
   previousEndpointId?: string;
   currentEndpointId?: string;
+  statusCode?: string;
+  propertyName?: string;
+  schemaPath?: string;
+  previousSchemaType?: string;
+  currentSchemaType?: string;
 };
 
 export type ImpactedContractConsumer = {
@@ -99,6 +118,7 @@ type ContractBaselineRow = {
   path: string;
   schema_version: string | null;
   content_hash: string;
+  compatibility_json: string;
 };
 
 type EndpointRow = {
@@ -121,6 +141,7 @@ type CurrentYamlRoute = {
 type CurrentContractParse = {
   ok: boolean;
   endpoints: ContractEndpoint[];
+  compatibility?: OpenApiCompatibilitySignature;
   warning?: string;
 };
 
@@ -258,7 +279,7 @@ function loadContractBaseline(
 ): ContractBaselineRow | undefined {
   return db
     .prepare(
-      `SELECT c.id, c.kind, c.service_name, c.path, v.schema_version, v.content_hash
+      `SELECT c.id, c.kind, c.service_name, c.path, v.schema_version, v.content_hash, v.compatibility_json
        FROM contracts c
        INNER JOIN contract_versions v
           ON v.contract_id = c.id
@@ -388,6 +409,11 @@ function classifyChanges(
     });
   }
 
+  const previousCompatibility = parseOpenApiCompatibility(provider.contract.compatibility_json);
+  if (previousCompatibility !== undefined && current.compatibility !== undefined) {
+    changes.push(...classifyOpenApiCompatibilityChanges(previousCompatibility, current.compatibility));
+  }
+
   if (changes.length === 0 && current.contentHash !== undefined && current.contentHash !== provider.contract.content_hash) {
     changes.push({
       kind: 'changed_contract_without_endpoint_delta',
@@ -399,6 +425,139 @@ function classifyChanges(
   return changes.sort(compareChanges);
 }
 
+function classifyOpenApiCompatibilityChanges(
+  previous: OpenApiCompatibilitySignature,
+  current: OpenApiCompatibilitySignature
+): ContractDiffChange[] {
+  const previousByKey = compatibilityOperationsByKey(previous.operations);
+  const currentByKey = compatibilityOperationsByKey(current.operations);
+  const changes: ContractDiffChange[] = [];
+  for (const [key, previousOperation] of previousByKey) {
+    const currentOperation = currentByKey.get(key);
+    if (!currentOperation) continue;
+    changes.push(...classifyRequestBodyChanges(previousOperation, currentOperation));
+    changes.push(...classifyResponseBodyChanges(previousOperation, currentOperation));
+  }
+  return changes;
+}
+
+function classifyRequestBodyChanges(
+  previousOperation: OpenApiCompatibilityOperation,
+  currentOperation: OpenApiCompatibilityOperation
+): ContractDiffChange[] {
+  const previousBody = previousOperation.requestBody;
+  const currentBody = currentOperation.requestBody;
+  if (currentBody === undefined) return [];
+  const changes: ContractDiffChange[] = [];
+  const previousRequired = new Set(previousBody?.required ?? []);
+  for (const propertyName of currentBody.required) {
+    if (previousRequired.has(propertyName)) continue;
+    changes.push({
+      kind: 'added_request_required_property',
+      classification: 'breaking',
+      reason: 'request required property added to current contract',
+      httpMethod: currentOperation.method,
+      routePath: currentOperation.path,
+      propertyName,
+      schemaPath: `requestBody.required.${propertyName}`
+    });
+  }
+  changes.push(...classifyPropertyTypeChanges({
+    kind: 'changed_request_property_type',
+    reason: 'request property type changed in current contract',
+    httpMethod: currentOperation.method,
+    routePath: currentOperation.path,
+    schemaPathPrefix: 'requestBody.properties',
+    previousBody,
+    currentBody
+  }));
+  return changes;
+}
+
+function classifyResponseBodyChanges(
+  previousOperation: OpenApiCompatibilityOperation,
+  currentOperation: OpenApiCompatibilityOperation
+): ContractDiffChange[] {
+  const previousResponses = responsesByStatus(previousOperation.responses);
+  const currentResponses = responsesByStatus(currentOperation.responses);
+  const changes: ContractDiffChange[] = [];
+  for (const [statusCode, previousResponse] of previousResponses) {
+    const currentResponse = currentResponses.get(statusCode);
+    if (!currentResponse) {
+      changes.push({
+        kind: 'removed_response_status',
+        classification: 'breaking',
+        reason: 'response status removed from current contract',
+        httpMethod: previousOperation.method,
+        routePath: previousOperation.path,
+        statusCode,
+        schemaPath: `responses.${statusCode}`
+      });
+      continue;
+    }
+    const previousBody = previousResponse.body;
+    if (previousBody === undefined) continue;
+    const currentBody = currentResponse.body;
+    const currentRequired = new Set(currentBody?.required ?? []);
+    for (const propertyName of previousBody.required) {
+      if (currentRequired.has(propertyName)) continue;
+      changes.push({
+        kind: 'removed_response_required_property',
+        classification: 'breaking',
+        reason: 'response required property removed from current contract',
+        httpMethod: previousOperation.method,
+        routePath: previousOperation.path,
+        statusCode,
+        propertyName,
+        schemaPath: `responses.${statusCode}.body.required.${propertyName}`
+      });
+    }
+    changes.push(...classifyPropertyTypeChanges({
+      kind: 'changed_response_property_type',
+      reason: 'response property type changed in current contract',
+      httpMethod: previousOperation.method,
+      routePath: previousOperation.path,
+      statusCode,
+      schemaPathPrefix: `responses.${statusCode}.body.properties`,
+      previousBody,
+      currentBody
+    }));
+  }
+  return changes;
+}
+
+function classifyPropertyTypeChanges(options: {
+  kind: 'changed_request_property_type' | 'changed_response_property_type';
+  reason: string;
+  httpMethod: string;
+  routePath: string;
+  statusCode?: string;
+  schemaPathPrefix: string;
+  previousBody: OpenApiObjectSchemaSignature | undefined;
+  currentBody: OpenApiObjectSchemaSignature | undefined;
+}): ContractDiffChange[] {
+  if (options.previousBody === undefined || options.currentBody === undefined) return [];
+  const changes: ContractDiffChange[] = [];
+  for (const [propertyName, previousProperty] of Object.entries(options.previousBody.properties)) {
+    const currentProperty = options.currentBody.properties[propertyName];
+    if (currentProperty === undefined) continue;
+    if (previousProperty.type === currentProperty.type) continue;
+    changes.push({
+      kind: options.kind,
+      classification: 'breaking',
+      reason: options.reason,
+      httpMethod: options.httpMethod,
+      routePath: options.routePath,
+      ...(options.statusCode !== undefined ? { statusCode: options.statusCode } : {}),
+      propertyName,
+      schemaPath: `${options.schemaPathPrefix}.${propertyName}`,
+      previousSchemaType: previousProperty.type,
+      currentSchemaType: currentProperty.type
+    });
+  }
+  return changes;
+}
+
 function impactedConsumersForChanges(
   db: ReturnType<typeof openDatabase>,
   workspaceId: number,
@@ -408,7 +567,7 @@ function impactedConsumersForChanges(
 ): ImpactedContractConsumer[] {
   const breakingEndpointKeys = new Set(
     changes
-      .filter((change) => change.kind === 'removed_endpoint' && change.httpMethod && change.routePath)
+      .filter((change) => change.classification === 'breaking' && change.httpMethod && change.routePath)
       .map((change) => endpointKey(change.httpMethod!, change.routePath!))
   );
   if (breakingEndpointKeys.size === 0) return [];
@@ -459,13 +618,21 @@ function persistBreakingLinks(
   changes: ContractDiffChange[]
 ): void {
   const breakingByKey = new Map(
-    changes
-      .filter((change) => change.kind === 'removed_endpoint' && change.httpMethod && change.routePath)
-      .map((change) => [endpointKey(change.httpMethod!, change.routePath!), change])
+    changes.reduce<Array<[string, ContractDiffChange[]]>>((entries, change) => {
+      if (change.classification !== 'breaking' || !change.httpMethod || !change.routePath) return entries;
+      const key = endpointKey(change.httpMethod, change.routePath);
+      const existing = entries.find(([entryKey]) => entryKey === key);
+      if (existing) {
+        existing[1].push(change);
+      } else {
+        entries.push([key, [change]]);
+      }
+      return entries;
+    }, [])
   );
   const links = impactedConsumers.flatMap((consumer): PersistableBreakLink[] => {
-    const change = breakingByKey.get(endpointKey(consumer.httpMethod, consumer.routePath));
-    return change ? [{ consumer, change }] : [];
+    const endpointChanges = breakingByKey.get(endpointKey(consumer.httpMethod, consumer.routePath)) ?? [];
+    return endpointChanges.map((change) => ({ consumer, change }));
   });
 
   db.exec('BEGIN');
@@ -563,6 +730,38 @@ function canPersistDiff(changes: ContractDiffChange[]): boolean {
   );
 }
 
+function parseOpenApiCompatibility(compatibilityJson: string): OpenApiCompatibilitySignature | undefined {
+  const parsed = parseJsonObject(compatibilityJson);
+  if (
+    parsed?.schemaVersion !== OPENAPI_COMPAT_SCHEMA_VERSION ||
+    parsed.analyzer !== OPENAPI_COMPAT_ANALYZER_ID ||
+    !Array.isArray(parsed.operations)
+  ) {
+    return undefined;
+  }
+  return parsed as OpenApiCompatibilitySignature;
+}
+
+function compatibilityOperationsByKey(
+  operations: readonly OpenApiCompatibilityOperation[]
+): Map<string, OpenApiCompatibilityOperation> {
+  const byKey = new Map<string, OpenApiCompatibilityOperation>();
+  for (const operation of operations) {
+    byKey.set(endpointKey(operation.method, operation.path), operation);
+  }
+  return byKey;
+}
+
+function responsesByStatus(
+  responses: readonly OpenApiResponseSignature[]
+): Map<string, OpenApiResponseSignature> {
+  const byStatus = new Map<string, OpenApiResponseSignature>();
+  for (const response of responses) {
+    byStatus.set(response.status, response);
+  }
+  return byStatus;
+}
+
 function parseCurrentOpenApiContract(content: string, contractPath: string): CurrentContractParse {
   if (contractPath.toLowerCase().endsWith('.json')) {
     return parseOpenApiJsonEndpoints(content);
@@ -632,7 +831,12 @@ function parseOpenApiJsonEndpoints(content: string): CurrentContractParse {
       });
     }
   }
-  return { ok: true, endpoints };
+  const compatibility = extractOpenApiJsonCompatibility(content);
+  return {
+    ok: true,
+    endpoints,
+    ...(compatibility !== undefined ? { compatibility } : {})
+  };
 }
 
 function parseOpenApiYamlEndpoints(content: string): CurrentContractParse {
@@ -824,14 +1028,22 @@ function compareChanges(left: ContractDiffChange, right: ContractDiffChange): nu
   if (kindOrder !== 0) return kindOrder;
   return (
     (left.routePath ?? '').localeCompare(right.routePath ?? '') ||
-    (left.httpMethod ?? '').localeCompare(right.httpMethod ?? '')
+    (left.httpMethod ?? '').localeCompare(right.httpMethod ?? '') ||
+    (left.statusCode ?? '').localeCompare(right.statusCode ?? '') ||
+    (left.schemaPath ?? '').localeCompare(right.schemaPath ?? '') ||
+    (left.propertyName ?? '').localeCompare(right.propertyName ?? '')
   );
 }
 
 function changeKindOrder(kind: ContractDiffChangeKind): number {
   if (kind === 'added_endpoint') return 0;
   if (kind === 'removed_endpoint') return 1;
-  return 2;
+  if (kind === 'removed_response_status') return 2;
+  if (kind === 'removed_response_required_property') return 3;
+  if (kind === 'changed_response_property_type') return 4;
+  if (kind === 'added_request_required_property') return 5;
+  if (kind === 'changed_request_property_type') return 6;
+  return 7;
 }
 
 function dedupeConsumers(consumers: ImpactedContractConsumer[]): ImpactedContractConsumer[] {
@@ -869,7 +1081,8 @@ function breakingLinkId(workspaceId: number, link: PersistableBreakLink): string
     link.consumer.providerRepoPath,
     link.consumer.providerContractPath,
     link.consumer.httpMethod,
-    link.consumer.routePath
+    link.consumer.routePath,
+    changeFingerprint(link.change)
   ).slice(0, 24);
 }
 
@@ -892,12 +1105,31 @@ function breakingLinkProvenance(link: PersistableBreakLink): string {
       kind: link.change.kind,
       method: link.consumer.httpMethod,
       path: link.consumer.routePath,
-      ...(link.change.previousEndpointId !== undefined ? { previousEndpointId: link.change.previousEndpointId } : {})
+      ...(link.change.previousEndpointId !== undefined ? { previousEndpointId: link.change.previousEndpointId } : {}),
+      ...(link.change.currentEndpointId !== undefined ? { currentEndpointId: link.change.currentEndpointId } : {}),
+      ...(link.change.statusCode !== undefined ? { statusCode: link.change.statusCode } : {}),
+      ...(link.change.propertyName !== undefined ? { propertyName: link.change.propertyName } : {}),
+      ...(link.change.schemaPath !== undefined ? { schemaPath: link.change.schemaPath } : {}),
+      ...(link.change.previousSchemaType !== undefined ? { previousSchemaType: link.change.previousSchemaType } : {}),
+      ...(link.change.currentSchemaType !== undefined ? { currentSchemaType: link.change.currentSchemaType } : {})
     },
     evidence: {
       filePath: link.consumer.consumerPath,
       snippet: link.consumer.evidenceSnippet
     }
+  });
+}
+
+function changeFingerprint(change: ContractDiffChange): string {
+  return stableJson({
+    kind: change.kind,
+    method: change.httpMethod,
+    path: change.routePath,
+    statusCode: change.statusCode,
+    propertyName: change.propertyName,
+    schemaPath: change.schemaPath,
+    previousSchemaType: change.previousSchemaType,
+    currentSchemaType: change.currentSchemaType
   });
 }
 

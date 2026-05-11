@@ -39,6 +39,7 @@
 | [D-027](#d-027-cross-repo-contract-resolution-reads-indexed-local-repos-only) | cross-repo contract resolution reads indexed local repos only | P0/P1 | 2026-05-11 |
 | [D-028](#d-028-contract-diff-v0-compares-indexed-openapi-endpoints-to-current-files) | contract diff v0 compares indexed OpenAPI endpoints to current files | P0/P1 | 2026-05-11 |
 | [D-029](#d-029-mcp-workspace-contract-resources-expand-contract-impact-on-demand) | MCP workspace contract resources expand contract impact on demand | P3/P0 | 2026-05-11 |
+| [D-030](#d-030-json-openapi-schema-diff-uses-indexed-compatibility-signatures) | JSON OpenAPI schema diff uses indexed compatibility signatures | P0/P1 | 2026-05-11 |
 
 ---
 
@@ -542,6 +543,24 @@
 **결과/위험:** v0는 OpenAPI endpoint-surface diff 결과를 MCP로 연결하는 surface다. `impact_trace_contract_diff`는 기본적으로 root workspace DB에 breaking link를 갱신하므로 MCP annotation은 write-capable이다. resource read는 read-only payload지만 context telemetry row는 append될 수 있다. contracts resource는 latest completed index baseline과 endpoint count만 보여주며 current working tree body/schema details는 후속 schema/body-level diff에서 확장한다.
 
 **관련 commit:** `feat(mcp): contract impact resources 추가`
+
+---
+
+## D-030: JSON OpenAPI schema diff uses indexed compatibility signatures
+
+**결정:** JSON OpenAPI contract는 index 시점에 `openapi-compat-v0` compatibility signature를 `contract_versions.compatibility_json`에 저장한다. signature는 operation별 method/path, JSON request body flat object required/properties type, JSON response status/body flat object required/properties type만 담는다. `workspace contract-diff`와 `impact_trace_contract_diff`는 latest indexed signature와 current JSON contract signature를 비교해 removed response status, removed response required property, changed response property type, added request required property, changed request property type을 `breaking`으로 분류한다. matching `CONSUMES_HTTP_ENDPOINT` consumer가 있으면 기존 endpoint removal과 같은 `BREAKS_COMPATIBILITY_WITH` link로 저장한다.
+
+**맥락:** endpoint surface만 비교하면 `/api/users`가 남아 있어도 response `name` required field가 사라지거나 request `email` required field가 추가되는 breaking change를 `unknown`으로만 반환한다. 사용자는 Claude/Codex가 코드 수정 직후 관련 contract impact를 작은 context로 알고 싶다고 했으므로, full OpenAPI parser/linter를 도입하기 전에 local deterministic signature로 가장 흔한 body-level break를 잡는다.
+
+**대안:**
+- full OpenAPI diff library 도입 — 장기적으로 좋지만 dependency, output normalization, YAML/ref/allOf/oneOf behavior 검증 범위가 크다.
+- current file만 깊게 parse하고 indexed baseline은 endpoint relation에서 재구성 — previous response/request body 정보가 없어서 body-level diff가 불가능하다.
+- contract raw content를 DB에 저장 — diff fidelity는 좋아지지만 DB 크기와 private payload 보존 정책이 커진다.
+- body-only change를 계속 `unknown` 유지 — context 절감 목표에는 안전하지만 사용자에게 실제 breaking risk를 충분히 알려주지 못한다.
+
+**결과/위험:** v0는 JSON OpenAPI의 flat object body signature와 local `#/...` `$ref`만 지원한다. YAML body diff, nested property path, arrays/items path, allOf/oneOf/anyOf, enum cardinality, format/nullability, auth scope, protobuf/GraphQL/AsyncAPI diff는 후속 slice다. signature는 contract metadata JSON에는 넣지 않고 `contract_versions.compatibility_json`에만 저장해 baseline metadata payload가 커지지 않게 한다. unreadable/unparsed current contract는 기존처럼 unknown이며 기존 breaking links를 보존한다.
+
+**관련 commit:** `feat(contracts): OpenAPI JSON schema diff 추가`
 
 ---
 

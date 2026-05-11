@@ -368,12 +368,36 @@ test('indexProject persists OpenAPI contracts and analyzeDiff reaches implementi
       '  "paths": {',
       '    "/api/users": {',
       '      "get": {',
-      '        "operationId": "listUsers"',
+      '        "operationId": "listUsers",',
+      '        "responses": {',
+      '          "200": {',
+      '            "description": "ok",',
+      '            "content": {',
+      '              "application/json": {',
+      '                "schema": {',
+      '                  "$ref": "#/components/schemas/User"',
+      '                }',
+      '              }',
+      '            }',
+      '          }',
+      '        }',
       '      }',
       '    },',
       '    "/api/audits": {',
       '      "get": {',
       '        "operationId": "listAudits"',
+      '      }',
+      '    }',
+      '  },',
+      '  "components": {',
+      '    "schemas": {',
+      '      "User": {',
+      '        "type": "object",',
+      '        "required": ["id", "name"],',
+      '        "properties": {',
+      '          "id": { "type": "string" },',
+      '          "name": { "type": "string" }',
+      '        }',
       '      }',
       '    }',
       '  }',
@@ -510,6 +534,55 @@ test('indexProject persists OpenAPI contracts and analyzeDiff reaches implementi
       ['GET /api/audits', 'GET /api/users']
     );
     assert.notEqual(jsonEndpointEvidence[0]!.start_line, jsonEndpointEvidence[1]!.start_line);
+
+    const jsonContractVersion = db
+      .prepare(
+        `SELECT compatibility_json
+         FROM contract_versions
+         WHERE id = ?`
+      )
+      .get(`file:contracts/openapi.json:${index.indexRunId}`) as
+      | {
+          compatibility_json: string;
+        }
+      | undefined;
+    assert.ok(jsonContractVersion, 'expected JSON contract version row');
+    const compatibility = JSON.parse(jsonContractVersion.compatibility_json) as {
+      schemaVersion?: number;
+      analyzer?: string;
+      operations?: Array<{
+        method: string;
+        path: string;
+        responses?: Array<{
+          status: string;
+          body?: {
+            required?: string[];
+            properties?: Record<string, { type?: string }>;
+          };
+        }>;
+      }>;
+    };
+    assert.equal(compatibility.schemaVersion, 1);
+    assert.equal(compatibility.analyzer, 'openapi-compat-v0');
+    assert.deepEqual(
+      compatibility.operations?.find((operation) => operation.method === 'GET' && operation.path === '/api/users'),
+      {
+        method: 'GET',
+        path: '/api/users',
+        responses: [
+          {
+            status: '200',
+            body: {
+              required: ['id', 'name'],
+              properties: {
+                id: { type: 'string' },
+                name: { type: 'string' }
+              }
+            }
+          }
+        ]
+      }
+    );
 
     const declares = db
       .prepare(

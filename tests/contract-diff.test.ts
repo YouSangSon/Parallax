@@ -102,6 +102,153 @@ async function writeOpenApiJsonContract(repoRoot: string, routes: string[]): Pro
   );
 }
 
+async function writeOpenApiJsonUserSchemaContract(
+  repoRoot: string,
+  options: {
+    responseRequired?: string[];
+    requestRequired?: string[];
+  } = {}
+): Promise<void> {
+  await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
+  await writeFile(
+    path.join(repoRoot, 'contracts/openapi.json'),
+    `${JSON.stringify({
+      openapi: '3.0.0',
+      info: {
+        title: 'Users API',
+        version: '1.0.0'
+      },
+      paths: {
+        '/api/users': {
+          get: {
+            operationId: 'listUsers',
+            responses: {
+              200: {
+                description: 'ok',
+                content: {
+                  'application/json': {
+                    schema: {
+                      $ref: '#/components/schemas/User'
+                    }
+                  }
+                }
+              }
+            }
+          },
+          post: {
+            operationId: 'createUser',
+            requestBody: {
+              required: true,
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    required: options.requestRequired ?? ['name'],
+                    properties: {
+                      name: { type: 'string' },
+                      email: { type: 'string' }
+                    }
+                  }
+                }
+              }
+            },
+            responses: {
+              201: {
+                description: 'created'
+              }
+            }
+          }
+        }
+      },
+      components: {
+        schemas: {
+          User: {
+            type: 'object',
+            required: options.responseRequired ?? ['id', 'name'],
+            properties: {
+              id: { type: 'string' },
+              name: { type: 'string' }
+            }
+          }
+        }
+      }
+    }, null, 2)}\n`
+  );
+}
+
+async function writeOpenApiJsonChainedRefContract(repoRoot: string, userIdType: 'string' | 'integer'): Promise<void> {
+  await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
+  await writeFile(
+    path.join(repoRoot, 'contracts/openapi.json'),
+    `${JSON.stringify({
+      openapi: '3.0.0',
+      info: {
+        title: 'Users API',
+        version: '1.0.0'
+      },
+      paths: {
+        '/api/users': {
+          get: {
+            operationId: 'listUsers',
+            responses: {
+              200: {
+                description: 'ok',
+                content: {
+                  'application/json': {
+                    schema: {
+                      $ref: '#/components/schemas/UserResponse'
+                    }
+                  }
+                }
+              }
+            }
+          },
+          post: {
+            operationId: 'createUser',
+            requestBody: {
+              required: true,
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    required: ['userId'],
+                    properties: {
+                      userId: { $ref: '#/components/schemas/UserIdAlias' }
+                    }
+                  }
+                }
+              }
+            },
+            responses: {
+              201: {
+                description: 'created'
+              }
+            }
+          }
+        }
+      },
+      components: {
+        schemas: {
+          UserResponse: {
+            type: 'object',
+            required: ['id', 'alternateId'],
+            properties: {
+              id: { $ref: '#/components/schemas/UserIdAlias' },
+              alternateId: { $ref: '#/components/schemas/UserIdAlias' }
+            }
+          },
+          UserIdAlias: {
+            $ref: '#/components/schemas/UserId'
+          },
+          UserId: {
+            type: userIdType
+          }
+        }
+      }
+    }, null, 2)}\n`
+  );
+}
+
 async function writeMalformedOpenApiContract(repoRoot: string): Promise<void> {
   await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
   await writeFile(
@@ -360,6 +507,68 @@ async function setupWorkspaceWithResolvedJsonContract(): Promise<{
   const providerRoot = await makeRepo('impact-trace-diff-json-provider-');
   await writeConsumerClient(consumerRoot, '/api/users');
   await writeOpenApiJsonContract(providerRoot, ['/api/users']);
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'users-api'
+  });
+  const resolved = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+  assert.equal(resolved.links.length, 1);
+
+  return {
+    consumerRoot,
+    providerRoot
+  };
+}
+
+async function setupWorkspaceWithResolvedJsonSchemaContract(): Promise<{
+  consumerRoot: string;
+  providerRoot: string;
+  consumerReal: string;
+  providerReal: string;
+}> {
+  const consumerRoot = await makeRepo('impact-trace-diff-json-schema-consumer-');
+  const providerRoot = await makeRepo('impact-trace-diff-json-schema-provider-');
+  await writeConsumerClient(consumerRoot, '/api/users');
+  await writeOpenApiJsonUserSchemaContract(providerRoot);
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'users-api'
+  });
+  const resolved = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+  assert.equal(resolved.links.length, 1);
+
+  return {
+    consumerRoot,
+    providerRoot,
+    consumerReal: realpathSync(consumerRoot),
+    providerReal: realpathSync(providerRoot)
+  };
+}
+
+async function setupWorkspaceWithResolvedJsonChainedRefContract(): Promise<{
+  consumerRoot: string;
+  providerRoot: string;
+}> {
+  const consumerRoot = await makeRepo('impact-trace-diff-json-chain-consumer-');
+  const providerRoot = await makeRepo('impact-trace-diff-json-chain-provider-');
+  await writeConsumerClient(consumerRoot, '/api/users');
+  await writeOpenApiJsonChainedRefContract(providerRoot, 'string');
 
   await initProject({ repoRoot: consumerRoot });
   await initProject({ repoRoot: providerRoot });
@@ -912,6 +1121,173 @@ test('analyzeContractDiff classifies removed OpenAPI JSON endpoints as breaking'
       httpMethod: 'GET',
       routePath: '/api/users',
       previousEndpointId: 'endpoint:json:GET /api/users'
+    }
+  ]);
+});
+
+test('analyzeContractDiff classifies removed OpenAPI JSON response required properties as breaking', async () => {
+  const { consumerRoot, providerRoot, consumerReal, providerReal } =
+    await setupWorkspaceWithResolvedJsonSchemaContract();
+  await writeOpenApiJsonUserSchemaContract(providerRoot, { responseRequired: ['id'] });
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/openapi.json'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.equal(result.summary.breakingChangeCount, 1);
+  assert.equal(result.summary.unknownChangeCount, 0);
+  assert.equal(result.summary.impactedConsumerCount, 1);
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'removed_response_required_property',
+      classification: 'breaking',
+      reason: 'response required property removed from current contract',
+      httpMethod: 'GET',
+      routePath: '/api/users',
+      statusCode: '200',
+      propertyName: 'name',
+      schemaPath: 'responses.200.body.required.name'
+    }
+  ]);
+  assert.deepEqual(result.impactedConsumers, [
+    {
+      consumerService: 'web',
+      consumerRepoPath: consumerReal,
+      consumerPath: 'src/client.ts',
+      providerService: 'users-api',
+      providerRepoPath: providerReal,
+      providerContractPath: 'contracts/openapi.json',
+      httpMethod: 'GET',
+      routePath: '/api/users',
+      evidenceSnippet: 'return fetch("https://users.example.test/api/users");'
+    }
+  ]);
+
+  const db = new DatabaseSync(databasePath(consumerRoot), { readOnly: true });
+  try {
+    const row = db
+      .prepare(
+        `SELECT kind, confidence, provenance
+         FROM cross_repo_links
+         WHERE kind = ?`
+      )
+      .get('BREAKS_COMPATIBILITY_WITH') as { kind: string; confidence: string; provenance: string };
+    assert.equal(row.kind, 'BREAKS_COMPATIBILITY_WITH');
+    assert.equal(row.confidence, 'heuristic');
+    assert.deepEqual(JSON.parse(row.provenance), {
+      schemaVersion: 1,
+      analyzer: 'contract-diff-v0',
+      classification: 'breaking',
+      consumer: {
+        serviceName: 'web',
+        repoPath: consumerReal,
+        path: 'src/client.ts'
+      },
+      provider: {
+        serviceName: 'users-api',
+        repoPath: providerReal,
+        contractPath: 'contracts/openapi.json'
+      },
+      change: {
+        kind: 'removed_response_required_property',
+        method: 'GET',
+        path: '/api/users',
+        statusCode: '200',
+        propertyName: 'name',
+        schemaPath: 'responses.200.body.required.name'
+      },
+      evidence: {
+        filePath: 'src/client.ts',
+        snippet: 'return fetch("https://users.example.test/api/users");'
+      }
+    });
+  } finally {
+    db.close();
+  }
+});
+
+test('analyzeContractDiff classifies added OpenAPI JSON request required properties as breaking', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithResolvedJsonSchemaContract();
+  await writeOpenApiJsonUserSchemaContract(providerRoot, { requestRequired: ['name', 'email'] });
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/openapi.json'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.deepEqual(
+    result.changes.filter((change) => change.kind === 'added_request_required_property'),
+    [
+      {
+        kind: 'added_request_required_property',
+        classification: 'breaking',
+        reason: 'request required property added to current contract',
+        httpMethod: 'POST',
+        routePath: '/api/users',
+        propertyName: 'email',
+        schemaPath: 'requestBody.required.email'
+      }
+    ]
+  );
+});
+
+test('analyzeContractDiff follows chained duplicate OpenAPI JSON refs for request and response type changes', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithResolvedJsonChainedRefContract();
+  await writeOpenApiJsonChainedRefContract(providerRoot, 'integer');
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/openapi.json'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.equal(result.summary.breakingChangeCount, 3);
+  assert.equal(result.summary.unknownChangeCount, 0);
+  assert.equal(result.summary.impactedConsumerCount, 1);
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'changed_response_property_type',
+      classification: 'breaking',
+      reason: 'response property type changed in current contract',
+      httpMethod: 'GET',
+      routePath: '/api/users',
+      statusCode: '200',
+      propertyName: 'alternateId',
+      schemaPath: 'responses.200.body.properties.alternateId',
+      previousSchemaType: 'string',
+      currentSchemaType: 'integer'
+    },
+    {
+      kind: 'changed_response_property_type',
+      classification: 'breaking',
+      reason: 'response property type changed in current contract',
+      httpMethod: 'GET',
+      routePath: '/api/users',
+      statusCode: '200',
+      propertyName: 'id',
+      schemaPath: 'responses.200.body.properties.id',
+      previousSchemaType: 'string',
+      currentSchemaType: 'integer'
+    },
+    {
+      kind: 'changed_request_property_type',
+      classification: 'breaking',
+      reason: 'request property type changed in current contract',
+      httpMethod: 'POST',
+      routePath: '/api/users',
+      propertyName: 'userId',
+      schemaPath: 'requestBody.properties.userId',
+      previousSchemaType: 'string',
+      currentSchemaType: 'integer'
     }
   ]);
 });

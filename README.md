@@ -46,7 +46,7 @@ MVP 구현이 들어가 있습니다.
 - OpenAPI/Swagger/AsyncAPI contract baseline과 구현 코드 reverse-link 저장
 - `.impact-trace/workspace.json` 기반 local workspace catalog와 `workspace init/add-repo/list/resolve-contracts` CLI
 - workspace에 등록된 indexed repo 사이의 OpenAPI provider endpoint ↔ HTTP consumer file link 저장
-- OpenAPI endpoint surface diff를 `breaking`/`non-breaking`/`unknown`으로 분류하고 known consumer impact를 `BREAKS_COMPATIBILITY_WITH` link로 저장
+- OpenAPI endpoint surface와 JSON request/response flat schema diff를 `breaking`/`non-breaking`/`unknown`으로 분류하고 known consumer impact를 `BREAKS_COMPATIBILITY_WITH` link로 저장
 - MCP `impact_trace_contract_diff`와 `impact-trace://workspaces/{name}` resource로 workspace contract/link 상태를 compact payload로 제공
 - import 기반 관련 테스트 추론
 - Markdown mention 기반 관련 문서 추론
@@ -434,7 +434,10 @@ secret redaction을 거치며, telemetry write는 외부 시스템이 아니라 
 안에서만 append-only로 발생합니다.
 `impact_trace_doctor` v0는 telemetry row를 추가하지 않는 순수 read-only health surface입니다.
 database가 없을 때도 `.impact-trace` 디렉터리를 만들지 않고 `database_missing` finding을 반환합니다.
-`impact_trace_contract_diff` v0는 CLI `workspace contract-diff`와 같은 endpoint-surface classifier를 MCP로 노출합니다.
+`impact_trace_contract_diff` v0는 CLI `workspace contract-diff`와 같은 OpenAPI contract classifier를 MCP로 노출합니다.
+YAML/JSON endpoint surface diff에 더해 JSON OpenAPI는 latest index에 저장된 request/response body compatibility signature를 current file과 비교합니다.
+v0 breaking rule은 removed endpoint, removed response status, removed response required property, changed response property type,
+added request required property, changed request property type입니다.
 기본적으로 `BREAKS_COMPATIBILITY_WITH` link를 repo-local workspace DB에 갱신하며, 결과에는
 `impact-trace://workspaces/{workspaceName}`, `/contracts`, `/cross-repo-links` resource URI가 포함됩니다.
 agent는 diff payload를 받은 뒤 전체 workspace를 읽지 않고 필요한 contract baseline이나 cross-repo link 목록만 resource로 확장할 수 있습니다.

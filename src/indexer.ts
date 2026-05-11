@@ -1146,7 +1146,7 @@ function prepareStatements(db: Db): PreparedStatements {
         id, contract_id, index_run_id, content_hash, schema_version, compatibility_json,
         breaking_change_summary, created_at
       )
-      VALUES (?, ?, ?, ?, ?, '{}', NULL, datetime('now'))
+      VALUES (?, ?, ?, ?, ?, ?, NULL, datetime('now'))
     `),
     insertCoverage: db.prepare(`
       INSERT OR REPLACE INTO index_coverage (index_run_id, adapter_id, path, language_id, status, reason)
@@ -1338,6 +1338,8 @@ function persistContractDescriptor(
     contract.languageId ??
     contract.kind;
   const contractContentHash = ctx.fileContentHashByPath.get(contract.path) ?? contract.contentHash;
+  const contractMetadata = contractMetadataForPersistence(contract.metadata);
+  const compatibilityJson = compatibilityJsonForContractVersion(contract.metadata);
   ctx.stmts.upsertContract.run(
     contract.id,
     ctx.repoId,
@@ -1345,15 +1347,32 @@ function persistContractDescriptor(
     serviceName ?? null,
     contract.path,
     contract.displayName,
-    stableJson(contract.metadata)
+    stableJson(contractMetadata)
   );
   ctx.stmts.insertContractVersion.run(
     `${contract.id}:${ctx.indexRunId}`,
     contract.id,
     ctx.indexRunId,
     contractContentHash,
-    schemaVersion ?? null
+    schemaVersion ?? null,
+    compatibilityJson
   );
+}
+
+function contractMetadataForPersistence(
+  metadata: Readonly<Record<string, unknown>>
+): Readonly<Record<string, unknown>> {
+  const { compatibility: _compatibility, ...rest } = metadata;
+  return rest;
+}
+
+function compatibilityJsonForContractVersion(metadata: Readonly<Record<string, unknown>>): string {
+  const compatibility = metadata.compatibility;
+  return isJsonRecord(compatibility) ? stableJson(compatibility) : '{}';
+}
+
+function isJsonRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function stringMetadata(

@@ -2,6 +2,7 @@ import path from 'node:path';
 import ts from 'typescript';
 
 import { markdownEntityKindForPath } from '../artifacts.js';
+import { extractOpenApiJsonCompatibility } from '../openapi_compat.js';
 import type { Confidence, RelationKind, ScannedFile } from '../types.js';
 import type {
   AdapterCapability,
@@ -460,6 +461,8 @@ function openApiJsonMetadata(
     if (typeof schemaVersion === 'string') metadata.schemaVersion = schemaVersion;
     const serviceName = parsed['x-service-name'] ?? parsed.info?.['x-service-name'] ?? parsed.info?.title;
     if (typeof serviceName === 'string' && serviceName.length > 0) metadata.serviceName = serviceName;
+    const compatibility = extractOpenApiJsonCompatibility(content);
+    if (compatibility !== undefined) metadata.compatibility = compatibility;
   } catch {
     // Path-obvious contracts still get a baseline row even if the JSON is invalid.
   }

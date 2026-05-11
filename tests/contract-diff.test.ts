@@ -4239,6 +4239,15 @@ test('analyzeContractDiff links removed AsyncAPI operations to resolved event co
 
   assert.equal(result.summary.classification, 'breaking');
   assert.equal(result.summary.impactedConsumerCount, 1);
+  assert.equal(result.summary.eventTopologyCount, 1);
+  assert.deepEqual(result.summary.eventTopologyBreakdown, [
+    {
+      providerAction: 'SEND',
+      counterpartyRole: 'consumer',
+      pattern: 'subscriber-call',
+      count: 1
+    }
+  ]);
   assert.deepEqual(result.impactedConsumers, [
     {
       consumerService: 'web',
@@ -4257,6 +4266,22 @@ test('analyzeContractDiff links removed AsyncAPI operations to resolved event co
       }
     }
   ]);
+
+  const cliRun = runCli(consumerRoot, [
+    'workspace',
+    'contract-diff',
+    '--name',
+    'platform',
+    '--provider',
+    'orders-events',
+    '--contract',
+    'contracts/asyncapi.yaml'
+  ]);
+  assert.equal(cliRun.status, 0, `workspace contract-diff failed: ${cliRun.stderr}`);
+  assert.match(
+    cliRun.stdout,
+    /consumer: web:src\/orders-consumer\.ts -> orders-events:SEND orders\.submitted \[topology: SEND -> consumer via subscriber-call\]/
+  );
 
   const db = new DatabaseSync(databasePath(consumerRoot), { readOnly: true });
   try {

@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { createBranch, mergeBranches, recallOnRepo, rememberOnRepo, trace } from './agent_memory.js';
 import type { RememberValue } from './agent_memory.js';
 import { abandonBranch, gcBranches, restoreBranch } from './branch_gc.js';
+import type { EventTopologyProvenance } from './contract_diff.js';
 import { doctorProject, redactDoctorReportForMcp } from './doctor.js';
 import { computeEmbedding, selectedEmbeddingModel } from './embeddings.js';
 import type { EmbeddingResult } from './embeddings.js';
@@ -1905,17 +1906,22 @@ function readWorkspaceCrossRepoLinksResource(context: McpContext, workspaceName:
     return {
       version: 0,
       workspace: workspace.name,
-      links: rows.slice(0, limit).map((row) => ({
-        id: row.id,
-        kind: row.kind,
-        confidence: row.confidence,
-        sourceRepoPath: row.source_repo_path,
-        sourceService: row.source_service,
-        targetRepoPath: row.target_repo_path,
-        targetService: row.target_service,
-        indexRunId: row.index_run_id,
-        provenance: parsedProvenance(row.provenance)
-      })),
+      links: rows.slice(0, limit).map((row) => {
+        const provenance = parsedProvenance(row.provenance);
+        const eventTopology = eventTopologyFromProvenance(provenance);
+        return {
+          id: row.id,
+          kind: row.kind,
+          confidence: row.confidence,
+          sourceRepoPath: row.source_repo_path,
+          sourceService: row.source_service,
+          targetRepoPath: row.target_repo_path,
+          targetService: row.target_service,
+          indexRunId: row.index_run_id,
+          ...(eventTopology !== undefined ? { eventTopology } : {}),
+          provenance
+        };
+      }),
       limits: {
         links: limit,
         truncated: rows.length > limit
@@ -1928,6 +1934,19 @@ function readWorkspaceCrossRepoLinksResource(context: McpContext, workspaceName:
 function parsedProvenance(value: string): unknown {
   const parsed = parseJsonObject(value);
   return Object.keys(parsed).length > 0 ? parsed : value;
+}
+
+function eventTopologyFromProvenance(provenance: unknown): EventTopologyProvenance | undefined {
+  if (!isRecord(provenance) || !isRecord(provenance.eventTopology)) return undefined;
+  const providerAction = provenance.eventTopology.providerAction;
+  const counterpartyRole = provenance.eventTopology.counterpartyRole;
+  const pattern = provenance.eventTopology.pattern;
+  if (typeof providerAction !== 'string' || typeof pattern !== 'string') return undefined;
+  if (!providerAction || !pattern) return undefined;
+  if (counterpartyRole !== 'consumer' && counterpartyRole !== 'producer' && counterpartyRole !== 'unknown') {
+    return undefined;
+  }
+  return { providerAction, counterpartyRole, pattern };
 }
 
 function listReportResources(context: McpContext): Array<{ uri: string; name: string; mimeType: string }> {

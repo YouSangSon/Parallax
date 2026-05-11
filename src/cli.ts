@@ -163,7 +163,10 @@ async function main(): Promise<void> {
           console.log(`${change.classification}: ${change.kind}${endpoint}`);
         }
         for (const consumer of result.impactedConsumers) {
-          console.log(`consumer: ${consumer.consumerService}:${consumer.consumerPath} -> ${consumer.providerService}:${consumer.httpMethod} ${consumer.routePath}`);
+          const topology = formatEventTopology(consumer.eventTopology);
+          console.log(
+            `consumer: ${consumer.consumerService}:${consumer.consumerPath} -> ${consumer.providerService}:${consumer.httpMethod} ${consumer.routePath}${topology ? ` [topology: ${topology}]` : ''}`
+          );
         }
         for (const warning of result.warnings) {
           console.error(`warning: ${warning}`);
@@ -458,6 +461,15 @@ function parseChangedFiles(args: string[], repoRoot: string): string[] {
   const positional = parsePositionals(args);
   if (positional.length > 0) return positional;
   throw new Error('analyze requires --changed <file[,file]> or --base <ref> [--head <ref>]');
+}
+
+function formatEventTopology(topology: {
+  providerAction: string;
+  counterpartyRole: 'consumer' | 'producer' | 'unknown';
+  pattern: string;
+} | undefined): string | undefined {
+  if (topology === undefined) return undefined;
+  return `${topology.providerAction} -> ${topology.counterpartyRole} via ${topology.pattern}`;
 }
 
 function parseRequiredArg(args: string[], name: string): string {

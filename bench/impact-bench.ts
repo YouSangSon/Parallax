@@ -182,9 +182,13 @@ const expectedRelations: readonly ExpectedRelation[] = [
   externalRelation('DEPENDS_ON', 'src/main/java/com/example/AdminClient.java', 'org.springframework.web.client.RestTemplate', 'Spring RestTemplate import declares client dependency'),
   fallbackRelation('DEPENDS_ON', 'Dockerfile', 'src/main/java/com/example/UserController.java', 'Dockerfile COPY dependency'),
   fallbackRelation('CONFIGURES', 'Dockerfile', 'src/main/java/com/example/UserController.java', 'Dockerfile copies controller'),
+  languageDeclareRelation('src/python/util.py', 'Helper', 'Python class declares Helper'),
+  languageDeclareRelation('src/python/util.py', 'helper', 'Python function declares helper'),
   languageRelation('DEPENDS_ON', 'src/python/app.py', 'src/python/util.py', 'Python module imports util'),
   languageRelation('VERIFIES', 'tests/python/test_util.py', 'src/python/util.py', 'Pytest verifies util'),
+  languageDeclareRelation('src/go/calc.go', 'Add', 'Go function declares Add'),
   languageRelation('VERIFIES', 'src/go/calc_test.go', 'src/go/calc.go', 'Go test verifies calc'),
+  languageDeclareRelation('src/rust/lib.rs', 'run', 'Rust function declares run'),
   languageRelation('VERIFIES', 'src/rust/lib_test.rs', 'src/rust/lib.rs', 'Rust test verifies lib')
 ];
 
@@ -283,7 +287,7 @@ export async function runImpactBench(options: RunImpactBenchOptions = {}): Promi
       relationPrecision >= 0.95 &&
       affectedFileRecall === 1 &&
       evidencePresence === 1 &&
-      spanCompleteness >= 0.85 &&
+      spanCompleteness >= 0.9 &&
       adapterAttribution === 1 &&
       contextPackReadiness === 1 &&
       score >= 0.9;
@@ -495,6 +499,23 @@ function springDeclareRelation(
     targetPath: sourcePath,
     targetSymbol,
     adapterId: JVM_SPRING_SEMANTIC_ADAPTER_ID,
+    label
+  };
+}
+
+function languageDeclareRelation(
+  sourcePath: string,
+  targetSymbol: string,
+  label: string
+): ExpectedRelation {
+  return {
+    kind: 'DECLARES',
+    sourceKind: 'file',
+    sourcePath,
+    targetKind: 'symbol',
+    targetPath: sourcePath,
+    targetSymbol,
+    adapterId: adapterIdForPath(sourcePath),
     label
   };
 }
@@ -805,6 +826,9 @@ async function writeFixture(repoRoot: string): Promise<void> {
   ].join('\n'));
 
   await writeFile(path.join(repoRoot, 'src/python/util.py'), [
+    'class Helper:',
+    '    pass',
+    '',
     'def helper():',
     '    return "ok"',
     ''
@@ -831,7 +855,9 @@ async function writeFixture(repoRoot: string): Promise<void> {
   await writeFile(path.join(repoRoot, 'src/go/calc_test.go'), [
     'package calc',
     'import "testing"',
-    'func TestAdd(t *testing.T) { _ = Add(1, 2) }',
+    'func TestAdd(t *testing.T) {',
+    '  _ = Add(1, 2)',
+    '}',
     ''
   ].join('\n'));
 
@@ -843,7 +869,9 @@ async function writeFixture(repoRoot: string): Promise<void> {
   await writeFile(path.join(repoRoot, 'src/rust/lib_test.rs'), [
     'use super::run;',
     '#[test]',
-    'fn run_test() { assert!(run()); }',
+    'fn run_test() {',
+    '  assert!(run());',
+    '}',
     ''
   ].join('\n'));
   await writeFile(path.join(repoRoot, 'Dockerfile'), [

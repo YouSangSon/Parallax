@@ -33,6 +33,7 @@
 | [D-021](#d-021-ui-explorer-is-local-read-only-and-resource-shaped) | UI Explorer is local, read-only, and resource-shaped | P3 | 2026-05-11 |
 | [D-022](#d-022-tsjs-import-spans-use-typescript-parser-without-project-resolution) | TS/JS import spans use TypeScript parser without project resolution | P1 | 2026-05-11 |
 | [D-023](#d-023-jvmspring-spans-stay-lightweight-before-build-system-resolution) | JVM/Spring spans stay lightweight before build-system resolution | P1 | 2026-05-11 |
+| [D-024](#d-024-pythongorust-spans-use-declaration-lines-before-full-resolvers) | Python/Go/Rust spans use declaration lines before full resolvers | P1 | 2026-05-11 |
 
 ---
 
@@ -425,9 +426,27 @@
 - config key semantic binding까지 구현 — `@ConfigurationProperties(prefix=...)`와 YAML tree 매칭은 가치가 있지만 별도 parser/contract가 필요하다.
 - whole-file evidence 유지 — context 절감 목표와 UI evidence panel 신뢰도가 약하다.
 
-**결과/위험:** Spring/Spring Boot fixture의 핵심 relation은 bounded snippet과 `startLine/endLine/startCol/endCol`를 갖는다. ImpactBench `spanCompleteness` gate는 0.85로 올라간다. v0는 shallow regex라 nested annotation expression, build-generated symbols, runtime wiring은 여전히 다루지 않는다. Python/Go/Rust parser-backed depth와 workspace resolver는 후속으로 남긴다.
+**결과/위험:** Spring/Spring Boot fixture의 핵심 relation은 bounded snippet과 `startLine/endLine/startCol/endCol`를 갖는다. ImpactBench `spanCompleteness` gate는 0.85로 올라간다. v0는 shallow regex라 nested annotation expression, build-generated symbols, runtime wiring은 여전히 다루지 않는다. D-024에서 Python/Go/Rust lightweight span까지 반영하고, workspace resolver는 후속으로 남긴다.
 
 **관련 commit:** `feat(adapters): add jvm spring evidence spans`
+
+---
+
+## D-024: Python/Go/Rust spans use declaration lines before full resolvers
+
+**결정:** Python/Go/Rust depth v0는 Tree-sitter, language server, package/workspace resolver 없이 기존 deterministic adapter에서 declaration-line evidence를 먼저 저장한다. 대상은 Python/Go/Rust generic `DECLARES`와 filename-inferred `VERIFIES`다. import-backed `VERIFIES`는 기존 import evidence를 계속 우선한다.
+
+**맥락:** TS/JS와 JVM/Spring span이 생긴 뒤에도 Python/Go/Rust 테스트 영향은 filename inference일 때 whole-file evidence로 남아 agent context를 불필요하게 키웠다. 사용자는 이 언어들을 실제 stack으로 쓴다. full resolver를 기다리기보다 UI/MCP가 바로 펼칠 수 있는 작은 근거를 먼저 보강한다.
+
+**대안:**
+- Tree-sitter 공통 parser 도입 — Python/Go/Rust 확장성은 좋지만 native dependency와 packaging surface가 커진다.
+- 각 언어 LSP/gopls/rust-analyzer/pyright 연동 — 정확도는 높지만 설치 상태와 workspace model에 강하게 의존한다.
+- package/workspace resolver 선행 — cross-module import는 좋아지지만 단일 파일 근거 위치 개선보다 범위가 크다.
+- import-backed span만 유지 — filename-inferred tests와 declaration relation이 계속 whole-file context로 남는다.
+
+**결과/위험:** ImpactBench expected relation은 43개로 늘고 `spanCompleteness` gate는 0.9로 올라간다. 현재 fixture는 `spanCompleteness 0.9535`다. v0는 declaration-line 기반이라 decorator/attribute 일부와 simple test declaration에는 강하지만, Python dynamic imports, Go build tags, Rust cfg feature/module tree resolution은 후속 workspace/contract resolver로 남긴다.
+
+**관련 commit:** `feat(adapters): add python go rust evidence spans`
 
 ---
 

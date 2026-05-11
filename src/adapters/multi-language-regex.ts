@@ -28,6 +28,7 @@ type ExtractedSymbol = {
   name: string;
   kind: string;
   exported: boolean;
+  evidence?: EvidenceSpan;
 };
 
 type EvidenceSpan = {
@@ -209,7 +210,15 @@ async function* extractEvents(
         confidence: 'proven',
         provenance: `${symbol.kind}:${symbol.name}`,
         evidenceFile,
-        evidenceSnippet
+        evidenceSnippet: symbol.evidence?.snippet ?? evidenceSnippet,
+        ...(symbol.evidence
+          ? {
+              startLine: symbol.evidence.startLine,
+              endLine: symbol.evidence.endLine,
+              startCol: symbol.evidence.startCol,
+              endCol: symbol.evidence.endCol
+            }
+          : {})
       })
     };
   }
@@ -824,7 +833,8 @@ function extractSymbols(file: ScannedFile): ExtractedSymbol[] {
       symbols.push({
         name: match[nameIndex]!,
         kind: match[kindIndex]!,
-        exported: exportedIndex === undefined ? false : Boolean(match[exportedIndex])
+        exported: exportedIndex === undefined ? false : Boolean(match[exportedIndex]),
+        ...symbolEvidenceForMatch(file, match)
       });
     }
   };
@@ -839,7 +849,8 @@ function extractSymbols(file: ScannedFile): ExtractedSymbol[] {
       symbols.push({
         name: match[nameIndex]!,
         kind,
-        exported: exportedIndex === undefined ? false : Boolean(match[exportedIndex])
+        exported: exportedIndex === undefined ? false : Boolean(match[exportedIndex]),
+        ...symbolEvidenceForMatch(file, match)
       });
     }
   };
@@ -867,6 +878,46 @@ function extractSymbols(file: ScannedFile): ExtractedSymbol[] {
   return dedupeSymbols(symbols);
 }
 
+function symbolEvidenceForMatch(
+  file: ScannedFile,
+  match: RegExpExecArray
+): { evidence: EvidenceSpan } | Record<string, never> {
+  if (file.language !== 'python' && file.language !== 'go' && file.language !== 'rust') return {};
+  return {
+    evidence: declarationLineEvidence(file.content, match.index, match[0]!.length, file.language)
+  };
+}
+
+function declarationLineEvidence(
+  content: string,
+  matchIndex: number,
+  matchLength: number,
+  language: string
+): EvidenceSpan {
+  const startIndex = declarationEvidenceStart(content, matchIndex, language);
+  return evidenceSpanFromRange(content, startIndex, lineEndIndex(content, matchIndex + matchLength));
+}
+
+function declarationEvidenceStart(content: string, declarationIndex: number, language: string): number {
+  let start = firstNonWhitespaceIndex(content, declarationIndex);
+  if (language !== 'python' && language !== 'rust') return start;
+
+  let lineStart = content.lastIndexOf('\n', Math.max(0, declarationIndex - 1)) + 1;
+  while (lineStart > 0) {
+    const previousLineEnd = lineStart - 1;
+    const previousLineStart = content.lastIndexOf('\n', previousLineEnd - 1) + 1;
+    const previousLine = content.slice(previousLineStart, previousLineEnd).trim();
+    const isAttribute =
+      language === 'python'
+        ? previousLine.startsWith('@')
+        : /^#\s*\[/.test(previousLine);
+    if (!isAttribute) break;
+    start = firstNonWhitespaceIndex(content, previousLineStart);
+    lineStart = previousLineStart;
+  }
+  return start;
+}
+
 function extractImports(file: ScannedFile): ExtractedImport[] {
   if (file.relativePath.endsWith('.md')) return [];
   if (file.language === 'typescript' || file.language === 'javascript') {
@@ -875,7 +926,7 @@ function extractImports(file: ScannedFile): ExtractedImport[] {
   const imports: ExtractedImport[] = [];
   const patterns: RegExp[] = [];
   if (file.language === 'python') {
-    patterns.push(/^\s*from\s+([A-Za-z_][\w.]*)\s+import\b/gm, /^\s*import\s+([A-Za-z_][\w.]*)/gm);
+    patterns.push(/^\s*from\s+([A-Za-z_][\w.]*)\s+import\b[^\n]*/gm, /^\s*import\s+([A-Za-z_][\w.]*)[^\n]*/gm);
   } else if (file.language === 'go') {
     patterns.push(/\bimport\s+"([^"]+)"/g, /^\s*"([^"]+)"\s*$/gm);
   } else if (file.language === 'rust') {
@@ -1231,9 +1282,7 @@ function inferTestTargets(
   });
   const filenameTargets = inferFilenameTestTargets(relativePath, language, filePathSet)
     .map((targetPath) => {
-      const evidence = isJvmLanguage(language)
-        ? testDeclarationEvidence(content, language)
-        : undefined;
+      const evidence = testDeclarationEvidence(content, language);
       return {
         path: targetPath,
         ...(evidence ? { evidence } : {})
@@ -1247,6 +1296,15 @@ function inferTestTargets(
 function testDeclarationEvidence(content: string, language: string): EvidenceSpan | undefined {
   if (language === 'java' || language === 'kotlin') {
     return firstJvmTestDeclarationEvidence(content);
+  }
+  if (language === 'python') {
+    return firstPythonTestDeclarationEvidence(content);
+  }
+  if (language === 'go') {
+    return firstGoTestDeclarationEvidence(content);
+  }
+  if (language === 'rust') {
+    return firstRustTestDeclarationEvidence(content);
   }
   return undefined;
 }
@@ -1265,6 +1323,54 @@ function firstJvmTestDeclarationEvidence(content: string): EvidenceSpan | undefi
     startIndex,
     lineEndIndex(content, match.index + match[0]!.length)
   );
+}
+
+function firstPythonTestDeclarationEvidence(content: string): EvidenceSpan | undefined {
+  const match = firstPatternMatch(content, [
+    /^\s*(?:async\s+)?def\s+test_[A-Za-z_]\w*\s*\(/gm,
+    /^\s*class\s+Test[A-Za-z_]\w*\b[^\n]*/gm
+  ]);
+  return match ? declarationLineEvidence(content, match.index, match[0]!.length, 'python') : undefined;
+}
+
+function firstGoTestDeclarationEvidence(content: string): EvidenceSpan | undefined {
+  const patterns = [
+    /^\s*func\s+Test[A-Za-z0-9_]*\s*\(/gm,
+    /^\s*func\s+Benchmark[A-Za-z0-9_]*\s*\(/gm,
+    /^\s*func\s+Fuzz[A-Za-z0-9_]*\s*\(/gm
+  ];
+  for (const pattern of patterns) {
+    const match = pattern.exec(content);
+    if (match) return declarationLineEvidence(content, match.index, match[0]!.length, 'go');
+  }
+  return undefined;
+}
+
+function firstRustTestDeclarationEvidence(content: string): EvidenceSpan | undefined {
+  const attributePattern =
+    /^\s*#\s*\[\s*test\s*\]\s*(?:\r?\n\s*#\s*\[[^\n]*\]\s*)*\r?\n\s*(?:(?:pub(?:\([^)]*\))?|async)\s+)*fn\s+[A-Za-z_]\w*\s*\(/gm;
+  const attributeMatch = attributePattern.exec(content);
+  if (attributeMatch) {
+    return evidenceSpanFromRange(
+      content,
+      firstNonWhitespaceIndex(content, attributeMatch.index),
+      lineEndIndex(content, attributeMatch.index + attributeMatch[0]!.length)
+    );
+  }
+
+  const functionPattern =
+    /^\s*(?:(?:pub(?:\([^)]*\))?|async)\s+)*fn\s+(?:test_[A-Za-z_]\w*|[A-Za-z_]\w*_test)\s*\(/gm;
+  const functionMatch = functionPattern.exec(content);
+  return functionMatch
+    ? declarationLineEvidence(content, functionMatch.index, functionMatch[0]!.length, 'rust')
+    : undefined;
+}
+
+function firstPatternMatch(content: string, patterns: readonly RegExp[]): RegExpExecArray | undefined {
+  const matches = patterns
+    .map((pattern) => pattern.exec(content))
+    .filter((match): match is RegExpExecArray => match !== null);
+  return matches.sort((left, right) => left.index - right.index)[0];
 }
 
 function dedupeTestTargets(targets: readonly InferredTestTarget[]): InferredTestTarget[] {

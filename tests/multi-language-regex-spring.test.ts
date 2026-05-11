@@ -354,7 +354,10 @@ test('indexProject emits Spring Boot endpoints, component declarations, and JVM/
       ''
     ].join('\n')
   );
-  await writeFile(path.join(repoRoot, 'python/calculator.py'), 'def calculate():\n    return 1\n');
+  await writeFile(
+    path.join(repoRoot, 'python/calculator.py'),
+    'class Calculator:\n    pass\n\n\ndef calculate():\n    return 1\n'
+  );
   await writeFile(
     path.join(repoRoot, 'python/calculator_test.py'),
     'from calculator import calculate\n\ndef test_calculate():\n    assert calculate() == 1\n'
@@ -367,12 +370,12 @@ test('indexProject emits Spring Boot endpoints, component declarations, and JVM/
   await writeFile(path.join(repoRoot, 'go/orders/order.go'), 'package orders\n\nfunc Calculate() int { return 1 }\n');
   await writeFile(
     path.join(repoRoot, 'go/orders/order_test.go'),
-    'package orders\n\nfunc TestCalculate(t *testing.T) { _ = Calculate() }\n'
+    'package orders\n\nfunc TestCalculate(t *testing.T) {\n  _ = Calculate()\n}\n'
   );
   await writeFile(path.join(repoRoot, 'rust/src/calculator.rs'), 'pub fn calculate() -> i32 { 1 }\n');
   await writeFile(
     path.join(repoRoot, 'rust/tests/calculator_spec.rs'),
-    'use impact_trace_fixture::calculator::calculate;\n\n#[test]\nfn verifies_calculator() { assert_eq!(calculate(), 1); }\n'
+    'use impact_trace_fixture::calculator::calculate;\n\n#[test]\nfn verifies_calculator() {\n  assert_eq!(calculate(), 1);\n}\n'
   );
 
   await initProject({ repoRoot });
@@ -575,6 +578,49 @@ test('indexProject emits Spring Boot endpoints, component declarations, and JVM/
       /interface OrderRepository extends JpaRepository/
     );
 
+    const polyglotDeclarationEvidence = db
+      .prepare(
+        `SELECT source.path AS source_path, target.symbol AS target_symbol,
+                ev.snippet, ev.start_line, ev.end_line, ev.start_col, ev.end_col
+         FROM relations r
+         INNER JOIN entities source ON source.id = r.source_entity_id
+         INNER JOIN entities target ON target.id = r.target_entity_id
+         INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+         WHERE r.index_run_id = ?
+           AND r.kind = ?
+           AND source.path IN (?, ?, ?)
+           AND target.symbol IN (?, ?, ?)
+         ORDER BY source.path, target.symbol`
+      )
+      .all(
+        index.indexRunId,
+        'DECLARES',
+        'python/calculator.py',
+        'go/orders/order.go',
+        'rust/src/calculator.rs',
+        'calculate',
+        'Calculate',
+        'Calculator'
+      ) as Array<EvidenceSpanRow & { source_path: string; target_symbol: string }>;
+    for (const expected of [
+      { sourcePath: 'python/calculator.py', targetSymbol: 'Calculator', snippet: /^class Calculator:/ },
+      { sourcePath: 'python/calculator.py', targetSymbol: 'calculate', snippet: /^def calculate\(\):$/ },
+      { sourcePath: 'go/orders/order.go', targetSymbol: 'Calculate', snippet: /^func Calculate\(\) int/ },
+      { sourcePath: 'rust/src/calculator.rs', targetSymbol: 'calculate', snippet: /^pub fn calculate\(\)/ }
+    ]) {
+      const row = polyglotDeclarationEvidence.find(
+        (item) => item.source_path === expected.sourcePath && item.target_symbol === expected.targetSymbol
+      );
+      assert.ok(row, `missing DECLARES evidence for ${expected.sourcePath}#${expected.targetSymbol}`);
+      assertBoundedSpan(row, `${expected.sourcePath}#${expected.targetSymbol}`);
+      assert.match(row.snippet, expected.snippet);
+      assert.equal(
+        row.snippet.includes('\n    return'),
+        false,
+        `${expected.sourcePath}#${expected.targetSymbol} should not use a whole-function snippet`
+      );
+    }
+
     const configEvidence = db
       .prepare(
         `SELECT source.path AS source_path, target.path AS target_path,
@@ -694,6 +740,49 @@ test('indexProject emits Spring Boot endpoints, component declarations, and JVM/
       false,
       'filename-inferred JVM VERIFIES should not use whole-file evidence'
     );
+    const pythonImportBackedVerifyEvidence = findVerifyEvidence(
+      db,
+      index.indexRunId,
+      'python/calculator_test.py',
+      'python/calculator.py'
+    );
+    assertBoundedSpan(pythonImportBackedVerifyEvidence, 'import-backed Python VERIFIES');
+    assert.equal(pythonImportBackedVerifyEvidence.start_line, 1);
+    assert.match(pythonImportBackedVerifyEvidence.snippet, /^from calculator import calculate$/);
+    assert.equal(
+      pythonImportBackedVerifyEvidence.snippet.includes('def test_calculate'),
+      false,
+      'import-backed Python VERIFIES should prefer import-line evidence'
+    );
+    for (const expected of [
+      {
+        label: 'filename-inferred Python VERIFIES',
+        sourcePath: 'tests/test_calculator.py',
+        targetPath: 'src/calculator.py',
+        snippet: /^def test_calculate\(\):$/
+      },
+      {
+        label: 'filename-inferred Go VERIFIES',
+        sourcePath: 'go/orders/order_test.go',
+        targetPath: 'go/orders/order.go',
+        snippet: /^func TestCalculate\(t \*testing\.T\)/
+      },
+      {
+        label: 'filename-inferred Rust VERIFIES',
+        sourcePath: 'rust/tests/calculator_spec.rs',
+        targetPath: 'rust/src/calculator.rs',
+        snippet: /^#\[test\]\nfn verifies_calculator\(\)/
+      }
+    ]) {
+      const row = findVerifyEvidence(db, index.indexRunId, expected.sourcePath, expected.targetPath);
+      assertBoundedSpan(row, expected.label);
+      assert.match(row.snippet, expected.snippet);
+      assert.equal(
+        row.snippet.includes('assert True') || row.snippet.includes('_ = Calculate()') || row.snippet.includes('assert_eq!'),
+        false,
+        `${expected.label} should not use whole-test-body evidence`
+      );
+    }
     assert.deepEqual(
       verifiesRelations
         .filter((row) => row.source_path === 'src/test/java/com/a/OrderServiceTest.java')
@@ -761,5 +850,28 @@ function findEvidenceByProvenance(
 ): EvidenceSpanRow {
   const row = rows.find((item) => item.provenance === provenance);
   assert.ok(row, `missing evidence for ${provenance}`);
+  return row;
+}
+
+function findVerifyEvidence(
+  db: DatabaseSync,
+  indexRunId: number,
+  sourcePath: string,
+  targetPath: string
+): EvidenceSpanRow {
+  const row = db
+    .prepare(
+      `SELECT ev.snippet, ev.start_line, ev.end_line, ev.start_col, ev.end_col
+       FROM relations r
+       INNER JOIN entities source ON source.id = r.source_entity_id
+       INNER JOIN entities target ON target.id = r.target_entity_id
+       INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+       WHERE r.index_run_id = ?
+         AND r.kind = ?
+         AND source.path = ?
+         AND target.path = ?`
+    )
+    .get(indexRunId, 'VERIFIES', sourcePath, targetPath) as EvidenceSpanRow | undefined;
+  assert.ok(row, `missing VERIFIES evidence for ${sourcePath} -> ${targetPath}`);
   return row;
 }

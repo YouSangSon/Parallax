@@ -29,12 +29,12 @@ test('ImpactBench runner writes deterministic report shape', async () => {
     assert.equal(report.fixtureId, 'phase6b-multilanguage-v0');
     assert.equal(report.outputPath, '.impact-trace/bench/impact-bench-report.json');
     assert.equal(report.summary.passed, true);
-    assert.equal(report.summary.expectedRelations, 39);
+    assert.equal(report.summary.expectedRelations, 43);
     assert.equal(report.summary.expectedRelations, report.summary.matchedRelations);
     assert.equal(report.summary.unexpectedRelations, 0);
     assert.equal(report.scores.affectedFileRecall, 1);
     assert.equal(report.scores.evidencePresence, 1);
-    assert.ok(report.scores.spanCompleteness >= 0.85);
+    assert.ok(report.scores.spanCompleteness >= 0.9);
     assert.equal(report.scores.adapterAttribution, 1);
     assert.equal(report.scores.contextPackReadiness, 1);
     assert.ok(report.summary.score >= 0.9);
@@ -79,7 +79,13 @@ test('ImpactBench runner writes deterministic report shape', async () => {
       'Spring @DataJpaTest verifies repository',
       'Spring Feign @FeignClient declares client',
       'Spring WebClient import declares client dependency',
-      'Spring RestTemplate import declares client dependency'
+      'Spring RestTemplate import declares client dependency',
+      'Python class declares Helper',
+      'Python function declares helper',
+      'Go function declares Add',
+      'Rust function declares run',
+      'Go test verifies calc',
+      'Rust test verifies lib'
     ]) {
       assert.ok(
         report.expectedRelationLabels.includes(requiredLabel),

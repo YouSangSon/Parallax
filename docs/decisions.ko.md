@@ -54,6 +54,7 @@
 | [D-042](#d-042-ui-workspace-topology-reuses-compact-resource-shapes) | UI workspace topology reuses compact resource shapes | P3/P0 | 2026-05-12 |
 | [D-043](#d-043-ui-work-artifact-impact-is-report-derived-and-resource-linked) | UI work artifact impact is report-derived and resource-linked | P3/P0 | 2026-05-12 |
 | [D-044](#d-044-ui-work-artifact-metadata-stays-compact-and-body-free) | UI work artifact metadata stays compact and body-free | P3/P0 | 2026-05-12 |
+| [D-045](#d-045-ui-work-artifact-freshness-is-derived-from-compact-dates) | UI work artifact freshness is derived from compact dates | P3/P0 | 2026-05-12 |
 
 ---
 
@@ -803,7 +804,7 @@
 - artifact Markdown 본문을 bootstrap에 포함 — 사람이 보기엔 편하지만 context budget과 secret exposure surface가 커진다.
 - policy/proposal/PRD마다 별도 endpoint를 만든다 — v0에서는 entity resource URI로 충분하며 API surface가 불필요하게 넓어진다.
 
-**결과/위험:** Work Artifacts panel은 report-derived라 selected report와 일관된다. 자세한 문서 근거가 필요하면 entity/evidence resource를 expand-on-demand로 읽는다. v0는 freshness/staleness 계산, owner/reviewer routing, external docs connector는 다루지 않으며, 후속 work artifact depth에서 별도 relation과 resource를 추가한다.
+**결과/위험:** Work Artifacts panel은 report-derived라 selected report와 일관된다. 자세한 문서 근거가 필요하면 entity/evidence resource를 expand-on-demand로 읽는다. v0는 owner/reviewer routing, external docs connector는 다루지 않으며, 후속 work artifact depth에서 별도 relation과 resource를 추가한다.
 
 **관련 commit:** `feat(ui): work artifact impact panel 추가`
 
@@ -820,9 +821,26 @@
 - YAML parser dependency 추가 — v0 metadata key/value 몇 개에는 과하다.
 - DB `work_artifacts` table을 먼저 완성 — external connector까지 포함한 저장 모델은 후속으로 두고, UI v0는 selected report와 일관되는 preview를 우선한다.
 
-**결과/위험:** 사람이 title/owner/status/updated date를 보고 review 대상 우선순위를 더 빨리 잡을 수 있다. v0 parser는 단순 scalar frontmatter와 문서 선두 H1만 지원한다. freshness/staleness 판정, reviewer routing, external docs metadata sync는 후속 slice에서 다룬다.
+**결과/위험:** 사람이 title/owner/status/updated date를 보고 review 대상 우선순위를 더 빨리 잡을 수 있다. v0 parser는 단순 scalar frontmatter와 문서 선두 H1만 지원한다. reviewer routing, external docs metadata sync는 후속 slice에서 다룬다.
 
 **관련 commit:** `feat(ui): work artifact metadata preview 추가`
+
+---
+
+## D-045: UI work artifact freshness is derived from compact dates
+
+**결정:** Work Artifacts preview는 `updatedAt` metadata와 selected report의 `created_at`을 비교해 각 row에 `current`, `stale`, `unknown` freshness state를 붙인다. 정책/기본 artifact는 90일, proposal은 60일, PRD/requirement는 120일, decision은 180일 threshold를 쓴다. stale과 unknown row는 Work Artifacts sort에서 current보다 앞에 둔다.
+
+**맥락:** title/owner/status만으로는 오래된 정책이나 제안서가 코드 변경에 얼마나 위험한지 판단하기 어렵다. 현재 시각을 직접 쓰면 같은 report가 실행 시점마다 다르게 보이므로, selected report의 생성 시각을 기준으로 계산해 재현 가능한 UI snapshot을 유지한다.
+
+**대안:**
+- `Date.now()` 기준으로 stale 계산 — UI를 열 때마다 결과가 달라져 report 재현성이 깨진다.
+- 문서 본문에서 "last reviewed" 같은 문장을 찾아 추론 — body parsing과 context 노출 surface가 커져 거부한다.
+- external docs connector에서 freshness를 동기화 — 필요한 방향이지만 v0 local Markdown UX를 막을 이유가 없다.
+
+**결과/위험:** 오래된 policy/PRD/requirement/decision/proposal impact가 Work Artifacts panel에서 먼저 보이고, agent에게 전달되는 bootstrap은 여전히 compact scalar만 담는다. threshold는 보수적 기본값이므로 팀별 정책 주기는 후속 config로 열어야 한다.
+
+**관련 commit:** `feat(ui): work artifact freshness badge 추가`
 
 ---
 

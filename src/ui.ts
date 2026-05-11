@@ -30,6 +30,7 @@ export type UiSnapshot = {
   graph: UiGraphPreview | null;
   coverage: UiCoverageSnapshot | null;
   contextPacks: UiContextPackSummary[];
+  workArtifacts: UiWorkArtifactImpact[];
   workspaces: UiWorkspaceSnapshot[];
 };
 
@@ -53,9 +54,15 @@ export type UiReportSummary = {
 export type UiReportPreview = UiReportSummary & {
   changed: ImpactReport['changed'];
   affectedFiles: ImpactReport['affectedFiles'];
-  evidence: ImpactReport['evidence'];
+  evidence: UiEvidencePreview[];
   actions: ImpactAction[];
   warnings: string[];
+};
+
+export type UiEvidencePreview = ImpactReport['evidence'][number] & {
+  snippetOmitted?: boolean;
+  omittedReason?: string;
+  resourceUri?: string;
 };
 
 export type UiGraphPreview = {
@@ -86,6 +93,17 @@ export type UiCoverageSnapshot = {
   }>;
   limit: number;
   truncated: boolean;
+};
+
+export type UiWorkArtifactImpact = {
+  kind: string;
+  path: string;
+  displayName: string;
+  reason: string;
+  confidence: string;
+  relations: string[];
+  resourceUri: string;
+  depth?: number;
 };
 
 export type UiWorkspaceSnapshot = {
@@ -207,6 +225,7 @@ export async function buildUiSnapshot(options: UiOptions): Promise<UiSnapshot> {
       graph: null,
       coverage: null,
       contextPacks: [],
+      workArtifacts: [],
       workspaces: []
     };
   }
@@ -258,6 +277,7 @@ export async function buildUiSnapshot(options: UiOptions): Promise<UiSnapshot> {
       graph,
       coverage: readLatestCoverage(db, repoId),
       contextPacks: readContextPacks(db, repoId),
+      workArtifacts: selectedRow ? workArtifactsFromReportRow(selectedRow) : [],
       workspaces: readWorkspaceSnapshots(db)
     };
   } finally {
@@ -308,6 +328,7 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       <div class="evidence-meta">
         <strong>${escapeHtml(item.file)}</strong>
         <span>${escapeHtml(item.kind)} · ${escapeHtml(item.confidence)}</span>
+        ${item.resourceUri ? `<small>${escapeHtml(item.resourceUri)}</small>` : ''}
       </div>
       <pre>${escapeHtml(item.snippet)}</pre>
     </li>
@@ -339,6 +360,15 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
     <li class="coverage-row">
       <strong>${escapeHtml(item.path)}</strong>
       <span>${escapeHtml(item.status)} · ${escapeHtml(item.adapterId)} · ${escapeHtml(item.reason)}</span>
+    </li>
+  `).join('');
+  const workArtifactRows = snapshot.workArtifacts.slice(0, 30).map((item) => `
+    <li class="work-artifact-row" data-filter-text="${escapeHtml(`${item.kind} ${item.path} ${item.reason} ${item.relations.join(' ')}`)}">
+      <div>
+        <strong>${escapeHtml(item.displayName)}</strong>
+        <span>${escapeHtml(item.kind)} · ${escapeHtml(item.reason)} · ${escapeHtml(item.confidence)}</span>
+        <small>${escapeHtml(item.resourceUri)}</small>
+      </div>
     </li>
   `).join('');
   const workspaceRows = snapshot.workspaces.flatMap((workspace) => [
@@ -455,15 +485,15 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       background: #fdfaf2;
     }
     .list { list-style: none; margin: 0; padding: 0; max-height: 520px; overflow: auto; }
-    .entity-row, .impact-row, .evidence-row, .action-row, .pack-row, .coverage-row, .workspace-row, .workspace-link-row, .workspace-contract-row, .finding {
+    .entity-row, .impact-row, .evidence-row, .action-row, .pack-row, .coverage-row, .work-artifact-row, .workspace-row, .workspace-link-row, .workspace-contract-row, .finding {
       padding: 10px 12px;
       border-bottom: 1px solid var(--line);
       min-width: 0;
     }
     .entity-row, .action-row { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; align-items: center; }
     .impact-row, .workspace-link-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; }
-    .impact-row strong, .pack-row strong, .coverage-row strong, .workspace-row strong, .workspace-link-row strong, .workspace-contract-row strong { display: block; overflow-wrap: anywhere; }
-    .impact-row span, .pack-row span, .coverage-row span, .workspace-row span, .workspace-link-row span, .workspace-link-row small, .workspace-contract-row span, .evidence-meta span { color: var(--muted); font-size: 12px; }
+    .impact-row strong, .pack-row strong, .coverage-row strong, .work-artifact-row strong, .workspace-row strong, .workspace-link-row strong, .workspace-contract-row strong { display: block; overflow-wrap: anywhere; }
+    .impact-row span, .pack-row span, .coverage-row span, .work-artifact-row span, .work-artifact-row small, .workspace-row span, .workspace-link-row span, .workspace-link-row small, .workspace-contract-row span, .evidence-meta span { color: var(--muted); font-size: 12px; }
     .kind, .badge {
       border: 1px solid var(--line);
       border-radius: 999px;
@@ -491,6 +521,7 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       gap: 12px;
       margin-top: 12px;
     }
+    .wide-panel { margin-top: 12px; }
     .graph-grid {
       display: grid;
       grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
@@ -542,6 +573,7 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       <div class="metric"><span>Evidence</span><strong>${escapeHtml(String(report?.evidenceCount ?? 0))}</strong></div>
       <div class="metric"><span>Actions</span><strong>${escapeHtml(String(report?.actionCount ?? 0))}</strong></div>
       <div class="metric"><span>Coverage gaps</span><strong>${escapeHtml(String(doctor.index.coverage?.skippedPaths ?? 0))}</strong></div>
+      <div class="metric"><span>Work artifacts</span><strong>${escapeHtml(String(snapshot.workArtifacts.length))}</strong></div>
       <div class="metric"><span>Workspaces</span><strong>${escapeHtml(String(snapshot.workspaces.length))}</strong></div>
     </section>
     <section class="workbench" aria-label="Impact report workbench">
@@ -557,6 +589,10 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
         <h2>Evidence</h2>
         <ul class="list filterable">${evidenceRows || '<li class="empty">No evidence in the selected report.</li>'}</ul>
       </section>
+    </section>
+    <section class="panel wide-panel">
+      <h2>Work Artifacts</h2>
+      <ul class="list filterable">${workArtifactRows || '<li class="empty">No policy, decision, PRD, requirement, or proposal impact in the selected report.</li>'}</ul>
     </section>
     <section class="bottom">
       <section class="panel">
@@ -611,6 +647,7 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
           <li class="pack-row"><strong>/api/reports/{id}/graph/json</strong><span>GraphExport JSON shape with limit/cursor pagination</span></li>
           <li class="pack-row"><strong>/api/coverage/latest</strong><span>Coverage resource shape</span></li>
           <li class="pack-row"><strong>/api/context-packs/{id}</strong><span>Persisted context pack resource shape</span></li>
+          <li class="pack-row"><strong>bootstrap.workArtifacts</strong><span>Policy, decision, PRD, requirement, and proposal impact preview shape</span></li>
           <li class="pack-row"><strong>/api/workspaces/{name}</strong><span>Workspace contracts and cross-repo link preview shape</span></li>
         </ul>
       </section>
@@ -763,10 +800,91 @@ function reportPreviewFromRow(row: ReportRow): UiReportPreview {
     ...reportSummaryFromRow(row),
     changed: report.changed,
     affectedFiles: report.affectedFiles,
-    evidence: report.evidence,
+    evidence: evidencePreviewFromReport(report),
     actions: report.actions,
     warnings: report.warnings ?? []
   };
+}
+
+const workArtifactKinds = new Set(['policy', 'proposal', 'prd', 'decision', 'business_plan', 'requirement', 'meeting_note', 'customer_artifact']);
+const omittedWorkArtifactEvidenceSnippet = 'Work artifact evidence omitted from UI bootstrap. Open the entity resource for document details.';
+
+function evidencePreviewFromReport(report: ImpactReport): UiEvidencePreview[] {
+  const workArtifactPaths = workArtifactPathSet(report);
+  return report.evidence.map((item) => {
+    const resourceUri = workArtifactEvidenceResourceUri(item, workArtifactPaths);
+    if (!resourceUri) return item;
+    return {
+      ...item,
+      snippet: omittedWorkArtifactEvidenceSnippet,
+      snippetOmitted: true,
+      omittedReason: 'work-artifact-resource-on-demand',
+      resourceUri
+    };
+  });
+}
+
+function workArtifactsFromReportRow(row: ReportRow): UiWorkArtifactImpact[] {
+  const report = JSON.parse(row.json) as ImpactReport;
+  const affectedByPath = new Map(report.affectedFiles.map((item) => [item.path, item]));
+  const byKey = new Map<string, UiWorkArtifactImpact>();
+  for (const item of report.affected) {
+    const targetPath = item.target.path;
+    if (!targetPath || !workArtifactKinds.has(item.target.kind)) continue;
+    const affectedFile = affectedByPath.get(targetPath);
+    const key = `${item.target.kind}:${targetPath}`;
+    if (byKey.has(key)) continue;
+    byKey.set(key, {
+      kind: item.target.kind,
+      path: targetPath,
+      displayName: item.target.displayName ?? targetPath,
+      reason: affectedFile?.reason ?? item.relations.join(' -> '),
+      confidence: affectedFile?.confidence ?? item.confidence,
+      relations: item.relations,
+      resourceUri: entityResourceUri(item.target),
+      ...(affectedFile?.depth !== undefined ? { depth: affectedFile.depth } : {})
+    });
+  }
+  return [...byKey.values()].sort(compareWorkArtifacts);
+}
+
+function workArtifactPathSet(report: ImpactReport): Set<string> {
+  return new Set(
+    report.affected
+      .map((item) => item.target)
+      .filter((target) => target.path && workArtifactKinds.has(target.kind))
+      .map((target) => target.path!)
+  );
+}
+
+function workArtifactEvidenceResourceUri(
+  evidence: ImpactReport['evidence'][number],
+  workArtifactPaths: ReadonlySet<string>
+): string | undefined {
+  if (evidence.subject && workArtifactKinds.has(evidence.subject.kind)) {
+    return entityResourceUri(evidence.subject);
+  }
+  if (evidence.subject?.path && workArtifactPaths.has(evidence.subject.path)) {
+    return entityResourceUri(evidence.subject);
+  }
+  if (workArtifactPaths.has(evidence.file)) {
+    return `impact-trace://entities/${encodeURIComponent(`file:${evidence.file}`)}`;
+  }
+  return undefined;
+}
+
+function compareWorkArtifacts(left: UiWorkArtifactImpact, right: UiWorkArtifactImpact): number {
+  return workArtifactKindRank(left.kind) - workArtifactKindRank(right.kind)
+    || (left.depth ?? 99) - (right.depth ?? 99)
+    || left.path.localeCompare(right.path);
+}
+
+function workArtifactKindRank(kind: string): number {
+  if (kind === 'policy') return 0;
+  if (kind === 'decision') return 1;
+  if (kind === 'prd' || kind === 'requirement') return 2;
+  if (kind === 'proposal') return 3;
+  return 4;
 }
 
 async function graphPreview(repoRoot: string, reportId: string): Promise<UiGraphPreview | null> {
@@ -1046,6 +1164,10 @@ function readWorkspaceLinksForUi(
 
 function workspaceResourceUri(workspaceName: string): string {
   return `impact-trace://workspaces/${encodeURIComponent(workspaceName)}`;
+}
+
+function entityResourceUri(entity: ImpactReport['changed'][number]): string {
+  return `impact-trace://entities/${encodeURIComponent(entity.id)}`;
 }
 
 function workspaceResources(workspaceName: string): UiWorkspaceSnapshot['resources'] {

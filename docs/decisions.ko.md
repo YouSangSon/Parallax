@@ -52,6 +52,7 @@
 | [D-040](#d-040-contract-diff-preserves-event-topology-provenance) | Contract diff preserves event topology provenance | P0/P1 | 2026-05-12 |
 | [D-041](#d-041-contract-topology-surface-stays-compact-and-optional) | Contract topology surface stays compact and optional | P0/P1 | 2026-05-12 |
 | [D-042](#d-042-ui-workspace-topology-reuses-compact-resource-shapes) | UI workspace topology reuses compact resource shapes | P3/P0 | 2026-05-12 |
+| [D-043](#d-043-ui-work-artifact-impact-is-report-derived-and-resource-linked) | UI work artifact impact is report-derived and resource-linked | P3/P0 | 2026-05-12 |
 
 ---
 
@@ -787,6 +788,23 @@
 **결과/위험:** UI는 root workspace DB와 각 provider repo DB를 read-only로 열어 latest indexed contract baseline과 bounded link preview만 읽는다. `/api/workspaces/{name}`은 MCP resource URI와 같은 naming을 유지해 agent와 사람이 같은 확장 포인트를 본다. legacy/malformed provenance는 topology field 없이 confidence badge로 fallback한다. 현재는 table/list preview라 대형 workspace에서는 pagination/filter depth가 부족하며, session timeline과 richer event graph는 후속 slice에서 다룬다.
 
 **관련 commit:** `feat(ui): workspace topology surface 추가`
+
+---
+
+## D-043: UI work artifact impact is report-derived and resource-linked
+
+**결정:** `impact-trace ui`는 selected report의 `affected`/`affectedFiles`에서 `policy`, `decision`, `prd`, `requirement`, `proposal` 같은 work artifact target만 추려 `workArtifacts` preview와 Work Artifacts panel로 보여준다. 각 row는 path, kind, reason, confidence, relation path, `impact-trace://entities/{id}` resource URI만 담는다. selected report의 artifact evidence snippet도 UI bootstrap에서는 placeholder로 치환하고, 문서 본문이나 전체 evidence는 resource expand-on-demand로만 읽는다.
+
+**맥락:** 제품 목표는 코드 변경이 정책/제안서/PRD/의사결정에 미치는 영향을 Claude/Codex와 사람이 같이 보게 하는 것이다. 이미 Markdown artifact adapter는 `GOVERNS`/`PROPOSES`/`REQUIRES` relation을 report에 넣는다. UI가 이를 일반 Impact Paths 목록에 섞어두면 사용자가 중요한 업무 산출물 impact를 놓치기 쉽고, agent context 절감 원칙도 약해진다.
+
+**대안:**
+- 별도 DB query로 모든 work artifact를 UI에서 다시 탐색 — report와 graph가 이미 선택한 impact context와 drift될 수 있어 거부한다.
+- artifact Markdown 본문을 bootstrap에 포함 — 사람이 보기엔 편하지만 context budget과 secret exposure surface가 커진다.
+- policy/proposal/PRD마다 별도 endpoint를 만든다 — v0에서는 entity resource URI로 충분하며 API surface가 불필요하게 넓어진다.
+
+**결과/위험:** Work Artifacts panel은 report-derived라 selected report와 일관된다. 자세한 문서 근거가 필요하면 entity/evidence resource를 expand-on-demand로 읽는다. v0는 freshness/staleness 계산, owner/reviewer routing, external docs connector는 다루지 않으며, 후속 work artifact depth에서 별도 relation과 resource를 추가한다.
+
+**관련 commit:** `feat(ui): work artifact impact panel 추가`
 
 ---
 

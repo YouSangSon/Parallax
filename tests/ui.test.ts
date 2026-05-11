@@ -38,6 +38,45 @@ async function makeUiRepo(): Promise<{ repoRoot: string; reportId: string }> {
   return { repoRoot, reportId: report.id };
 }
 
+async function makeUiWorkArtifactRepo(): Promise<{ repoRoot: string; reportId: string }> {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-ui-artifacts-'));
+  await mkdir(path.join(repoRoot, 'src/auth'), { recursive: true });
+  await mkdir(path.join(repoRoot, 'policies'), { recursive: true });
+  await mkdir(path.join(repoRoot, 'docs/proposals'), { recursive: true });
+  await mkdir(path.join(repoRoot, 'docs/prd'), { recursive: true });
+  await mkdir(path.join(repoRoot, 'docs/requirements'), { recursive: true });
+  await mkdir(path.join(repoRoot, 'docs/decisions'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/auth/session.ts'), 'export function rotateSession() { return "ok"; }\n');
+  await writeFile(
+    path.join(repoRoot, 'policies/security-auth.md'),
+    '# Security auth policy\n\nChanges to src/auth/session.ts require security review.\n\nPRIVATE BODY SENTENCE should stay behind resource expansion.\n'
+  );
+  await writeFile(
+    path.join(repoRoot, 'docs/proposals/payment-retry.md'),
+    '# Payment retry proposal\n\nThe proposed retry flow updates src/auth/session.ts.\n'
+  );
+  await writeFile(
+    path.join(repoRoot, 'docs/prd/auth-context.md'),
+    '# Auth context PRD\n\nThe auth context depends on src/auth/session.ts.\n'
+  );
+  await writeFile(
+    path.join(repoRoot, 'docs/requirements/session-hardening.md'),
+    '# Session hardening requirement\n\nThe requirement depends on src/auth/session.ts.\n'
+  );
+  await writeFile(
+    path.join(repoRoot, 'docs/decisions/auth-session.md'),
+    '# Auth session decision\n\nThis decision governs src/auth/session.ts.\n'
+  );
+  await initProject({ repoRoot });
+  await indexProject({ repoRoot });
+  const report = await analyzeDiff({
+    repoRoot,
+    changedFiles: ['src/auth/session.ts'],
+    writeReport: true
+  });
+  return { repoRoot, reportId: report.id };
+}
+
 async function makeUiWorkspaceRepo(): Promise<{ consumerRoot: string; providerRoot: string }> {
   const consumerRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-ui-workspace-consumer-'));
   const providerRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-ui-workspace-provider-'));
@@ -150,6 +189,35 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(html, /Workspace Contracts/);
     assert.match(html, /overflow-wrap: anywhere/);
     assert.doesNotMatch(html, /landing/i);
+  } finally {
+    await rm(repoRoot, { recursive: true, force: true });
+  }
+});
+
+test('UI snapshot and HTML expose work artifact impact', async () => {
+  const { repoRoot, reportId } = await makeUiWorkArtifactRepo();
+  try {
+    const snapshot = await buildUiSnapshot({ repoRoot });
+    assert.equal(snapshot.selectedReportId, reportId);
+    assert.deepEqual(snapshot.workArtifacts.map((item) => item.kind), ['policy', 'decision', 'prd', 'requirement', 'proposal']);
+    assert.ok(snapshot.workArtifacts.some((item) =>
+      item.path === 'policies/security-auth.md' && item.reason === 'governs src/auth/session.ts'
+    ));
+    assert.ok(snapshot.workArtifacts.some((item) =>
+      item.path === 'docs/requirements/session-hardening.md' && item.reason === 'requires src/auth/session.ts'
+    ));
+    assert.ok(snapshot.workArtifacts.every((item) => item.resourceUri.startsWith('impact-trace://entities/')));
+    assert.ok(snapshot.selectedReport?.evidence.some((item) => item.snippetOmitted === true));
+    assert.equal(JSON.stringify(snapshot).includes('PRIVATE BODY SENTENCE'), false);
+
+    const html = renderUiHtml(snapshot);
+    assert.match(html, /Work Artifacts/);
+    assert.match(html, /policies\/security-auth\.md/);
+    assert.match(html, /docs\/requirements\/session-hardening\.md/);
+    assert.match(html, /docs\/proposals\/payment-retry\.md/);
+    assert.match(html, /bootstrap\.workArtifacts/);
+    assert.doesNotMatch(html, /PRIVATE BODY SENTENCE/);
+    assert.match(html, /Work artifact evidence omitted from UI bootstrap/);
   } finally {
     await rm(repoRoot, { recursive: true, force: true });
   }
@@ -285,12 +353,14 @@ test('UI server exposes bootstrap and resource-shaped JSON endpoints', async () 
       graph: { nodes: unknown[] };
       coverage: { coverage: unknown[] };
       workspaces: unknown[];
+      workArtifacts: unknown[];
     };
     assert.equal(bootstrap.selectedReportId, reportId);
     assert.ok(bootstrap.selectedReport.affectedFiles.length > 0);
     assert.ok(bootstrap.graph.nodes.length > 0);
     assert.ok(bootstrap.coverage.coverage.length > 0);
     assert.ok(Array.isArray(bootstrap.workspaces));
+    assert.ok(Array.isArray(bootstrap.workArtifacts));
 
     const reportJson = await (await fetch(new URL(`/api/reports/${encodeURIComponent(reportId)}`, ui.url))).json() as {
       id: string;

@@ -41,6 +41,7 @@
 | [D-029](#d-029-mcp-workspace-contract-resources-expand-contract-impact-on-demand) | MCP workspace contract resources expand contract impact on demand | P3/P0 | 2026-05-11 |
 | [D-030](#d-030-json-openapi-schema-diff-uses-indexed-compatibility-signatures) | JSON OpenAPI schema diff uses indexed compatibility signatures | P0/P1 | 2026-05-11 |
 | [D-031](#d-031-yaml-openapi-schema-diff-reuses-the-compatibility-signature-model) | YAML OpenAPI schema diff reuses the compatibility signature model | P0/P1 | 2026-05-11 |
+| [D-032](#d-032-openapi-nested-schema-diff-extends-compatibility-signatures) | OpenAPI nested schema diff extends compatibility signatures | P0/P1 | 2026-05-11 |
 
 ---
 
@@ -580,6 +581,24 @@
 **결과/위험:** v0는 YAML parser를 추가 의존성으로 사용하지만, current diff에서는 기존 endpoint scanner가 성공한 경우에만 compatibility signature를 붙인다. 따라서 tab indentation, malformed path/method, non-object operation 같은 기존 unknown/preserve behavior는 유지된다. 지원 범위는 JSON media type의 flat object body, local `#/...` `$ref`, response status/required/type, request required/type까지다. nested properties, arrays/items details, allOf/oneOf/anyOf, enum/format/nullability, auth scope, protobuf/GraphQL/AsyncAPI는 후속 slice다.
 
 **관련 commit:** `feat(contracts): OpenAPI YAML schema diff 추가`
+
+---
+
+## D-032: OpenAPI nested schema diff extends compatibility signatures
+
+**결정:** JSON/YAML OpenAPI contract diff는 `openapi-compat-v0` compatibility payload를 schemaVersion 2로 올리고, `required`와 `properties` key를 nested schema path로 확장한다. 예를 들어 `profile.displayName`, `members[].id`, root array item `[].id` 같은 path가 `contract_versions.compatibility_json`에 들어가며, diff는 기존 breaking rule을 같은 방식으로 적용한다. `allOf` object schema는 deterministic merge로 펼치고, overlapping property type은 order-insensitive set fingerprint로 저장한다. `oneOf`/`anyOf`는 branch 전체를 full semantic diff하지 않고 object required set을 포함한 property type fingerprint나 root body fingerprint(`$`) 변화로 비교하며, `properties` 없이 `required`만 있는 object branch도 fingerprint에 포함한다.
+
+**맥락:** flat object signature는 `/api/users` endpoint가 유지되어도 response 내부 nested required field 제거, array item type 변경, composed schema 변경을 놓친다. 사용자가 원하는 제품은 Claude/Codex에 전체 OpenAPI 파일을 다시 넣는 것이 아니라 "어떤 nested contract path가 어떤 consumer를 깨뜨리는가"를 작은 context로 알려주는 것이므로, 기존 compatibility signature를 path 기반으로 깊게 만드는 편이 가장 작다.
+
+**대안:**
+- OpenAPI 전용 diff library 도입 — 장기적으로 가능하지만 dependency와 output normalization, allOf/oneOf/nullable/auth rule 검증 범위가 커진다.
+- schemaVersion을 유지 — 기존 flat baseline과 nested-capable baseline이 조용히 섞여 false unknown이 생길 수 있어 거부한다. schemaVersion 1 baseline은 warning을 내고 provider reindex를 요구한다.
+- nested schema를 raw JSON으로 저장 — 정확도는 올라가지만 DB payload와 private contract body 보존 범위가 커진다.
+- oneOf/anyOf를 full branch-aware로 해석 — request/response variance rule과 branch matching 비용이 커져 이번 deterministic slice 범위를 넘는다.
+
+**결과/위험:** nested object required/type, root/nested array item required/type, local `#/...` ref chain(object와 array pointer segment 포함), `allOf` object merge, `oneOf`/`anyOf` property/root body fingerprint 변화가 known consumer endpoint에 `BREAKS_COMPATIBILITY_WITH` link로 저장된다. 기존 schemaVersion 1 flat baseline은 nested-capable으로 취급하지 않고 warning과 `unknown` fallback을 반환하므로 provider repo를 새로 index해야 nested impact가 잡힌다. oneOf/anyOf는 "대안 집합 fingerprint가 바뀌었다"는 보수적 breaking signal이며, branch matching/discriminator semantics, nullable/format/enum cardinality, auth scope, protobuf/GraphQL/AsyncAPI는 후속 slice다.
+
+**관련 commit:** `feat(contracts): OpenAPI nested schema diff 추가`
 
 ---
 

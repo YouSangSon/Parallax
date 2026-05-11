@@ -311,6 +311,684 @@ async function writeOpenApiJsonChainedRefContract(repoRoot: string, userIdType: 
   );
 }
 
+async function writeOpenApiJsonNestedSchemaContract(
+  repoRoot: string,
+  options: {
+    responseProfileRequired?: string[];
+    responseMemberIdType?: 'string' | 'integer';
+    requestProfileRequired?: string[];
+  } = {}
+): Promise<void> {
+  await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
+  await writeFile(
+    path.join(repoRoot, 'contracts/openapi.json'),
+    `${JSON.stringify({
+      openapi: '3.0.0',
+      info: {
+        title: 'Users API',
+        version: '1.0.0'
+      },
+      paths: {
+        '/api/users': {
+          get: {
+            operationId: 'listUsers',
+            responses: {
+              200: {
+                description: 'ok',
+                content: {
+                  'application/json': {
+                    schema: {
+                      type: 'object',
+                      required: ['id', 'profile', 'members'],
+                      properties: {
+                        id: { type: 'string' },
+                        profile: {
+                          type: 'object',
+                          required: options.responseProfileRequired ?? ['displayName'],
+                          properties: {
+                            displayName: { type: 'string' }
+                          }
+                        },
+                        members: {
+                          type: 'array',
+                          items: {
+                            type: 'object',
+                            required: ['id'],
+                            properties: {
+                              id: { type: options.responseMemberIdType ?? 'string' }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          post: {
+            operationId: 'createUser',
+            requestBody: {
+              required: true,
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    required: ['profile'],
+                    properties: {
+                      profile: {
+                        type: 'object',
+                        required: options.requestProfileRequired ?? ['displayName'],
+                        properties: {
+                          displayName: { type: 'string' },
+                          locale: { type: 'string' }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            responses: {
+              201: {
+                description: 'created'
+              }
+            }
+          }
+        }
+      }
+    }, null, 2)}\n`
+  );
+}
+
+async function writeOpenApiYamlNestedSchemaContract(
+  repoRoot: string,
+  options: {
+    responseProfileRequired?: string[];
+    responseMemberIdType?: 'string' | 'integer';
+    requestProfileRequired?: string[];
+  } = {}
+): Promise<void> {
+  await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
+  const responseProfileRequired = options.responseProfileRequired ?? ['displayName'];
+  const requestProfileRequired = options.requestProfileRequired ?? ['displayName'];
+  await writeFile(
+    path.join(repoRoot, 'contracts/openapi.yaml'),
+    [
+      'openapi: 3.0.0',
+      'info:',
+      '  title: Users API',
+      '  version: 1.0.0',
+      'paths:',
+      '  /api/users:',
+      '    get:',
+      '      operationId: listUsers',
+      '      responses:',
+      "        '200':",
+      '          description: ok',
+      '          content:',
+      '            application/json:',
+      '              schema:',
+      '                type: object',
+      '                required:',
+      '                  - id',
+      '                  - profile',
+      '                  - members',
+      '                properties:',
+      '                  id:',
+      '                    type: string',
+      '                  profile:',
+      '                    type: object',
+      '                    required:',
+      ...responseProfileRequired.map((propertyName) => `                      - ${propertyName}`),
+      '                    properties:',
+      '                      displayName:',
+      '                        type: string',
+      '                  members:',
+      '                    type: array',
+      '                    items:',
+      '                      type: object',
+      '                      required:',
+      '                        - id',
+      '                      properties:',
+      '                        id:',
+      `                          type: ${options.responseMemberIdType ?? 'string'}`,
+      '    post:',
+      '      operationId: createUser',
+      '      requestBody:',
+      '        required: true',
+      '        content:',
+      '          application/json:',
+      '            schema:',
+      '              type: object',
+      '              required:',
+      '                - profile',
+      '              properties:',
+      '                profile:',
+      '                  type: object',
+      '                  required:',
+      ...requestProfileRequired.map((propertyName) => `                    - ${propertyName}`),
+      '                  properties:',
+      '                    displayName:',
+      '                      type: string',
+      '                    locale:',
+      '                      type: string',
+      '      responses:',
+      "        '201':",
+      '          description: created',
+      ''
+    ].join('\n')
+  );
+}
+
+async function writeOpenApiJsonAllOfSchemaContract(repoRoot: string, displayNameType: 'string' | 'integer'): Promise<void> {
+  await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
+  await writeFile(
+    path.join(repoRoot, 'contracts/openapi.json'),
+    `${JSON.stringify({
+      openapi: '3.0.0',
+      info: {
+        title: 'Users API',
+        version: '1.0.0'
+      },
+      paths: {
+        '/api/users': {
+          get: {
+            operationId: 'listUsers',
+            responses: {
+              200: {
+                description: 'ok',
+                content: {
+                  'application/json': {
+                    schema: {
+                      $ref: '#/components/schemas/UserResponse'
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      components: {
+        schemas: {
+          UserResponse: {
+            allOf: [
+              { $ref: '#/components/schemas/BaseUser' },
+              {
+                type: 'object',
+                required: ['profile'],
+                properties: {
+                  profile: { $ref: '#/components/schemas/UserProfile' }
+                }
+              }
+            ]
+          },
+          BaseUser: {
+            type: 'object',
+            required: ['id'],
+            properties: {
+              id: { type: 'string' }
+            }
+          },
+          UserProfile: {
+            type: 'object',
+            required: ['displayName'],
+            properties: {
+              displayName: { type: displayNameType }
+            }
+          }
+        }
+      }
+    }, null, 2)}\n`
+  );
+}
+
+async function writeOpenApiJsonOneOfSchemaContract(repoRoot: string, includeIntegerAlternative: boolean): Promise<void> {
+  await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
+  await writeFile(
+    path.join(repoRoot, 'contracts/openapi.json'),
+    `${JSON.stringify({
+      openapi: '3.0.0',
+      info: {
+        title: 'Users API',
+        version: '1.0.0'
+      },
+      paths: {
+        '/api/users': {
+          get: {
+            operationId: 'listUsers',
+            responses: {
+              200: {
+                description: 'ok',
+                content: {
+                  'application/json': {
+                    schema: {
+                      type: 'object',
+                      required: ['externalId'],
+                      properties: {
+                        externalId: {
+                          oneOf: [
+                            { type: 'string' },
+                            ...(includeIntegerAlternative ? [{ type: 'integer' }] : [])
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }, null, 2)}\n`
+  );
+}
+
+async function writeOpenApiJsonAnyOfSchemaContract(repoRoot: string, includeIntegerAlternative: boolean): Promise<void> {
+  await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
+  await writeFile(
+    path.join(repoRoot, 'contracts/openapi.json'),
+    `${JSON.stringify({
+      openapi: '3.0.0',
+      info: {
+        title: 'Users API',
+        version: '1.0.0'
+      },
+      paths: {
+        '/api/users': {
+          get: {
+            operationId: 'listUsers',
+            responses: {
+              200: {
+                description: 'ok',
+                content: {
+                  'application/json': {
+                    schema: {
+                      type: 'object',
+                      required: ['externalId'],
+                      properties: {
+                        externalId: {
+                          anyOf: [
+                            { type: 'string' },
+                            ...(includeIntegerAlternative ? [{ type: 'integer' }] : [])
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }, null, 2)}\n`
+  );
+}
+
+async function writeOpenApiJsonRootArraySchemaContract(repoRoot: string, itemIdType: 'string' | 'integer'): Promise<void> {
+  await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
+  await writeFile(
+    path.join(repoRoot, 'contracts/openapi.json'),
+    `${JSON.stringify({
+      openapi: '3.0.0',
+      info: {
+        title: 'Users API',
+        version: '1.0.0'
+      },
+      paths: {
+        '/api/users': {
+          get: {
+            operationId: 'listUsers',
+            responses: {
+              200: {
+                description: 'ok',
+                content: {
+                  'application/json': {
+                    schema: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        required: ['id'],
+                        properties: {
+                          id: { type: itemIdType }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }, null, 2)}\n`
+  );
+}
+
+async function writeOpenApiJsonRootOneOfSchemaContract(repoRoot: string, includeIntegerAlternative: boolean): Promise<void> {
+  await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
+  await writeFile(
+    path.join(repoRoot, 'contracts/openapi.json'),
+    `${JSON.stringify({
+      openapi: '3.0.0',
+      info: {
+        title: 'Users API',
+        version: '1.0.0'
+      },
+      paths: {
+        '/api/users': {
+          get: {
+            operationId: 'listUsers',
+            responses: {
+              200: {
+                description: 'ok',
+                content: {
+                  'application/json': {
+                    schema: {
+                      oneOf: [
+                        {
+                          type: 'object',
+                          required: ['id'],
+                          properties: {
+                            id: { type: 'string' }
+                          }
+                        },
+                        ...(includeIntegerAlternative
+                          ? [{
+                              type: 'object',
+                              required: ['id'],
+                              properties: {
+                                id: { type: 'integer' }
+                              }
+                            }]
+                          : [])
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }, null, 2)}\n`
+  );
+}
+
+async function writeOpenApiJsonRootOneOfRequiredResponseContract(repoRoot: string, required: string[]): Promise<void> {
+  await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
+  await writeFile(
+    path.join(repoRoot, 'contracts/openapi.json'),
+    `${JSON.stringify({
+      openapi: '3.0.0',
+      info: {
+        title: 'Users API',
+        version: '1.0.0'
+      },
+      paths: {
+        '/api/users': {
+          get: {
+            operationId: 'listUsers',
+            responses: {
+              200: {
+                description: 'ok',
+                content: {
+                  'application/json': {
+                    schema: {
+                      oneOf: [
+                        {
+                          type: 'object',
+                          required,
+                          properties: {
+                            id: { type: 'string' },
+                            name: { type: 'string' }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }, null, 2)}\n`
+  );
+}
+
+async function writeOpenApiJsonRootOneOfRequiredOnlyResponseContract(
+  repoRoot: string,
+  required: string[]
+): Promise<void> {
+  await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
+  await writeFile(
+    path.join(repoRoot, 'contracts/openapi.json'),
+    `${JSON.stringify({
+      openapi: '3.0.0',
+      info: {
+        title: 'Users API',
+        version: '1.0.0'
+      },
+      paths: {
+        '/api/users': {
+          get: {
+            operationId: 'listUsers',
+            responses: {
+              200: {
+                description: 'ok',
+                content: {
+                  'application/json': {
+                    schema: {
+                      oneOf: [
+                        {
+                          type: 'object',
+                          required
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }, null, 2)}\n`
+  );
+}
+
+async function writeOpenApiJsonRootAnyOfRequiredRequestContract(repoRoot: string, required: string[]): Promise<void> {
+  await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
+  await writeFile(
+    path.join(repoRoot, 'contracts/openapi.json'),
+    `${JSON.stringify({
+      openapi: '3.0.0',
+      info: {
+        title: 'Users API',
+        version: '1.0.0'
+      },
+      paths: {
+        '/api/users': {
+          post: {
+            operationId: 'createUser',
+            requestBody: {
+              required: true,
+              content: {
+                'application/json': {
+                  schema: {
+                    anyOf: [
+                      {
+                        type: 'object',
+                        required,
+                        properties: {
+                          id: { type: 'string' },
+                          name: { type: 'string' }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            responses: {
+              201: {
+                description: 'created'
+              }
+            }
+          }
+        }
+      }
+    }, null, 2)}\n`
+  );
+}
+
+async function writeOpenApiJsonRootAnyOfRequiredOnlyRequestContract(
+  repoRoot: string,
+  required: string[]
+): Promise<void> {
+  await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
+  await writeFile(
+    path.join(repoRoot, 'contracts/openapi.json'),
+    `${JSON.stringify({
+      openapi: '3.0.0',
+      info: {
+        title: 'Users API',
+        version: '1.0.0'
+      },
+      paths: {
+        '/api/users': {
+          post: {
+            operationId: 'createUser',
+            requestBody: {
+              required: true,
+              content: {
+                'application/json': {
+                  schema: {
+                    anyOf: [
+                      {
+                        type: 'object',
+                        required
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            responses: {
+              201: {
+                description: 'created'
+              }
+            }
+          }
+        }
+      }
+    }, null, 2)}\n`
+  );
+}
+
+async function writeOpenApiJsonArrayPointerRefContract(repoRoot: string, idType: 'string' | 'integer'): Promise<void> {
+  await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
+  await writeFile(
+    path.join(repoRoot, 'contracts/openapi.json'),
+    `${JSON.stringify({
+      openapi: '3.0.0',
+      info: {
+        title: 'Users API',
+        version: '1.0.0'
+      },
+      paths: {
+        '/api/users': {
+          get: {
+            operationId: 'listUsers',
+            responses: {
+              200: {
+                description: 'ok',
+                content: {
+                  'application/json': {
+                    schema: {
+                      $ref: '#/components/schemas/UserEnvelope/allOf/0'
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      components: {
+        schemas: {
+          UserEnvelope: {
+            allOf: [
+              {
+                type: 'object',
+                required: ['id'],
+                properties: {
+                  id: { type: idType }
+                }
+              }
+            ]
+          }
+        }
+      }
+    }, null, 2)}\n`
+  );
+}
+
+async function writeOpenApiJsonOverlappingAllOfContract(
+  repoRoot: string,
+  order: 'string-then-enum' | 'enum-then-string'
+): Promise<void> {
+  const stringBranch = {
+    type: 'object',
+    required: ['id'],
+    properties: {
+      id: { type: 'string' }
+    }
+  };
+  const enumBranch = {
+    type: 'object',
+    properties: {
+      id: { enum: ['a', 'b'] }
+    }
+  };
+  await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
+  await writeFile(
+    path.join(repoRoot, 'contracts/openapi.json'),
+    `${JSON.stringify({
+      openapi: '3.0.0',
+      info: {
+        title: 'Users API',
+        version: '1.0.0'
+      },
+      paths: {
+        '/api/users': {
+          get: {
+            operationId: 'listUsers',
+            responses: {
+              200: {
+                description: 'ok',
+                content: {
+                  'application/json': {
+                    schema: {
+                      allOf: order === 'string-then-enum'
+                        ? [stringBranch, enumBranch]
+                        : [enumBranch, stringBranch]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }, null, 2)}\n`
+  );
+}
+
 async function writeMalformedOpenApiContract(repoRoot: string): Promise<void> {
   await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
   await writeFile(
@@ -559,6 +1237,32 @@ async function removeConsumerFromWorkspaceCatalog(consumerRoot: string, provider
   );
 }
 
+function downgradeOpenApiCompatibilityBaseline(repoRoot: string, schemaVersion: number): void {
+  const db = new DatabaseSync(databasePath(repoRoot));
+  try {
+    const row = db
+      .prepare(
+        `SELECT contract_id, index_run_id, compatibility_json
+         FROM contract_versions
+         WHERE compatibility_json <> '{}'
+         LIMIT 1`
+      )
+      .get() as { contract_id: string; index_run_id: number; compatibility_json: string };
+    const compatibility = JSON.parse(row.compatibility_json) as { schemaVersion?: number };
+    compatibility.schemaVersion = schemaVersion;
+    db
+      .prepare(
+        `UPDATE contract_versions
+         SET compatibility_json = ?
+         WHERE contract_id = ?
+           AND index_run_id = ?`
+      )
+      .run(JSON.stringify(compatibility), row.contract_id, row.index_run_id);
+  } finally {
+    db.close();
+  }
+}
+
 async function setupWorkspaceWithResolvedContract(): Promise<{
   consumerRoot: string;
   providerRoot: string;
@@ -695,6 +1399,379 @@ async function setupWorkspaceWithResolvedJsonChainedRefContract(): Promise<{
   const providerRoot = await makeRepo('impact-trace-diff-json-chain-provider-');
   await writeConsumerClient(consumerRoot, '/api/users');
   await writeOpenApiJsonChainedRefContract(providerRoot, 'string');
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'users-api'
+  });
+  const resolved = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+  assert.equal(resolved.links.length, 1);
+
+  return {
+    consumerRoot,
+    providerRoot
+  };
+}
+
+async function setupWorkspaceWithResolvedJsonNestedSchemaContract(): Promise<{
+  consumerRoot: string;
+  providerRoot: string;
+}> {
+  const consumerRoot = await makeRepo('impact-trace-diff-json-nested-consumer-');
+  const providerRoot = await makeRepo('impact-trace-diff-json-nested-provider-');
+  await writeConsumerClient(consumerRoot, '/api/users');
+  await writeOpenApiJsonNestedSchemaContract(providerRoot);
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'users-api'
+  });
+  const resolved = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+  assert.equal(resolved.links.length, 1);
+
+  return {
+    consumerRoot,
+    providerRoot
+  };
+}
+
+async function setupWorkspaceWithResolvedYamlNestedSchemaContract(): Promise<{
+  consumerRoot: string;
+  providerRoot: string;
+}> {
+  const consumerRoot = await makeRepo('impact-trace-diff-yaml-nested-consumer-');
+  const providerRoot = await makeRepo('impact-trace-diff-yaml-nested-provider-');
+  await writeConsumerClient(consumerRoot, '/api/users');
+  await writeOpenApiYamlNestedSchemaContract(providerRoot);
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'users-api'
+  });
+  const resolved = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+  assert.equal(resolved.links.length, 1);
+
+  return {
+    consumerRoot,
+    providerRoot
+  };
+}
+
+async function setupWorkspaceWithResolvedJsonAllOfSchemaContract(): Promise<{
+  consumerRoot: string;
+  providerRoot: string;
+}> {
+  const consumerRoot = await makeRepo('impact-trace-diff-json-allof-consumer-');
+  const providerRoot = await makeRepo('impact-trace-diff-json-allof-provider-');
+  await writeConsumerClient(consumerRoot, '/api/users');
+  await writeOpenApiJsonAllOfSchemaContract(providerRoot, 'string');
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'users-api'
+  });
+  const resolved = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+  assert.equal(resolved.links.length, 1);
+
+  return {
+    consumerRoot,
+    providerRoot
+  };
+}
+
+async function setupWorkspaceWithResolvedJsonOneOfSchemaContract(): Promise<{
+  consumerRoot: string;
+  providerRoot: string;
+}> {
+  const consumerRoot = await makeRepo('impact-trace-diff-json-oneof-consumer-');
+  const providerRoot = await makeRepo('impact-trace-diff-json-oneof-provider-');
+  await writeConsumerClient(consumerRoot, '/api/users');
+  await writeOpenApiJsonOneOfSchemaContract(providerRoot, true);
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'users-api'
+  });
+  const resolved = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+  assert.equal(resolved.links.length, 1);
+
+  return {
+    consumerRoot,
+    providerRoot
+  };
+}
+
+async function setupWorkspaceWithResolvedJsonAnyOfSchemaContract(): Promise<{
+  consumerRoot: string;
+  providerRoot: string;
+}> {
+  const consumerRoot = await makeRepo('impact-trace-diff-json-anyof-consumer-');
+  const providerRoot = await makeRepo('impact-trace-diff-json-anyof-provider-');
+  await writeConsumerClient(consumerRoot, '/api/users');
+  await writeOpenApiJsonAnyOfSchemaContract(providerRoot, true);
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'users-api'
+  });
+  const resolved = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+  assert.equal(resolved.links.length, 1);
+
+  return {
+    consumerRoot,
+    providerRoot
+  };
+}
+
+async function setupWorkspaceWithResolvedJsonRootArraySchemaContract(): Promise<{
+  consumerRoot: string;
+  providerRoot: string;
+}> {
+  const consumerRoot = await makeRepo('impact-trace-diff-json-root-array-consumer-');
+  const providerRoot = await makeRepo('impact-trace-diff-json-root-array-provider-');
+  await writeConsumerClient(consumerRoot, '/api/users');
+  await writeOpenApiJsonRootArraySchemaContract(providerRoot, 'string');
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'users-api'
+  });
+  const resolved = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+  assert.equal(resolved.links.length, 1);
+
+  return {
+    consumerRoot,
+    providerRoot
+  };
+}
+
+async function setupWorkspaceWithResolvedJsonRootOneOfSchemaContract(): Promise<{
+  consumerRoot: string;
+  providerRoot: string;
+}> {
+  const consumerRoot = await makeRepo('impact-trace-diff-json-root-oneof-consumer-');
+  const providerRoot = await makeRepo('impact-trace-diff-json-root-oneof-provider-');
+  await writeConsumerClient(consumerRoot, '/api/users');
+  await writeOpenApiJsonRootOneOfSchemaContract(providerRoot, true);
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'users-api'
+  });
+  const resolved = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+  assert.equal(resolved.links.length, 1);
+
+  return {
+    consumerRoot,
+    providerRoot
+  };
+}
+
+async function setupWorkspaceWithResolvedJsonRootOneOfRequiredResponseContract(): Promise<{
+  consumerRoot: string;
+  providerRoot: string;
+}> {
+  const consumerRoot = await makeRepo('impact-trace-diff-json-root-oneof-required-consumer-');
+  const providerRoot = await makeRepo('impact-trace-diff-json-root-oneof-required-provider-');
+  await writeConsumerClient(consumerRoot, '/api/users');
+  await writeOpenApiJsonRootOneOfRequiredResponseContract(providerRoot, ['id', 'name']);
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'users-api'
+  });
+  const resolved = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+  assert.equal(resolved.links.length, 1);
+
+  return {
+    consumerRoot,
+    providerRoot
+  };
+}
+
+async function setupWorkspaceWithResolvedJsonRootOneOfRequiredOnlyResponseContract(): Promise<{
+  consumerRoot: string;
+  providerRoot: string;
+}> {
+  const consumerRoot = await makeRepo('impact-trace-diff-json-root-oneof-required-only-consumer-');
+  const providerRoot = await makeRepo('impact-trace-diff-json-root-oneof-required-only-provider-');
+  await writeConsumerClient(consumerRoot, '/api/users');
+  await writeOpenApiJsonRootOneOfRequiredOnlyResponseContract(providerRoot, ['id', 'name']);
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'users-api'
+  });
+  const resolved = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+  assert.equal(resolved.links.length, 1);
+
+  return {
+    consumerRoot,
+    providerRoot
+  };
+}
+
+async function setupWorkspaceWithJsonRootAnyOfRequiredRequestContract(): Promise<{
+  consumerRoot: string;
+  providerRoot: string;
+}> {
+  const consumerRoot = await makeRepo('impact-trace-diff-json-root-anyof-required-consumer-');
+  const providerRoot = await makeRepo('impact-trace-diff-json-root-anyof-required-provider-');
+  await writeConsumerClient(consumerRoot, '/api/users');
+  await writeOpenApiJsonRootAnyOfRequiredRequestContract(providerRoot, ['id']);
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'users-api'
+  });
+
+  return {
+    consumerRoot,
+    providerRoot
+  };
+}
+
+async function setupWorkspaceWithJsonRootAnyOfRequiredOnlyRequestContract(): Promise<{
+  consumerRoot: string;
+  providerRoot: string;
+}> {
+  const consumerRoot = await makeRepo('impact-trace-diff-json-root-anyof-required-only-consumer-');
+  const providerRoot = await makeRepo('impact-trace-diff-json-root-anyof-required-only-provider-');
+  await writeConsumerClient(consumerRoot, '/api/users');
+  await writeOpenApiJsonRootAnyOfRequiredOnlyRequestContract(providerRoot, ['id']);
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'users-api'
+  });
+
+  return {
+    consumerRoot,
+    providerRoot
+  };
+}
+
+async function setupWorkspaceWithResolvedJsonArrayPointerRefContract(): Promise<{
+  consumerRoot: string;
+  providerRoot: string;
+}> {
+  const consumerRoot = await makeRepo('impact-trace-diff-json-array-pointer-ref-consumer-');
+  const providerRoot = await makeRepo('impact-trace-diff-json-array-pointer-ref-provider-');
+  await writeConsumerClient(consumerRoot, '/api/users');
+  await writeOpenApiJsonArrayPointerRefContract(providerRoot, 'string');
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'users-api'
+  });
+  const resolved = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+  assert.equal(resolved.links.length, 1);
+
+  return {
+    consumerRoot,
+    providerRoot
+  };
+}
+
+async function setupWorkspaceWithResolvedJsonOverlappingAllOfContract(): Promise<{
+  consumerRoot: string;
+  providerRoot: string;
+}> {
+  const consumerRoot = await makeRepo('impact-trace-diff-json-overlap-allof-consumer-');
+  const providerRoot = await makeRepo('impact-trace-diff-json-overlap-allof-provider-');
+  await writeConsumerClient(consumerRoot, '/api/users');
+  await writeOpenApiJsonOverlappingAllOfContract(providerRoot, 'string-then-enum');
 
   await initProject({ repoRoot: consumerRoot });
   await initProject({ repoRoot: providerRoot });
@@ -1527,6 +2604,498 @@ test('analyzeContractDiff follows chained duplicate OpenAPI JSON refs for reques
       currentSchemaType: 'integer'
     }
   ]);
+});
+
+test('analyzeContractDiff classifies nested OpenAPI JSON object and array schema changes as breaking', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithResolvedJsonNestedSchemaContract();
+  await writeOpenApiJsonNestedSchemaContract(providerRoot, {
+    responseProfileRequired: [],
+    responseMemberIdType: 'integer',
+    requestProfileRequired: ['displayName', 'locale']
+  });
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/openapi.json'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.equal(result.summary.breakingChangeCount, 3);
+  assert.equal(result.summary.unknownChangeCount, 0);
+  assert.equal(result.summary.impactedConsumerCount, 1);
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'removed_response_required_property',
+      classification: 'breaking',
+      reason: 'response required property removed from current contract',
+      httpMethod: 'GET',
+      routePath: '/api/users',
+      statusCode: '200',
+      propertyName: 'profile.displayName',
+      schemaPath: 'responses.200.body.required.profile.displayName'
+    },
+    {
+      kind: 'changed_response_property_type',
+      classification: 'breaking',
+      reason: 'response property type changed in current contract',
+      httpMethod: 'GET',
+      routePath: '/api/users',
+      statusCode: '200',
+      propertyName: 'members[].id',
+      schemaPath: 'responses.200.body.properties.members[].id',
+      previousSchemaType: 'string',
+      currentSchemaType: 'integer'
+    },
+    {
+      kind: 'added_request_required_property',
+      classification: 'breaking',
+      reason: 'request required property added to current contract',
+      httpMethod: 'POST',
+      routePath: '/api/users',
+      propertyName: 'profile.locale',
+      schemaPath: 'requestBody.required.profile.locale'
+    }
+  ]);
+
+  const db = new DatabaseSync(databasePath(consumerRoot), { readOnly: true });
+  try {
+    const rows = db
+      .prepare(
+        `SELECT provenance
+         FROM cross_repo_links
+         WHERE kind = ?
+         ORDER BY provenance`
+      )
+      .all('BREAKS_COMPATIBILITY_WITH') as Array<{ provenance: string }>;
+    assert.deepEqual(
+      rows.map((row) => {
+        const provenance = JSON.parse(row.provenance) as {
+          change: {
+            kind: string;
+            path: string;
+            schemaPath?: string;
+            propertyName?: string;
+            previousSchemaType?: string;
+            currentSchemaType?: string;
+          };
+        };
+        return provenance.change;
+      }),
+      [
+        {
+          kind: 'changed_response_property_type',
+          method: 'GET',
+          path: '/api/users',
+          statusCode: '200',
+          schemaPath: 'responses.200.body.properties.members[].id',
+          propertyName: 'members[].id',
+          previousSchemaType: 'string',
+          currentSchemaType: 'integer'
+        },
+        {
+          kind: 'removed_response_required_property',
+          method: 'GET',
+          path: '/api/users',
+          statusCode: '200',
+          schemaPath: 'responses.200.body.required.profile.displayName',
+          propertyName: 'profile.displayName'
+        }
+      ]
+    );
+  } finally {
+    db.close();
+  }
+});
+
+test('analyzeContractDiff classifies nested OpenAPI YAML object and array schema changes as breaking', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithResolvedYamlNestedSchemaContract();
+  await writeOpenApiYamlNestedSchemaContract(providerRoot, {
+    responseProfileRequired: [],
+    responseMemberIdType: 'integer',
+    requestProfileRequired: ['displayName', 'locale']
+  });
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/openapi.yaml'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.equal(result.summary.breakingChangeCount, 3);
+  assert.equal(result.summary.unknownChangeCount, 0);
+  assert.equal(result.summary.impactedConsumerCount, 1);
+  assert.deepEqual(
+    result.changes.map((change) => ({
+      kind: change.kind,
+      propertyName: change.propertyName,
+      schemaPath: change.schemaPath,
+      previousSchemaType: change.previousSchemaType,
+      currentSchemaType: change.currentSchemaType
+    })),
+    [
+      {
+        kind: 'removed_response_required_property',
+        propertyName: 'profile.displayName',
+        schemaPath: 'responses.200.body.required.profile.displayName',
+        previousSchemaType: undefined,
+        currentSchemaType: undefined
+      },
+      {
+        kind: 'changed_response_property_type',
+        propertyName: 'members[].id',
+        schemaPath: 'responses.200.body.properties.members[].id',
+        previousSchemaType: 'string',
+        currentSchemaType: 'integer'
+      },
+      {
+        kind: 'added_request_required_property',
+        propertyName: 'profile.locale',
+        schemaPath: 'requestBody.required.profile.locale',
+        previousSchemaType: undefined,
+        currentSchemaType: undefined
+      }
+    ]
+  );
+});
+
+test('analyzeContractDiff merges OpenAPI JSON allOf schemas before comparing nested property types', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithResolvedJsonAllOfSchemaContract();
+  await writeOpenApiJsonAllOfSchemaContract(providerRoot, 'integer');
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/openapi.json'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'changed_response_property_type',
+      classification: 'breaking',
+      reason: 'response property type changed in current contract',
+      httpMethod: 'GET',
+      routePath: '/api/users',
+      statusCode: '200',
+      propertyName: 'profile.displayName',
+      schemaPath: 'responses.200.body.properties.profile.displayName',
+      previousSchemaType: 'string',
+      currentSchemaType: 'integer'
+    }
+  ]);
+});
+
+test('analyzeContractDiff fingerprints OpenAPI JSON oneOf alternatives as response property type changes', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithResolvedJsonOneOfSchemaContract();
+  await writeOpenApiJsonOneOfSchemaContract(providerRoot, false);
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/openapi.json'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'changed_response_property_type',
+      classification: 'breaking',
+      reason: 'response property type changed in current contract',
+      httpMethod: 'GET',
+      routePath: '/api/users',
+      statusCode: '200',
+      propertyName: 'externalId',
+      schemaPath: 'responses.200.body.properties.externalId',
+      previousSchemaType: 'oneOf<integer|string>',
+      currentSchemaType: 'oneOf<string>'
+    }
+  ]);
+});
+
+test('analyzeContractDiff fingerprints OpenAPI JSON anyOf alternatives as response property type changes', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithResolvedJsonAnyOfSchemaContract();
+  await writeOpenApiJsonAnyOfSchemaContract(providerRoot, false);
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/openapi.json'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'changed_response_property_type',
+      classification: 'breaking',
+      reason: 'response property type changed in current contract',
+      httpMethod: 'GET',
+      routePath: '/api/users',
+      statusCode: '200',
+      propertyName: 'externalId',
+      schemaPath: 'responses.200.body.properties.externalId',
+      previousSchemaType: 'anyOf<integer|string>',
+      currentSchemaType: 'anyOf<string>'
+    }
+  ]);
+});
+
+test('analyzeContractDiff classifies OpenAPI JSON root array item property changes as breaking', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithResolvedJsonRootArraySchemaContract();
+  await writeOpenApiJsonRootArraySchemaContract(providerRoot, 'integer');
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/openapi.json'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'changed_response_property_type',
+      classification: 'breaking',
+      reason: 'response property type changed in current contract',
+      httpMethod: 'GET',
+      routePath: '/api/users',
+      statusCode: '200',
+      propertyName: '[].id',
+      schemaPath: 'responses.200.body.properties.[].id',
+      previousSchemaType: 'string',
+      currentSchemaType: 'integer'
+    }
+  ]);
+});
+
+test('analyzeContractDiff fingerprints OpenAPI JSON root oneOf response bodies as breaking', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithResolvedJsonRootOneOfSchemaContract();
+  await writeOpenApiJsonRootOneOfSchemaContract(providerRoot, false);
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/openapi.json'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'changed_response_property_type',
+      classification: 'breaking',
+      reason: 'response property type changed in current contract',
+      httpMethod: 'GET',
+      routePath: '/api/users',
+      statusCode: '200',
+      propertyName: '$',
+      schemaPath: 'responses.200.body.properties.$',
+      previousSchemaType: 'oneOf<object{required:id;properties:id:integer}|object{required:id;properties:id:string}>',
+      currentSchemaType: 'oneOf<object{required:id;properties:id:string}>'
+    }
+  ]);
+});
+
+test('analyzeContractDiff fingerprints OpenAPI JSON root oneOf response required-only changes as breaking', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithResolvedJsonRootOneOfRequiredResponseContract();
+  await writeOpenApiJsonRootOneOfRequiredResponseContract(providerRoot, ['id']);
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/openapi.json'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'changed_response_property_type',
+      classification: 'breaking',
+      reason: 'response property type changed in current contract',
+      httpMethod: 'GET',
+      routePath: '/api/users',
+      statusCode: '200',
+      propertyName: '$',
+      schemaPath: 'responses.200.body.properties.$',
+      previousSchemaType: 'oneOf<object{required:id|name;properties:id:string,name:string}>',
+      currentSchemaType: 'oneOf<object{required:id;properties:id:string,name:string}>'
+    }
+  ]);
+});
+
+test('analyzeContractDiff fingerprints OpenAPI JSON root oneOf required-only response bodies without properties', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithResolvedJsonRootOneOfRequiredOnlyResponseContract();
+  await writeOpenApiJsonRootOneOfRequiredOnlyResponseContract(providerRoot, ['id']);
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/openapi.json'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'changed_response_property_type',
+      classification: 'breaking',
+      reason: 'response property type changed in current contract',
+      httpMethod: 'GET',
+      routePath: '/api/users',
+      statusCode: '200',
+      propertyName: '$',
+      schemaPath: 'responses.200.body.properties.$',
+      previousSchemaType: 'oneOf<object{required:id|name;properties:}>',
+      currentSchemaType: 'oneOf<object{required:id;properties:}>'
+    }
+  ]);
+});
+
+test('analyzeContractDiff fingerprints OpenAPI JSON root anyOf request required-only changes as breaking', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithJsonRootAnyOfRequiredRequestContract();
+  await writeOpenApiJsonRootAnyOfRequiredRequestContract(providerRoot, ['id', 'name']);
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/openapi.json'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'changed_request_property_type',
+      classification: 'breaking',
+      reason: 'request property type changed in current contract',
+      httpMethod: 'POST',
+      routePath: '/api/users',
+      propertyName: '$',
+      schemaPath: 'requestBody.properties.$',
+      previousSchemaType: 'anyOf<object{required:id;properties:id:string,name:string}>',
+      currentSchemaType: 'anyOf<object{required:id|name;properties:id:string,name:string}>'
+    }
+  ]);
+});
+
+test('analyzeContractDiff fingerprints OpenAPI JSON root anyOf required-only request bodies without properties', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithJsonRootAnyOfRequiredOnlyRequestContract();
+  await writeOpenApiJsonRootAnyOfRequiredOnlyRequestContract(providerRoot, ['id', 'name']);
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/openapi.json'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'changed_request_property_type',
+      classification: 'breaking',
+      reason: 'request property type changed in current contract',
+      httpMethod: 'POST',
+      routePath: '/api/users',
+      propertyName: '$',
+      schemaPath: 'requestBody.properties.$',
+      previousSchemaType: 'anyOf<object{required:id;properties:}>',
+      currentSchemaType: 'anyOf<object{required:id|name;properties:}>'
+    }
+  ]);
+});
+
+test('analyzeContractDiff follows OpenAPI JSON pointer refs through array indices', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithResolvedJsonArrayPointerRefContract();
+  await writeOpenApiJsonArrayPointerRefContract(providerRoot, 'integer');
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/openapi.json'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'changed_response_property_type',
+      classification: 'breaking',
+      reason: 'response property type changed in current contract',
+      httpMethod: 'GET',
+      routePath: '/api/users',
+      statusCode: '200',
+      propertyName: 'id',
+      schemaPath: 'responses.200.body.properties.id',
+      previousSchemaType: 'string',
+      currentSchemaType: 'integer'
+    }
+  ]);
+});
+
+test('analyzeContractDiff does not treat overlapping OpenAPI JSON allOf branch reordering as breaking', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithResolvedJsonOverlappingAllOfContract();
+  await writeOpenApiJsonOverlappingAllOfContract(providerRoot, 'enum-then-string');
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/openapi.json'
+  });
+
+  assert.equal(result.summary.breakingChangeCount, 0);
+  assert.equal(
+    result.changes.some((change) => change.kind === 'changed_response_property_type'),
+    false
+  );
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'changed_contract_without_endpoint_delta',
+      classification: 'unknown',
+      reason: 'contract content changed but endpoint surface is unchanged in the v0 analyzer'
+    }
+  ]);
+});
+
+test('analyzeContractDiff warns when indexed OpenAPI compatibility baseline is stale', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithResolvedJsonNestedSchemaContract();
+  downgradeOpenApiCompatibilityBaseline(providerRoot, 1);
+  await writeOpenApiJsonNestedSchemaContract(providerRoot, { responseMemberIdType: 'integer' });
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/openapi.json'
+  });
+
+  assert.equal(result.summary.classification, 'unknown');
+  assert.equal(
+    result.changes.some((change) => change.kind === 'changed_response_property_type'),
+    false
+  );
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'changed_contract_without_endpoint_delta',
+      classification: 'unknown',
+      reason: 'contract content changed but endpoint surface is unchanged in the v0 analyzer'
+    }
+  ]);
+  assert.ok(
+    result.warnings.some((warning) =>
+      warning.includes('indexed OpenAPI compatibility baseline uses schemaVersion 1') &&
+      warning.includes('reindex provider contract')
+    ),
+    `expected stale compatibility warning, got ${JSON.stringify(result.warnings)}`
+  );
 });
 
 test('analyzeContractDiff treats non-OpenAPI JSON as unknown and preserves existing breaking links', async () => {

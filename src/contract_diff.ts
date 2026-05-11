@@ -170,7 +170,7 @@ export function analyzeContractDiff(options: AnalyzeContractDiffOptions): Analyz
   try {
     const previousEndpoints = loadPreviousEndpoints(provider);
     const current = readCurrentContract(provider.repoPath, contractPath, warnings);
-    const changes = classifyChanges(provider, previousEndpoints, current, contractPath);
+    const changes = classifyChanges(provider, previousEndpoints, current, contractPath, warnings);
     const rootDb = openDatabase(repoRoot, { readOnly: options.persist === false });
     try {
       const workspaceRow = readWorkspaceRow(rootDb, workspace.name);
@@ -366,7 +366,8 @@ function classifyChanges(
   provider: IndexedProvider,
   previousEndpoints: ContractEndpoint[],
   current: CurrentContractParse & { contentHash?: string },
-  contractPath: string
+  contractPath: string,
+  warnings: string[]
 ): ContractDiffChange[] {
   if (!current.ok) {
     return [{
@@ -411,7 +412,7 @@ function classifyChanges(
     });
   }
 
-  const previousCompatibility = parseOpenApiCompatibility(provider.contract.compatibility_json);
+  const previousCompatibility = parseOpenApiCompatibility(provider.contract.compatibility_json, warnings);
   if (previousCompatibility !== undefined && current.compatibility !== undefined) {
     changes.push(...classifyOpenApiCompatibilityChanges(previousCompatibility, current.compatibility));
   }
@@ -732,8 +733,21 @@ function canPersistDiff(changes: ContractDiffChange[]): boolean {
   );
 }
 
-function parseOpenApiCompatibility(compatibilityJson: string): OpenApiCompatibilitySignature | undefined {
+function parseOpenApiCompatibility(
+  compatibilityJson: string,
+  warnings: string[]
+): OpenApiCompatibilitySignature | undefined {
   const parsed = parseJsonObject(compatibilityJson);
+  if (
+    parsed?.analyzer === OPENAPI_COMPAT_ANALYZER_ID &&
+    parsed.schemaVersion !== undefined &&
+    parsed.schemaVersion !== OPENAPI_COMPAT_SCHEMA_VERSION
+  ) {
+    warnings.push(
+      `indexed OpenAPI compatibility baseline uses schemaVersion ${String(parsed.schemaVersion)}; reindex provider contract for schemaVersion ${OPENAPI_COMPAT_SCHEMA_VERSION}`
+    );
+    return undefined;
+  }
   if (
     parsed?.schemaVersion !== OPENAPI_COMPAT_SCHEMA_VERSION ||
     parsed.analyzer !== OPENAPI_COMPAT_ANALYZER_ID ||

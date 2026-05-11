@@ -30,8 +30,8 @@ Impact-trace가 만들려는 것은 더 좁고 선명하다. **코드/문서/정
 
 | 상태 | 항목 |
 |---|---|
-| landed | `impact_trace_search_context` keyword/relation/evidence RRF ranking v1, retrieval depth v0(FTS5/BM25 entity lane, `semanticRank`, `graphProximityRank`), search budget/diversification v0(`brief`/`standard`/`deep`, returned bytes, estimated tokens, omitted counts, path/entity/relation interleave), persistent entity/relation_evidence/facts FTS projection + retrieval bench v0, sqlite-vec ANN semantic lane with brute-force fallback, evidence resource v0, context telemetry v0, doctor v0, MCP surface guard, opt-in `import-session` v0, graph JSON pagination, typed error envelope v0, explicit supersession v0, persisted context pack reuse v0, UI Explorer v0, TS/JS parser-backed import span v0, JVM/Spring lightweight evidence span v0, Python/Go/Rust lightweight evidence span v0, OpenAPI contract baseline, workspace catalog v0, cross-repo contract resolver v0, OpenAPI endpoint/schema contract diff v0, MCP workspace/contract resources v0 |
-| next | nested schema/protobuf/GraphQL/AsyncAPI contract diff |
+| landed | `impact_trace_search_context` keyword/relation/evidence RRF ranking v1, retrieval depth v0(FTS5/BM25 entity lane, `semanticRank`, `graphProximityRank`), search budget/diversification v0(`brief`/`standard`/`deep`, returned bytes, estimated tokens, omitted counts, path/entity/relation interleave), persistent entity/relation_evidence/facts FTS projection + retrieval bench v0, sqlite-vec ANN semantic lane with brute-force fallback, evidence resource v0, context telemetry v0, doctor v0, MCP surface guard, opt-in `import-session` v0, graph JSON pagination, typed error envelope v0, explicit supersession v0, persisted context pack reuse v0, UI Explorer v0, TS/JS parser-backed import span v0, JVM/Spring lightweight evidence span v0, Python/Go/Rust lightweight evidence span v0, OpenAPI contract baseline, workspace catalog v0, cross-repo contract resolver v0, OpenAPI endpoint/nested schema contract diff v0, MCP workspace/contract resources v0 |
+| next | protobuf/GraphQL/AsyncAPI contract diff |
 | later | UI Explorer session timeline, context rank feedback |
 
 ---
@@ -375,7 +375,7 @@ transaction을 기준으로 current/as-of visibility를 판단한다. 현재 vie
 | 2 | entity persistent FTS + sqlite-vec ANN lane | 완료. schema v14 entity FTS live-write/backfill/restart repair와 ANN-first/fallback parity test를 추가했다. |
 | 3 | persisted context pack id / repeated-query reuse | 완료. 첫 full pack 이후 같은 cache key는 `context_pack_reference`만 반환하고 full pack은 resource로 재사용한다. |
 | 4 | UI Explorer v0 | 완료. `impact-trace ui`가 read-only localhost workbench로 report, evidence, graph, coverage, context pack summary를 보여준다. |
-| 5 | contract diff impact | 완료. workspace catalog, contract baseline, cross-repo links 위에서 OpenAPI endpoint removal consumer risk를 만든다. 다음은 protobuf/GraphQL/schema body diff와 MCP resource 노출이다. |
+| 5 | contract diff impact | 완료. workspace catalog, contract baseline, cross-repo links 위에서 OpenAPI endpoint/nested schema consumer risk를 만든다. 다음은 protobuf/GraphQL/AsyncAPI diff다. |
 
 이미 완료된 guardrail은 유지한다: adoption boundary doc, search RRF initial v1, telemetry v0, MCP allowlist/security tests, doctor v0, opt-in session import v0.
 

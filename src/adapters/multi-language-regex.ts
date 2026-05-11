@@ -3,6 +3,7 @@ import ts from 'typescript';
 
 import { markdownEntityKindForPath } from '../artifacts.js';
 import { extractOpenApiJsonCompatibility, extractOpenApiYamlCompatibility } from '../openapi_compat.js';
+import { extractProtobufCompatibility, stripProtobufComments } from '../protobuf_compat.js';
 import type { Confidence, RelationKind, ScannedFile } from '../types.js';
 import type {
   AdapterCapability,
@@ -431,7 +432,13 @@ function extractOpenApiEndpoints(file: ScannedFile): ContractEndpoint[] {
 }
 
 function contractMetadataForFile(file: ScannedFile): Readonly<Record<string, unknown>> {
-  if (file.language === 'protobuf') return { contractKind: 'protobuf' };
+  if (file.language === 'protobuf') {
+    const compatibility = extractProtobufCompatibility(file.content);
+    return {
+      contractKind: 'protobuf',
+      ...(compatibility !== undefined ? { compatibility } : {})
+    };
+  }
   if (file.language === 'graphql') return { contractKind: 'graphql' };
   if (file.language === 'json') return openApiJsonMetadata(file.content, contractKindForPath(file.relativePath));
   return openApiYamlMetadata(file.content, contractKindForPath(file.relativePath));
@@ -758,23 +765,20 @@ function stripYamlComment(line: string): string {
 }
 
 function extractProtobufEndpoints(file: ScannedFile): ContractEndpoint[] {
-  const endpoints: ContractEndpoint[] = [];
-  let serviceName: string | undefined;
-  const pattern = /\bservice\s+([A-Za-z_]\w*)|\brpc\s+([A-Za-z_]\w*)\s*\(/g;
-  let match: RegExpExecArray | null;
-  while ((match = pattern.exec(file.content))) {
-    if (match[1]) {
-      serviceName = match[1];
-      continue;
-    }
-    const rpcName = match[2]!;
-    endpoints.push({
-      displayName: serviceName ? `${serviceName}.${rpcName}` : rpcName,
-      metadata: { rpc: rpcName, ...(serviceName ? { service: serviceName } : {}) },
-      evidence: evidenceLineAt(file.content, match.index)
-    });
-  }
-  return endpoints;
+  const compatibility = extractProtobufCompatibility(file.content);
+  if (compatibility === undefined) return [];
+  return compatibility.operations.map((operation) => ({
+    displayName: `${operation.service}.${operation.rpc}`,
+    metadata: { rpc: operation.rpc, service: operation.service },
+    evidence: evidenceLineAt(file.content, protobufRpcOffset(file.content, operation.rpc))
+  }));
+}
+
+function protobufRpcOffset(content: string, rpcName: string): number {
+  const stripped = stripProtobufComments(content);
+  const escapedRpcName = rpcName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = new RegExp(`\\brpc\\s+${escapedRpcName}\\s*\\(`).exec(stripped);
+  return match?.index ?? 0;
 }
 
 function extractGraphqlEndpoints(file: ScannedFile): ContractEndpoint[] {

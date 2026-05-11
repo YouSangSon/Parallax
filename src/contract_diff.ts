@@ -13,6 +13,15 @@ import {
   type OpenApiObjectSchemaSignature,
   type OpenApiResponseSignature
 } from './openapi_compat.js';
+import {
+  extractProtobufCompatibility,
+  PROTOBUF_COMPAT_ANALYZER_ID,
+  PROTOBUF_COMPAT_SCHEMA_VERSION,
+  type ProtobufCompatibilitySignature,
+  type ProtobufFieldSignature,
+  type ProtobufMessageSignature,
+  type ProtobufOperationSignature
+} from './protobuf_compat.js';
 import { normalizeRepoRoot, resolveInsideRoot } from './security.js';
 import { contentHash, ensureRepo, getRepoId, latestCompletedIndexRun, openDatabase } from './store.js';
 import { listWorkspaces, type WorkspaceSummary } from './workspace.js';
@@ -144,6 +153,7 @@ type CurrentContractParse = {
   ok: boolean;
   endpoints: ContractEndpoint[];
   compatibility?: OpenApiCompatibilitySignature;
+  protobufCompatibility?: ProtobufCompatibilitySignature;
   warning?: string;
 };
 
@@ -169,7 +179,7 @@ export function analyzeContractDiff(options: AnalyzeContractDiffOptions): Analyz
   const provider = selectProvider(workspace, options, contractPath, warnings);
   try {
     const previousEndpoints = loadPreviousEndpoints(provider);
-    const current = readCurrentContract(provider.repoPath, contractPath, warnings);
+    const current = readCurrentContract(provider.repoPath, contractPath, provider.contract.kind, warnings);
     const changes = classifyChanges(provider, previousEndpoints, current, contractPath, warnings);
     const rootDb = openDatabase(repoRoot, { readOnly: options.persist === false });
     try {
@@ -313,7 +323,9 @@ function loadPreviousEndpoints(provider: IndexedProvider): ContractEndpoint[] {
     )
     .all(provider.repoId, provider.indexRunId, provider.contract.path) as EndpointRow[];
   return rows.flatMap((row) => {
-    const parsed = parseHttpEndpointDisplay(row.endpoint_display_name);
+    const parsed = provider.contract.kind === 'protobuf'
+      ? parseProtobufEndpointDisplay(row.endpoint_display_name)
+      : parseHttpEndpointDisplay(row.endpoint_display_name);
     if (!parsed) return [];
     return [{
       endpointId: row.endpoint_id,
@@ -326,6 +338,7 @@ function loadPreviousEndpoints(provider: IndexedProvider): ContractEndpoint[] {
 function readCurrentContract(
   providerRepoPath: string,
   contractPath: string,
+  contractKind: string,
   warnings: string[]
 ): CurrentContractParse & { contentHash?: string } {
   let absolutePath: string;
@@ -352,7 +365,9 @@ function readCurrentContract(
     };
   }
 
-  const parsed = parseCurrentOpenApiContract(content, contractPath);
+  const parsed = contractKind === 'protobuf' || contractPath.toLowerCase().endsWith('.proto')
+    ? parseCurrentProtobufContract(content)
+    : parseCurrentOpenApiContract(content, contractPath);
   if (!parsed.ok && parsed.warning) {
     warnings.push(parsed.warning);
   }
@@ -412,9 +427,16 @@ function classifyChanges(
     });
   }
 
-  const previousCompatibility = parseOpenApiCompatibility(provider.contract.compatibility_json, warnings);
-  if (previousCompatibility !== undefined && current.compatibility !== undefined) {
-    changes.push(...classifyOpenApiCompatibilityChanges(previousCompatibility, current.compatibility));
+  if (provider.contract.kind === 'protobuf') {
+    const previousCompatibility = parseProtobufCompatibility(provider.contract.compatibility_json, warnings);
+    if (previousCompatibility !== undefined && current.protobufCompatibility !== undefined) {
+      changes.push(...classifyProtobufCompatibilityChanges(previousCompatibility, current.protobufCompatibility));
+    }
+  } else {
+    const previousCompatibility = parseOpenApiCompatibility(provider.contract.compatibility_json, warnings);
+    if (previousCompatibility !== undefined && current.compatibility !== undefined) {
+      changes.push(...classifyOpenApiCompatibilityChanges(previousCompatibility, current.compatibility));
+    }
   }
 
   if (changes.length === 0 && current.contentHash !== undefined && current.contentHash !== provider.contract.content_hash) {
@@ -440,6 +462,124 @@ function classifyOpenApiCompatibilityChanges(
     if (!currentOperation) continue;
     changes.push(...classifyRequestBodyChanges(previousOperation, currentOperation));
     changes.push(...classifyResponseBodyChanges(previousOperation, currentOperation));
+  }
+  return changes;
+}
+
+function classifyProtobufCompatibilityChanges(
+  previous: ProtobufCompatibilitySignature,
+  current: ProtobufCompatibilitySignature
+): ContractDiffChange[] {
+  const previousOperations = protobufOperationsByKey(previous.operations);
+  const currentOperations = protobufOperationsByKey(current.operations);
+  const previousMessages = protobufMessagesByName(previous.messages);
+  const currentMessages = protobufMessagesByName(current.messages);
+  const changes: ContractDiffChange[] = [];
+
+  for (const [key, previousOperation] of previousOperations) {
+    const currentOperation = currentOperations.get(key);
+    if (!currentOperation) continue;
+    changes.push(...classifyProtobufRpcTypeChanges(previousOperation, currentOperation));
+    changes.push(...classifyProtobufMessageChanges({
+      operation: currentOperation,
+      previousMessage: previousMessages.get(previousOperation.requestType),
+      currentMessage: currentMessages.get(currentOperation.requestType),
+      direction: 'request'
+    }));
+    changes.push(...classifyProtobufMessageChanges({
+      operation: currentOperation,
+      previousMessage: previousMessages.get(previousOperation.responseType),
+      currentMessage: currentMessages.get(currentOperation.responseType),
+      direction: 'response'
+    }));
+  }
+
+  return changes;
+}
+
+function classifyProtobufRpcTypeChanges(
+  previousOperation: ProtobufOperationSignature,
+  currentOperation: ProtobufOperationSignature
+): ContractDiffChange[] {
+  const changes: ContractDiffChange[] = [];
+  if (
+    previousOperation.requestType !== currentOperation.requestType ||
+    previousOperation.requestStream !== currentOperation.requestStream
+  ) {
+    changes.push({
+      kind: 'changed_request_property_type',
+      classification: 'breaking',
+      reason: 'protobuf RPC request type changed in current contract',
+      httpMethod: 'RPC',
+      routePath: currentOperation.path,
+      propertyName: '$',
+      schemaPath: 'request',
+      previousSchemaType: protobufRpcType(previousOperation.requestType, previousOperation.requestStream),
+      currentSchemaType: protobufRpcType(currentOperation.requestType, currentOperation.requestStream)
+    });
+  }
+  if (
+    previousOperation.responseType !== currentOperation.responseType ||
+    previousOperation.responseStream !== currentOperation.responseStream
+  ) {
+    changes.push({
+      kind: 'changed_response_property_type',
+      classification: 'breaking',
+      reason: 'protobuf RPC response type changed in current contract',
+      httpMethod: 'RPC',
+      routePath: currentOperation.path,
+      propertyName: '$',
+      schemaPath: 'response',
+      previousSchemaType: protobufRpcType(previousOperation.responseType, previousOperation.responseStream),
+      currentSchemaType: protobufRpcType(currentOperation.responseType, currentOperation.responseStream)
+    });
+  }
+  return changes;
+}
+
+function classifyProtobufMessageChanges(options: {
+  operation: ProtobufOperationSignature;
+  previousMessage: ProtobufMessageSignature | undefined;
+  currentMessage: ProtobufMessageSignature | undefined;
+  direction: 'request' | 'response';
+}): ContractDiffChange[] {
+  if (options.previousMessage === undefined || options.currentMessage === undefined) return [];
+  const currentFields = protobufFieldsByNumber(options.currentMessage.fields);
+  const changes: ContractDiffChange[] = [];
+  for (const previousField of options.previousMessage.fields) {
+    const currentField = currentFields.get(previousField.number);
+    const propertyName = protobufFieldDisplayName(options.previousMessage, previousField);
+    const schemaPath = `${options.direction}.${shortProtobufTypeName(options.previousMessage.name)}.fields.${previousField.number}`;
+    if (!currentField) {
+      changes.push({
+        kind: options.direction === 'request' ? 'changed_request_property_type' : 'removed_response_required_property',
+        classification: 'breaking',
+        reason: options.direction === 'request'
+          ? 'protobuf request field removed from current contract'
+          : 'protobuf response field removed from current contract',
+        httpMethod: 'RPC',
+        routePath: options.operation.path,
+        propertyName,
+        schemaPath
+      });
+      continue;
+    }
+    const previousType = protobufFieldType(previousField);
+    const currentType = protobufFieldType(currentField);
+    if (previousType === currentType && previousField.name === currentField.name) continue;
+    changes.push({
+      kind: options.direction === 'request' ? 'changed_request_property_type' : 'changed_response_property_type',
+      classification: 'breaking',
+      reason: options.direction === 'request'
+        ? 'protobuf request field type changed in current contract'
+        : 'protobuf response field type changed in current contract',
+      httpMethod: 'RPC',
+      routePath: options.operation.path,
+      propertyName,
+      schemaPath,
+      previousSchemaType: previousType,
+      currentSchemaType: currentType
+    });
   }
   return changes;
 }
@@ -758,6 +898,33 @@ function parseOpenApiCompatibility(
   return parsed as OpenApiCompatibilitySignature;
 }
 
+function parseProtobufCompatibility(
+  compatibilityJson: string,
+  warnings: string[]
+): ProtobufCompatibilitySignature | undefined {
+  const parsed = parseJsonObject(compatibilityJson);
+  if (
+    parsed?.analyzer === PROTOBUF_COMPAT_ANALYZER_ID &&
+    parsed.schemaVersion !== undefined &&
+    parsed.schemaVersion !== PROTOBUF_COMPAT_SCHEMA_VERSION
+  ) {
+    warnings.push(
+      `indexed Protobuf compatibility baseline uses schemaVersion ${String(parsed.schemaVersion)}; reindex provider contract for schemaVersion ${PROTOBUF_COMPAT_SCHEMA_VERSION}`
+    );
+    return undefined;
+  }
+  if (
+    parsed?.schemaVersion !== PROTOBUF_COMPAT_SCHEMA_VERSION ||
+    parsed.analyzer !== PROTOBUF_COMPAT_ANALYZER_ID ||
+    parsed.contractKind !== 'protobuf' ||
+    !Array.isArray(parsed.operations) ||
+    !Array.isArray(parsed.messages)
+  ) {
+    return undefined;
+  }
+  return parsed as ProtobufCompatibilitySignature;
+}
+
 function compatibilityOperationsByKey(
   operations: readonly OpenApiCompatibilityOperation[]
 ): Map<string, OpenApiCompatibilityOperation> {
@@ -766,6 +933,56 @@ function compatibilityOperationsByKey(
     byKey.set(endpointKey(operation.method, operation.path), operation);
   }
   return byKey;
+}
+
+function protobufOperationsByKey(
+  operations: readonly ProtobufOperationSignature[]
+): Map<string, ProtobufOperationSignature> {
+  const byKey = new Map<string, ProtobufOperationSignature>();
+  for (const operation of operations) {
+    byKey.set(protobufOperationKey(operation), operation);
+  }
+  return byKey;
+}
+
+function protobufOperationKey(operation: ProtobufOperationSignature): string {
+  return `${operation.service}.${operation.rpc}`;
+}
+
+function protobufMessagesByName(
+  messages: readonly ProtobufMessageSignature[]
+): Map<string, ProtobufMessageSignature> {
+  const byName = new Map<string, ProtobufMessageSignature>();
+  for (const message of messages) {
+    byName.set(message.name, message);
+  }
+  return byName;
+}
+
+function protobufFieldsByNumber(
+  fields: readonly ProtobufFieldSignature[]
+): Map<number, ProtobufFieldSignature> {
+  const byNumber = new Map<number, ProtobufFieldSignature>();
+  for (const field of fields) {
+    byNumber.set(field.number, field);
+  }
+  return byNumber;
+}
+
+function protobufRpcType(typeName: string, stream: boolean): string {
+  return stream ? `stream ${typeName}` : typeName;
+}
+
+function protobufFieldType(field: ProtobufFieldSignature): string {
+  return field.label === 'singular' ? field.type : `${field.label} ${field.type}`;
+}
+
+function protobufFieldDisplayName(message: ProtobufMessageSignature, field: ProtobufFieldSignature): string {
+  return `${shortProtobufTypeName(message.name)}.${field.name}#${field.number}`;
+}
+
+function shortProtobufTypeName(typeName: string): string {
+  return typeName.split('.').at(-1) ?? typeName;
 }
 
 function responsesByStatus(
@@ -795,6 +1012,26 @@ function parseCurrentOpenApiContract(content: string, contractPath: string): Cur
   return {
     ...parsed,
     ...(compatibility.compatibility !== undefined ? { compatibility: compatibility.compatibility } : {})
+  };
+}
+
+function parseCurrentProtobufContract(content: string): CurrentContractParse {
+  const compatibility = extractProtobufCompatibility(content);
+  if (compatibility === undefined) {
+    return {
+      ok: false,
+      endpoints: [],
+      warning: 'current Protobuf contract could not be parsed: no services or messages found'
+    };
+  }
+  return {
+    ok: true,
+    endpoints: compatibility.operations.map((operation) => ({
+      endpointId: `endpoint:protobuf:${operation.service}.${operation.rpc}`,
+      httpMethod: 'RPC',
+      routePath: operation.path
+    })),
+    protobufCompatibility: compatibility
   };
 }
 
@@ -1042,7 +1279,15 @@ function endpointKey(method: string, routePath: string): string {
 }
 
 function currentEndpointId(contractPath: string, endpoint: ContractEndpoint): string {
-  const languageId = contractPath.toLowerCase().endsWith('.json') ? 'json' : 'yaml';
+  const lowerPath = contractPath.toLowerCase();
+  const languageId = lowerPath.endsWith('.proto')
+    ? 'protobuf'
+    : lowerPath.endsWith('.json')
+      ? 'json'
+      : 'yaml';
+  if (languageId === 'protobuf' && endpoint.httpMethod === 'RPC') {
+    return `endpoint:protobuf:${endpoint.routePath.replace('/', '.')}`;
+  }
   return `endpoint:${languageId}:${endpointKey(endpoint.httpMethod, endpoint.routePath)}`;
 }
 
@@ -1050,6 +1295,12 @@ function parseHttpEndpointDisplay(displayName: string): { method: string; path: 
   const match = /^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE)\s+(\S+)$/i.exec(displayName.trim());
   if (!match) return undefined;
   return { method: match[1]!.toUpperCase(), path: match[2]! };
+}
+
+function parseProtobufEndpointDisplay(displayName: string): { method: string; path: string } | undefined {
+  const match = /^([A-Za-z_]\w*)\.([A-Za-z_]\w*)$/.exec(displayName.trim());
+  if (!match) return undefined;
+  return { method: 'RPC', path: `${match[1]!}/${match[2]!}` };
 }
 
 function compareChanges(left: ContractDiffChange, right: ContractDiffChange): number {

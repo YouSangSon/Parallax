@@ -19,6 +19,7 @@ For day-by-day developer log see [docs/progress.ko.md](docs/progress.ko.md). For
 - **Cross-repo contract resolver v0** — `impact-trace workspace resolve-contracts` reads indexed local workspace repos, matches consumer HTTP literals to provider OpenAPI endpoints, and persists deterministic `cross_repo_links` without cloning or network access.
 - **OpenAPI contract diff v0** — `impact-trace workspace contract-diff` compares the latest indexed OpenAPI endpoint surface with the current contract file, classifies removed endpoints as breaking and added endpoints as non-breaking, and persists impacted consumers as `BREAKS_COMPATIBILITY_WITH` links.
 - **OpenAPI nested schema diff v0** — JSON/YAML OpenAPI compatibility signatures now use schemaVersion 2 with nested object paths, root/nested array item paths, allOf object merges, and oneOf/anyOf property/root body fingerprints so contract diff can report nested body breaking changes without sending whole contract files to the agent.
+- **Protobuf contract diff v0** — `.proto` baselines now store compact `protobuf-compat-v0` service/RPC/message signatures, and `workspace contract-diff` classifies removed RPCs plus response message field removals/type changes as breaking without requiring Buf, BSR, or raw contract snapshots in SQLite.
 - **MCP workspace/contract resources v0** — `impact_trace_contract_diff` exposes the endpoint-surface classifier to coding agents and returns `impact-trace://workspaces/{name}` resource links for workspace membership, latest contract baselines, and provider/consumer impact links.
 - **MCP context pack v0** — `impact_trace_context_for_change` returns budgeted `brief`/`standard`/`deep` context packs with top impact paths, compact evidence, actions, omitted counts, and entity/coverage resource links without persisting a full report.
 - **Docs root cleanup** — root `docs/` keeps the current high-signal docs for planning, onboarding, and implementation.
@@ -46,7 +47,7 @@ Originally developed on `feature/phase6-adapter-foundations`; landed on `main` a
 
 ### Follow-up scope
 
-- protobuf/GraphQL/AsyncAPI contract diff and full parser/LSP depth.
+- GraphQL/AsyncAPI contract diff and full parser/LSP depth.
 
 ---
 

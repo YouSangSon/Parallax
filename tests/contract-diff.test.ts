@@ -49,6 +49,77 @@ async function writeConsumerClient(repoRoot: string, routePath: string): Promise
   );
 }
 
+async function writeProtobufContract(
+  repoRoot: string,
+  options: {
+    includeListUsers?: boolean;
+    includeCommentedLegacyRpc?: boolean;
+    includeNestedUserDetails?: boolean;
+    includeNestedUserNickname?: boolean;
+    includeUserContactOneof?: boolean;
+    includeUserEmailOneofField?: boolean;
+    userEmailOneofFieldType?: 'string' | 'int64';
+    userNameFieldType?: 'string' | 'int64';
+    includeUserNameField?: boolean;
+  } = {}
+): Promise<void> {
+  await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
+  const includeListUsers = options.includeListUsers ?? true;
+  const includeNestedUserDetails = options.includeNestedUserDetails ?? false;
+  const includeNestedUserNickname = options.includeNestedUserNickname ?? true;
+  const includeUserContactOneof = options.includeUserContactOneof ?? false;
+  const includeUserEmailOneofField = options.includeUserEmailOneofField ?? true;
+  const includeUserNameField = options.includeUserNameField ?? true;
+  await writeFile(
+    path.join(repoRoot, 'contracts/users.proto'),
+    [
+      'syntax = "proto3";',
+      '',
+      'package users.v1;',
+      '',
+      'service UserService {',
+      '  rpc GetUser (GetUserRequest) returns (User);',
+      ...(options.includeCommentedLegacyRpc ? ['  // rpc LegacyUser (GetUserRequest) returns (User);'] : []),
+      ...(includeListUsers ? ['  rpc ListUsers (ListUsersRequest) returns (ListUsersResponse);'] : []),
+      '}',
+      '',
+      'message GetUserRequest {',
+      '  string id = 1;',
+      '}',
+      '',
+      'message ListUsersRequest {',
+      '  string cursor = 1;',
+      '}',
+      '',
+      'message ListUsersResponse {',
+      '  repeated User users = 1;',
+      '}',
+      '',
+      'message User {',
+      '  string id = 1;',
+      ...(includeUserNameField ? [`  ${options.userNameFieldType ?? 'string'} name = 2;`] : []),
+      ...(includeNestedUserDetails
+        ? [
+          '  message Details {',
+          ...(includeNestedUserNickname ? ['    string nickname = 1;'] : []),
+          '  }',
+          '  Details details = 3;'
+        ]
+        : []),
+      ...(includeUserContactOneof
+        ? [
+          '  oneof contact {',
+          ...(includeUserEmailOneofField ? [`    ${options.userEmailOneofFieldType ?? 'string'} email = 4;`] : []),
+          '    string phone = 5;',
+          '  }'
+        ]
+        : []),
+      '}',
+      ''
+    ].join('\n')
+  );
+}
+
 async function writeOpenApiContract(repoRoot: string, routes: string[]): Promise<void> {
   await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
   const routeLines = routes.flatMap((route) => [
@@ -1351,6 +1422,33 @@ async function setupWorkspaceWithResolvedJsonContract(): Promise<{
   });
   const resolved = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
   assert.equal(resolved.links.length, 1);
+
+  return {
+    consumerRoot,
+    providerRoot
+  };
+}
+
+async function setupWorkspaceWithProtobufContract(): Promise<{
+  consumerRoot: string;
+  providerRoot: string;
+}> {
+  const consumerRoot = await makeRepo('impact-trace-diff-protobuf-consumer-');
+  const providerRoot = await makeRepo('impact-trace-diff-protobuf-provider-');
+  await writeConsumerClient(consumerRoot, '/api/users');
+  await writeProtobufContract(providerRoot);
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'users-api'
+  });
 
   return {
     consumerRoot,
@@ -3036,6 +3134,217 @@ test('analyzeContractDiff follows OpenAPI JSON pointer refs through array indice
       schemaPath: 'responses.200.body.properties.id',
       previousSchemaType: 'string',
       currentSchemaType: 'integer'
+    }
+  ]);
+});
+
+test('analyzeContractDiff classifies removed Protobuf RPCs as breaking', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithProtobufContract();
+  await writeProtobufContract(providerRoot, { includeListUsers: false });
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/users.proto'
+  });
+
+  assert.equal(result.contract.kind, 'protobuf');
+  assert.equal(result.summary.classification, 'breaking');
+  assert.equal(result.summary.impactedConsumerCount, 0);
+  const db = new DatabaseSync(databasePath(providerRoot), { readOnly: true });
+  try {
+    const row = db
+      .prepare(
+        `SELECT compatibility_json
+         FROM contracts c
+         INNER JOIN contract_versions v ON v.contract_id = c.id
+         INNER JOIN index_runs r ON r.id = v.index_run_id
+         WHERE c.path = ?
+           AND r.status = 'completed'
+         ORDER BY v.index_run_id DESC
+         LIMIT 1`
+      )
+      .get('contracts/users.proto') as { compatibility_json: string };
+    const compatibility = JSON.parse(row.compatibility_json) as {
+      analyzer: string;
+      contractKind: string;
+      operations: Array<{ service: string; rpc: string; path: string }>;
+      messages: Array<{ name: string; fields: Array<{ number: number; name: string; type: string }> }>;
+    };
+    assert.equal(compatibility.analyzer, 'protobuf-compat-v0');
+    assert.equal(compatibility.contractKind, 'protobuf');
+    assert.deepEqual(
+      compatibility.operations.map((operation) => `${operation.service}/${operation.rpc}`),
+      ['UserService/GetUser', 'UserService/ListUsers']
+    );
+    assert.deepEqual(
+      compatibility.messages.find((message) => message.name === 'users.v1.User')?.fields,
+      [
+        { number: 1, name: 'id', type: 'string', label: 'singular' },
+        { number: 2, name: 'name', type: 'string', label: 'singular' }
+      ]
+    );
+    assert.deepEqual(
+      compatibility.messages.find((message) => message.name === 'users.v1.ListUsersResponse')?.fields,
+      [{ number: 1, name: 'users', type: 'users.v1.User', label: 'repeated' }]
+    );
+  } finally {
+    db.close();
+  }
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'removed_endpoint',
+      classification: 'breaking',
+      reason: 'endpoint removed from current contract',
+      httpMethod: 'RPC',
+      routePath: 'UserService/ListUsers',
+      previousEndpointId: 'endpoint:protobuf:UserService.ListUsers'
+    }
+  ]);
+});
+
+test('analyzeContractDiff classifies Protobuf response field type changes as breaking', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithProtobufContract();
+  await writeProtobufContract(providerRoot, { userNameFieldType: 'int64' });
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/users.proto'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'changed_response_property_type',
+      classification: 'breaking',
+      reason: 'protobuf response field type changed in current contract',
+      httpMethod: 'RPC',
+      routePath: 'UserService/GetUser',
+      propertyName: 'User.name#2',
+      schemaPath: 'response.User.fields.2',
+      previousSchemaType: 'string',
+      currentSchemaType: 'int64'
+    }
+  ]);
+});
+
+test('analyzeContractDiff classifies removed Protobuf response fields as breaking', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithProtobufContract();
+  await writeProtobufContract(providerRoot, { includeUserNameField: false });
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/users.proto'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'removed_response_required_property',
+      classification: 'breaking',
+      reason: 'protobuf response field removed from current contract',
+      httpMethod: 'RPC',
+      routePath: 'UserService/GetUser',
+      propertyName: 'User.name#2',
+      schemaPath: 'response.User.fields.2'
+    }
+  ]);
+});
+
+test('analyzeContractDiff ignores commented Protobuf RPC declarations in indexed baselines', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithProtobufContract();
+  await writeProtobufContract(providerRoot, { includeCommentedLegacyRpc: true });
+  await indexProject({ repoRoot: providerRoot });
+
+  const db = new DatabaseSync(databasePath(providerRoot), { readOnly: true });
+  try {
+    const row = db
+      .prepare(
+        `SELECT compatibility_json
+         FROM contracts c
+         INNER JOIN contract_versions v ON v.contract_id = c.id
+         INNER JOIN index_runs r ON r.id = v.index_run_id
+         WHERE c.path = ?
+           AND r.status = 'completed'
+         ORDER BY v.index_run_id DESC
+         LIMIT 1`
+      )
+      .get('contracts/users.proto') as { compatibility_json: string };
+    const compatibility = JSON.parse(row.compatibility_json) as {
+      operations: Array<{ service: string; rpc: string }>;
+    };
+    assert.deepEqual(
+      compatibility.operations.map((operation) => `${operation.service}/${operation.rpc}`),
+      ['UserService/GetUser', 'UserService/ListUsers']
+    );
+  } finally {
+    db.close();
+  }
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/users.proto'
+  });
+
+  assert.equal(result.summary.classification, 'unchanged');
+  assert.deepEqual(result.changes, []);
+});
+
+test('analyzeContractDiff ignores nested Protobuf message fields when comparing parent responses', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithProtobufContract();
+  await writeProtobufContract(providerRoot, { includeNestedUserDetails: true, includeNestedUserNickname: true });
+  await indexProject({ repoRoot: providerRoot });
+  await writeProtobufContract(providerRoot, { includeNestedUserDetails: true, includeNestedUserNickname: false });
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/users.proto'
+  });
+
+  assert.equal(result.summary.classification, 'unknown');
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'changed_contract_without_endpoint_delta',
+      classification: 'unknown',
+      reason: 'contract content changed but endpoint surface is unchanged in the v0 analyzer'
+    }
+  ]);
+});
+
+test('analyzeContractDiff classifies Protobuf oneof response field type changes as breaking', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithProtobufContract();
+  await writeProtobufContract(providerRoot, { includeUserContactOneof: true });
+  await indexProject({ repoRoot: providerRoot });
+  await writeProtobufContract(providerRoot, { includeUserContactOneof: true, userEmailOneofFieldType: 'int64' });
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/users.proto'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'changed_response_property_type',
+      classification: 'breaking',
+      reason: 'protobuf response field type changed in current contract',
+      httpMethod: 'RPC',
+      routePath: 'UserService/GetUser',
+      propertyName: 'User.email#4',
+      schemaPath: 'response.User.fields.4',
+      previousSchemaType: 'string',
+      currentSchemaType: 'int64'
     }
   ]);
 });

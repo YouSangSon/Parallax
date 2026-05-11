@@ -1,8 +1,8 @@
 # Phase 6B — Multi-language + Spring Boot Adapter Pack v0 + Trusted Evidence
 
 > **작성:** 2026-05-09 (`main` @ `3cba0a2`)
-> **상태:** `/autoplan` + `/team-builder` 이후 사용자 stack 정정 반영. 2026-05-11 현재 ImpactBench, adapter pack v0 routing, TS/JS parser-backed import span v0, JVM/Spring lightweight evidence span v0, Python/Go/Rust lightweight evidence span v0, OpenAPI contract impact baseline, workspace catalog v0, cross-repo contract resolver v0, OpenAPI endpoint-surface/nested schema contract diff v0, MCP workspace/contract resources v0가 landed. 파일명은 기존 링크 유지를 위해 유지한다.
-> **결론:** 이 phase는 **Java/Kotlin/Spring Boot/Python/Go/Rust/TS/JS adapter pack v0 + source-span evidence + git snapshot metadata + OpenAPI baseline + workspace catalog + cross-repo resolver + endpoint/nested schema contract diff + MCP workspace/contract resources**를 닫았다. 다음 제품 slice는 protobuf/GraphQL/AsyncAPI contract diff다.
+> **상태:** `/autoplan` + `/team-builder` 이후 사용자 stack 정정 반영. 2026-05-12 현재 ImpactBench, adapter pack v0 routing, TS/JS parser-backed import span v0, JVM/Spring lightweight evidence span v0, Python/Go/Rust lightweight evidence span v0, OpenAPI contract impact baseline, workspace catalog v0, cross-repo contract resolver v0, OpenAPI endpoint-surface/nested schema contract diff v0, Protobuf contract diff v0, MCP workspace/contract resources v0가 landed. 파일명은 기존 링크 유지를 위해 유지한다.
+> **결론:** 이 phase는 **Java/Kotlin/Spring Boot/Python/Go/Rust/TS/JS adapter pack v0 + source-span evidence + git snapshot metadata + OpenAPI baseline + workspace catalog + cross-repo resolver + endpoint/nested schema contract diff + Protobuf contract diff + MCP workspace/contract resources**를 닫았다. 다음 제품 slice는 GraphQL/AsyncAPI contract diff다.
 
 ---
 
@@ -68,11 +68,11 @@ v0 target languages/frameworks:
 - full interprocedural call graph, data-flow, symbol reference graph
 - JVM bytecode analysis, full Maven/Gradle model, annotation processor resolution
 - Python virtualenv/package resolver, Go workspace resolver, Cargo feature resolver
-- protobuf/GraphQL/AsyncAPI contract diff와 OpenAPI의 discriminator/nullable/format/auth 같은 advanced compatibility semantics
+- GraphQL/AsyncAPI contract diff와 OpenAPI의 discriminator/nullable/format/auth 같은 advanced compatibility semantics
 - LSP/CodeQL enrichment, graph DB projection, full web explorer
 - agent가 report를 보고 자동으로 코드 수정하는 기능
 
-단, 현재 v0 adapter들은 deterministic heuristic extractor를 공유한다. TS/JS import-like syntax는 `ts.createSourceFile` 기반 parser span으로 한 단계 깊어졌고, JVM/Spring은 endpoint/declaration/config/test relation에 lightweight line/annotation spans를 저장한다. Python/Go/Rust는 declaration/test relation에 lightweight declaration-line spans를 저장한다. OpenAPI/Swagger/AsyncAPI YAML/JSON은 contract baseline과 명시적 code path 기반 implementer reverse-link를 저장한다. workspace catalog v0는 `.impact-trace/workspace.json` local allowlist를 기존 `workspaces`/`workspace_repos` 테이블에 동기화한다. cross-repo contract resolver v0는 indexed workspace repo의 OpenAPI provider endpoint와 HTTP consumer literal을 `cross_repo_links`로 연결한다. contract diff v0는 latest indexed OpenAPI endpoint surface와 current contract file을 비교해 removed endpoint를 breaking, added endpoint를 non-breaking으로 분류하고 known consumer를 `BREAKS_COMPATIBILITY_WITH` link로 저장한다. JSON/YAML OpenAPI는 latest index에 `openapi-compat-v0` schemaVersion 2 request/response nested schema path signature를 저장해 response status/required property/type 및 request required property/type breaking rule까지 비교한다. nested object path, root/nested array item path, object/array segment를 지나는 local `$ref` chain, allOf object merge, properties 없는 required-only object까지 포함한 oneOf/anyOf property/root body fingerprint는 포함됐다. schemaVersion 1 flat baseline은 warning으로 reindex를 요구한다. full type-checker, full parser-backed Python/Go/Rust resolution, Tree-sitter/LSP/CodeQL enrichment, full source span coverage, protobuf/GraphQL/AsyncAPI diff는 후속 pass로 둔다. UI의 첫 버전에서 필요할 graph JSON contract와 evidence/resource shape는 이 phase의 output에서 깨지지 않게 둔다.
+단, 현재 v0 adapter들은 deterministic heuristic extractor를 공유한다. TS/JS import-like syntax는 `ts.createSourceFile` 기반 parser span으로 한 단계 깊어졌고, JVM/Spring은 endpoint/declaration/config/test relation에 lightweight line/annotation spans를 저장한다. Python/Go/Rust는 declaration/test relation에 lightweight declaration-line spans를 저장한다. OpenAPI/Swagger/AsyncAPI YAML/JSON은 contract baseline과 명시적 code path 기반 implementer reverse-link를 저장한다. workspace catalog v0는 `.impact-trace/workspace.json` local allowlist를 기존 `workspaces`/`workspace_repos` 테이블에 동기화한다. cross-repo contract resolver v0는 indexed workspace repo의 OpenAPI provider endpoint와 HTTP consumer literal을 `cross_repo_links`로 연결한다. contract diff v0는 latest indexed OpenAPI endpoint surface와 current contract file을 비교해 removed endpoint를 breaking, added endpoint를 non-breaking으로 분류하고 known consumer를 `BREAKS_COMPATIBILITY_WITH` link로 저장한다. JSON/YAML OpenAPI는 latest index에 `openapi-compat-v0` schemaVersion 2 request/response nested schema path signature를 저장해 response status/required property/type 및 request required property/type breaking rule까지 비교한다. Protobuf는 latest index에 `protobuf-compat-v0` service/RPC/message field signature를 저장하고 removed RPC, response field removal/type change를 breaking으로 분류한다. nested object path, root/nested array item path, object/array segment를 지나는 local `$ref` chain, allOf object merge, properties 없는 required-only object까지 포함한 oneOf/anyOf property/root body fingerprint는 포함됐다. schemaVersion 1 flat baseline은 warning으로 reindex를 요구한다. full type-checker, full parser-backed Python/Go/Rust resolution, Tree-sitter/LSP/CodeQL enrichment, full source span coverage, GraphQL/AsyncAPI diff는 후속 pass로 둔다. UI의 첫 버전에서 필요할 graph JSON contract와 evidence/resource shape는 이 phase의 output에서 깨지지 않게 둔다.
 
 ## 3. Architecture
 
@@ -245,9 +245,9 @@ full MemoryBench가 아니라 adapter accuracy용 얇은 evaluation spine을 먼
    - `brief`/`standard`/`deep` context budget, dedupe, ranking, resource-on-demand evidence가 v0에 포함됐다.
    - multi-language adapter 결과는 language/framework별 top impact path로 압축되어 AI context 사용량을 줄인다.
 2. **UI explorer v0:** 저장된 report/graph JSON을 읽어 changed/affected/evidence/action을 필터링해 보여주는 read-only local UI가 `impact-trace ui`로 landed 상태다.
-3. **Workspace catalog + resolver + contract diff + MCP resources v0:** `.impact-trace/workspace.json` local allowlist, `workspace init/add-repo/list/resolve-contracts/contract-diff` CLI, JSON/YAML OpenAPI nested request/response schema breaking rules, `impact_trace_contract_diff`, `impact-trace://workspaces/{name}/contracts`, `/cross-repo-links` resource가 landed 상태다.
+3. **Workspace catalog + resolver + contract diff + MCP resources v0:** `.impact-trace/workspace.json` local allowlist, `workspace init/add-repo/list/resolve-contracts/contract-diff` CLI, JSON/YAML OpenAPI nested request/response schema breaking rules, Protobuf service/RPC/message field breaking rules, `impact_trace_contract_diff`, `impact-trace://workspaces/{name}/contracts`, `/cross-repo-links` resource가 landed 상태다.
 
-다음 제품 slice는 protobuf/GraphQL/AsyncAPI breaking rules로 넓히는 것이다.
+다음 제품 slice는 GraphQL/AsyncAPI breaking rules로 넓히는 것이다.
 
 ## 6. Acceptance Criteria
 

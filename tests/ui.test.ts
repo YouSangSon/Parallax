@@ -6,7 +6,15 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 
-import { analyzeDiff, indexProject, initProject } from '../src/index.js';
+import {
+  addWorkspaceRepo,
+  analyzeContractDiff,
+  analyzeDiff,
+  indexProject,
+  initProject,
+  initWorkspace,
+  resolveCrossRepoContracts
+} from '../src/index.js';
 import { normalizeRepoRoot } from '../src/security.js';
 import { getRepoId, openDatabase } from '../src/store.js';
 import { buildUiSnapshot, renderUiHtml, startUiServer } from '../src/ui.js';
@@ -30,6 +38,97 @@ async function makeUiRepo(): Promise<{ repoRoot: string; reportId: string }> {
   return { repoRoot, reportId: report.id };
 }
 
+async function makeUiWorkspaceRepo(): Promise<{ consumerRoot: string; providerRoot: string }> {
+  const consumerRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-ui-workspace-consumer-'));
+  const providerRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-ui-workspace-provider-'));
+  await mkdir(path.join(consumerRoot, 'src'), { recursive: true });
+  await writeFile(
+    path.join(consumerRoot, 'src/orders-consumer.ts'),
+    [
+      'export function startOrdersConsumer(bus: { subscribe(topic: string, handler: () => void): void }) {',
+      '  bus.subscribe("orders.submitted", () => undefined);',
+      '}',
+      ''
+    ].join('\n')
+  );
+  await writeUiAsyncApiContract(providerRoot);
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'orders-events'
+  });
+  const resolved = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+  assert.equal(resolved.links.length, 1);
+  assert.equal(resolved.links[0]?.eventTopology?.pattern, 'subscriber-call');
+
+  await writeUiAsyncApiContract(providerRoot, { includeOrderSubmittedOperation: false });
+  const diff = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'orders-events',
+    contractPath: 'contracts/asyncapi.yaml'
+  });
+  assert.equal(diff.summary.classification, 'breaking');
+  assert.equal(diff.summary.eventTopologyCount, 1);
+
+  return { consumerRoot, providerRoot };
+}
+
+async function writeUiAsyncApiContract(
+  repoRoot: string,
+  options: { includeOrderSubmittedOperation?: boolean } = {}
+): Promise<void> {
+  await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
+  const includeOrderSubmittedOperation = options.includeOrderSubmittedOperation ?? true;
+  await writeFile(
+    path.join(repoRoot, 'contracts/asyncapi.yaml'),
+    [
+      "asyncapi: '3.0.0'",
+      'info:',
+      '  title: Orders Events',
+      "  version: '1.0.0'",
+      ...(includeOrderSubmittedOperation
+        ? [
+          'channels:',
+          '  orderSubmitted:',
+          '    address: orders.submitted',
+          '    messages:',
+          '      OrderSubmitted:',
+          "        $ref: '#/components/messages/OrderSubmitted'",
+          'operations:',
+          '  publishOrderSubmitted:',
+          '    action: send',
+          '    channel:',
+          "      $ref: '#/channels/orderSubmitted'",
+          '    messages:',
+          "      - $ref: '#/channels/orderSubmitted/messages/OrderSubmitted'"
+        ]
+        : [
+          'channels: {}',
+          'operations: {}'
+        ]),
+      'components:',
+      '  messages:',
+      '    OrderSubmitted:',
+      '      payload:',
+      '        type: object',
+      '        required:',
+      '          - orderId',
+      '        properties:',
+      '          orderId:',
+      '            type: string',
+      ''
+    ].join('\n')
+  );
+}
+
 test('UI snapshot and HTML render a list-first report workbench', async () => {
   const { repoRoot, reportId } = await makeUiRepo();
   try {
@@ -48,6 +147,7 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(html, /Evidence/);
     assert.match(html, /Focused Graph/);
     assert.match(html, /Coverage Gaps/);
+    assert.match(html, /Workspace Contracts/);
     assert.match(html, /overflow-wrap: anywhere/);
     assert.doesNotMatch(html, /landing/i);
   } finally {
@@ -72,6 +172,83 @@ test('UI snapshot exposes typed empty states before reports exist', async () => 
     assert.match(html, /value="">No reports/);
   } finally {
     await rm(repoRoot, { recursive: true, force: true });
+  }
+});
+
+test('UI snapshot and API expose workspace contract topology', async () => {
+  const { consumerRoot, providerRoot } = await makeUiWorkspaceRepo();
+  let ui: Awaited<ReturnType<typeof startUiServer>> | undefined;
+  try {
+    const snapshot = await buildUiSnapshot({ repoRoot: consumerRoot });
+    const workspace = snapshot.workspaces.find((item) => item.name === 'platform');
+    assert.ok(workspace);
+    assert.equal(workspace.repoCount, 2);
+    assert.ok(workspace.contracts.some((contract) => contract.path === 'contracts/asyncapi.yaml'));
+    const topologyLink = workspace.links.find((link) => link.routeLabel === 'SEND orders.submitted');
+    assert.equal(topologyLink?.eventTopology?.providerAction, 'SEND');
+    assert.equal(topologyLink?.eventTopology?.counterpartyRole, 'consumer');
+    assert.equal(topologyLink?.eventTopology?.pattern, 'subscriber-call');
+    assert.equal(topologyLink?.consumerPath, 'src/orders-consumer.ts');
+
+    const html = renderUiHtml(snapshot);
+    assert.match(html, /Workspace Contracts/);
+    assert.match(html, /orders\.submitted/);
+    assert.match(html, /subscriber-call/);
+    assert.match(html, /impact-trace:\/\/workspaces\/platform\/cross-repo-links/);
+
+    ui = await startUiServer({ repoRoot: consumerRoot, port: 0 });
+    const workspaceJson = await (await fetch(new URL('/api/workspaces/platform', ui.url))).json() as {
+      name: string;
+      contracts: Array<{ path: string }>;
+      links: Array<{ routeLabel?: string; eventTopology?: { pattern: string } }>;
+    };
+    assert.equal(workspaceJson.name, 'platform');
+    assert.ok(workspaceJson.contracts.some((contract) => contract.path === 'contracts/asyncapi.yaml'));
+    assert.ok(workspaceJson.links.some((link) =>
+      link.routeLabel === 'SEND orders.submitted' && link.eventTopology?.pattern === 'subscriber-call'
+    ));
+  } finally {
+    await ui?.close();
+    await rm(consumerRoot, { recursive: true, force: true });
+    await rm(providerRoot, { recursive: true, force: true });
+  }
+});
+
+test('UI workspace snapshot tolerates legacy link provenance and unindexed repos', async () => {
+  const { consumerRoot, providerRoot } = await makeUiWorkspaceRepo();
+  const unindexedRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-ui-workspace-unindexed-'));
+  try {
+    addWorkspaceRepo({
+      repoRoot: consumerRoot,
+      workspaceName: 'platform',
+      localPath: unindexedRoot,
+      serviceName: 'unindexed'
+    });
+    const db = openDatabase(consumerRoot);
+    try {
+      db.prepare('UPDATE cross_repo_links SET provenance = ?').run('legacy-provenance');
+    } finally {
+      db.close();
+    }
+
+    const snapshot = await buildUiSnapshot({ repoRoot: consumerRoot });
+    const workspace = snapshot.workspaces.find((item) => item.name === 'platform');
+    assert.ok(workspace);
+    assert.equal(workspace.repoCount, 3);
+    assert.ok(workspace.warnings.some((warning) =>
+      warning.includes('unindexed') && warning.includes('impact trace database not found')
+    ));
+    assert.ok(workspace.links.length > 0);
+    assert.ok(workspace.links.every((link) => link.eventTopology === undefined));
+    assert.ok(workspace.links.every((link) => link.routeLabel === undefined));
+
+    const html = renderUiHtml(snapshot);
+    assert.match(html, /confidence-heuristic/);
+    assert.doesNotMatch(html, /legacy-provenance/);
+  } finally {
+    await rm(consumerRoot, { recursive: true, force: true });
+    await rm(providerRoot, { recursive: true, force: true });
+    await rm(unindexedRoot, { recursive: true, force: true });
   }
 });
 
@@ -107,11 +284,13 @@ test('UI server exposes bootstrap and resource-shaped JSON endpoints', async () 
       selectedReport: { affectedFiles: unknown[] };
       graph: { nodes: unknown[] };
       coverage: { coverage: unknown[] };
+      workspaces: unknown[];
     };
     assert.equal(bootstrap.selectedReportId, reportId);
     assert.ok(bootstrap.selectedReport.affectedFiles.length > 0);
     assert.ok(bootstrap.graph.nodes.length > 0);
     assert.ok(bootstrap.coverage.coverage.length > 0);
+    assert.ok(Array.isArray(bootstrap.workspaces));
 
     const reportJson = await (await fetch(new URL(`/api/reports/${encodeURIComponent(reportId)}`, ui.url))).json() as {
       id: string;

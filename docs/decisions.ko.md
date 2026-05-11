@@ -51,6 +51,7 @@
 | [D-039](#d-039-generated-client-and-event-topology-v0-stays-heuristic-and-schema-neutral) | Generated-client and event topology v0 stays heuristic and schema-neutral | P0/P1 | 2026-05-12 |
 | [D-040](#d-040-contract-diff-preserves-event-topology-provenance) | Contract diff preserves event topology provenance | P0/P1 | 2026-05-12 |
 | [D-041](#d-041-contract-topology-surface-stays-compact-and-optional) | Contract topology surface stays compact and optional | P0/P1 | 2026-05-12 |
+| [D-042](#d-042-ui-workspace-topology-reuses-compact-resource-shapes) | UI workspace topology reuses compact resource shapes | P3/P0 | 2026-05-12 |
 
 ---
 
@@ -768,6 +769,24 @@
 **결과/위험:** topology가 있는 impacted consumer만 summary breakdown에 집계된다. MCP cross-repo link resource는 top-level `eventTopology`를 제공하지만 원본 `provenance`도 계속 제공해 하위 호환을 유지한다. malformed/legacy provenance는 기존처럼 provenance만 반환하고 top-level hint는 생략한다. 더 풍부한 NATS/AMQP/Kafka binding이나 graph UI가 들어오면 이 compact surface를 입력으로 쓰되, 저장 모델 확장은 별도 ADR에서 다룬다.
 
 **관련 commit:** `feat(contracts): topology surface 요약 추가`
+
+---
+
+## D-042: UI workspace topology reuses compact resource shapes
+
+**결정:** `impact-trace ui`는 workspace contract baseline과 cross-repo provider/consumer link를 read-only panel로 보여준다. UI snapshot은 `workspaces[*].contracts`, `workspaces[*].links`, `workspaces[*].resources`를 포함하고, JSON endpoint `/api/workspaces/{name}`은 같은 compact shape를 반환한다. Event topology가 있는 link는 `providerAction`, `counterpartyRole`, `pattern`을 바로 표시하되, raw provenance 전체를 UI payload에 다시 싣지는 않는다.
+
+**맥락:** D-041로 CLI/MCP에는 topology hint가 compact field로 올라왔지만, 사람이 보는 local UI는 아직 report/evidence/graph 중심이었다. 사용자가 원하는 제품은 Claude/Codex가 contract나 event 코드를 바꿀 때 "관련 코드/정책/제안서/contract impact"를 작은 context로 agent에게 주고, 사람도 같은 근거를 쉽게 보는 것이다. 따라서 UI도 MCP resource-on-demand model을 따라 workspace 전체 dump가 아니라 contract/link preview와 resource URI를 먼저 보여줘야 한다.
+
+**대안:**
+- UI에서 MCP resource reader를 직접 import — 현재 MCP 내부 helper는 telemetry/resource envelope와 결합돼 있어 UI read path를 불필요하게 끌고 간다.
+- `listWorkspaces()`를 UI snapshot에서 호출 — catalog sync가 write를 수행할 수 있어 read-only UI 원칙과 맞지 않는다.
+- provenance JSON 전체를 table row에 노출 — 디버깅은 쉽지만 context 절감과 사람이 훑는 UX가 약해진다.
+- 별도 graph visualization을 바로 추가 — useful하지만 richer topology schema가 확정되기 전에는 UI surface가 앞서간다.
+
+**결과/위험:** UI는 root workspace DB와 각 provider repo DB를 read-only로 열어 latest indexed contract baseline과 bounded link preview만 읽는다. `/api/workspaces/{name}`은 MCP resource URI와 같은 naming을 유지해 agent와 사람이 같은 확장 포인트를 본다. legacy/malformed provenance는 topology field 없이 confidence badge로 fallback한다. 현재는 table/list preview라 대형 workspace에서는 pagination/filter depth가 부족하며, session timeline과 richer event graph는 후속 slice에서 다룬다.
+
+**관련 commit:** `feat(ui): workspace topology surface 추가`
 
 ---
 

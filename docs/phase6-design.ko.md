@@ -2,8 +2,8 @@
 
 > **목적:** Phase 1~4(agent-memory 축)가 완료된 시점에서, 원래 P0/P1 (Entity Graph Core, "code graph project") 중 미수입 adapter foundation과 trusted evidence 레인을 닫는다. 본 phase는 **adapter foundations + multi-language/Spring Boot trusted evidence + workspace catalog + evidence 정밀도**의 기반에 집중.
 > **작성:** 2026-05-03 (사전 design doc), 2026-05-04 branch 진행 상태 반영, 2026-05-09 main 반영 상태 정리, 2026-05-11 Phase 6B 진행 상태 반영, 2026-05-12 Protobuf/GraphQL/AsyncAPI contract diff와 consumer resolver 반영
-> **상태:** foundation subset은 `main`에 반영됨 (`3cba0a2`). Phase 6B에서는 multi-language/Spring/Python/Go/Rust/TS/JS spans, OpenAPI contract baseline, workspace catalog v0, cross-repo contract resolver v0, GraphQL/Protobuf/AsyncAPI consumer resolver v0, generated-client/event topology v0, contract diff topology provenance, OpenAPI endpoint/nested schema diff v0, Protobuf contract diff v0, GraphQL contract diff v0, AsyncAPI contract diff v0, build-system/package resolver v0, MCP workspace/contract resources v0가 landed. 다음 slice는 full parser/LSP depth와 deeper package/build resolver다.
-> **참고:** [decisions.ko.md](decisions.ko.md) (D-001..D-037) · [impact-trace-plan.ko.md](impact-trace-plan.ko.md) (원래 P0/P1 ledger) · [roadmap.md](roadmap.md) (A1/A5 row) · [progress.ko.md](progress.ko.md).
+> **상태:** foundation subset은 `main`에 반영됨 (`3cba0a2`). Phase 6B에서는 multi-language/Spring/Python/Go/Rust/TS/JS spans, OpenAPI contract baseline, workspace catalog v0, cross-repo contract resolver v0, GraphQL/Protobuf/AsyncAPI consumer resolver v0, generated-client/event topology v0, contract diff topology provenance, contract topology surface v0, OpenAPI endpoint/nested schema diff v0, Protobuf contract diff v0, GraphQL contract diff v0, AsyncAPI contract diff v0, build-system/package resolver v0, MCP workspace/contract resources v0가 landed. 다음 slice는 full parser/LSP depth와 deeper package/build resolver다.
+> **참고:** [decisions.ko.md](decisions.ko.md) (D-001..D-041) · [impact-trace-plan.ko.md](impact-trace-plan.ko.md) (원래 P0/P1 ledger) · [roadmap.md](roadmap.md) (A1/A5 row) · [progress.ko.md](progress.ko.md).
 
 ---
 
@@ -37,6 +37,7 @@ Phase 6/6B에서 반영됨:
 - ✅ GraphQL/Protobuf/AsyncAPI consumer resolver v0 — operation document, RPC call, event address literal과 provider contract endpoint link 저장
 - ✅ generated-client/event topology v0 — Connect-ES style generated client call, full Protobuf route string, common event producer/consumer call-site topology hint 저장
 - ✅ contract diff topology provenance — resolved event topology hint를 impacted consumer와 breaking link provenance까지 보존
+- ✅ contract topology surface v0 — topology summary, CLI human output, MCP cross-repo link top-level hint 노출
 - ✅ OpenAPI contract diff v0 — latest indexed endpoint surface와 current contract file 비교, known consumer breaking link 저장
 - ✅ Protobuf contract diff v0 — compact service/RPC/message field signature로 removed RPC와 response field breaking change 분류
 - ✅ GraphQL contract diff v0 — compact root operation/object/input signature로 removed root field와 schema field breaking change 분류
@@ -282,6 +283,7 @@ Remaining Phase 6/6B scope:
 - [x] cross-repo provider/consumer resolver v0
 - [x] Protobuf/AsyncAPI consumer resolver v0
 - [x] generated-client/event topology resolver v0
+- [x] contract topology surface v0
 - [x] OpenAPI endpoint-surface contract diff/breaking-change classification v0
 - [x] OpenAPI nested schema/allOf/oneOf contract diff/breaking-change classification v0
 - [x] Protobuf/GraphQL/AsyncAPI compact signature contract diff/breaking-change classification v0

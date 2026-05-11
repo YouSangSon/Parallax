@@ -50,6 +50,7 @@
 | [D-038](#d-038-build-system-package-resolver-stays-manifest-only-in-v0) | Build-system package resolver stays manifest-only in v0 | P1/P2 | 2026-05-12 |
 | [D-039](#d-039-generated-client-and-event-topology-v0-stays-heuristic-and-schema-neutral) | Generated-client and event topology v0 stays heuristic and schema-neutral | P0/P1 | 2026-05-12 |
 | [D-040](#d-040-contract-diff-preserves-event-topology-provenance) | Contract diff preserves event topology provenance | P0/P1 | 2026-05-12 |
+| [D-041](#d-041-contract-topology-surface-stays-compact-and-optional) | Contract topology surface stays compact and optional | P0/P1 | 2026-05-12 |
 
 ---
 
@@ -750,6 +751,23 @@
 **결과/위험:** AsyncAPI removed operation의 impacted consumer result와 persisted breaking link provenance가 provider action, counterparty role, pattern을 유지한다. malformed/legacy consumes provenance처럼 topology가 없거나 shape가 맞지 않는 경우에는 기존처럼 consumer impact만 유지하고 topology는 생략한다. eventTopology schemaVersion은 아직 cross-repo link provenance 내부 shape에 묶여 있으므로, 더 풍부한 NATS/AMQP/Kafka binding graph가 들어오면 새 D-0xx에서 versioned topology payload를 검토한다.
 
 **관련 commit:** `feat(contracts): event topology provenance 보존`
+
+---
+
+## D-041: Contract topology surface stays compact and optional
+
+**결정:** `workspace contract-diff` summary에 optional `eventTopologyCount`와 `eventTopologyBreakdown`을 추가하고, CLI human output과 MCP `/cross-repo-links` resource가 `eventTopology`를 top-level hint로 노출한다. 기존 provenance JSON은 그대로 유지하며, topology가 없는 link/result에는 새 필드를 생략한다.
+
+**맥락:** D-040은 topology를 손실 없이 보존했지만, agent나 사람이 매번 `impactedConsumers[*].eventTopology` 또는 nested provenance를 직접 파싱해야 하면 context 절감 효과가 약해진다. 사용자가 보는 표면에는 “이 breaking impact가 event consumer인지 producer인지”를 한 줄로 보여주고, MCP resource는 full provenance를 확장하지 않아도 rank/filter에 쓸 수 있는 작은 hint를 제공해야 한다.
+
+**대안:**
+- 모든 topology detail을 provenance에만 둔다 — schema는 단순하지만 MCP/UI/CLI가 다시 JSON을 파싱해야 하므로 거부한다.
+- 새 table/column으로 topology를 정규화한다 — richer topology graph가 확정되기 전에는 migration 비용이 크다.
+- topology 없는 HTTP/OpenAPI impact에도 빈 summary를 항상 넣는다 — payload noise가 늘어 compact-first 원칙과 맞지 않는다.
+
+**결과/위험:** topology가 있는 impacted consumer만 summary breakdown에 집계된다. MCP cross-repo link resource는 top-level `eventTopology`를 제공하지만 원본 `provenance`도 계속 제공해 하위 호환을 유지한다. malformed/legacy provenance는 기존처럼 provenance만 반환하고 top-level hint는 생략한다. 더 풍부한 NATS/AMQP/Kafka binding이나 graph UI가 들어오면 이 compact surface를 입력으로 쓰되, 저장 모델 확장은 별도 ADR에서 다룬다.
+
+**관련 commit:** `feat(contracts): topology surface 요약 추가`
 
 ---
 

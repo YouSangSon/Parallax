@@ -195,6 +195,29 @@ async function makeContractWorkspaceRepo(): Promise<{ consumerRoot: string; prov
   return { consumerRoot, providerRoot };
 }
 
+function seedMcpConsumesEventTopology(repoRoot: string): void {
+  const db = new DatabaseSync(databasePath(repoRoot));
+  try {
+    const row = db
+      .prepare(
+        `SELECT id, provenance
+         FROM cross_repo_links
+         WHERE kind = ?`
+      )
+      .get('CONSUMES_HTTP_ENDPOINT') as { id: string; provenance: string };
+    const provenance = JSON.parse(row.provenance) as Record<string, unknown>;
+    provenance.eventTopology = {
+      providerAction: 'SEND',
+      counterpartyRole: 'consumer',
+      pattern: 'subscriber-call'
+    };
+    db.prepare('UPDATE cross_repo_links SET provenance = ? WHERE id = ?')
+      .run(JSON.stringify(provenance), row.id);
+  } finally {
+    db.close();
+  }
+}
+
 async function writeMcpOpenApiContract(repoRoot: string, routes: string[]): Promise<void> {
   await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
   const routeLines = routes.flatMap((route) => [
@@ -1202,6 +1225,7 @@ test('MCP contract_diff returns compact workspace resources and persists breakin
   const { consumerRoot, providerRoot } = await makeContractWorkspaceRepo();
   const consumerReal = realpathSync(consumerRoot);
   const providerReal = realpathSync(providerRoot);
+  seedMcpConsumesEventTopology(consumerRoot);
   await writeMcpOpenApiContract(providerRoot, ['/api/status', '/api/admin']);
   const client = new McpProcessClient(consumerRoot);
   try {
@@ -1220,9 +1244,24 @@ test('MCP contract_diff returns compact workspace resources and persists breakin
     const diff = JSON.parse(diffResponse.result.content[0].text) as {
       workspace: { name: string };
       provider: { serviceName: string; repoPath: string };
-      summary: { classification: string; breakingChangeCount: number; impactedConsumerCount: number };
+      summary: {
+        classification: string;
+        breakingChangeCount: number;
+        impactedConsumerCount: number;
+        eventTopologyCount?: number;
+        eventTopologyBreakdown?: Array<{
+          providerAction: string;
+          counterpartyRole: string;
+          pattern: string;
+          count: number;
+        }>;
+      };
       changes: Array<{ kind: string; classification: string; httpMethod?: string; routePath?: string }>;
-      impactedConsumers: Array<{ consumerPath: string; routePath: string }>;
+      impactedConsumers: Array<{
+        consumerPath: string;
+        routePath: string;
+        eventTopology?: { providerAction: string; counterpartyRole: string; pattern: string };
+      }>;
       resources: { workspace: string; contracts: string; crossRepoLinks: string };
     };
     assert.equal(diff.workspace.name, 'platform');
@@ -1231,6 +1270,15 @@ test('MCP contract_diff returns compact workspace resources and persists breakin
     assert.equal(diff.summary.classification, 'breaking');
     assert.equal(diff.summary.breakingChangeCount, 1);
     assert.equal(diff.summary.impactedConsumerCount, 1);
+    assert.equal(diff.summary.eventTopologyCount, 1);
+    assert.deepEqual(diff.summary.eventTopologyBreakdown, [
+      {
+        providerAction: 'SEND',
+        counterpartyRole: 'consumer',
+        pattern: 'subscriber-call',
+        count: 1
+      }
+    ]);
     assert.ok(diff.changes.some((change) =>
       change.kind === 'removed_endpoint' &&
       change.classification === 'breaking' &&
@@ -1246,6 +1294,11 @@ test('MCP contract_diff returns compact workspace resources and persists breakin
         routePath: '/api/users'
       }
     ]);
+    assert.deepEqual(diff.impactedConsumers[0]?.eventTopology, {
+      providerAction: 'SEND',
+      counterpartyRole: 'consumer',
+      pattern: 'subscriber-call'
+    });
     assert.equal(diff.resources.workspace, 'impact-trace://workspaces/platform');
     assert.equal(diff.resources.contracts, 'impact-trace://workspaces/platform/contracts');
     assert.equal(diff.resources.crossRepoLinks, 'impact-trace://workspaces/platform/cross-repo-links');
@@ -1304,11 +1357,13 @@ test('MCP contract_diff returns compact workspace resources and persists breakin
     const linksJson = JSON.parse(linksResource.result.contents[0].text) as {
       workspace: string;
       links: Array<{
+        id: string;
         kind: string;
         sourceService: string;
         targetService: string;
         sourceRepoPath: string;
         targetRepoPath: string;
+        eventTopology?: { providerAction: string; counterpartyRole: string; pattern: string };
         provenance: any;
       }>;
     };
@@ -1319,14 +1374,57 @@ test('MCP contract_diff returns compact workspace resources and persists breakin
       link.targetService === 'users-api' &&
       link.sourceRepoPath === consumerReal &&
       link.targetRepoPath === providerReal &&
+      link.eventTopology?.providerAction === 'SEND' &&
+      link.eventTopology.counterpartyRole === 'consumer' &&
+      link.eventTopology.pattern === 'subscriber-call' &&
       link.provenance.http.path === '/api/users'
     ));
     assert.ok(linksJson.links.some((link) =>
       link.kind === 'BREAKS_COMPATIBILITY_WITH' &&
       link.sourceService === 'web' &&
       link.targetService === 'users-api' &&
+      link.eventTopology?.providerAction === 'SEND' &&
+      link.eventTopology.counterpartyRole === 'consumer' &&
+      link.eventTopology.pattern === 'subscriber-call' &&
       link.provenance.change.path === '/api/users'
     ));
+
+    const db = new DatabaseSync(databasePath(consumerRoot));
+    try {
+      const malformed = linksJson.links.find((link) => link.kind === 'CONSUMES_HTTP_ENDPOINT');
+      assert.ok(malformed);
+      const malformedProvenance = {
+        ...malformed.provenance,
+        eventTopology: {
+          providerAction: '',
+          counterpartyRole: 'consumer',
+          pattern: 'subscriber-call'
+        }
+      };
+      db.prepare('UPDATE cross_repo_links SET provenance = ? WHERE id = ?')
+        .run(JSON.stringify(malformedProvenance), malformed.id);
+    } finally {
+      db.close();
+    }
+
+    const malformedLinksResource = await client.request('resources/read', { uri: diff.resources.crossRepoLinks });
+    assert.equal(malformedLinksResource.error, undefined);
+    const malformedLinksJson = JSON.parse(malformedLinksResource.result.contents[0].text) as {
+      links: Array<{
+        id: string;
+        kind: string;
+        eventTopology?: { providerAction: string; counterpartyRole: string; pattern: string };
+        provenance: any;
+      }>;
+    };
+    const malformedConsumes = malformedLinksJson.links.find((link) => link.kind === 'CONSUMES_HTTP_ENDPOINT');
+    assert.ok(malformedConsumes);
+    assert.equal(malformedConsumes.eventTopology, undefined);
+    assert.deepEqual(malformedConsumes.provenance.eventTopology, {
+      providerAction: '',
+      counterpartyRole: 'consumer',
+      pattern: 'subscriber-call'
+    });
 
     const templates = await client.request('resources/templates/list', {});
     assert.equal(templates.error, undefined);

@@ -121,6 +121,10 @@ export type EventTopologyProvenance = {
   pattern: string;
 };
 
+export type EventTopologySummary = EventTopologyProvenance & {
+  count: number;
+};
+
 export type AnalyzeContractDiffResult = {
   workspace: WorkspaceSummary;
   provider: ContractDiffProvider;
@@ -131,6 +135,8 @@ export type AnalyzeContractDiffResult = {
     nonBreakingChangeCount: number;
     unknownChangeCount: number;
     impactedConsumerCount: number;
+    eventTopologyCount?: number;
+    eventTopologyBreakdown?: EventTopologySummary[];
   };
   changes: ContractDiffChange[];
   impactedConsumers: ImpactedContractConsumer[];
@@ -1312,6 +1318,7 @@ function summarizeChanges(
   const breakingChangeCount = changes.filter((change) => change.classification === 'breaking').length;
   const nonBreakingChangeCount = changes.filter((change) => change.classification === 'non-breaking').length;
   const unknownChangeCount = changes.filter((change) => change.classification === 'unknown').length;
+  const eventTopologyBreakdown = summarizeEventTopology(impactedConsumers);
   return {
     classification: breakingChangeCount > 0
       ? 'breaking'
@@ -1323,8 +1330,40 @@ function summarizeChanges(
     breakingChangeCount,
     nonBreakingChangeCount,
     unknownChangeCount,
-    impactedConsumerCount: impactedConsumers.length
+    impactedConsumerCount: impactedConsumers.length,
+    ...(eventTopologyBreakdown.length > 0
+      ? {
+          eventTopologyCount: eventTopologyBreakdown.reduce((total, item) => total + item.count, 0),
+          eventTopologyBreakdown
+        }
+      : {})
   };
+}
+
+function summarizeEventTopology(impactedConsumers: ImpactedContractConsumer[]): EventTopologySummary[] {
+  const byKey = new Map<string, EventTopologySummary>();
+  for (const consumer of impactedConsumers) {
+    if (consumer.eventTopology === undefined) continue;
+    const key = [
+      consumer.eventTopology.providerAction,
+      consumer.eventTopology.counterpartyRole,
+      consumer.eventTopology.pattern
+    ].join('\0');
+    const existing = byKey.get(key);
+    if (existing) {
+      existing.count += 1;
+      continue;
+    }
+    byKey.set(key, {
+      ...consumer.eventTopology,
+      count: 1
+    });
+  }
+  return [...byKey.values()].sort((a, b) =>
+    a.providerAction.localeCompare(b.providerAction) ||
+    a.counterpartyRole.localeCompare(b.counterpartyRole) ||
+    a.pattern.localeCompare(b.pattern)
+  );
 }
 
 function canPersistDiff(changes: ContractDiffChange[]): boolean {

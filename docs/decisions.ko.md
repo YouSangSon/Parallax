@@ -55,6 +55,7 @@
 | [D-043](#d-043-ui-work-artifact-impact-is-report-derived-and-resource-linked) | UI work artifact impact is report-derived and resource-linked | P3/P0 | 2026-05-12 |
 | [D-044](#d-044-ui-work-artifact-metadata-stays-compact-and-body-free) | UI work artifact metadata stays compact and body-free | P3/P0 | 2026-05-12 |
 | [D-045](#d-045-ui-work-artifact-freshness-is-derived-from-compact-dates) | UI work artifact freshness is derived from compact dates | P3/P0 | 2026-05-12 |
+| [D-046](#d-046-mcp-context-packs-carry-body-free-work-artifact-previews) | MCP context packs carry body-free work artifact previews | P3/P0 | 2026-05-12 |
 
 ---
 
@@ -841,6 +842,23 @@
 **결과/위험:** 오래된 policy/PRD/requirement/decision/proposal impact가 Work Artifacts panel에서 먼저 보이고, agent에게 전달되는 bootstrap은 여전히 compact scalar만 담는다. threshold는 보수적 기본값이므로 팀별 정책 주기는 후속 config로 열어야 한다.
 
 **관련 commit:** `feat(ui): work artifact freshness badge 추가`
+
+---
+
+## D-046: MCP context packs carry body-free work artifact previews
+
+**결정:** `impact_trace_context_for_change`의 `ContextPack`은 `workArtifacts` 배열을 포함한다. 각 row는 kind, path, displayName, reason, confidence, relation path, entity resource URI, compact metadata, freshness state만 담는다. work artifact evidence snippet은 context pack payload에서 placeholder로 치환하고, 실제 문서 내용은 entity/evidence resource를 명시적으로 읽을 때만 확장한다.
+
+**맥락:** UI Work Artifacts panel만으로는 사람이 보기에는 충분하지만 Claude/Codex 같은 MCP client가 코드 변경 전에 정책/PRD/제안서 impact를 직접 받지 못한다. 제품 목표는 agent context를 줄이면서 관련 업무 산출물의 존재와 상태를 알려주는 것이므로, context pack에 별도 compact lane이 필요하다.
+
+**대안:**
+- 기존 `context`/`evidence` 배열에 Markdown artifact를 그대로 섞는다 — 문서 본문이 compact pack에 들어갈 수 있어 context 절감과 privacy 목표를 깨므로 거부한다.
+- UI bootstrap 전용 shape만 유지한다 — MCP agent가 같은 정보를 쓰지 못해 핵심 workflow와 어긋난다.
+- external docs connector를 먼저 만든다 — 후속 확장에는 필요하지만 repo-local Markdown impact를 agent에게 알리는 v0를 막을 이유는 없다.
+
+**결과/위험:** agent는 전체 문서 본문 없이도 어떤 정책/결정/PRD/제안서가 변경 영향을 받는지 알 수 있다. `context-pack-cache-v2`로 cache key를 bump해 이전 shape의 persisted pack과 충돌하지 않게 했다. v0는 owner/reviewer routing과 팀별 freshness threshold config는 다루지 않는다.
+
+**관련 commit:** `feat(context): work artifact preview 추가`
 
 ---
 

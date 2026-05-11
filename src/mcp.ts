@@ -11,6 +11,8 @@ import type { EventTopologyProvenance } from './contract_diff.js';
 import { doctorProject, redactDoctorReportForMcp } from './doctor.js';
 import { computeEmbedding, selectedEmbeddingModel } from './embeddings.js';
 import type { EmbeddingResult } from './embeddings.js';
+import { markdownArtifactMetadataFromContent } from './artifacts.js';
+import type { MarkdownArtifactMetadata } from './artifacts.js';
 import { readGitSnapshot } from './git-snapshot.js';
 import { reflectFacts, repairReflections } from './reflection.js';
 import { profileEntity } from './profile.js';
@@ -32,6 +34,8 @@ import type {
   ContextPackEvidence,
   ContextPackItem,
   ContextPackReusePolicy,
+  ContextPackWorkArtifact,
+  ContextPackWorkArtifactFreshness,
   EntityRef,
   Evidence,
   GraphExport,
@@ -126,7 +130,11 @@ export function createMcpServer(context: McpContext): McpServer {
           maxDepth: maxDepth ?? preset.maxDepth,
           maxFanout: maxFanout ?? preset.maxFanout
         });
-        const pack = buildContextPack(report, normalizedBudget);
+        const pack = buildContextPack(
+          report,
+          normalizedBudget,
+          indexRunAsOfIso(context, report.indexRunId)
+        );
         const persisted = persistContextPackForReuse(context, pack, {
           changedFiles: report.changedFiles,
           maxDepth: maxDepth ?? preset.maxDepth,
@@ -863,6 +871,7 @@ type ContextBudgetPreset = {
   maxDepth: number;
   maxFanout: number;
   affectedLimit: number;
+  workArtifactLimit: number;
   evidenceLimit: number;
   snippetChars: number;
 };
@@ -872,6 +881,7 @@ const contextBudgetPresets: Record<ContextBudget, ContextBudgetPreset> = {
     maxDepth: 1,
     maxFanout: 50,
     affectedLimit: 5,
+    workArtifactLimit: 5,
     evidenceLimit: 5,
     snippetChars: 300
   },
@@ -879,6 +889,7 @@ const contextBudgetPresets: Record<ContextBudget, ContextBudgetPreset> = {
     maxDepth: 2,
     maxFanout: 200,
     affectedLimit: 15,
+    workArtifactLimit: 12,
     evidenceLimit: 12,
     snippetChars: 800
   },
@@ -886,6 +897,7 @@ const contextBudgetPresets: Record<ContextBudget, ContextBudgetPreset> = {
     maxDepth: 3,
     maxFanout: 500,
     affectedLimit: 50,
+    workArtifactLimit: 30,
     evidenceLimit: 30,
     snippetChars: 1_500
   }
@@ -903,7 +915,16 @@ function contextBudgetPreset(budget: ContextBudget): ContextBudgetPreset {
   return contextBudgetPresets[budget];
 }
 
-function buildContextPack(report: ImpactReport, budget: ContextBudget): ContextPack {
+function indexRunAsOfIso(context: McpContext, indexRunId: number): string {
+  return withReadOnlyDb(context, (db, repoId) => {
+    const row = db
+      .prepare('SELECT started_at, finished_at FROM index_runs WHERE repo_id = ? AND id = ?')
+      .get(repoId, indexRunId) as { started_at: string; finished_at: string | null } | undefined;
+    return row?.finished_at ?? row?.started_at ?? '';
+  });
+}
+
+function buildContextPack(report: ImpactReport, budget: ContextBudget, asOfIso: string): ContextPack {
   const preset = contextBudgetPreset(budget);
   const affectedTargetsByPath = new Map(
     report.affected
@@ -929,29 +950,34 @@ function buildContextPack(report: ImpactReport, budget: ContextBudget): ContextP
       resourceUri: entityResourceUri(target)
     };
   });
+  const workArtifactPaths = workArtifactPathSet(report);
+  const allWorkArtifacts = workArtifactsForContextPack(report, asOfIso);
+  const selectedWorkArtifacts = allWorkArtifacts.slice(0, preset.workArtifactLimit);
   const selectedEvidence = dedupeEvidenceForContext(report.evidence)
     .sort((a, b) => compareEvidence(a, b, selectedPaths))
     .slice(0, preset.evidenceLimit)
-    .map((evidence) => compactEvidence(evidence, preset.snippetChars));
+    .map((evidence) => compactEvidence(evidence, preset.snippetChars, workArtifactPaths));
   const selectedActionPaths = new Set(selectedAffected.map((file) => file.path));
   const actions = report.actions.filter((action) =>
     action.target.path ? selectedActionPaths.has(action.target.path) : false
   );
   const entityLinks = [
     ...report.changed.map(entityResourceUri),
-    ...contextItems.map((item) => item.resourceUri)
+    ...contextItems.map((item) => item.resourceUri),
+    ...selectedWorkArtifacts.map((item) => item.resourceUri)
   ];
   const evidenceLinks = selectedEvidence.flatMap((item) => item.resourceUri ? [item.resourceUri] : []);
   return {
     version: 0,
     budget,
     indexRunId: report.indexRunId,
-    summary: contextSummary(report, selectedAffected.length, selectedEvidence.length),
+    summary: contextSummary(report, selectedAffected.length, selectedWorkArtifacts.length, selectedEvidence.length),
     changed: report.changed.map((entity) => ({
       entity,
       resourceUri: entityResourceUri(entity)
     })),
     context: contextItems,
+    workArtifacts: selectedWorkArtifacts,
     actions,
     evidence: selectedEvidence,
     resources: {
@@ -961,11 +987,13 @@ function buildContextPack(report: ImpactReport, budget: ContextBudget): ContextP
     },
     omittedCounts: {
       affected: Math.max(report.affectedFiles.length - selectedAffected.length, 0),
+      workArtifacts: Math.max(allWorkArtifacts.length - selectedWorkArtifacts.length, 0),
       evidence: Math.max(dedupeEvidenceForContext(report.evidence).length - selectedEvidence.length, 0),
       actions: Math.max(report.actions.length - actions.length, 0)
     },
     limits: {
       affectedLimit: preset.affectedLimit,
+      workArtifactLimit: preset.workArtifactLimit,
       evidenceLimit: preset.evidenceLimit,
       snippetChars: preset.snippetChars,
       affectedTruncated: report.affectedFiles.length > preset.affectedLimit,
@@ -999,6 +1027,7 @@ type ContextPackReference = {
   };
   omittedCounts: {
     contextItems: number;
+    workArtifacts: number;
     evidence: number;
     actions: number;
     fullContextPackBytes: number;
@@ -1072,7 +1101,7 @@ function persistContextPackForReuse(
   return { pack: persistedPack, wasReused, fullBytes };
 }
 
-const CONTEXT_PACK_CACHE_VERSION = 'context-pack-cache-v1';
+const CONTEXT_PACK_CACHE_VERSION = 'context-pack-cache-v2';
 
 function contextPackRequestHash(
   context: McpContext,
@@ -1127,7 +1156,7 @@ function contextPackReference(
     summary: [
       `Reusing persisted context pack ${pack.contextPackId}.`,
       `Fetch ${pack.resourceUri} only if the full compact context is needed.`,
-      `${pack.context.length} context item(s), ${pack.evidence.length} evidence item(s), and ${pack.actions.length} action(s) are stored in the resource.`
+      `${pack.context.length} context item(s), ${pack.workArtifacts.length} work artifact(s), ${pack.evidence.length} evidence item(s), and ${pack.actions.length} action(s) are stored in the resource.`
     ],
     changedFiles,
     resources: {
@@ -1135,6 +1164,7 @@ function contextPackReference(
     },
     omittedCounts: {
       contextItems: pack.context.length,
+      workArtifacts: pack.workArtifacts.length,
       evidence: pack.evidence.length,
       actions: pack.actions.length,
       fullContextPackBytes: fullBytes
@@ -1145,11 +1175,13 @@ function contextPackReference(
 function contextSummary(
   report: ImpactReport,
   selectedAffectedCount: number,
+  selectedWorkArtifactCount: number,
   selectedEvidenceCount: number
 ): string[] {
   return [
     `${report.changedFiles.length} changed file(s) analyzed against index run ${report.indexRunId}.`,
     `${report.affectedFiles.length} affected file(s) found; ${selectedAffectedCount} included in this context pack.`,
+    `${selectedWorkArtifactCount} work artifact(s) included without document bodies.`,
     `${selectedEvidenceCount} evidence item(s) included; fetch entity resources for more detail.`,
     `${report.actions.length} recommended action(s) available from the full impact analysis.`
   ];
@@ -1174,6 +1206,157 @@ function dedupeEvidenceForContext(evidence: readonly Evidence[]): Evidence[] {
   return [...byKey.values()];
 }
 
+const contextWorkArtifactKinds = new Set(['policy', 'proposal', 'prd', 'decision', 'business_plan', 'requirement', 'meeting_note', 'customer_artifact']);
+const omittedWorkArtifactEvidenceSnippet = 'Work artifact evidence omitted from context pack. Fetch the entity or evidence resource for document details.';
+
+function workArtifactsForContextPack(report: ImpactReport, asOfIso: string): ContextPackWorkArtifact[] {
+  const affectedByPath = new Map(report.affectedFiles.map((item) => [item.path, item]));
+  const metadataByPath = workArtifactMetadataByPath(report);
+  const byKey = new Map<string, ContextPackWorkArtifact>();
+  for (const item of report.affected) {
+    const targetPath = item.target.path;
+    if (!targetPath || !contextWorkArtifactKinds.has(item.target.kind)) continue;
+    const affectedFile = affectedByPath.get(targetPath);
+    const metadata = metadataByPath.get(targetPath);
+    const key = `${item.target.kind}:${targetPath}`;
+    if (byKey.has(key)) continue;
+    byKey.set(key, {
+      kind: item.target.kind,
+      path: targetPath,
+      displayName: metadata?.title ?? item.target.displayName ?? targetPath,
+      reason: affectedFile?.reason ?? item.relations.join(' -> '),
+      confidence: affectedFile?.confidence ?? item.confidence,
+      relations: item.relations,
+      resourceUri: entityResourceUri(item.target),
+      ...(metadata && hasArtifactMetadata(metadata) ? { metadata } : {}),
+      freshness: workArtifactFreshness(item.target.kind, metadata, asOfIso)
+    });
+  }
+  return [...byKey.values()].sort(compareContextWorkArtifacts);
+}
+
+function workArtifactPathSet(report: ImpactReport): Set<string> {
+  return new Set(
+    report.affected
+      .map((item) => item.target)
+      .filter((target) => target.path && contextWorkArtifactKinds.has(target.kind))
+      .map((target) => target.path!)
+  );
+}
+
+function workArtifactMetadataByPath(report: ImpactReport): Map<string, MarkdownArtifactMetadata> {
+  const workArtifactPaths = workArtifactPathSet(report);
+  const out = new Map<string, MarkdownArtifactMetadata>();
+  for (const evidence of report.evidence) {
+    const path = workArtifactEvidencePath(evidence, workArtifactPaths);
+    if (!path || out.has(path)) continue;
+    const metadata = markdownArtifactMetadataFromContent(evidence.snippet);
+    if (hasArtifactMetadata(metadata)) out.set(path, metadata);
+  }
+  return out;
+}
+
+function workArtifactEvidencePath(
+  evidence: Evidence,
+  workArtifactPaths: ReadonlySet<string>
+): string | undefined {
+  if (evidence.subject?.path && workArtifactPaths.has(evidence.subject.path)) {
+    return evidence.subject.path;
+  }
+  if (workArtifactPaths.has(evidence.file)) return evidence.file;
+  return undefined;
+}
+
+function hasArtifactMetadata(metadata: MarkdownArtifactMetadata): boolean {
+  return Boolean(metadata.title || metadata.owner || metadata.status || metadata.updatedAt);
+}
+
+function isWorkArtifactEvidence(evidence: Evidence, workArtifactPaths: ReadonlySet<string>): boolean {
+  return Boolean(
+    (evidence.subject && contextWorkArtifactKinds.has(evidence.subject.kind)) ||
+    (evidence.subject?.path && workArtifactPaths.has(evidence.subject.path)) ||
+    workArtifactPaths.has(evidence.file)
+  );
+}
+
+function workArtifactFreshness(
+  kind: string,
+  metadata: MarkdownArtifactMetadata | undefined,
+  asOfIso: string
+): ContextPackWorkArtifactFreshness {
+  const thresholdDays = workArtifactFreshnessThresholdDays(kind);
+  const updatedAt = parseDateOnly(metadata?.updatedAt);
+  const asOf = parseDateOnly(asOfIso);
+  if (!updatedAt || !asOf) {
+    return {
+      state: 'unknown',
+      label: 'review date unknown',
+      thresholdDays
+    };
+  }
+  const ageDays = Math.max(0, Math.floor((asOf.getTime() - updatedAt.getTime()) / 86_400_000));
+  if (ageDays > thresholdDays) {
+    return {
+      state: 'stale',
+      label: `stale ${ageDays}d`,
+      thresholdDays,
+      ageDays
+    };
+  }
+  return {
+    state: 'current',
+    label: `current ${ageDays}d`,
+    thresholdDays,
+    ageDays
+  };
+}
+
+function workArtifactFreshnessThresholdDays(kind: string): number {
+  if (kind === 'proposal') return 60;
+  if (kind === 'prd' || kind === 'requirement') return 120;
+  if (kind === 'decision') return 180;
+  return 90;
+}
+
+function parseDateOnly(value: string | undefined): Date | undefined {
+  if (!value) return undefined;
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  if (!match) return undefined;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return undefined;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return undefined;
+  }
+  return date;
+}
+
+function compareContextWorkArtifacts(left: ContextPackWorkArtifact, right: ContextPackWorkArtifact): number {
+  return workArtifactFreshnessRank(left.freshness.state) - workArtifactFreshnessRank(right.freshness.state)
+    || workArtifactKindRank(left.kind) - workArtifactKindRank(right.kind)
+    || left.path.localeCompare(right.path);
+}
+
+function workArtifactFreshnessRank(state: ContextPackWorkArtifactFreshness['state']): number {
+  if (state === 'stale') return 0;
+  if (state === 'unknown') return 1;
+  return 2;
+}
+
+function workArtifactKindRank(kind: string): number {
+  if (kind === 'policy') return 0;
+  if (kind === 'decision') return 1;
+  if (kind === 'prd' || kind === 'requirement') return 2;
+  if (kind === 'proposal') return 3;
+  return 4;
+}
+
 function compareEvidence(
   left: Evidence,
   right: Evidence,
@@ -1187,13 +1370,19 @@ function compareEvidence(
     || left.kind.localeCompare(right.kind);
 }
 
-function compactEvidence(evidence: Evidence, snippetChars: number): ContextPackEvidence {
+function compactEvidence(
+  evidence: Evidence,
+  snippetChars: number,
+  workArtifactPaths: ReadonlySet<string>
+): ContextPackEvidence {
   const resourceUri = persistedEvidenceResourceUri(evidence);
   return {
     id: evidence.id,
     file: evidence.file,
     kind: evidence.kind,
-    snippet: truncateSnippet(evidence.snippet, snippetChars),
+    snippet: isWorkArtifactEvidence(evidence, workArtifactPaths)
+      ? omittedWorkArtifactEvidenceSnippet
+      : truncateSnippet(evidence.snippet, snippetChars),
     confidence: evidence.confidence,
     ...(resourceUri ? { resourceUri } : {}),
     ...(evidence.startLine !== undefined ? { startLine: evidence.startLine } : {}),

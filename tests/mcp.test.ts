@@ -164,6 +164,49 @@ async function makeRepo(): Promise<string> {
   return repoRoot;
 }
 
+async function makeMcpWorkArtifactRepo(): Promise<string> {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-mcp-artifacts-'));
+  await mkdir(path.join(repoRoot, 'src/auth'), { recursive: true });
+  await mkdir(path.join(repoRoot, 'policies'), { recursive: true });
+  await mkdir(path.join(repoRoot, 'docs/decisions'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/auth/session.ts'), 'export function rotateSession() { return "ok"; }\n');
+  await writeFile(
+    path.join(repoRoot, 'policies/security-auth.md'),
+    [
+      '---',
+      'title: Security Auth Policy',
+      'owner: security-platform',
+      'status: approved',
+      'updated: 2000-01-01',
+      '---',
+      '# Security auth policy',
+      '',
+      'Changes to src/auth/session.ts require security review.',
+      '',
+      'PRIVATE BODY SENTENCE should stay behind resource expansion.',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(repoRoot, 'docs/decisions/auth-session.md'),
+    [
+      '---',
+      'title: Auth session decision',
+      'updated: 2026-02-30',
+      '---',
+      '# Auth session decision',
+      '',
+      'This decision governs src/auth/session.ts.',
+      '',
+      'SECRET DECISION BODY should not be in context pack payload.',
+      ''
+    ].join('\n')
+  );
+  await initProject({ repoRoot });
+  await indexProject({ repoRoot });
+  return repoRoot;
+}
+
 async function makeContractWorkspaceRepo(): Promise<{ consumerRoot: string; providerRoot: string }> {
   const consumerRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-mcp-contract-consumer-'));
   const providerRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-mcp-contract-provider-'));
@@ -1547,6 +1590,74 @@ test('MCP context_for_change returns budgeted compact context without persisting
   }
 });
 
+test('MCP context_for_change includes body-free work artifact previews', async () => {
+  const repoRoot = await makeMcpWorkArtifactRepo();
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+    const response = await client.request('tools/call', {
+      name: 'impact_trace_context_for_change',
+      arguments: { changedFiles: ['src/auth/session.ts'], budget: 'brief' }
+    });
+
+    assert.equal(response.error, undefined);
+    const pack = JSON.parse(response.result.content[0].text) as {
+      workArtifacts: Array<{
+        kind: string;
+        path: string;
+        displayName: string;
+        resourceUri: string;
+        metadata?: {
+          title?: string;
+          owner?: string;
+          status?: string;
+          updatedAt?: string;
+          source?: string;
+        };
+        freshness: {
+          state: string;
+          label: string;
+          thresholdDays: number;
+          ageDays?: number;
+        };
+      }>;
+      evidence: Array<{ snippet: string; file: string }>;
+      resources: { entities: string[] };
+      omittedCounts: { workArtifacts: number };
+      limits: { workArtifactLimit: number };
+    };
+
+    const policy = pack.workArtifacts.find((item) => item.path === 'policies/security-auth.md');
+    assert.equal(policy?.displayName, 'Security Auth Policy');
+    assert.deepEqual(policy?.metadata, {
+      title: 'Security Auth Policy',
+      owner: 'security-platform',
+      status: 'approved',
+      updatedAt: '2000-01-01',
+      source: 'frontmatter'
+    });
+    assert.equal(policy?.freshness.state, 'stale');
+    assert.equal(policy?.freshness.thresholdDays, 90);
+    assert.ok((policy?.freshness.ageDays ?? 0) > 90);
+    assert.equal(policy?.resourceUri, `impact-trace://entities/${encodeURIComponent('file:policies/security-auth.md')}`);
+
+    const decision = pack.workArtifacts.find((item) => item.path === 'docs/decisions/auth-session.md');
+    assert.equal(decision?.metadata?.updatedAt, '2026-02-30');
+    assert.equal(decision?.freshness.state, 'unknown');
+    assert.equal(decision?.freshness.label, 'review date unknown');
+    assert.equal(pack.omittedCounts.workArtifacts, 0);
+    assert.equal(pack.limits.workArtifactLimit, 5);
+    assert.ok(pack.resources.entities.includes(policy!.resourceUri));
+    assert.equal(JSON.stringify(pack).includes('PRIVATE BODY SENTENCE'), false);
+    assert.equal(JSON.stringify(pack).includes('SECRET DECISION BODY'), false);
+    assert.ok(pack.evidence.some((item) =>
+      item.snippet === 'Work artifact evidence omitted from context pack. Fetch the entity or evidence resource for document details.'
+    ));
+  } finally {
+    await client.close();
+  }
+});
+
 test('MCP context_for_change reuses persisted context packs by reference', async () => {
   const repoRoot = await makeRepo();
   const client = new McpProcessClient(repoRoot);
@@ -1581,8 +1692,9 @@ test('MCP context_for_change reuses persisted context packs by reference', async
       resourceUri: string;
       reused: boolean;
       resources: { contextPack: string };
-      omittedCounts: { contextItems: number; evidence: number; actions: number; fullContextPackBytes: number };
+      omittedCounts: { contextItems: number; workArtifacts: number; evidence: number; actions: number; fullContextPackBytes: number };
       context?: unknown[];
+      workArtifacts?: unknown[];
       evidence?: unknown[];
       actions?: unknown[];
     };
@@ -1592,6 +1704,7 @@ test('MCP context_for_change reuses persisted context packs by reference', async
     assert.equal(second.resourceUri, first.resourceUri);
     assert.equal(second.resources.contextPack, first.resourceUri);
     assert.equal(second.context, undefined);
+    assert.equal(second.workArtifacts, undefined);
     assert.equal(second.evidence, undefined);
     assert.equal(second.actions, undefined);
     assert.equal(second.omittedCounts.contextItems, first.context.length);

@@ -49,6 +49,7 @@
 | [D-037](#d-037-protobuf-and-asyncapi-consumer-resolver-reuses-the-cross-repo-link-envelope) | Protobuf and AsyncAPI consumer resolver reuses the cross-repo link envelope | P0/P1 | 2026-05-12 |
 | [D-038](#d-038-build-system-package-resolver-stays-manifest-only-in-v0) | Build-system package resolver stays manifest-only in v0 | P1/P2 | 2026-05-12 |
 | [D-039](#d-039-generated-client-and-event-topology-v0-stays-heuristic-and-schema-neutral) | Generated-client and event topology v0 stays heuristic and schema-neutral | P0/P1 | 2026-05-12 |
+| [D-040](#d-040-contract-diff-preserves-event-topology-provenance) | Contract diff preserves event topology provenance | P0/P1 | 2026-05-12 |
 
 ---
 
@@ -732,6 +733,23 @@
 **결과/위험:** Protobuf generated-client usage는 source files에서만 찾고 generated descriptor files와 generated headers는 계속 제외한다. RPC method-name-only match에는 comment-masked service anchor가 필요하고 source comment 안의 service anchor/full path/RPC call은 consumer evidence로 쓰지 않는다. AsyncAPI event topology는 source/config line의 exact token과 direction-bearing call-site pattern을 함께 요구하며 source comments, docs/examples/README, partial topic match, exact-address-only constants/config는 제외한다. `cross_repo_links.provenance.eventTopology`에는 provider action, counterparty role, pattern name만 저장하고 confidence는 `heuristic`으로 유지한다. 이 v0는 literal topic/call-site가 있는 common path를 줄이는 용도이며, cross-file constants, generated client type flow, GraphQL/protobuf/AsyncAPI full parser/LSP depth, Kafka regex topic, NATS wildcard, AMQP exchange/routing-key graph, schema registry subject inference는 후속이다.
 
 **관련 commit:** `feat(workspace): generated client event topology 추가`
+
+---
+
+## D-040: Contract diff preserves event topology provenance
+
+**결정:** `workspace contract-diff`가 기존 `CONSUMES_HTTP_ENDPOINT` link에서 impacted consumer를 만들 때 optional `eventTopology` provenance를 함께 읽고, `BREAKS_COMPATIBILITY_WITH` link provenance에도 그대로 저장한다. 새 DB column이나 새 link kind는 추가하지 않는다.
+
+**맥락:** D-039에서 AsyncAPI consumer/producers의 방향 hint를 `eventTopology`로 저장했지만, removed AsyncAPI operation을 `BREAKS_COMPATIBILITY_WITH`로 승격하는 contract diff 단계에서 이 정보를 버리면 MCP/UI가 “깨지는 파일”은 알 수 있어도 그 파일이 producer인지 consumer인지 다시 추론해야 한다. 사용자가 원하는 AI context 절감은 resolve 단계의 작은 evidence가 breaking impact까지 이어지는 것이므로, contract diff가 provenance를 손실 없이 전달해야 한다.
+
+**대안:**
+- `BREAKS_EVENT_TOPOLOGY_WITH` 같은 새 link kind 추가 — 의미는 명확하지만 MCP/contract resource와 기존 consumer impact path를 넓혀야 하므로 이번 slice에서는 과하다.
+- `ImpactedContractConsumer` 결과에는 숨기고 persisted provenance에만 저장 — CLI/MCP caller가 같은 정보를 두 경로에서 다르게 보게 되어 거부한다.
+- event topology를 contract diff에서 다시 추론 — D-039의 resolver 판단을 반복하고 drift 위험을 만든다.
+
+**결과/위험:** AsyncAPI removed operation의 impacted consumer result와 persisted breaking link provenance가 provider action, counterparty role, pattern을 유지한다. malformed/legacy consumes provenance처럼 topology가 없거나 shape가 맞지 않는 경우에는 기존처럼 consumer impact만 유지하고 topology는 생략한다. eventTopology schemaVersion은 아직 cross-repo link provenance 내부 shape에 묶여 있으므로, 더 풍부한 NATS/AMQP/Kafka binding graph가 들어오면 새 D-0xx에서 versioned topology payload를 검토한다.
+
+**관련 commit:** `feat(contracts): event topology provenance 보존`
 
 ---
 

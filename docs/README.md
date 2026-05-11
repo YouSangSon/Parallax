@@ -28,7 +28,7 @@
 
 설계와 결정의 *왜*가 궁금할 때:
 
-- [`decisions.ko.md`](decisions.ko.md) — **누적 ADR 로그 (D-001..D-039)**. 모든 굳어진 결정과 거부된 대안 + 관련 commit. 가장 먼저 읽으면 좋은 *single source of truth*.
+- [`decisions.ko.md`](decisions.ko.md) — **누적 ADR 로그 (D-001..D-040)**. 모든 굳어진 결정과 거부된 대안 + 관련 commit. 가장 먼저 읽으면 좋은 *single source of truth*.
 - [`impact-context-layer-plan.ko.md`](impact-context-layer-plan.ko.md) — Claude/Codex MCP context layer, local UI explorer, AI context budget 절감, 정책/제안서 impact까지 포함한 제품 계획.
 - [`indexing-model.ko.md`](indexing-model.ko.md) — 코드 인덱서 모델 (entities/relations/evidence) + 회사 업무 artifact 확장.
 - [`/skills/impact-trace/references/architecture.md`](../skills/impact-trace/references/architecture.md) — **깊은 architecture reference**. schema versions, recall paths, reflection pipeline, branch GC, redaction gates, LLM provider abstraction, sqlite-vec ANN. 코드 확장 시 *어디부터 볼지* 가이드 포함.

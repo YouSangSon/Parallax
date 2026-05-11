@@ -119,7 +119,27 @@ async function main(): Promise<void> {
       }
       return;
     }
-    throw new Error('workspace requires init, add-repo, or list');
+    if (subcommand === 'resolve-contracts') {
+      const { resolveCrossRepoContracts } = await import('./index.js');
+      const name = parseOptionalWorkspaceArg(workspaceArgs, '--name');
+      const result = resolveCrossRepoContracts({
+        repoRoot,
+        ...(name !== undefined ? { workspaceName: name } : {})
+      });
+      if (workspaceArgs.includes('--json')) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.log(`Resolved cross-repo contract links: ${result.links.length}`);
+        for (const link of result.links) {
+          console.log(`${link.consumerService}:${link.consumerPath} -> ${link.providerService}:${link.httpMethod} ${link.routePath}`);
+        }
+        for (const warning of result.warnings) {
+          console.error(`warning: ${warning}`);
+        }
+      }
+      return;
+    }
+    throw new Error('workspace requires init, add-repo, list, or resolve-contracts');
   }
 
   if (command === 'analyze') {
@@ -482,6 +502,7 @@ Commands:
   impact-trace workspace init [--name <name>] [--service <service>] [--force]
   impact-trace workspace add-repo <path> [--name <name>] [--service <service>] [--remote <url>]
   impact-trace workspace list [--name <name>] [--json]
+  impact-trace workspace resolve-contracts [--name <name>] [--json]
   impact-trace analyze --changed src/file.ts [--depth 2] [--json]
   impact-trace analyze --base main [--head HEAD] [--depth 2] [--json]
   impact-trace graph export --report <id> [--format mermaid|json|dot]

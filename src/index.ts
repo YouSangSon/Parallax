@@ -18,6 +18,12 @@ export type {
   TraceResult
 } from './agent_memory.js';
 export { analyzeDiff } from './analyzer.js';
+export { resolveCrossRepoContracts } from './cross_repo_resolver.js';
+export type {
+  CrossRepoContractLink,
+  ResolveCrossRepoContractsOptions,
+  ResolveCrossRepoContractsResult
+} from './cross_repo_resolver.js';
 export { exportImpactGraph } from './graph.js';
 export { indexProject } from './indexer.js';
 export { initProject } from './init.js';

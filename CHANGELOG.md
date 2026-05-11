@@ -16,6 +16,7 @@ For day-by-day developer log see [docs/progress.ko.md](docs/progress.ko.md). For
 - **ImpactBench thin spine** — `npm run bench` now builds a deterministic multi-language/Spring Boot fixture, scores relation recall/precision, affected-file recall, evidence presence, span completeness, adapter attribution, and context-pack readiness, then writes `.impact-trace/bench/impact-bench-report.json`.
 - **OpenAPI contract impact baseline** — path-obvious OpenAPI/Swagger/AsyncAPI YAML/JSON files are indexed as contracts, persisted to contract baseline/version tables, and reverse-linked from implementing code when the contract explicitly names repo-local source paths.
 - **Workspace catalog v0** — `impact-trace workspace init/add-repo/list` manages an explicit local repo allowlist in `.impact-trace/workspace.json` and syncs it into `workspaces`/`workspace_repos` without cloning or network access.
+- **Cross-repo contract resolver v0** — `impact-trace workspace resolve-contracts` reads indexed local workspace repos, matches consumer HTTP literals to provider OpenAPI endpoints, and persists deterministic `cross_repo_links` without cloning or network access.
 - **MCP context pack v0** — `impact_trace_context_for_change` returns budgeted `brief`/`standard`/`deep` context packs with top impact paths, compact evidence, actions, omitted counts, and entity/coverage resource links without persisting a full report.
 - **Docs root cleanup** — root `docs/` keeps the current high-signal docs for planning, onboarding, and implementation.
 
@@ -42,7 +43,7 @@ Originally developed on `feature/phase6-adapter-foundations`; landed on `main` a
 
 ### Follow-up scope
 
-- Cross-repo provider/consumer resolver, contract diff/breaking-change classification, full parser/LSP depth, and MCP workspace/contract resources.
+- Contract diff/breaking-change classification, full parser/LSP depth, and MCP workspace/contract resources.
 
 ---
 

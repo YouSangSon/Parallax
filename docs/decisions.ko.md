@@ -48,6 +48,7 @@
 | [D-036](#d-036-graphql-consumer-resolver-links-operation-documents-to-root-fields) | GraphQL consumer resolver links operation documents to root fields | P0/P1 | 2026-05-12 |
 | [D-037](#d-037-protobuf-and-asyncapi-consumer-resolver-reuses-the-cross-repo-link-envelope) | Protobuf and AsyncAPI consumer resolver reuses the cross-repo link envelope | P0/P1 | 2026-05-12 |
 | [D-038](#d-038-build-system-package-resolver-stays-manifest-only-in-v0) | Build-system package resolver stays manifest-only in v0 | P1/P2 | 2026-05-12 |
+| [D-039](#d-039-generated-client-and-event-topology-v0-stays-heuristic-and-schema-neutral) | Generated-client and event topology v0 stays heuristic and schema-neutral | P0/P1 | 2026-05-12 |
 
 ---
 
@@ -620,7 +621,7 @@
 - Protobuf endpoint-only diff만 유지 — removed RPC는 잡지만 response field removal/type change를 놓친다.
 - GraphQL/AsyncAPI까지 generic compatibility layer를 먼저 만든 뒤 Protobuf를 넣기 — 설계는 깔끔하지만 이번 slice의 사용자 가치가 늦어진다.
 
-**결과/위험:** v0 parser는 deterministic regex 기반이며 top-level service/message, unary/stream RPC, simple field/map/oneof-member field signature만 다룬다. imports, nested message diff, enum/reserved/options, oneof group semantics, proto2 default semantics, package-qualified cross-file type resolution, generated-client source compatibility는 후속이다. consumer impact persistence는 기존 `cross_repo_links`가 있을 때만 가능하다. D-037에서 service-anchored Protobuf RPC consumer resolver v0가 추가되어 removed RPC는 known consumer link가 있으면 `BREAKS_COMPATIBILITY_WITH`로 저장된다. response field break의 generated-client/source compatibility와 cross-file usage graph는 여전히 후속이다. GraphQL diff는 D-034에서, AsyncAPI diff는 D-035에서 확장했다.
+**결과/위험:** v0 parser는 deterministic regex 기반이며 top-level service/message, unary/stream RPC, simple field/map/oneof-member field signature만 다룬다. imports, nested message diff, enum/reserved/options, oneof group semantics, proto2 default semantics, package-qualified cross-file type resolution, generated-client source compatibility는 후속이다. consumer impact persistence는 기존 `cross_repo_links`가 있을 때만 가능하다. D-037에서 service-anchored Protobuf RPC consumer resolver v0가 추가되어 removed RPC는 known consumer link가 있으면 `BREAKS_COMPATIBILITY_WITH`로 저장된다. D-039에서 Connect-ES style generated client call과 full route string matching을 추가했지만, response field break의 generated-client/source compatibility와 cross-file usage graph는 여전히 후속이다. GraphQL diff는 D-034에서, AsyncAPI diff는 D-035에서 확장했다.
 
 **관련 commit:** `feat(contracts): Protobuf contract diff 추가`
 
@@ -656,7 +657,7 @@
 - AsyncAPI를 OpenAPI YAML scanner에 계속 태움 — endpoint/operation이 비어 `unknown`이 되며 event contract risk를 놓친다.
 - consumer resolver부터 구현 — downstream link는 중요하지만 provider contract 자체의 breaking classifier가 없으면 어떤 변화가 위험한지 작은 payload로 설명할 수 없다.
 
-**결과/위험:** v0 parser는 deterministic compact extractor이며 AsyncAPI 3.x `operations`/`channels`와 2.x `publish`/`subscribe` 형태의 local `#/...` refs를 우선 지원한다. payload schema는 JSON-schema-like object required/properties, local refs, nested/array/composition fingerprint를 compact path로 저장한다. operation removal은 endpoint-equivalent breaking change로 분류되고, message payload field removal/type change 및 newly required payload field는 message-level breaking change로 분류된다. event consumer impact persistence는 기존 `cross_repo_links`가 있을 때만 가능하다. D-037에서 event address literal consumer resolver v0가 추가되어 removed operation은 known consumer link가 있으면 `BREAKS_COMPATIBILITY_WITH`로 저장된다. message trait/security/binding semantics, external refs, schema registry integration, producer/consumer direction inference와 topology-level matching은 후속이다.
+**결과/위험:** v0 parser는 deterministic compact extractor이며 AsyncAPI 3.x `operations`/`channels`와 2.x `publish`/`subscribe` 형태의 local `#/...` refs를 우선 지원한다. payload schema는 JSON-schema-like object required/properties, local refs, nested/array/composition fingerprint를 compact path로 저장한다. operation removal은 endpoint-equivalent breaking change로 분류되고, message payload field removal/type change 및 newly required payload field는 message-level breaking change로 분류된다. event consumer impact persistence는 기존 `cross_repo_links`가 있을 때만 가능하다. D-037에서 event address literal consumer resolver v0가 추가되어 removed operation은 known consumer link가 있으면 `BREAKS_COMPATIBILITY_WITH`로 저장된다. D-039에서 common producer/consumer call-site direction hint를 추가했지만, message trait/security/binding semantics, external refs, schema registry integration, NATS/AMQP/Kafka binding depth는 후속이다.
 
 **관련 commit:** `feat(contracts): AsyncAPI contract diff 추가`
 
@@ -713,6 +714,24 @@
 **결과/위험:** v0는 manifest-only extractor라 dependency resolution의 실제 build semantics를 보장하지 않는다. npm workspace/file dependency, Gradle `project(":x")`, Cargo path dependency는 proven local signal로 취급하고, registry/external coordinate는 heuristic package dependency로 남긴다. package → manifest identity edge를 저장하므로 manifest file 변경은 dependent package manifests까지 도달한다. exact repo-local path mention은 `CONFIGURES`로 보존해 build manifest가 기존 system/config reference lane을 완전히 잃지 않게 한다. lockfile drift, transitive dependency, Gradle version catalog, Maven parent/profile/property interpolation, Go replace/workspace, Python optional dependencies/Poetry/uv, generated-client/source usage graph는 후속이다.
 
 **관련 commit:** `feat(adapters): build-system package resolver 추가`
+
+---
+
+## D-039: Generated-client and event topology v0 stays heuristic and schema-neutral
+
+**결정:** `workspace resolve-contracts`는 Protobuf/generated-client v0를 기존 RPC matcher 안에서 보강하고, AsyncAPI event topology v0를 기존 `CONSUMES_HTTP_ENDPOINT` envelope의 optional provenance로 저장한다. Protobuf는 Connect-ES `createClient`/`createPromiseClient` 같은 service anchor + lowerCamel RPC call과 `/pkg.Service/Rpc` 또는 `pkg.Service/Rpc` full path 문자열을 인식한다. AsyncAPI는 exact event address token을 계속 요구하되, 해당 line이 Spring Kafka `@KafkaListener`, KafkaJS/Python/Go/Rust style subscribe/listener/consumer 패턴이면 consumer로, `KafkaTemplate.send`, `producer.send`, `send_and_wait`, writer/producer 패턴이면 producer로 분류한다. Provider operation action이 `SEND`/`PUBLISH`면 consumer-side call site만, `RECEIVE`/`SUBSCRIBE`면 producer-side call site만 연결한다.
+
+**맥락:** D-037의 Protobuf/AsyncAPI resolver는 removed RPC/event operation을 known downstream impact로 연결했지만, 사용자가 실제로 쓰는 Claude/Codex context에서는 generated client call-site와 event producer/consumer 방향이 더 중요하다. EventCatalog는 event-driven architecture catalog/visualization, AsyncAPI parser/diff는 dereferenced document validation/diff, Buf/Connect/protobuf-es는 generated service/client shape의 좋은 reference다. 하지만 이 프로젝트의 core value는 local-first, no network/build execution, compact context pack이므로 v0는 외부 toolchain을 실행하지 않고 fresh indexed files만 읽는 deterministic heuristic이어야 한다.
+
+**대안:**
+- EventCatalog를 embedded catalog/runtime dependency로 도입 — EDA visualization과 schema explorer는 유용하지만 Astro/React catalog surface와 generator model이 core resolver보다 크다. UI/visual concept만 참고한다.
+- `@asyncapi/parser`/`@asyncapi/diff` 또는 Buf/protoc descriptor build를 runtime dependency로 추가 — fidelity는 높지만 install/build/network/dereference/version drift 표면이 커져 D-035/D-037의 compact signature 원칙과 충돌한다.
+- 새 `CONSUMES_EVENT`/`PRODUCES_EVENT`/`CONSUMES_RPC` link kind와 DB schema를 추가 — 의미는 더 정확하지만 MCP resource/contract diff가 이미 기존 cross-repo link envelope를 읽고 있어 이번 slice에서는 provenance 확장으로 닫는 편이 작다.
+- 변수 추적, config placeholder, Spring property resolution, Kafka regex subscription, AMQP/NATS binding topology까지 구현 — 실제성이 높지만 v0 deterministic test gate를 넘는 scope다.
+
+**결과/위험:** Protobuf generated-client usage는 source files에서만 찾고 generated descriptor files와 generated headers는 계속 제외한다. RPC method-name-only match에는 comment-masked service anchor가 필요하고 source comment 안의 service anchor/full path/RPC call은 consumer evidence로 쓰지 않는다. AsyncAPI event topology는 source/config line의 exact token과 direction-bearing call-site pattern을 함께 요구하며 source comments, docs/examples/README, partial topic match, exact-address-only constants/config는 제외한다. `cross_repo_links.provenance.eventTopology`에는 provider action, counterparty role, pattern name만 저장하고 confidence는 `heuristic`으로 유지한다. 이 v0는 literal topic/call-site가 있는 common path를 줄이는 용도이며, cross-file constants, generated client type flow, GraphQL/protobuf/AsyncAPI full parser/LSP depth, Kafka regex topic, NATS wildcard, AMQP exchange/routing-key graph, schema registry subject inference는 후속이다.
+
+**관련 commit:** `feat(workspace): generated client event topology 추가`
 
 ---
 

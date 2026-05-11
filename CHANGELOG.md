@@ -19,6 +19,7 @@ For day-by-day developer log see [docs/progress.ko.md](docs/progress.ko.md). For
 - **Cross-repo contract resolver v0** — `impact-trace workspace resolve-contracts` reads indexed local workspace repos, matches consumer HTTP literals to provider OpenAPI endpoints, and persists deterministic `cross_repo_links` without cloning or network access.
 - **GraphQL consumer resolver v0** — `impact-trace workspace resolve-contracts` also matches indexed GraphQL operation documents to provider `Query.*`/`Mutation.*`/`Subscription.*` root fields, reusing compact cross-repo links so contract diff can persist known GraphQL consumer impact.
 - **Protobuf/AsyncAPI consumer resolver v0** — `impact-trace workspace resolve-contracts` also matches Protobuf RPC calls and AsyncAPI event address literals to provider operations, so removed RPCs/events can persist known downstream impact without Buf, runtime reflection, schema registry, or raw contract snapshots.
+- **Generated-client/event topology resolver v0** — Protobuf matching now covers Connect-ES style generated client calls and full `pkg.Service/Rpc` route strings, while AsyncAPI event matches record producer/consumer topology hints for common Spring Kafka, KafkaJS, Python, Go, and Rust call-site shapes without adding EventCatalog, AsyncAPI parser/diff, or Buf/protoc runtime dependencies.
 - **Build-system/package resolver v0** — `indexProject()` reads `package.json`, `pom.xml`, `build.gradle(.kts)`, `go.mod`, `Cargo.toml`, and `pyproject.toml` as manifest-only package graph inputs, emits package `DECLARES`/`DEPENDS_ON` relations, and lets package manifest changes reach dependent manifests without executing npm, Maven, Gradle, Go, Cargo, or Python tooling.
 - **OpenAPI contract diff v0** — `impact-trace workspace contract-diff` compares the latest indexed OpenAPI endpoint surface with the current contract file, classifies removed endpoints as breaking and added endpoints as non-breaking, and persists impacted consumers as `BREAKS_COMPATIBILITY_WITH` links.
 - **OpenAPI nested schema diff v0** — JSON/YAML OpenAPI compatibility signatures now use schemaVersion 2 with nested object paths, root/nested array item paths, allOf object merges, and oneOf/anyOf property/root body fingerprints so contract diff can report nested body breaking changes without sending whole contract files to the agent.
@@ -52,7 +53,7 @@ Originally developed on `feature/phase6-adapter-foundations`; landed on `main` a
 
 ### Follow-up scope
 
-- GraphQL/protobuf/AsyncAPI full parser/LSP depth, generated-client usage graph, richer event topology inference, and deeper package-manager/build model resolution.
+- GraphQL/protobuf/AsyncAPI full parser/LSP depth, generated-client data-flow graph, richer event topology inference, and deeper package-manager/build model resolution.
 
 ---
 

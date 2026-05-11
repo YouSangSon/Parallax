@@ -23,6 +23,13 @@ export type CrossRepoContractLink = {
   providerEndpointId: string;
   httpMethod: string;
   routePath: string;
+  eventTopology?: CrossRepoEventTopology;
+};
+
+export type CrossRepoEventTopology = {
+  providerAction: string;
+  counterpartyRole: 'consumer' | 'producer' | 'unknown';
+  pattern: string;
 };
 
 export type ResolveCrossRepoContractsResult = {
@@ -53,6 +60,12 @@ type ConsumerMatch = {
   serviceName: string;
   filePath: string;
   snippet: string;
+  eventTopology?: CrossRepoEventTopology;
+};
+
+type ConsumerEvidence = {
+  snippet: string;
+  eventTopology?: CrossRepoEventTopology;
 };
 
 type PersistableLink = CrossRepoContractLink & {
@@ -217,7 +230,8 @@ function resolveLinks(
           providerEndpointId: endpoint.endpointId,
           httpMethod: endpoint.httpMethod,
           routePath: endpoint.routePath,
-          evidenceSnippet: match.snippet
+          evidenceSnippet: match.snippet,
+          ...(match.eventTopology !== undefined ? { eventTopology: match.eventTopology } : {})
         });
       }
     }
@@ -244,13 +258,14 @@ function findConsumerMatches(
     if (!shouldScanConsumerFile(row.path, endpoint)) continue;
     const content = readFreshIndexedFile(repo, row.path, row.content_hash, 'consumer file', warnings, warnedFiles);
     if (content === undefined) continue;
-    const line = firstMatchingLine(content, row.path, endpoint);
-    if (!line) continue;
+    const evidence = firstMatchingEvidence(content, row.path, endpoint);
+    if (!evidence) continue;
     matches.push({
       repoPath: repo.repoPath,
       serviceName: repo.serviceName,
       filePath: row.path,
-      snippet: line
+      snippet: evidence.snippet,
+      ...(evidence.eventTopology !== undefined ? { eventTopology: evidence.eventTopology } : {})
     });
   }
   return matches;
@@ -311,21 +326,23 @@ function readFreshIndexedFile(
   return content;
 }
 
-function firstMatchingLine(content: string, filePath: string, endpoint: ProviderEndpoint): string | undefined {
+function firstMatchingEvidence(content: string, filePath: string, endpoint: ProviderEndpoint): ConsumerEvidence | undefined {
   if (endpoint.httpMethod === 'GRAPHQL') {
-    return firstMatchingGraphqlOperationLine(content, filePath, endpoint.routePath);
+    const snippet = firstMatchingGraphqlOperationLine(content, filePath, endpoint.routePath);
+    return snippet === undefined ? undefined : { snippet };
   }
   if (endpoint.httpMethod === 'RPC') {
-    return firstMatchingProtobufRpcLine(content, filePath, endpoint.routePath);
+    const snippet = firstMatchingProtobufRpcLine(content, filePath, endpoint.routePath);
+    return snippet === undefined ? undefined : { snippet };
   }
   if (isAsyncApiEndpointMethod(endpoint.httpMethod)) {
-    return firstMatchingAsyncApiEventLine(content, endpoint.routePath);
+    return firstMatchingAsyncApiEventEvidence(content, endpoint.httpMethod, endpoint.routePath);
   }
   const lines = content.split(/\r?\n/);
   for (const line of lines) {
     if (!line.includes(endpoint.routePath)) continue;
     if (!methodMatches(line, endpoint.httpMethod)) continue;
-    return line.trim();
+    return { snippet: line.trim() };
   }
   return undefined;
 }
@@ -598,12 +615,13 @@ function firstMatchingProtobufRpcLine(content: string, filePath: string, routePa
   if (isGeneratedProtobufFilePath(filePath) || isGeneratedProtobufContent(content)) return undefined;
   const target = parseProtobufRoutePath(routePath);
   if (target === undefined) return undefined;
-  const lines = content.split(/\r?\n/);
-  const fullPathLine = lines.find((line) => protobufFullPathMatches(line, target.serviceName, target.rpcName));
-  if (fullPathLine !== undefined) return fullPathLine.trim();
-  if (!protobufServiceContextMatches(content, target.serviceName)) return undefined;
-  const rpcLine = lines.find((line) => protobufRpcCallLineMatches(line, target.rpcName));
-  return rpcLine === undefined ? undefined : rpcLine.trim();
+  const lines = sourceLinesWithCommentMasks(content);
+  const fullPathLine = lines.find((line) => protobufFullPathMatches(line.masked, target.serviceName, target.rpcName));
+  if (fullPathLine !== undefined) return fullPathLine.raw.trim();
+  const maskedContent = lines.map((line) => line.masked).join('\n');
+  if (!protobufServiceContextMatches(maskedContent, target.serviceName)) return undefined;
+  const rpcLine = lines.find((line) => protobufRpcCallLineMatches(line.masked, target.rpcName));
+  return rpcLine === undefined ? undefined : rpcLine.raw.trim();
 }
 
 function parseProtobufRoutePath(routePath: string): { serviceName: string; rpcName: string } | undefined {
@@ -616,12 +634,12 @@ function parseProtobufRoutePath(routePath: string): { serviceName: string; rpcNa
 }
 
 function protobufFullPathMatches(line: string, serviceName: string, rpcName: string): boolean {
-  const pattern = new RegExp(`/(?:[A-Za-z_]\\w*\\.)*${escapeRegExp(serviceName)}/${escapeRegExp(rpcName)}\\b`);
+  const pattern = new RegExp(`(?:^|[^A-Za-z0-9_.])/?(?:[A-Za-z_]\\w*\\.)*${escapeRegExp(serviceName)}/${escapeRegExp(rpcName)}\\b`);
   return pattern.test(line);
 }
 
 function protobufServiceContextMatches(content: string, serviceName: string): boolean {
-  const pattern = new RegExp(`\\b${escapeRegExp(serviceName)}(?:Grpc|Client|Stub|BlockingStub|FutureStub)?\\b`);
+  const pattern = new RegExp(`\\b${escapeRegExp(serviceName)}(?:Grpc|Client|Stub|BlockingStub|FutureStub|CoroutineStub)?\\b`);
   return pattern.test(content);
 }
 
@@ -651,10 +669,163 @@ function camelToSnakeCase(value: string): string {
     .toLowerCase();
 }
 
-function firstMatchingAsyncApiEventLine(content: string, routePath: string): string | undefined {
-  const lines = content.split(/\r?\n/);
-  const line = lines.find((candidate) => containsDelimitedToken(candidate, routePath));
-  return line === undefined ? undefined : line.trim();
+function firstMatchingAsyncApiEventEvidence(
+  content: string,
+  providerAction: string,
+  routePath: string
+): ConsumerEvidence | undefined {
+  const lines = sourceLinesWithCommentMasks(content);
+  for (const candidate of lines) {
+    if (!containsDelimitedToken(candidate.masked, routePath)) continue;
+    const snippet = candidate.raw.trim();
+    const topology = classifyAsyncApiEventLine(candidate.masked.trim(), providerAction);
+    if (topology.counterpartyRole === 'unknown') {
+      continue;
+    }
+    if (asyncApiCounterpartyRoleMatchesProviderAction(providerAction, topology.counterpartyRole)) {
+      return { snippet, eventTopology: topology };
+    }
+  }
+  return undefined;
+}
+
+function classifyAsyncApiEventLine(line: string, providerAction: string): CrossRepoEventTopology {
+  const lowered = line.toLowerCase();
+  const consumerPatterns: Array<[RegExp, string]> = [
+    [/@kafkalistener\b/i, 'spring-kafka-listener'],
+    [/\bconsumer\s*\.\s*subscribe\b/i, 'kafkajs-consumer-subscribe'],
+    [/\bsubscribe(?:to)?\s*\(/i, 'subscriber-call'],
+    [/\blisten(?:er)?\s*\(/i, 'listener-call'],
+    [/\bonmessage\b|\bhandler\s*[:=]/i, 'message-handler'],
+    [/\baiokafkaconsumer\b|\bkafkaconsumer\b/i, 'python-kafka-consumer'],
+    [/\breaderconfig\b|\bnewreader\b/i, 'go-kafka-reader'],
+    [/\bstreamconsumer\b|\bbaseconsumer\b|\bsubscribe\s*\(/i, 'rust-kafka-consumer'],
+    [/\bconsumer\b.*(?:topic|topics|channel|queue)/i, 'consumer-config']
+  ];
+  const producerPatterns: Array<[RegExp, string]> = [
+    [/\bkafkatemplate\s*\.\s*send\b/i, 'spring-kafka-template-send'],
+    [/\bproducer\s*\.\s*send\b/i, 'producer-send'],
+    [/\bsend_and_wait\s*\(/i, 'python-aiokafka-send'],
+    [/\bpublish\s*\(/i, 'publisher-call'],
+    [/\bemit\s*\(/i, 'emitter-call'],
+    [/\bwriterconfig\b|\bnewwriter\b/i, 'go-kafka-writer'],
+    [/\bfutureproducer\b|\bbaseproducer\b/i, 'rust-kafka-producer'],
+    [/\bproducer\b.*(?:topic|topics|channel|queue)/i, 'producer-config']
+  ];
+
+  for (const [pattern, name] of consumerPatterns) {
+    if (pattern.test(line)) {
+      return { providerAction, counterpartyRole: 'consumer', pattern: name };
+    }
+  }
+  for (const [pattern, name] of producerPatterns) {
+    if (pattern.test(line)) {
+      return { providerAction, counterpartyRole: 'producer', pattern: name };
+    }
+  }
+
+  if (/\b(?:subscribe|listener|consumer|reader)\b/.test(lowered)) {
+    return { providerAction, counterpartyRole: 'consumer', pattern: 'consumer-keyword' };
+  }
+  if (/\b(?:publish|producer|send|emit|writer)\b/.test(lowered)) {
+    return { providerAction, counterpartyRole: 'producer', pattern: 'producer-keyword' };
+  }
+  return { providerAction, counterpartyRole: 'unknown', pattern: 'exact-event-address' };
+}
+
+function asyncApiCounterpartyRoleMatchesProviderAction(
+  providerAction: string,
+  counterpartyRole: CrossRepoEventTopology['counterpartyRole']
+): boolean {
+  const action = providerAction.toUpperCase();
+  if (counterpartyRole === 'consumer') return action === 'SEND' || action === 'PUBLISH';
+  if (counterpartyRole === 'producer') return action === 'RECEIVE' || action === 'SUBSCRIBE';
+  return true;
+}
+
+function sourceLinesWithCommentMasks(content: string): Array<{ raw: string; masked: string }> {
+  const lines: Array<{ raw: string; masked: string }> = [];
+  const rawLines = content.split(/\r?\n/);
+  let inBlockComment = false;
+  for (const raw of rawLines) {
+    let masked = '';
+    let state: 'code' | 'single' | 'double' | 'template' = 'code';
+    for (let index = 0; index < raw.length; index += 1) {
+      const char = raw[index]!;
+      const next = raw[index + 1];
+
+      if (inBlockComment) {
+        if (char === '*' && next === '/') {
+          masked += '  ';
+          inBlockComment = false;
+          index += 1;
+        } else {
+          masked += char === '\t' ? '\t' : ' ';
+        }
+        continue;
+      }
+
+      if (state === 'single') {
+        masked += char;
+        if (char === '\\') {
+          if (next !== undefined) {
+            masked += next;
+            index += 1;
+          }
+        } else if (char === "'") {
+          state = 'code';
+        }
+        continue;
+      }
+
+      if (state === 'double') {
+        masked += char;
+        if (char === '\\') {
+          if (next !== undefined) {
+            masked += next;
+            index += 1;
+          }
+        } else if (char === '"') {
+          state = 'code';
+        }
+        continue;
+      }
+
+      if (state === 'template') {
+        masked += char;
+        if (char === '\\') {
+          if (next !== undefined) {
+            masked += next;
+            index += 1;
+          }
+        } else if (char === '`') {
+          state = 'code';
+        }
+        continue;
+      }
+
+      if (char === '/' && next === '/') {
+        masked += ' '.repeat(raw.length - index);
+        break;
+      }
+      if (char === '/' && next === '*') {
+        masked += '  ';
+        inBlockComment = true;
+        index += 1;
+        continue;
+      }
+      if (char === '#') {
+        masked += ' '.repeat(raw.length - index);
+        break;
+      }
+      if (char === "'") state = 'single';
+      if (char === '"') state = 'double';
+      if (char === '`') state = 'template';
+      masked += char;
+    }
+    lines.push({ raw, masked });
+  }
+  return lines;
 }
 
 function containsDelimitedToken(value: string, token: string): boolean {
@@ -794,6 +965,7 @@ function linkProvenance(link: PersistableLink): string {
       method: link.httpMethod,
       path: link.routePath
     },
+    ...(link.eventTopology !== undefined ? { eventTopology: link.eventTopology } : {}),
     evidence: {
       filePath: link.consumerPath,
       snippet: link.evidenceSnippet

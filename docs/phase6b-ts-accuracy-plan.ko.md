@@ -1,7 +1,7 @@
 # Phase 6B — Multi-language + Spring Boot Adapter Pack v0 + Trusted Evidence
 
 > **작성:** 2026-05-09 (`main` @ `3cba0a2`)
-> **상태:** `/autoplan` + `/team-builder` 이후 사용자 stack 정정 반영. 2026-05-11 현재 ImpactBench, adapter pack v0 routing, TS/JS parser-backed import span v0, JVM/Spring lightweight evidence span v0, Python/Go/Rust lightweight evidence span v0가 landed. 파일명은 기존 링크 유지를 위해 유지한다.
+> **상태:** `/autoplan` + `/team-builder` 이후 사용자 stack 정정 반영. 2026-05-11 현재 ImpactBench, adapter pack v0 routing, TS/JS parser-backed import span v0, JVM/Spring lightweight evidence span v0, Python/Go/Rust lightweight evidence span v0, OpenAPI contract impact baseline이 landed. 파일명은 기존 링크 유지를 위해 유지한다.
 > **결론:** 다음 제품 slice는 **Java/Kotlin/Spring Boot/Python/Go/Rust/TS/JS adapter pack v0 + source-span evidence + git snapshot metadata**다. full MemoryBench, workspace resolver, full call graph는 뒤로 둔다.
 
 ---
@@ -68,11 +68,11 @@ v0 target languages/frameworks:
 - full interprocedural call graph, data-flow, symbol reference graph
 - JVM bytecode analysis, full Maven/Gradle model, annotation processor resolution
 - Python virtualenv/package resolver, Go workspace resolver, Cargo feature resolver
-- workspace/cross-repo resolver, contract baseline
+- workspace/cross-repo resolver, contract diff
 - LSP/CodeQL enrichment, graph DB projection, full web explorer
 - agent가 report를 보고 자동으로 코드 수정하는 기능
 
-단, 현재 v0 adapter들은 deterministic heuristic extractor를 공유한다. TS/JS import-like syntax는 `ts.createSourceFile` 기반 parser span으로 한 단계 깊어졌고, JVM/Spring은 endpoint/declaration/config/test relation에 lightweight line/annotation spans를 저장한다. Python/Go/Rust는 declaration/test relation에 lightweight declaration-line spans를 저장한다. full type-checker, full parser-backed Python/Go/Rust resolution, Tree-sitter/LSP/CodeQL enrichment, full source span coverage는 후속 pass로 둔다. UI의 첫 버전에서 필요할 graph JSON contract와 evidence/resource shape는 이 phase의 output에서 깨지지 않게 둔다.
+단, 현재 v0 adapter들은 deterministic heuristic extractor를 공유한다. TS/JS import-like syntax는 `ts.createSourceFile` 기반 parser span으로 한 단계 깊어졌고, JVM/Spring은 endpoint/declaration/config/test relation에 lightweight line/annotation spans를 저장한다. Python/Go/Rust는 declaration/test relation에 lightweight declaration-line spans를 저장한다. OpenAPI/Swagger/AsyncAPI YAML/JSON은 contract baseline과 명시적 code path 기반 implementer reverse-link를 저장한다. full type-checker, full parser-backed Python/Go/Rust resolution, Tree-sitter/LSP/CodeQL enrichment, full source span coverage, cross-repo contract resolver는 후속 pass로 둔다. UI의 첫 버전에서 필요할 graph JSON contract와 evidence/resource shape는 이 phase의 output에서 깨지지 않게 둔다.
 
 ## 3. Architecture
 
@@ -181,7 +181,7 @@ full MemoryBench가 아니라 adapter accuracy용 얇은 evaluation spine을 먼
 - span completeness: source-span slice 이후 gate로 승격
 - context-pack readiness: top relation/evidence payload가 MCP budget에 넣을 수 있을 만큼 작고 dedupe 가능
 
-현재 얇은 spine은 `bench/impact-bench.ts`와 `npm run bench`로 시작한다. report는 기본적으로 `.impact-trace/bench/impact-bench-report.json`에 쓰며, `.impact-trace/`는 gitignore 대상이라 반복 실행해도 작업트리를 오염시키지 않는다. 2026-05-11 기준 fixture는 TS/JS alias/re-export/type-only/namespace/dynamic import/require span, Spring Boot `@ConfigurationProperties`, `application.properties`, JPA/Spring Data, `@DataJpaTest`, Feign/WebClient/RestTemplate, Python/Go/Rust declaration/test span까지 expected relation으로 검증한다. TS/JS parser-backed import span v0, JVM/Spring lightweight evidence span v0, Python/Go/Rust lightweight evidence span v0 이후 `spanCompleteness >= 0.9`가 bench gate로 승격됐고 현재 값은 0.9535다. 이 spine은 Phase 6B 전체 완료 선언이 아니라, 이후 Java/Kotlin/Spring Boot/Python/Go/Rust/TS/JS adapter depth pass가 개선됐는지 숫자로 확인하기 위한 기준선이다.
+현재 얇은 spine은 `bench/impact-bench.ts`와 `npm run bench`로 시작한다. report는 기본적으로 `.impact-trace/bench/impact-bench-report.json`에 쓰며, `.impact-trace/`는 gitignore 대상이라 반복 실행해도 작업트리를 오염시키지 않는다. 2026-05-11 기준 fixture는 TS/JS alias/re-export/type-only/namespace/dynamic import/require span, Spring Boot `@ConfigurationProperties`, `application.properties`, JPA/Spring Data, `@DataJpaTest`, Feign/WebClient/RestTemplate, Python/Go/Rust declaration/test span, OpenAPI endpoint declaration과 Spring controller implementer reverse-link까지 expected relation으로 검증한다. TS/JS parser-backed import span v0, JVM/Spring lightweight evidence span v0, Python/Go/Rust lightweight evidence span v0, OpenAPI contract impact baseline 이후 `spanCompleteness >= 0.9`가 bench gate이며 현재 값은 0.9565다. 이 spine은 Phase 6B 전체 완료 선언이 아니라, 이후 Java/Kotlin/Spring Boot/Python/Go/Rust/TS/JS/contract adapter depth pass가 개선됐는지 숫자로 확인하기 위한 기준선이다.
 
 ## 5. Commit Plan
 
@@ -262,7 +262,7 @@ Phase 6B가 끝나면 다음 제품 slice는 둘 중 하나다.
 - 각 language adapter가 regex 대비 핵심 fixture를 추가/정확 검출
 - 기존 behavior regression 없음: Markdown mentions, external entity, tests `VERIFIES`, docs/config inference 유지
 - 가능한 evidence에는 `start_line/end_line/start_col/end_col` 저장
-- TS/JS import-backed evidence와 import 기반 `VERIFIES`, JVM/Spring endpoint/declaration/config/test evidence, Python/Go/Rust declaration/test evidence는 bounded snippet + line/col range를 저장하고 ImpactBench `spanCompleteness >= 0.9`를 유지
+- TS/JS import-backed evidence와 import 기반 `VERIFIES`, JVM/Spring endpoint/declaration/config/test evidence, Python/Go/Rust declaration/test evidence, OpenAPI endpoint/implementer evidence는 bounded snippet + line/col range를 저장하고 ImpactBench `spanCompleteness >= 0.9`를 유지
 - analyze/MCP evidence output에서 span 확인 가능
 - dirty repo 또는 HEAD mismatch에서 git snapshot 기반 warning 출력
 - docs가 더 이상 Phase 6B를 TypeScript 단일 slice로 설명하지 않음

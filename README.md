@@ -43,6 +43,7 @@ MVP 구현이 들어가 있습니다.
 - TS/JS import edge 추출과 parser-backed import evidence span 저장
 - Spring Boot endpoint/declaration/config/test evidence span 저장
 - Python/Go/Rust declaration/test evidence span 저장
+- OpenAPI/Swagger/AsyncAPI contract baseline과 구현 코드 reverse-link 저장
 - import 기반 관련 테스트 추론
 - Markdown mention 기반 관련 문서 추론
 - Markdown policy/proposal/PRD/decision 파일을 first-class work artifact로 분류하고 `GOVERNS`/`PROPOSES`/`REQUIRES` impact relation 추론
@@ -69,7 +70,7 @@ Markdown/config/system/contract와 아직 깊게 다루지 않는 언어는 rege
 
 - Obsidian write sync
 - graph DB projection
-- workspace/cross-repo contract resolver
+- workspace/cross-repo contract resolver와 breaking-change 분류
 - web graph explorer
 - CodeQL adapter
 - 모든 언어의 full semantic analysis
@@ -126,7 +127,7 @@ graph LR
 **비전 한 페이지:** [docs/vision.ko.md](docs/vision.ko.md). **제품 계획:** [docs/impact-context-layer-plan.ko.md](docs/impact-context-layer-plan.ko.md) — MCP + UI + AI context 절감 + 코드/문서/정책/제안서 impact 기준 문서. **agentmemory 적용성 분석:** [docs/agentmemory-adoption-review.ko.md](docs/agentmemory-adoption-review.ko.md). **통합 로드맵:** [docs/roadmap.md](docs/roadmap.md). **두 축 어휘:** [docs/glossary.md](docs/glossary.md).
 자세한 사용 예시는 [docs/agent-memory-cookbook.ko.md](docs/agent-memory-cookbook.ko.md).
 현재 설계 근거: [Phase 6 설계/진행](docs/phase6-design.ko.md) · [Phase 6B multi-language + Spring Boot 계획](docs/phase6b-ts-accuracy-plan.ko.md).
-누적 결정 로그: [decisions.ko.md (D-001..D-024)](docs/decisions.ko.md).
+누적 결정 로그: [decisions.ko.md (D-001..D-025)](docs/decisions.ko.md).
 문서 navigation: [docs/README.md](docs/README.md).
 
 ## 요구 사항
@@ -594,8 +595,8 @@ npm audit --audit-level=high
 - [Impact Context Layer 제품 계획](docs/impact-context-layer-plan.ko.md) — Claude/Codex MCP integration, local UI explorer, context budget, 정책/제안서 impact 계획
 - [agentmemory 적용성 분석](docs/agentmemory-adoption-review.ko.md) — `rohitg00/agentmemory`에서 가져올 retrieval/lifecycle 패턴과 거부할 platform surface 정리
 - [Phase 6 설계/진행 문서](docs/phase6-design.ko.md) — `main`에 반영된 adapter foundation 작업
-- [Phase 6B multi-language + Spring Boot 계획](docs/phase6b-ts-accuracy-plan.ko.md) — 현재 slice: adapter pack v0 routing, ImpactBench fixture, TS/JS parser-backed import span v0, JVM/Spring lightweight evidence span v0, Python/Go/Rust lightweight span v0, 다음 depth pass: workspace contract
-- [Architecture decisions log (D-001..D-024)](docs/decisions.ko.md) — 누적 ADR 로그
+- [Phase 6B multi-language + Spring Boot 계획](docs/phase6b-ts-accuracy-plan.ko.md) — 현재 slice: adapter pack v0 routing, ImpactBench fixture, TS/JS parser-backed import span v0, JVM/Spring lightweight evidence span v0, Python/Go/Rust lightweight span v0, OpenAPI contract impact baseline, 다음 depth pass: workspace resolver
+- [Architecture decisions log (D-001..D-025)](docs/decisions.ko.md) — 누적 ADR 로그
 - [Agent memory cookbook](docs/agent-memory-cookbook.ko.md)
 
 **Skill 패키징 (Phase 4):**
@@ -617,7 +618,7 @@ npm audit --audit-level=high
 2. running index와 completed index를 분리해 snapshot-safe analysis 보장
 3. `--base`, `--head` 기반 git diff 분석과 stale-index detection 추가
 4. Java/Kotlin/Spring Boot/Python/Go/Rust/TS/JS adapter v0 라우팅과 ImpactBench coverage 유지
-5. parser-backed/lightweight adapter depth pass와 source-span evidence 확대: TS/JS import spans, JVM/Spring lightweight spans, Python/Go/Rust lightweight spans landed, 다음은 workspace/contract depth
+5. parser-backed/lightweight adapter depth pass와 source-span evidence 확대: TS/JS import spans, JVM/Spring lightweight spans, Python/Go/Rust lightweight spans, OpenAPI contract baseline landed, 다음은 workspace/cross-repo resolver depth
 6. C#/.NET, C/C++ adapter와 Maven/Gradle/dotnet/CMake/Bazel build-system resolver 추가
 7. shell, YAML/JSON/TOML, CI, Docker, Kubernetes, Terraform, OpenAPI/protobuf/GraphQL/AsyncAPI, CODEOWNERS/policy adapter 추가
 8. workspace catalog와 cross-repo API/gRPC/event contract impact 분석 추가

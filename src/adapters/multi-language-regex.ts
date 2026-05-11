@@ -170,14 +170,23 @@ async function* extractEvents(
   filePathSet: ReadonlySet<string>,
   importResolver: ImportResolverWithDiagnostics
 ): AsyncIterable<IndexEvent> {
+  const contractFile = isContractLikeFile(file.relativePath, file.language);
   const fileDescriptor: EntityDescriptor = {
-    kind: 'file',
+    kind: contractFile ? 'contract' : 'file',
     path: file.relativePath,
     languageId: file.language,
-    displayName: file.relativePath
+    displayName: file.relativePath,
+    ...(contractFile ? { metadata: contractMetadataForFile(file) } : {})
   };
   const evidenceSnippet = file.content;
   const evidenceFile = file.relativePath;
+
+  if (contractFile) {
+    yield {
+      kind: 'entity',
+      entity: fileDescriptor
+    };
+  }
 
   for (const message of importResolver.diagnosticsForFile(file.relativePath)) {
     yield {
@@ -225,6 +234,10 @@ async function* extractEvents(
 
   if (isJvmLanguage(file.language)) {
     yield* extractSpringEvents(file, fileDescriptor);
+  }
+
+  if (contractFile) {
+    yield* extractContractEndpointEvents(file, fileDescriptor);
   }
 
   for (const imported of extractImports(file)) {
@@ -319,8 +332,11 @@ async function* extractEvents(
   }
 
   if (isSystemOrContractLanguage(file.language)) {
-    const relationKind = relationKindForSystemReference(file.language) as RelationKind;
-    for (const target of inferTextTargetsWithEvidence(file.relativePath, file.content, filePathSet)) {
+    const relationKind = (contractFile ? 'REFERENCES' : relationKindForSystemReference(file.language)) as RelationKind;
+    const textTargets = contractFile
+      ? inferExplicitTextTargetsWithEvidence(file.relativePath, file.content, filePathSet)
+      : inferTextTargetsWithEvidence(file.relativePath, file.content, filePathSet);
+    for (const target of textTargets) {
       yield {
         kind: 'relation',
         relation: makeRelation({
@@ -337,8 +353,380 @@ async function* extractEvents(
           endCol: target.evidence.endCol
         })
       };
+      if (contractFile) {
+        yield {
+          kind: 'relation',
+          relation: makeRelation({
+            source: { kind: 'file', path: target.path },
+            target: fileDescriptor,
+            kind: 'IMPLEMENTS',
+            confidence: 'heuristic',
+            provenance: 'contract mention',
+            evidenceFile,
+            evidenceSnippet: target.evidence.snippet,
+            startLine: target.evidence.startLine,
+            endLine: target.evidence.endLine,
+            startCol: target.evidence.startCol,
+            endCol: target.evidence.endCol
+          })
+        };
+      }
     }
   }
+}
+
+async function* extractContractEndpointEvents(
+  file: ScannedFile,
+  fileDescriptor: EntityDescriptor
+): AsyncIterable<IndexEvent> {
+  const endpoints =
+    file.language === 'protobuf'
+      ? extractProtobufEndpoints(file)
+      : file.language === 'graphql'
+        ? extractGraphqlEndpoints(file)
+        : extractOpenApiEndpoints(file);
+
+  for (const endpoint of endpoints) {
+    const endpointDescriptor: EntityDescriptor = {
+      kind: 'endpoint',
+      languageId: file.language,
+      displayName: endpoint.displayName,
+      metadata: endpoint.metadata
+    };
+    yield {
+      kind: 'entity',
+      entity: endpointDescriptor
+    };
+    yield {
+      kind: 'relation',
+      relation: makeRelation({
+        source: fileDescriptor,
+        target: endpointDescriptor,
+        kind: 'DECLARES',
+        confidence: 'inferred',
+        provenance: 'contract operation',
+        evidenceFile: file.relativePath,
+        evidenceSnippet: endpoint.evidence.snippet,
+        startLine: endpoint.evidence.startLine,
+        endLine: endpoint.evidence.endLine,
+        startCol: endpoint.evidence.startCol,
+        endCol: endpoint.evidence.endCol
+      })
+    };
+  }
+}
+
+type ContractEndpoint = {
+  displayName: string;
+  metadata: Readonly<Record<string, unknown>>;
+  evidence: EvidenceSpan;
+};
+
+const openApiMethods = new Set(['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace']);
+
+function extractOpenApiEndpoints(file: ScannedFile): ContractEndpoint[] {
+  if (file.language === 'json') return extractOpenApiJsonEndpoints(file);
+  return extractOpenApiYamlEndpoints(file);
+}
+
+function contractMetadataForFile(file: ScannedFile): Readonly<Record<string, unknown>> {
+  if (file.language === 'protobuf') return { contractKind: 'protobuf' };
+  if (file.language === 'graphql') return { contractKind: 'graphql' };
+  if (file.language === 'json') return openApiJsonMetadata(file.content, contractKindForPath(file.relativePath));
+  return openApiYamlMetadata(file.content, contractKindForPath(file.relativePath));
+}
+
+function contractKindForPath(relativePath: string): string {
+  const basename = path.posix.basename(relativePath);
+  const withoutExtension = basename.replace(/\.[^.]+$/, '').toLowerCase();
+  if (withoutExtension.includes('asyncapi')) return 'asyncapi';
+  return 'openapi';
+}
+
+function openApiJsonMetadata(
+  content: string,
+  contractKind: string
+): Readonly<Record<string, unknown>> {
+  const metadata: Record<string, unknown> = { contractKind };
+  try {
+    const parsed = JSON.parse(content) as {
+      openapi?: unknown;
+      swagger?: unknown;
+      asyncapi?: unknown;
+      info?: { version?: unknown; title?: unknown; 'x-service-name'?: unknown };
+      'x-service-name'?: unknown;
+    };
+    const schemaVersion = contractKind === 'asyncapi' ? parsed.asyncapi : parsed.openapi ?? parsed.swagger;
+    if (typeof schemaVersion === 'string') metadata.schemaVersion = schemaVersion;
+    const serviceName = parsed['x-service-name'] ?? parsed.info?.['x-service-name'] ?? parsed.info?.title;
+    if (typeof serviceName === 'string' && serviceName.length > 0) metadata.serviceName = serviceName;
+  } catch {
+    // Path-obvious contracts still get a baseline row even if the JSON is invalid.
+  }
+  return metadata;
+}
+
+function openApiYamlMetadata(
+  content: string,
+  contractKind: string
+): Readonly<Record<string, unknown>> {
+  const metadata: Record<string, unknown> = { contractKind };
+  const schemaKey = contractKind === 'asyncapi' ? 'asyncapi' : '(?:openapi|swagger)';
+  const schemaMatch = new RegExp(`^\\s*${schemaKey}\\s*:\\s*['"]?([^'"\\s#]+)`, 'im').exec(content);
+  if (schemaMatch?.[1]) metadata.schemaVersion = schemaMatch[1];
+  const serviceMatch = /^\s*x-service-name\s*:\s*['"]?([^'"\n#]+)/im.exec(content);
+  if (serviceMatch?.[1]) metadata.serviceName = serviceMatch[1].trim();
+  return metadata;
+}
+
+function extractOpenApiJsonEndpoints(file: ScannedFile): ContractEndpoint[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(file.content);
+  } catch {
+    return [];
+  }
+  if (!parsed || typeof parsed !== 'object') return [];
+  const paths = (parsed as { paths?: unknown }).paths;
+  if (!paths || typeof paths !== 'object') return [];
+  const endpoints: ContractEndpoint[] = [];
+  for (const [apiPath, pathItem] of Object.entries(paths as Record<string, unknown>)) {
+    if (!apiPath.startsWith('/') || !pathItem || typeof pathItem !== 'object') continue;
+    for (const method of Object.keys(pathItem as Record<string, unknown>)) {
+      const normalizedMethod = method.toLowerCase();
+      if (!openApiMethods.has(normalizedMethod)) continue;
+      endpoints.push({
+        displayName: `${normalizedMethod.toUpperCase()} ${apiPath}`,
+        metadata: { path: apiPath, method: normalizedMethod.toUpperCase() },
+        evidence: jsonOpenApiMethodEvidence(file.content, apiPath, normalizedMethod)
+      });
+    }
+  }
+  return endpoints;
+}
+
+function jsonOpenApiMethodEvidence(
+  content: string,
+  apiPath: string,
+  normalizedMethod: string
+): EvidenceSpan {
+  const methodIndex = findOpenApiJsonMethodKeyIndex(content, apiPath, normalizedMethod);
+  return evidenceLineAt(content, methodIndex ?? 0);
+}
+
+function findOpenApiJsonMethodKeyIndex(
+  content: string,
+  apiPath: string,
+  normalizedMethod: string
+): number | undefined {
+  const rootStart = content.indexOf('{');
+  if (rootStart < 0) return undefined;
+  const rootEnd = findMatchingJsonObjectEnd(content, rootStart);
+  if (rootEnd === undefined) return undefined;
+  const pathsProperty = findJsonPropertyInObject(content, rootStart, rootEnd, 'paths');
+  if (!pathsProperty) return undefined;
+  const pathsObjectStart = findNextNonWhitespaceIndex(content, pathsProperty.colonIndex + 1);
+  if (content[pathsObjectStart] !== '{') return undefined;
+  const pathsObjectEnd = findMatchingJsonObjectEnd(content, pathsObjectStart);
+  if (pathsObjectEnd === undefined) return undefined;
+  const pathProperty = findJsonPropertyInObject(content, pathsObjectStart, pathsObjectEnd, apiPath);
+  if (!pathProperty) return undefined;
+  const pathItemStart = findNextNonWhitespaceIndex(content, pathProperty.colonIndex + 1);
+  if (content[pathItemStart] !== '{') return undefined;
+  const pathItemEnd = findMatchingJsonObjectEnd(content, pathItemStart);
+  if (pathItemEnd === undefined) return undefined;
+  return findJsonPropertyInObject(content, pathItemStart, pathItemEnd, normalizedMethod)?.keyStart;
+}
+
+type JsonPropertyLocation = {
+  keyStart: number;
+  keyEnd: number;
+  colonIndex: number;
+};
+
+function findJsonPropertyInObject(
+  content: string,
+  objectStart: number,
+  objectEnd: number,
+  propertyName: string
+): JsonPropertyLocation | undefined {
+  let depth = 0;
+  for (let index = objectStart; index <= objectEnd; index++) {
+    const char = content[index];
+    if (char === '"') {
+      const keyEnd = findJsonStringEnd(content, index);
+      if (keyEnd === undefined) return undefined;
+      const colonIndex = findNextNonWhitespaceIndex(content, keyEnd + 1);
+      if (depth === 1 && colonIndex <= objectEnd && content[colonIndex] === ':') {
+        const decoded = decodeJsonStringLiteral(content.slice(index, keyEnd + 1));
+        if (decoded === propertyName) {
+          return { keyStart: index, keyEnd, colonIndex };
+        }
+      }
+      index = keyEnd;
+      continue;
+    }
+    if (char === '{' || char === '[') {
+      depth++;
+    } else if (char === '}' || char === ']') {
+      depth--;
+    }
+  }
+  return undefined;
+}
+
+function findMatchingJsonObjectEnd(content: string, objectStart: number): number | undefined {
+  let depth = 0;
+  for (let index = objectStart; index < content.length; index++) {
+    const char = content[index];
+    if (char === '"') {
+      const stringEnd = findJsonStringEnd(content, index);
+      if (stringEnd === undefined) return undefined;
+      index = stringEnd;
+      continue;
+    }
+    if (char === '{') {
+      depth++;
+    } else if (char === '}') {
+      depth--;
+      if (depth === 0) return index;
+    }
+  }
+  return undefined;
+}
+
+function findJsonStringEnd(content: string, stringStart: number): number | undefined {
+  let escaped = false;
+  for (let index = stringStart + 1; index < content.length; index++) {
+    const char = content[index];
+    if (escaped) {
+      escaped = false;
+    } else if (char === '\\') {
+      escaped = true;
+    } else if (char === '"') {
+      return index;
+    }
+  }
+  return undefined;
+}
+
+function decodeJsonStringLiteral(literal: string): string | undefined {
+  try {
+    const decoded = JSON.parse(literal) as unknown;
+    return typeof decoded === 'string' ? decoded : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function findNextNonWhitespaceIndex(content: string, start: number): number {
+  for (let index = start; index < content.length; index++) {
+    if (!/\s/.test(content[index]!)) return index;
+  }
+  return content.length;
+}
+
+function extractOpenApiYamlEndpoints(file: ScannedFile): ContractEndpoint[] {
+  const endpoints: ContractEndpoint[] = [];
+  const lines = file.content.split(/\r?\n/);
+  let inPaths = false;
+  let currentPath: { value: string; indent: number } | undefined;
+  let offset = 0;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    const indent = line.length - line.trimStart().length;
+    if (/^paths\s*:\s*$/.test(trimmed)) {
+      inPaths = true;
+      currentPath = undefined;
+      offset += line.length + 1;
+      continue;
+    }
+    if (inPaths && indent === 0 && trimmed.length > 0 && !trimmed.startsWith('#') && !trimmed.startsWith('/')) {
+      inPaths = false;
+      currentPath = undefined;
+    }
+    if (!inPaths) {
+      offset += line.length + 1;
+      continue;
+    }
+    const pathMatch = /^(['"]?)(\/[^'":]+)\1\s*:\s*(?:#.*)?$/.exec(trimmed);
+    if (pathMatch) {
+      currentPath = { value: pathMatch[2]!, indent };
+      offset += line.length + 1;
+      continue;
+    }
+    const methodMatch = /^([A-Za-z]+)\s*:\s*(?:#.*)?$/.exec(trimmed);
+    if (
+      currentPath &&
+      methodMatch &&
+      indent > currentPath.indent &&
+      openApiMethods.has(methodMatch[1]!.toLowerCase())
+    ) {
+      const method = methodMatch[1]!.toUpperCase();
+      endpoints.push({
+        displayName: `${method} ${currentPath.value}`,
+        metadata: { path: currentPath.value, method },
+        evidence: evidenceLineAt(file.content, offset)
+      });
+    }
+    offset += line.length + 1;
+  }
+  return endpoints;
+}
+
+function extractProtobufEndpoints(file: ScannedFile): ContractEndpoint[] {
+  const endpoints: ContractEndpoint[] = [];
+  let serviceName: string | undefined;
+  const pattern = /\bservice\s+([A-Za-z_]\w*)|\brpc\s+([A-Za-z_]\w*)\s*\(/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(file.content))) {
+    if (match[1]) {
+      serviceName = match[1];
+      continue;
+    }
+    const rpcName = match[2]!;
+    endpoints.push({
+      displayName: serviceName ? `${serviceName}.${rpcName}` : rpcName,
+      metadata: { rpc: rpcName, ...(serviceName ? { service: serviceName } : {}) },
+      evidence: evidenceLineAt(file.content, match.index)
+    });
+  }
+  return endpoints;
+}
+
+function extractGraphqlEndpoints(file: ScannedFile): ContractEndpoint[] {
+  if (file.content.length > 64_000) return [];
+  const endpoints: ContractEndpoint[] = [];
+  const lines = file.content.split(/\r?\n/);
+  let currentType: 'Query' | 'Mutation' | undefined;
+  let depth = 0;
+  let offset = 0;
+
+  for (const line of lines) {
+    const typeMatch = /^\s*(?:type|extend\s+type)\s+(Query|Mutation)\s*\{/.exec(line);
+    if (typeMatch) {
+      currentType = typeMatch[1] as 'Query' | 'Mutation';
+      depth = 1;
+      offset += line.length + 1;
+      continue;
+    }
+    if (currentType && depth > 0) {
+      const fieldMatch = /^\s*([A-Za-z_]\w*)\s*(?:\([^)]*\))?\s*:/.exec(line);
+      if (fieldMatch) {
+        endpoints.push({
+          displayName: `${currentType}.${fieldMatch[1]!}`,
+          metadata: { type: currentType, field: fieldMatch[1]! },
+          evidence: evidenceLineAt(file.content, offset)
+        });
+      }
+      depth += (line.match(/\{/g) ?? []).length;
+      depth -= (line.match(/\}/g) ?? []).length;
+      if (depth <= 0) currentType = undefined;
+    }
+    offset += line.length + 1;
+  }
+  return endpoints;
 }
 
 function makeRelation(input: {
@@ -1534,6 +1922,25 @@ function inferTextTargetsWithEvidence(
   }));
 }
 
+function inferExplicitTextTargetsWithEvidence(
+  relativePath: string,
+  content: string,
+  filePathSet: ReadonlySet<string>
+): Array<{ path: string; evidence: EvidenceSpan }> {
+  const targets: string[] = [];
+  const normalizedContent = content.toLowerCase();
+  for (const file of filePathSet) {
+    if (file === relativePath) continue;
+    if (normalizedContent.includes(file.toLowerCase())) {
+      targets.push(file);
+    }
+  }
+  return targets.sort().map((targetPath) => ({
+    path: targetPath,
+    evidence: textTargetEvidence(content, targetPath)
+  }));
+}
+
 function textTargetEvidence(content: string, targetPath: string): EvidenceSpan {
   const normalizedContent = content.toLowerCase();
   const pathIndex = normalizedContent.indexOf(targetPath.toLowerCase());
@@ -1574,6 +1981,18 @@ export function isSystemOrContractLanguage(languageId: string): boolean {
     'properties',
     'policy'
   ].includes(languageId);
+}
+
+function isContractLikeFile(relativePath: string, languageId: string): boolean {
+  if (languageId === 'protobuf' || languageId === 'graphql') return true;
+  if (languageId !== 'yaml' && languageId !== 'json') return false;
+  const basename = path.posix.basename(relativePath);
+  const withoutExtension = basename.replace(/\.[^.]+$/, '').toLowerCase();
+  return (
+    withoutExtension.includes('openapi') ||
+    withoutExtension.includes('swagger') ||
+    withoutExtension.includes('asyncapi')
+  );
 }
 
 function relationKindForSystemReference(languageId: string): string {

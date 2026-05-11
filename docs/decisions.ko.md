@@ -34,6 +34,7 @@
 | [D-022](#d-022-tsjs-import-spans-use-typescript-parser-without-project-resolution) | TS/JS import spans use TypeScript parser without project resolution | P1 | 2026-05-11 |
 | [D-023](#d-023-jvmspring-spans-stay-lightweight-before-build-system-resolution) | JVM/Spring spans stay lightweight before build-system resolution | P1 | 2026-05-11 |
 | [D-024](#d-024-pythongorust-spans-use-declaration-lines-before-full-resolvers) | Python/Go/Rust spans use declaration lines before full resolvers | P1 | 2026-05-11 |
+| [D-025](#d-025-contract-files-reverse-link-to-implementers-before-cross-repo-resolution) | contract files reverse-link to implementers before cross-repo resolution | P0/P1 | 2026-05-11 |
 
 ---
 
@@ -447,6 +448,24 @@
 **결과/위험:** ImpactBench expected relation은 43개로 늘고 `spanCompleteness` gate는 0.9로 올라간다. 현재 fixture는 `spanCompleteness 0.9535`다. v0는 declaration-line 기반이라 decorator/attribute 일부와 simple test declaration에는 강하지만, Python dynamic imports, Go build tags, Rust cfg feature/module tree resolution은 후속 workspace/contract resolver로 남긴다.
 
 **관련 commit:** `feat(adapters): add python go rust evidence spans`
+
+---
+
+## D-025: contract files reverse-link to implementers before cross-repo resolution
+
+**결정:** OpenAPI/Swagger/AsyncAPI YAML/JSON, protobuf, GraphQL contract 파일은 first-class `contract` entity로 저장한다. 기존 `contracts`/`contract_versions` 테이블을 사용하고 schema migration은 추가하지 않는다. contract 파일이 repo-local code path를 명시적으로 언급하면 contract → code `REFERENCES`와 code → contract `IMPLEMENTS`를 함께 저장한다.
+
+**맥락:** `analyzeDiff()`는 변경된 entity의 inbound relation을 역방향으로 따라간다. 따라서 contract 파일이 source이고 구현 코드가 target인 relation만 있으면 "contract 변경이 어떤 구현 코드를 건드리는가"를 바로 보여줄 수 없다. v0는 cross-repo resolver를 기다리지 않고 단일 repo 안에서 명시적 path mention을 구현자 링크로 뒤집어 저장한다.
+
+**대안:**
+- analyzer를 양방향 traversal로 바꿈 — 영향 범위가 급격히 넓어지고 기존 report semantics가 흔들린다.
+- contract → code relation만 유지 — code 변경 시 contract 문서 영향은 보이지만, contract 변경 시 구현 코드 영향이 누락된다.
+- YAML/JSON stem matching 유지 — `User API` 같은 일반 단어가 `User.java`로 연결되는 false positive가 생긴다.
+- OpenAPI parser/library 도입 — 정확도는 높지만 v0의 local deterministic adapter blast radius보다 크다.
+
+**결과/위험:** OpenAPI contract는 endpoint `DECLARES`와 구현자 `IMPLEMENTS` relation을 bounded line/col evidence로 갖는다. `contracts` row는 `kind=openapi`, `service_name`, metadata를 저장하고 `contract_versions.schema_version`은 OpenAPI schema version을 기록한다. ImpactBench expected relation은 46개로 늘고 `spanCompleteness`는 0.9565다. v0는 명시적 repo path mention만 구현자로 인정하므로 자동 route-method matching, package/service discovery, cross-repo consumer mapping은 workspace resolver 후속으로 남긴다.
+
+**관련 commit:** `feat(contracts): add OpenAPI impact baseline`
 
 ---
 

@@ -319,6 +319,330 @@ test('indexProject writes canonical entity graph and broad language file entitie
   }
 });
 
+test('indexProject persists OpenAPI contracts and analyzeDiff reaches implementing code', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-contract-'));
+  await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
+  await mkdir(path.join(repoRoot, 'src/main/java/com/example'), { recursive: true });
+  await writeFile(
+    path.join(repoRoot, 'contracts/openapi.yaml'),
+    [
+      'openapi: 3.0.3',
+      'info:',
+      '  title: User API',
+      '  version: 1.2.3',
+      '  x-service-name: user-service',
+      'paths:',
+      '  /api/users:',
+      '    get:',
+      '      operationId: listUsers',
+      '      x-implementation: src/main/java/com/example/UserController.java',
+      '      responses:',
+      '        "200":',
+      '          description: ok',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(repoRoot, 'contracts/swagger.yaml'),
+    [
+      'swagger: "2.0"',
+      'info:',
+      '  title: Legacy User API',
+      '  version: 1.0.0',
+      '  x-service-name: legacy-user-service',
+      'paths: {}',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(repoRoot, 'contracts/openapi.json'),
+    [
+      '{',
+      '  "openapi": "3.0.3",',
+      '  "info": {',
+      '    "title": "JSON User API",',
+      '    "description": "/api/audits appears before the paths object",',
+      '    "version": "1.0.0",',
+      '    "x-service-name": "json-user-service"',
+      '  },',
+      '  "paths": {',
+      '    "/api/users": {',
+      '      "get": {',
+      '        "operationId": "listUsers"',
+      '      }',
+      '    },',
+      '    "/api/audits": {',
+      '      "get": {',
+      '        "operationId": "listAudits"',
+      '      }',
+      '    }',
+      '  }',
+      '}',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(repoRoot, 'src/main/java/com/example/UserController.java'),
+    [
+      'package com.example;',
+      '',
+      'public class UserController {',
+      '  public String listUsers() {',
+      '    return "ok";',
+      '  }',
+      '}',
+      ''
+    ].join('\n')
+  );
+  await initProject({ repoRoot });
+
+  const index = await indexProject({ repoRoot });
+  const report = await analyzeDiff({ repoRoot, changedFiles: ['contracts/openapi.yaml'] });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const contractEntity = db
+      .prepare(
+        `SELECT id, kind
+         FROM entities
+         WHERE id = ?
+           AND updated_index_run_id = ?`
+      )
+      .get('file:contracts/openapi.yaml', index.indexRunId) as
+      | { id: string; kind: string }
+      | undefined;
+    assert.equal(contractEntity?.kind, 'contract');
+
+    const contract = db
+      .prepare(
+        `SELECT id, repo_id, kind, service_name, path, display_name, metadata_json
+         FROM contracts
+         WHERE id = ?`
+      )
+      .get('file:contracts/openapi.yaml') as
+      | {
+          id: string;
+          repo_id: number;
+          kind: string;
+          service_name: string | null;
+          path: string;
+          display_name: string;
+          metadata_json: string;
+        }
+      | undefined;
+    assert.ok(contract, 'expected contract baseline row');
+    assert.equal(contract.repo_id, 1);
+    assert.equal(contract.kind, 'openapi');
+    assert.equal(contract.service_name, 'user-service');
+    assert.equal(contract.path, 'contracts/openapi.yaml');
+    assert.equal(contract.display_name, 'contracts/openapi.yaml');
+    assert.deepEqual(JSON.parse(contract.metadata_json), {
+      contractKind: 'openapi',
+      schemaVersion: '3.0.3',
+      serviceName: 'user-service'
+    });
+
+    const contractVersion = db
+      .prepare(
+        `SELECT contract_id, index_run_id, content_hash, schema_version, compatibility_json, breaking_change_summary
+         FROM contract_versions
+         WHERE id = ?`
+      )
+      .get(`file:contracts/openapi.yaml:${index.indexRunId}`) as
+      | {
+          contract_id: string;
+          index_run_id: number;
+          content_hash: string;
+          schema_version: string | null;
+          compatibility_json: string;
+          breaking_change_summary: string | null;
+        }
+      | undefined;
+    assert.ok(contractVersion, 'expected contract version row');
+    assert.equal(contractVersion.contract_id, 'file:contracts/openapi.yaml');
+    assert.equal(contractVersion.index_run_id, index.indexRunId);
+    assert.equal(contractVersion.schema_version, '3.0.3');
+    assert.equal(contractVersion.compatibility_json, '{}');
+    assert.equal(contractVersion.breaking_change_summary, null);
+    assert.ok(contractVersion.content_hash.length > 0);
+    const contractFile = db
+      .prepare('SELECT content_hash FROM files WHERE path = ?')
+      .get('contracts/openapi.yaml') as { content_hash: string } | undefined;
+    assert.equal(contractVersion.content_hash, contractFile?.content_hash);
+
+    const swaggerContract = db
+      .prepare(
+        `SELECT c.kind, c.service_name, v.schema_version
+         FROM contracts c
+         INNER JOIN contract_versions v ON v.contract_id = c.id
+         WHERE c.id = ?`
+      )
+      .get('file:contracts/swagger.yaml') as
+      | {
+          kind: string;
+          service_name: string | null;
+          schema_version: string | null;
+        }
+      | undefined;
+    assert.ok(swaggerContract, 'expected Swagger contract baseline row');
+    assert.equal(swaggerContract.kind, 'openapi');
+    assert.equal(swaggerContract.service_name, 'legacy-user-service');
+    assert.equal(swaggerContract.schema_version, '2.0');
+
+    const jsonEndpointEvidence = db
+      .prepare(
+        `SELECT e.display_name, ev.start_line
+         FROM relations r
+         INNER JOIN entities e ON e.id = r.target_entity_id
+         INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+         WHERE r.index_run_id = ?
+           AND r.kind = ?
+           AND r.source_entity_id = ?
+           AND e.kind = ?
+         ORDER BY e.display_name`
+      )
+      .all(index.indexRunId, 'DECLARES', 'file:contracts/openapi.json', 'endpoint') as Array<{
+      display_name: string;
+      start_line: number | null;
+    }>;
+    assert.deepEqual(
+      jsonEndpointEvidence.map((row) => row.display_name),
+      ['GET /api/audits', 'GET /api/users']
+    );
+    assert.notEqual(jsonEndpointEvidence[0]!.start_line, jsonEndpointEvidence[1]!.start_line);
+
+    const declares = db
+      .prepare(
+        `SELECT ev.start_line, ev.end_line, ev.start_col, ev.end_col
+         FROM relations r
+         INNER JOIN entities e ON e.id = r.target_entity_id
+         INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+         WHERE r.index_run_id = ?
+           AND r.kind = ?
+           AND r.source_entity_id = ?
+           AND e.kind = ?
+           AND e.display_name = ?`
+      )
+      .get(
+        index.indexRunId,
+        'DECLARES',
+        'file:contracts/openapi.yaml',
+        'endpoint',
+        'GET /api/users'
+      ) as
+      | {
+          start_line: number | null;
+          end_line: number | null;
+          start_col: number | null;
+          end_col: number | null;
+        }
+      | undefined;
+    assert.ok(declares, 'expected OpenAPI endpoint DECLARES relation');
+    assert.equal(declares.start_line, 8);
+    assert.equal(declares.end_line, 8);
+    assert.ok((declares.start_col ?? 0) > 0);
+    assert.ok((declares.end_col ?? 0) >= (declares.start_col ?? 0));
+
+    const implementsRelation = db
+      .prepare(
+        `SELECT ev.start_line, ev.end_line, ev.start_col, ev.end_col
+         FROM relations r
+         INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+         WHERE r.index_run_id = ?
+           AND r.kind = ?
+           AND r.source_entity_id = ?
+           AND r.target_entity_id = ?`
+      )
+      .get(
+        index.indexRunId,
+        'IMPLEMENTS',
+        'file:src/main/java/com/example/UserController.java',
+        'file:contracts/openapi.yaml'
+      ) as
+      | {
+          start_line: number | null;
+          end_line: number | null;
+          start_col: number | null;
+          end_col: number | null;
+        }
+      | undefined;
+    assert.ok(implementsRelation, 'expected implementing code to reverse-link to contract');
+    assert.equal(implementsRelation.start_line, 10);
+    assert.equal(implementsRelation.end_line, 10);
+    assert.ok((implementsRelation.start_col ?? 0) > 0);
+    assert.ok((implementsRelation.end_col ?? 0) >= (implementsRelation.start_col ?? 0));
+  } finally {
+    db.close();
+  }
+
+  assert.ok(
+    report.affectedFiles.some((file) => file.path === 'src/main/java/com/example/UserController.java')
+  );
+});
+
+test('indexProject does not persist contract baseline rows for relation-only placeholders', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-contract-placeholder-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/ref.ts'), 'export const ref = 1;\n');
+  await initProject({ repoRoot });
+
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'contract-placeholder-test-adapter',
+    version: '1',
+    capabilities: ['references'],
+    supports: (file: ScannedFile) => file.relativePath === 'src/ref.ts',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+      async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
+        yield {
+          kind: 'relation',
+          relation: {
+            source: { kind: 'file', path: file.relativePath, languageId: file.language },
+            target: {
+              kind: 'contract',
+              path: 'contracts/missing-openapi.yaml',
+              languageId: 'yaml',
+              displayName: 'missing-openapi'
+            },
+            kind: 'REFERENCES',
+            metadata: {
+              confidence: 'heuristic',
+              provenance: 'placeholder contract'
+            },
+            evidence: [
+              {
+                file: file.relativePath,
+                snippet: file.content,
+                confidence: 'heuristic'
+              }
+            ]
+          }
+        };
+      }
+    })
+  } satisfies SemanticAdapter);
+
+  await indexProjectWithRegistryForTest({ repoRoot }, registry);
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const placeholderEntity = db
+      .prepare('SELECT id, kind FROM entities WHERE id = ?')
+      .get('file:contracts/missing-openapi.yaml') as { id: string; kind: string } | undefined;
+    assert.equal(placeholderEntity?.kind, 'contract');
+    const contractRow = db
+      .prepare('SELECT id FROM contracts WHERE id = ?')
+      .get('file:contracts/missing-openapi.yaml') as { id: string } | undefined;
+    assert.equal(contractRow, undefined);
+    const versionRow = db
+      .prepare('SELECT id FROM contract_versions WHERE contract_id = ?')
+      .get('file:contracts/missing-openapi.yaml') as { id: string } | undefined;
+    assert.equal(versionRow, undefined);
+  } finally {
+    db.close();
+  }
+});
+
 test('indexProject persists adapter symbol entities without displayName using a fallback', async () => {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-symbol-display-fallback-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });

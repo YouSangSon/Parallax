@@ -14,6 +14,7 @@ For day-by-day developer log see [docs/progress.ko.md](docs/progress.ko.md). For
 - **Context budget goal** — the plan makes AI context reduction a first-class requirement: compact context packs, resource-on-demand evidence, ranking/dedupe, and `brief`/`standard`/`deep` MCP budgets.
 - **Phase 6B retargeted** — the next product slice is now Multi-language + Spring Boot Adapter Pack v0 + Trusted Evidence, covering Java, Kotlin, Spring Boot, Python, Go, Rust, TypeScript, and JavaScript rather than a TypeScript-only lane.
 - **ImpactBench thin spine** — `npm run bench` now builds a deterministic multi-language/Spring Boot fixture, scores relation recall/precision, affected-file recall, evidence presence, span completeness, adapter attribution, and context-pack readiness, then writes `.impact-trace/bench/impact-bench-report.json`.
+- **OpenAPI contract impact baseline** — path-obvious OpenAPI/Swagger/AsyncAPI YAML/JSON files are indexed as contracts, persisted to contract baseline/version tables, and reverse-linked from implementing code when the contract explicitly names repo-local source paths.
 - **MCP context pack v0** — `impact_trace_context_for_change` returns budgeted `brief`/`standard`/`deep` context packs with top impact paths, compact evidence, actions, omitted counts, and entity/coverage resource links without persisting a full report.
 - **Docs root cleanup** — root `docs/` keeps the current high-signal docs for planning, onboarding, and implementation.
 

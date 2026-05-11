@@ -107,6 +107,8 @@ interface PreparedStatements {
   updateEntityFreshness: Statement;
   insertEntityVersion: Statement;
   insertEntityVersionIfMissing: Statement;
+  upsertContract: Statement;
+  insertContractVersion: Statement;
   insertCoverage: Statement;
   insertRelation: Statement;
   insertRelationEvidence: Statement;
@@ -731,11 +733,12 @@ async function indexProjectInternal(
       const row = stmts.selectFile.get(repoId, file.relativePath) as { id: number };
       persistCtx.fileIdByPath.set(file.relativePath, row.id);
       const fileEntId = fileEntityId(file.relativePath);
+      const kind = fileKind(file.relativePath, file.language);
       currentStateSnapshot.captureEntity(fileEntId);
       stmts.upsertEntity.run(
         fileEntId,
         repoId,
-        fileKind(file.relativePath, file.language),
+        kind,
         file.relativePath,
         null,
         file.language,
@@ -749,6 +752,18 @@ async function indexProjectInternal(
         file.hash,
         JSON.stringify({ path: file.relativePath }),
         'active'
+      );
+      persistContractDescriptor(
+        {
+          id: fileEntId,
+          kind,
+          path: file.relativePath,
+          languageId: file.language,
+          displayName: file.relativePath,
+          metadata: contractFileMetadata(file.relativePath, file.language),
+          contentHash: file.hash
+        },
+        persistCtx
       );
       stmts.insertCoverage.run(
         indexRunId,
@@ -1115,6 +1130,24 @@ function prepareStatements(db: Db): PreparedStatements {
       INSERT OR IGNORE INTO entity_versions (entity_id, index_run_id, content_hash, location_json, state)
       VALUES (?, ?, ?, ?, ?)
     `),
+    upsertContract: db.prepare(`
+      INSERT INTO contracts (id, repo_id, kind, service_name, path, display_name, metadata_json, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      ON CONFLICT(id) DO UPDATE SET
+        repo_id = excluded.repo_id,
+        kind = excluded.kind,
+        service_name = excluded.service_name,
+        path = excluded.path,
+        display_name = excluded.display_name,
+        metadata_json = excluded.metadata_json
+    `),
+    insertContractVersion: db.prepare(`
+      INSERT OR REPLACE INTO contract_versions (
+        id, contract_id, index_run_id, content_hash, schema_version, compatibility_json,
+        breaking_change_summary, created_at
+      )
+      VALUES (?, ?, ?, ?, ?, '{}', NULL, datetime('now'))
+    `),
     insertCoverage: db.prepare(`
       INSERT OR REPLACE INTO index_coverage (index_run_id, adapter_id, path, language_id, status, reason)
       VALUES (?, ?, ?, ?, ?, ?)
@@ -1268,7 +1301,97 @@ function persistEntityDescriptor(
     ctx.stmts.upsertEntity.run(...entityValues);
     ctx.stmts.insertEntityVersion.run(...versionValues);
   }
+  if (mode === 'explicit') {
+    persistContractDescriptor(
+      {
+        id: entityId,
+        kind: entity.kind,
+        path: entity.path,
+        languageId: entity.languageId,
+        displayName,
+        metadata: metadata ?? {},
+        contentHash: contentHashValue
+      },
+      ctx
+    );
+  }
   return entityId;
+}
+
+function persistContractDescriptor(
+  contract: {
+    id: string;
+    kind: EntityKind;
+    path: string | undefined;
+    languageId: string | undefined;
+    displayName: string;
+    metadata: Readonly<Record<string, unknown>>;
+    contentHash: string;
+  },
+  ctx: Pick<PersistContext, 'stmts' | 'repoId' | 'indexRunId' | 'fileContentHashByPath'>
+): void {
+  if (contract.kind !== 'contract' || !contract.path) return;
+  const serviceName = stringMetadata(contract.metadata, 'serviceName', 'service_name');
+  const schemaVersion = stringMetadata(contract.metadata, 'schemaVersion', 'schema_version');
+  const contractKind =
+    stringMetadata(contract.metadata, 'contractKind', 'contract_kind') ??
+    contract.languageId ??
+    contract.kind;
+  const contractContentHash = ctx.fileContentHashByPath.get(contract.path) ?? contract.contentHash;
+  ctx.stmts.upsertContract.run(
+    contract.id,
+    ctx.repoId,
+    contractKind,
+    serviceName ?? null,
+    contract.path,
+    contract.displayName,
+    stableJson(contract.metadata)
+  );
+  ctx.stmts.insertContractVersion.run(
+    `${contract.id}:${ctx.indexRunId}`,
+    contract.id,
+    ctx.indexRunId,
+    contractContentHash,
+    schemaVersion ?? null
+  );
+}
+
+function stringMetadata(
+  metadata: Readonly<Record<string, unknown>>,
+  ...keys: string[]
+): string | undefined {
+  for (const key of keys) {
+    const value = metadata[key];
+    if (typeof value === 'string' && value.length > 0) return value;
+  }
+  return undefined;
+}
+
+function contractFileMetadata(
+  relativePath: string,
+  languageId: string
+): Readonly<Record<string, unknown>> {
+  const metadata: Record<string, unknown> = { path: relativePath };
+  if (languageId === 'protobuf') {
+    metadata.contractKind = 'protobuf';
+  } else if (languageId === 'graphql') {
+    metadata.contractKind = 'graphql';
+  } else if (languageId === 'yaml' || languageId === 'json') {
+    const contractKind = contractKindForPath(relativePath);
+    if (contractKind) {
+      metadata.contractKind = contractKind;
+    }
+  }
+  return metadata;
+}
+
+function contractKindForPath(relativePath: string): string | undefined {
+  const basename = path.posix.basename(relativePath);
+  const withoutExtension = basename.replace(/\.[^.]+$/, '').toLowerCase();
+  if (withoutExtension.includes('asyncapi')) return 'asyncapi';
+  if (withoutExtension.includes('swagger')) return 'openapi';
+  if (withoutExtension.includes('openapi')) return 'openapi';
+  return undefined;
 }
 
 function entityVersionContentHash(
@@ -1616,6 +1739,7 @@ function fileKind(relativePath: string, languageId: string): EntityKind {
   if (languageId === 'markdown') return entityKindForMarkdownPath(relativePath);
   if (languageId === 'policy') return 'policy';
   if (languageId === 'yaml' && relativePath.startsWith('.github/workflows/')) return 'workflow';
+  if ((languageId === 'yaml' || languageId === 'json') && isPathObviousContract(relativePath)) return 'contract';
   if (languageId === 'dockerfile' || languageId === 'terraform') return 'resource';
   if (
     languageId === 'yaml' ||
@@ -1629,6 +1753,16 @@ function fileKind(relativePath: string, languageId: string): EntityKind {
   }
   if (languageId === 'protobuf' || languageId === 'graphql') return 'contract';
   return 'file';
+}
+
+function isPathObviousContract(relativePath: string): boolean {
+  const basename = path.posix.basename(relativePath);
+  const withoutExtension = basename.replace(/\.[^.]+$/, '').toLowerCase();
+  return (
+    withoutExtension.includes('openapi') ||
+    withoutExtension.includes('swagger') ||
+    withoutExtension.includes('asyncapi')
+  );
 }
 
 function languageForPath(relativePath: string): string | undefined {

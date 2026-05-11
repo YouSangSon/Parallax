@@ -792,10 +792,21 @@ function entityKindForPath(relativePath: string, languageId: string | undefined)
   if (languageId === 'markdown') return entityKindForMarkdownPath(relativePath);
   if (path.posix.basename(relativePath) === 'CODEOWNERS') return 'policy';
   if (languageId === 'yaml' && relativePath.startsWith('.github/workflows/')) return 'workflow';
+  if ((languageId === 'yaml' || languageId === 'json') && isPathObviousContract(relativePath)) return 'contract';
   if (languageId === 'dockerfile' || languageId === 'terraform') return 'resource';
   if (languageId === 'yaml' || languageId === 'json' || languageId === 'toml' || languageId === 'properties' || languageId === 'shell' || languageId === 'makefile') return 'config';
   if (languageId === 'protobuf' || languageId === 'graphql') return 'contract';
   return 'file';
+}
+
+function isPathObviousContract(relativePath: string): boolean {
+  const basename = path.posix.basename(relativePath);
+  const withoutExtension = basename.replace(/\.[^.]+$/, '').toLowerCase();
+  return (
+    withoutExtension.includes('openapi') ||
+    withoutExtension.includes('swagger') ||
+    withoutExtension.includes('asyncapi')
+  );
 }
 
 function languageIdForPath(relativePath: string): string | undefined {

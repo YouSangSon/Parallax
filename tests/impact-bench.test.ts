@@ -29,7 +29,7 @@ test('ImpactBench runner writes deterministic report shape', async () => {
     assert.equal(report.fixtureId, 'phase6b-multilanguage-v0');
     assert.equal(report.outputPath, '.impact-trace/bench/impact-bench-report.json');
     assert.equal(report.summary.passed, true);
-    assert.equal(report.summary.expectedRelations, 43);
+    assert.equal(report.summary.expectedRelations, 46);
     assert.equal(report.summary.expectedRelations, report.summary.matchedRelations);
     assert.equal(report.summary.unexpectedRelations, 0);
     assert.equal(report.scores.affectedFileRecall, 1);
@@ -80,6 +80,9 @@ test('ImpactBench runner writes deterministic report shape', async () => {
       'Spring Feign @FeignClient declares client',
       'Spring WebClient import declares client dependency',
       'Spring RestTemplate import declares client dependency',
+      'OpenAPI contract declares users endpoint',
+      'OpenAPI contract references controller implementation',
+      'Spring controller implements OpenAPI contract',
       'Python class declares Helper',
       'Python function declares helper',
       'Go function declares Add',

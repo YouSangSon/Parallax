@@ -180,6 +180,9 @@ const expectedRelations: readonly ExpectedRelation[] = [
   springDeclareRelation('src/main/java/com/example/CatalogClient.java', 'CatalogClient', 'Spring Feign @FeignClient declares client'),
   externalRelation('DEPENDS_ON', 'src/main/java/com/example/UserClient.java', 'org.springframework.web.reactive.function.client.WebClient', 'Spring WebClient import declares client dependency'),
   externalRelation('DEPENDS_ON', 'src/main/java/com/example/AdminClient.java', 'org.springframework.web.client.RestTemplate', 'Spring RestTemplate import declares client dependency'),
+  contractEndpointRelation('contracts/openapi.yaml', 'GET /api/users', 'OpenAPI contract declares users endpoint'),
+  contractReferenceRelation('contracts/openapi.yaml', 'src/main/java/com/example/UserController.java', 'OpenAPI contract references controller implementation'),
+  contractImplementerRelation('src/main/java/com/example/UserController.java', 'contracts/openapi.yaml', 'Spring controller implements OpenAPI contract'),
   fallbackRelation('DEPENDS_ON', 'Dockerfile', 'src/main/java/com/example/UserController.java', 'Dockerfile COPY dependency'),
   fallbackRelation('CONFIGURES', 'Dockerfile', 'src/main/java/com/example/UserController.java', 'Dockerfile copies controller'),
   languageDeclareRelation('src/python/util.py', 'Helper', 'Python class declares Helper'),
@@ -553,6 +556,54 @@ function endpointRelation(
   };
 }
 
+function contractEndpointRelation(
+  sourcePath: string,
+  targetDisplayName: string,
+  label: string
+): ExpectedRelation {
+  return {
+    kind: 'DECLARES',
+    sourceKind: 'contract',
+    sourcePath,
+    targetKind: 'endpoint',
+    targetDisplayName,
+    adapterId: regexAdapterId,
+    label
+  };
+}
+
+function contractReferenceRelation(
+  sourcePath: string,
+  targetPath: string,
+  label: string
+): ExpectedRelation {
+  return {
+    kind: 'REFERENCES',
+    sourceKind: 'contract',
+    sourcePath,
+    targetKind: fileKindForPath(targetPath),
+    targetPath,
+    adapterId: regexAdapterId,
+    label
+  };
+}
+
+function contractImplementerRelation(
+  sourcePath: string,
+  targetPath: string,
+  label: string
+): ExpectedRelation {
+  return {
+    kind: 'IMPLEMENTS',
+    sourceKind: fileKindForPath(sourcePath),
+    sourcePath,
+    targetKind: 'contract',
+    targetPath,
+    adapterId: regexAdapterId,
+    label
+  };
+}
+
 function adapterIdForPath(relativePath: string): string {
   const language = languageIdForPath(relativePath);
   if (language === 'typescript' || language === 'javascript') return TS_JS_SEMANTIC_ADAPTER_ID;
@@ -565,6 +616,7 @@ function adapterIdForPath(relativePath: string): string {
 
 async function writeFixture(repoRoot: string): Promise<void> {
   const dirs = [
+    'contracts',
     'src/ts',
     'src/js',
     'src/main/java/com/example',
@@ -758,6 +810,22 @@ async function writeFixture(repoRoot: string): Promise<void> {
     '}',
     ''
   ].join('\n'));
+  await writeFile(path.join(repoRoot, 'contracts/openapi.yaml'), [
+    'openapi: 3.0.3',
+    'info:',
+    '  title: User API',
+    '  version: 1.0.0',
+    '  x-service-name: user-service',
+    'paths:',
+    '  /api/users:',
+    '    get:',
+    '      operationId: listUsers',
+    '      x-implementation: src/main/java/com/example/UserController.java',
+    '      responses:',
+    '        "200":',
+    '          description: ok',
+    ''
+  ].join('\n'));
   await writeFile(path.join(repoRoot, 'src/test/java/com/example/UserControllerTest.java'), [
     'package com.example;',
     'import org.junit.jupiter.api.Test;',
@@ -928,7 +996,7 @@ function findUnexpectedRelations(actualRelations: readonly ActualRelation[]): st
   );
   return actualRelations
     .filter((actual) => {
-      if (actual.kind === 'DECLARES') return false;
+      if (actual.kind === 'DECLARES' && actual.sourceKind !== 'contract') return false;
       if (
         actual.targetKind === 'external_entity' &&
         (!actual.sourcePath || !externalScoredSourcePaths.has(actual.sourcePath))
@@ -996,8 +1064,19 @@ function fileKindForPath(filePath: string): string {
   }
   if (filePath.startsWith('.github/workflows/')) return 'workflow';
   if (filePath === 'Dockerfile') return 'resource';
+  if (isPathObviousContract(filePath)) return 'contract';
   if (filePath.endsWith('.yml') || filePath.endsWith('.yaml') || filePath.endsWith('.properties')) return 'config';
   return 'file';
+}
+
+function isPathObviousContract(filePath: string): boolean {
+  const basename = path.posix.basename(filePath);
+  const withoutExtension = basename.replace(/\.[^.]+$/, '').toLowerCase();
+  return (
+    withoutExtension.includes('openapi') ||
+    withoutExtension.includes('swagger') ||
+    withoutExtension.includes('asyncapi')
+  );
 }
 
 function languageIdForPath(filePath: string): string | undefined {

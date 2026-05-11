@@ -49,11 +49,33 @@ async function makeUiWorkArtifactRepo(): Promise<{ repoRoot: string; reportId: s
   await writeFile(path.join(repoRoot, 'src/auth/session.ts'), 'export function rotateSession() { return "ok"; }\n');
   await writeFile(
     path.join(repoRoot, 'policies/security-auth.md'),
-    '# Security auth policy\n\nChanges to src/auth/session.ts require security review.\n\nPRIVATE BODY SENTENCE should stay behind resource expansion.\n'
+    [
+      '---',
+      'title: Security Auth Policy',
+      'owner: security-platform',
+      'status: approved',
+      'updated: 2026-05-01',
+      '---',
+      '# Security auth policy',
+      '',
+      'Changes to src/auth/session.ts require security review.',
+      '',
+      'PRIVATE BODY SENTENCE should stay behind resource expansion.',
+      ''
+    ].join('\n')
   );
   await writeFile(
     path.join(repoRoot, 'docs/proposals/payment-retry.md'),
-    '# Payment retry proposal\n\nThe proposed retry flow updates src/auth/session.ts.\n'
+    [
+      'The proposed retry flow updates src/auth/session.ts.',
+      '',
+      '```md',
+      '# SECRET CUSTOMER INCIDENT NOTES',
+      '```',
+      '',
+      '# Customer Acme incident notes',
+      ''
+    ].join('\n')
   );
   await writeFile(
     path.join(repoRoot, 'docs/prd/auth-context.md'),
@@ -203,20 +225,43 @@ test('UI snapshot and HTML expose work artifact impact', async () => {
     assert.ok(snapshot.workArtifacts.some((item) =>
       item.path === 'policies/security-auth.md' && item.reason === 'governs src/auth/session.ts'
     ));
+    const policy = snapshot.workArtifacts.find((item) => item.path === 'policies/security-auth.md');
+    assert.equal(policy?.displayName, 'Security Auth Policy');
+    assert.deepEqual(policy?.metadata, {
+      title: 'Security Auth Policy',
+      owner: 'security-platform',
+      status: 'approved',
+      updatedAt: '2026-05-01',
+      source: 'frontmatter'
+    });
     assert.ok(snapshot.workArtifacts.some((item) =>
       item.path === 'docs/requirements/session-hardening.md' && item.reason === 'requires src/auth/session.ts'
     ));
+    const requirement = snapshot.workArtifacts.find((item) => item.path === 'docs/requirements/session-hardening.md');
+    assert.equal(requirement?.displayName, 'Session hardening requirement');
+    assert.equal(requirement?.metadata?.source, 'heading');
+    const proposal = snapshot.workArtifacts.find((item) => item.path === 'docs/proposals/payment-retry.md');
+    assert.equal(proposal?.displayName, 'docs/proposals/payment-retry.md');
+    assert.equal(proposal?.metadata, undefined);
     assert.ok(snapshot.workArtifacts.every((item) => item.resourceUri.startsWith('impact-trace://entities/')));
     assert.ok(snapshot.selectedReport?.evidence.some((item) => item.snippetOmitted === true));
     assert.equal(JSON.stringify(snapshot).includes('PRIVATE BODY SENTENCE'), false);
+    assert.equal(JSON.stringify(snapshot).includes('SECRET CUSTOMER INCIDENT NOTES'), false);
+    assert.equal(JSON.stringify(snapshot).includes('Customer Acme incident notes'), false);
 
     const html = renderUiHtml(snapshot);
     assert.match(html, /Work Artifacts/);
+    assert.match(html, /Security Auth Policy/);
+    assert.match(html, /owner security-platform/);
+    assert.match(html, /status approved/);
+    assert.match(html, /updated 2026-05-01/);
     assert.match(html, /policies\/security-auth\.md/);
     assert.match(html, /docs\/requirements\/session-hardening\.md/);
     assert.match(html, /docs\/proposals\/payment-retry\.md/);
     assert.match(html, /bootstrap\.workArtifacts/);
     assert.doesNotMatch(html, /PRIVATE BODY SENTENCE/);
+    assert.doesNotMatch(html, /SECRET CUSTOMER INCIDENT NOTES/);
+    assert.doesNotMatch(html, /Customer Acme incident notes/);
     assert.match(html, /Work artifact evidence omitted from UI bootstrap/);
   } finally {
     await rm(repoRoot, { recursive: true, force: true });

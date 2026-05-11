@@ -35,6 +35,7 @@
 | [D-023](#d-023-jvmspring-spans-stay-lightweight-before-build-system-resolution) | JVM/Spring spans stay lightweight before build-system resolution | P1 | 2026-05-11 |
 | [D-024](#d-024-pythongorust-spans-use-declaration-lines-before-full-resolvers) | Python/Go/Rust spans use declaration lines before full resolvers | P1 | 2026-05-11 |
 | [D-025](#d-025-contract-files-reverse-link-to-implementers-before-cross-repo-resolution) | contract files reverse-link to implementers before cross-repo resolution | P0/P1 | 2026-05-11 |
+| [D-026](#d-026-workspace-catalog-is-an-explicit-local-allowlist) | workspace catalog is an explicit local allowlist | P0/P1 | 2026-05-11 |
 
 ---
 
@@ -466,6 +467,24 @@
 **결과/위험:** OpenAPI contract는 endpoint `DECLARES`와 구현자 `IMPLEMENTS` relation을 bounded line/col evidence로 갖는다. `contracts` row는 `kind=openapi`, `service_name`, metadata를 저장하고 `contract_versions.schema_version`은 OpenAPI schema version을 기록한다. ImpactBench expected relation은 46개로 늘고 `spanCompleteness`는 0.9565다. v0는 명시적 repo path mention만 구현자로 인정하므로 자동 route-method matching, package/service discovery, cross-repo consumer mapping은 workspace resolver 후속으로 남긴다.
 
 **관련 commit:** `feat(contracts): add OpenAPI impact baseline`
+
+---
+
+## D-026: workspace catalog is an explicit local allowlist
+
+**결정:** workspace v0는 `.impact-trace/workspace.json`에 repo local path를 명시적으로 등록하고, `impact-trace workspace init/add-repo/list`가 이 catalog를 기존 `workspaces`/`workspace_repos`/`repos` 테이블에 동기화한다. 등록 path는 canonical realpath directory여야 하며 URL-like path나 `git@host:repo` 형태는 거절한다.
+
+**맥락:** cross-repo API/gRPC/event impact를 하려면 provider/consumer repo boundary가 필요하다. 그러나 Impact Trace의 신뢰 경계는 local-first, no daemon, no implicit clone이다. 따라서 "어떤 repo를 읽어도 되는가"는 추론하지 않고 사용자가 명시한 local allowlist로 시작한다.
+
+**대안:**
+- Git remote나 package metadata에서 repo를 자동 clone — 편하지만 network/credential/write boundary가 불분명하다.
+- 중앙 workspace DB를 별도로 둠 — multi-repo에는 자연스럽지만 단일 repo `.impact-trace/impact.db`의 auditability와 설치 단순성이 깨진다.
+- MCP tool에서 workspace path를 임의 입력으로 매번 받음 — 빠르지만 반복 호출마다 trust boundary를 다시 검증해야 하고 UI/list UX가 없다.
+- workspace catalog 없이 contract resolver부터 구현 — consumer/provider graph가 어떤 repo 범위에서 유효한지 설명할 수 없다.
+
+**결과/위험:** workspace catalog는 config file 기준 상대경로를 사용하고 DB에는 canonical realpath를 저장한다. `add-repo` 재실행은 같은 path row를 업데이트하므로 idempotent하다. v0는 repo 등록/조회만 제공하며 cross-repo index traversal, contract diff, MCP workspace resource는 후속 slice다.
+
+**관련 commit:** `feat(workspace): add local catalog CLI`
 
 ---
 

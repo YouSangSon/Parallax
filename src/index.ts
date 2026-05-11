@@ -25,6 +25,28 @@ export { doctorProject, hasDoctorErrors, redactDoctorReportForMcp, REQUIRED_SCHE
 export type { DoctorFinding, DoctorOptions, DoctorReport } from './doctor.js';
 export { importSession } from './session_import.js';
 export type { SessionImportFormat, SessionImportOptions, SessionImportResult } from './session_import.js';
+export {
+  addWorkspaceRepo,
+  initWorkspace,
+  listWorkspaces,
+  loadWorkspaceCatalog,
+  syncWorkspaceCatalog,
+  workspaceCatalogPath
+} from './workspace.js';
+export type {
+  AddWorkspaceRepoOptions,
+  InitWorkspaceOptions,
+  InitWorkspaceResult,
+  ListWorkspacesOptions,
+  ListWorkspacesResult,
+  SyncWorkspaceCatalogOptions,
+  SyncWorkspaceCatalogResult,
+  WorkspaceCatalog,
+  WorkspaceCatalogRepo,
+  WorkspaceRepoSummary,
+  WorkspaceSummary,
+  WorkspaceTrustPolicy
+} from './workspace.js';
 export { createMcpServer, serveMcp } from './mcp.js';
 export { buildUiSnapshot, renderUiHtml, startUiServer } from './ui.js';
 export type { UiContextPackSummary, UiCoverageSnapshot, UiGraphPreview, UiReportPreview, UiReportSummary, UiServerOptions, UiSnapshot } from './ui.js';

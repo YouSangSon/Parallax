@@ -1,8 +1,8 @@
 # Phase 6B — Multi-language + Spring Boot Adapter Pack v0 + Trusted Evidence
 
 > **작성:** 2026-05-09 (`main` @ `3cba0a2`)
-> **상태:** `/autoplan` + `/team-builder` 이후 사용자 stack 정정 반영. 2026-05-11 현재 ImpactBench, adapter pack v0 routing, TS/JS parser-backed import span v0, JVM/Spring lightweight evidence span v0, Python/Go/Rust lightweight evidence span v0, OpenAPI contract impact baseline이 landed. 파일명은 기존 링크 유지를 위해 유지한다.
-> **결론:** 다음 제품 slice는 **Java/Kotlin/Spring Boot/Python/Go/Rust/TS/JS adapter pack v0 + source-span evidence + git snapshot metadata**다. full MemoryBench, workspace resolver, full call graph는 뒤로 둔다.
+> **상태:** `/autoplan` + `/team-builder` 이후 사용자 stack 정정 반영. 2026-05-11 현재 ImpactBench, adapter pack v0 routing, TS/JS parser-backed import span v0, JVM/Spring lightweight evidence span v0, Python/Go/Rust lightweight evidence span v0, OpenAPI contract impact baseline, workspace catalog v0가 landed. 파일명은 기존 링크 유지를 위해 유지한다.
+> **결론:** 이 phase는 **Java/Kotlin/Spring Boot/Python/Go/Rust/TS/JS adapter pack v0 + source-span evidence + git snapshot metadata + OpenAPI baseline + workspace catalog**를 닫았다. 다음 제품 slice는 cross-repo resolver와 contract diff다.
 
 ---
 
@@ -30,7 +30,7 @@ Phase 6B는 이 제품 전체가 아니라 첫 필수 조건이다. UI와 MCP가
 | Phase 5 MemoryBench 먼저 | 뒤로 둔다. 장기적으로 필요하지만 지금은 측정 대상의 핵심인 multi-language impact relation이 아직 regex 기반이다. |
 | TypeScript adapter만 먼저 | 거부한다. 사용자의 실제 stack은 Java/Kotlin/Spring Boot/Python/Go/Rust/TS/JS이고, TypeScript 단일 slice는 제품 검증 범위를 잘못 좁힌다. |
 | Spring Boot를 미래 generic JVM bucket으로 둠 | 거부한다. Spring Boot는 v0 first-class target이다. endpoint/config/persistence/test relation이 제품 가치와 바로 연결된다. |
-| workspace loader 먼저 | 뒤로 둔다. 단일 repo 안의 language/framework relation이 낮은 상태에서 multi-repo resolver를 붙이면 부정확한 관계가 더 크게 전파된다. |
+| workspace loader 먼저 | 초기에는 뒤로 뒀고, OpenAPI baseline 이후 v0 local allowlist로 완료했다. 아직 남은 것은 multi-repo resolver다. |
 | **Multi-language + Spring Boot v0 + trusted evidence** | 채택. adapter foundation을 실제 stack coverage로 검증하고, evidence 위치와 git 상태까지 같이 닫는다. |
 
 ## 2. Scope
@@ -49,7 +49,7 @@ Phase 6B는 이 제품 전체가 아니라 첫 필수 조건이다. UI와 MCP가
 - report/MCP evidence output의 optional span 노출
 - `index_runs` git snapshot metadata: commit SHA, branch name, dirty state
 - stale-index warning을 git snapshot 기반으로 정밀화
-- docs/ADR 정리: Phase 6 foundation landed, D-019/D-020/D-021 승격
+- docs/ADR 정리: Phase 6 foundation landed, decisions log D-026까지 갱신
 
 v0 target languages/frameworks:
 
@@ -68,11 +68,11 @@ v0 target languages/frameworks:
 - full interprocedural call graph, data-flow, symbol reference graph
 - JVM bytecode analysis, full Maven/Gradle model, annotation processor resolution
 - Python virtualenv/package resolver, Go workspace resolver, Cargo feature resolver
-- workspace/cross-repo resolver, contract diff
+- cross-repo resolver, contract diff
 - LSP/CodeQL enrichment, graph DB projection, full web explorer
 - agent가 report를 보고 자동으로 코드 수정하는 기능
 
-단, 현재 v0 adapter들은 deterministic heuristic extractor를 공유한다. TS/JS import-like syntax는 `ts.createSourceFile` 기반 parser span으로 한 단계 깊어졌고, JVM/Spring은 endpoint/declaration/config/test relation에 lightweight line/annotation spans를 저장한다. Python/Go/Rust는 declaration/test relation에 lightweight declaration-line spans를 저장한다. OpenAPI/Swagger/AsyncAPI YAML/JSON은 contract baseline과 명시적 code path 기반 implementer reverse-link를 저장한다. full type-checker, full parser-backed Python/Go/Rust resolution, Tree-sitter/LSP/CodeQL enrichment, full source span coverage, cross-repo contract resolver는 후속 pass로 둔다. UI의 첫 버전에서 필요할 graph JSON contract와 evidence/resource shape는 이 phase의 output에서 깨지지 않게 둔다.
+단, 현재 v0 adapter들은 deterministic heuristic extractor를 공유한다. TS/JS import-like syntax는 `ts.createSourceFile` 기반 parser span으로 한 단계 깊어졌고, JVM/Spring은 endpoint/declaration/config/test relation에 lightweight line/annotation spans를 저장한다. Python/Go/Rust는 declaration/test relation에 lightweight declaration-line spans를 저장한다. OpenAPI/Swagger/AsyncAPI YAML/JSON은 contract baseline과 명시적 code path 기반 implementer reverse-link를 저장한다. workspace catalog v0는 `.impact-trace/workspace.json` local allowlist를 기존 `workspaces`/`workspace_repos` 테이블에 동기화한다. full type-checker, full parser-backed Python/Go/Rust resolution, Tree-sitter/LSP/CodeQL enrichment, full source span coverage, cross-repo contract resolver는 후속 pass로 둔다. UI의 첫 버전에서 필요할 graph JSON contract와 evidence/resource shape는 이 phase의 output에서 깨지지 않게 둔다.
 
 ## 3. Architecture
 
@@ -237,16 +237,17 @@ full MemoryBench가 아니라 adapter accuracy용 얇은 evaluation spine을 먼
    - D-021 migration/regex fallback policy
    - Phase 6B 결과와 다음 Phase 5/7 진입 조건 기록
 
-## 5.5 Next Product Slice After Phase 6B
+## 5.5 Product Slices Completed After Phase 6B Planning
 
-Phase 6B가 끝나면 다음 제품 slice는 둘 중 하나다.
+초기 Phase 6B 계획 뒤에 다음 제품 slice도 완료됐다.
 
-1. **MCP context pack:** 이미 들어간 `impact_trace_context_for_change`와 `impact-trace://evidence/{id}` v0를 기반으로 `impact_trace_explain_entity`, graph pagination, typed error envelope를 완성한다.
-   - `brief`/`standard`/`deep` context budget, dedupe, ranking은 v0에 포함됐고, 다음은 agent loop 검증과 graph/resource pagination이다.
+1. **MCP context pack/resource contract:** `impact_trace_context_for_change`, `impact_trace_explain_entity`, graph pagination, typed error envelope, persisted context pack reuse가 landed 상태다.
+   - `brief`/`standard`/`deep` context budget, dedupe, ranking, resource-on-demand evidence가 v0에 포함됐다.
    - multi-language adapter 결과는 language/framework별 top impact path로 압축되어 AI context 사용량을 줄인다.
-2. **UI explorer v0:** 저장된 report/graph JSON을 읽어 changed/affected/evidence/action을 필터링해 보여주는 read-only local UI를 만든다.
+2. **UI explorer v0:** 저장된 report/graph JSON을 읽어 changed/affected/evidence/action을 필터링해 보여주는 read-only local UI가 `impact-trace ui`로 landed 상태다.
+3. **Workspace catalog v0:** `.impact-trace/workspace.json` local allowlist와 `workspace init/add-repo/list` CLI가 landed 상태다.
 
-둘의 순서는 Phase 6B 결과에 따라 결정한다. MCP resource contract가 충분히 안정되면 UI가 같은 contract를 재사용하는 쪽이 가장 깔끔하다.
+다음 제품 slice는 workspace catalog와 contract baseline을 사용해 cross-repo provider/consumer resolver와 contract diff를 붙이는 것이다.
 
 ## 6. Acceptance Criteria
 

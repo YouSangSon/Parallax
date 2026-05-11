@@ -65,6 +65,63 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === 'workspace') {
+    const [subcommand, ...workspaceArgs] = args;
+    if (subcommand === 'init') {
+      const { initWorkspace } = await import('./index.js');
+      const name = parseOptionalWorkspaceArg(workspaceArgs, '--name');
+      const serviceName = parseOptionalWorkspaceArg(workspaceArgs, '--service');
+      const result = initWorkspace({
+        repoRoot,
+        ...(name !== undefined ? { name } : {}),
+        ...(serviceName !== undefined ? { serviceName } : {}),
+        ...(workspaceArgs.includes('--force') ? { force: true } : {})
+      });
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    if (subcommand === 'add-repo') {
+      const { addWorkspaceRepo } = await import('./index.js');
+      const localPath = workspaceArgs[0];
+      if (!localPath || localPath.startsWith('--')) {
+        throw new Error('workspace add-repo requires <path>');
+      }
+      const workspaceName = parseOptionalWorkspaceArg(workspaceArgs, '--name');
+      const serviceName = parseOptionalWorkspaceArg(workspaceArgs, '--service');
+      const remoteUrl = parseOptionalWorkspaceArg(workspaceArgs, '--remote');
+      const result = addWorkspaceRepo({
+        repoRoot,
+        localPath,
+        ...(workspaceName !== undefined ? { workspaceName } : {}),
+        ...(serviceName !== undefined ? { serviceName } : {}),
+        ...(remoteUrl !== undefined ? { remoteUrl } : {})
+      });
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    if (subcommand === 'list') {
+      const { listWorkspaces } = await import('./index.js');
+      const name = parseOptionalWorkspaceArg(workspaceArgs, '--name');
+      const result = listWorkspaces({
+        repoRoot,
+        ...(name !== undefined ? { name } : {})
+      });
+      if (workspaceArgs.includes('--json')) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        for (const workspace of result.workspaces) {
+          console.log(workspace.name);
+          for (const repo of workspace.repos) {
+            const label = repo.serviceName ? ` (${repo.serviceName})` : '';
+            console.log(`  ${repo.localPath}${label}`);
+          }
+        }
+      }
+      return;
+    }
+    throw new Error('workspace requires init, add-repo, or list');
+  }
+
   if (command === 'analyze') {
     const { analyzeDiff } = await import('./index.js');
     const changedFiles = parseChangedFiles(args, repoRoot);
@@ -363,6 +420,16 @@ function parseOptionalArg(args: string[], name: string): string | undefined {
   return undefined;
 }
 
+function parseOptionalWorkspaceArg(args: string[], name: string): string | undefined {
+  const index = args.indexOf(name);
+  if (index < 0) return undefined;
+  const value = args[index + 1];
+  if (!value || value.startsWith('--')) {
+    throw new Error(`missing value for ${name}`);
+  }
+  return value;
+}
+
 function parseIntegerArg(args: string[], name: string): number | undefined {
   const value = parseOptionalArg(args, name);
   if (!value) return undefined;
@@ -376,7 +443,7 @@ function parseIntegerArg(args: string[], name: string): number | undefined {
 function parsePositionals(args: string[]): string[] {
   const valueFlags = new Set([
     '--changed', '--base', '--head', '--depth', '--max-fanout', '--max-file-bytes',
-    '--report', '--format', '--file', '--port',
+    '--report', '--format', '--file', '--port', '--service', '--remote',
     '--entity', '--attribute', '--value', '--branch', '--agent', '--evidence-fact-ids',
     '--name', '--from', '--fact-id', '--k', '--op', '--as-of-tx',
     '--target', '--source', '--query', '--model',
@@ -412,6 +479,9 @@ Commands:
   impact-trace doctor
   impact-trace ui [--report <id>] [--port <n>]
   impact-trace import-session --file <path> --format codex|claude [--branch <name>]
+  impact-trace workspace init [--name <name>] [--service <service>] [--force]
+  impact-trace workspace add-repo <path> [--name <name>] [--service <service>] [--remote <url>]
+  impact-trace workspace list [--name <name>] [--json]
   impact-trace analyze --changed src/file.ts [--depth 2] [--json]
   impact-trace analyze --base main [--head HEAD] [--depth 2] [--json]
   impact-trace graph export --report <id> [--format mermaid|json|dot]

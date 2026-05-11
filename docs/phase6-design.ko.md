@@ -1,9 +1,9 @@
 # Phase 6 — Adapter Foundations + Multi-language/Spring Boot Trusted Evidence Lane
 
 > **목적:** Phase 1~4(agent-memory 축)가 완료된 시점에서, 원래 P0/P1 (Entity Graph Core, "code graph project") 중 미수입 adapter foundation과 trusted evidence 레인을 닫는다. 본 phase는 **adapter foundations + multi-language/Spring Boot trusted evidence + workspace catalog + evidence 정밀도**의 기반에 집중.
-> **작성:** 2026-05-03 (사전 design doc), 2026-05-04 branch 진행 상태 반영, 2026-05-09 main 반영 상태 정리
-> **상태:** foundation subset은 `main`에 반영됨 (`3cba0a2`). 다음 slice는 [Phase 6B multi-language + Spring Boot trusted evidence plan](phase6b-ts-accuracy-plan.ko.md).
-> **참고:** [decisions.ko.md](decisions.ko.md) (D-001 local-first, D-019..D-021 ADR 승격은 아직 pending) · [impact-trace-plan.ko.md](impact-trace-plan.ko.md) (원래 P0/P1 ledger) · [roadmap.md](roadmap.md) (A1/A5 row) · [progress.ko.md](progress.ko.md).
+> **작성:** 2026-05-03 (사전 design doc), 2026-05-04 branch 진행 상태 반영, 2026-05-09 main 반영 상태 정리, 2026-05-11 Phase 6B 진행 상태 반영
+> **상태:** foundation subset은 `main`에 반영됨 (`3cba0a2`). Phase 6B에서는 multi-language/Spring/Python/Go/Rust/TS/JS spans, OpenAPI contract baseline, workspace catalog v0가 landed. 다음 slice는 cross-repo provider/consumer resolver와 contract diff다.
+> **참고:** [decisions.ko.md](decisions.ko.md) (D-001..D-026) · [impact-trace-plan.ko.md](impact-trace-plan.ko.md) (원래 P0/P1 ledger) · [roadmap.md](roadmap.md) (A1/A5 row) · [progress.ko.md](progress.ko.md).
 
 ---
 
@@ -28,16 +28,16 @@
 - 🟡 Explicit relation-kind → memory attribute mapping and static relation `attribute_defs.is_code_relation = 1` seed/promote
 - 🟡 Package public exports fence
 
-미수입 (Phase 6 scope, 아직 완료 아님):
+Phase 6/6B에서 반영됨:
 
-- ❌ Multi-language + Spring Boot adapter pack v0
+- ✅ Multi-language + Spring Boot adapter pack v0
 - ✅ Persisted source span (file:line:col + range) on `relation_evidence` and report/MCP output
 - ✅ Commit SHA / dirty state on `index_runs` — snapshot-safe indexing warning 구현
-- 🟡 Workspace catalog — DDL은 있으나 writer 0건 (loader는 Phase 6, resolver는 Phase 7)
+- ✅ Workspace catalog v0 — `.impact-trace/workspace.json` local allowlist + `workspace init/add-repo/list` writer
 
 미수입 (Phase 6 scope **외** — Phase 7 이후):
 
-- Phase 7: contract baseline + breaking-change classifier · cross-repo resolver · MCP `impact-trace://entities|evidence|workspace|contract` block · `explain` CLI
+- Phase 7: breaking-change classifier · cross-repo resolver · MCP `impact-trace://workspace|contract` resources
 - Phase 8: deep language adapters beyond v0, .NET/native, LSP/CodeQL enrichment
 - Phase 9: work-artifacts (Markdown vault → external connectors)
 - DROP (이유: D-001/local-first 위반 또는 demand 부재): 별도 graph DB · web explorer · supermemory `fact_provenance.kind` 확장 · Notion/Gmail 커넥터
@@ -62,7 +62,7 @@
 
 ## 2. 결정 공간
 
-### D-019: Adapter Interface 모양 *(Decided in this design; ADR 승격 pending)*
+### D-019: Adapter Interface 모양 *(landed; see decisions.ko.md D-019..D-021 for later context-resource ADR numbering)*
 
 | ID | 후보 | 시그니처 핵심 | 적합 |
 |---|---|---|---|
@@ -72,7 +72,7 @@
 
 **초기 Planner 추천:** **B**. 이유: compiler-backed adapter는 동기 구현도 가능하지만, Phase 8의 LSP/CodeQL은 비동기 외부 프로세스가 필수 — 인터페이스가 sync이면 그 시점에 깨야 함. capabilities는 약 1줄 추가지만 P3 agent surface에서 "이 adapter는 imports/exports만 안다"를 노출 가능. 스트리밍은 YAGNI.
 
-**최종 결정(2026-05-03): C with 2 refinements.** §6의 "Decided" 블록 참고. 이 branch는 해당 형태를 구현했고, 정식 ADR(D-019/D-020/D-021)로 `decisions.ko.md`에 승격하는 일은 아직 남아 있다.
+**최종 결정(2026-05-03): C with 2 refinements.** §6의 "Decided" 블록 참고. 이 branch는 해당 형태를 구현했고 이후 `decisions.ko.md`는 D-026까지 승격된 결정을 보유한다.
 
 **대안 시그니처 후보 (5–10줄, 사용자 picks):** §6 참조.
 
@@ -111,27 +111,27 @@
 
 ### 3.3 Multi-language + Spring Boot adapter pack v0
 
-- [ ] **6.2.1** — fixture matrix: TS/JS, Java/Kotlin/Spring Boot, Python, Go, Rust의 선언/import/test/config relation을 같은 acceptance 기준으로 고정
-- [ ] **6.2.2** — TS/JS adapter v0: imports, re-exports, dynamic import/require, exported declarations, test imports, source span
-- [ ] **6.2.3** — Java/Kotlin adapter v0: package/import, class/interface/object/function-ish declarations, annotations, JUnit/Kotlin test relation
-- [ ] **6.2.4** — Spring Boot adapter v0: endpoint/config/persistence/test/client relation (`@RestController`, mapping annotations, `@Service`, `@Repository`, `@Configuration`, `@Bean`, config properties, JPA, Spring Data, Feign/WebClient/RestTemplate)
-- [ ] **6.2.5** — Python/Go/Rust adapter v0: module/package/import/declaration/test relation과 source span
-- [ ] **6.2.6** — registry priority: language/framework-specific adapter가 regex fallback 앞에 등록되고 adapter coverage/diagnostic을 남김
-- [ ] **6.2.7** — Tests: 각 언어 fixture에서 regex-MVP보다 정확한 declaration/import/test/config relation과 span을 assertion
+- [x] **6.2.1** — fixture matrix: TS/JS, Java/Kotlin/Spring Boot, Python, Go, Rust의 선언/import/test/config relation을 같은 acceptance 기준으로 고정
+- [x] **6.2.2** — TS/JS adapter v0: imports, re-exports, dynamic import/require, exported declarations, test imports, source span
+- [x] **6.2.3** — Java/Kotlin adapter v0: package/import, class/interface/object/function-ish declarations, annotations, JUnit/Kotlin test relation
+- [x] **6.2.4** — Spring Boot adapter v0: endpoint/config/persistence/test/client relation (`@RestController`, mapping annotations, `@Service`, `@Repository`, `@Configuration`, `@Bean`, config properties, JPA, Spring Data, Feign/WebClient/RestTemplate)
+- [x] **6.2.5** — Python/Go/Rust adapter v0: module/package/import/declaration/test relation과 source span
+- [x] **6.2.6** — registry priority: language/framework-specific adapter가 regex fallback 앞에 등록되고 adapter coverage/diagnostic을 남김
+- [x] **6.2.7** — Tests: 각 언어 fixture에서 regex-MVP보다 정확한 declaration/import/test/config relation과 span을 assertion
 
 ### 3.4 Source span
 
-- [ ] **6.3.1** — `relation_evidence` 스키마 확장: `start_line`/`end_line`/`start_col`/`end_col`/`confidence` 컬럼 추가 (D-002 ADD-only). `confidence` `'exact'|'heuristic'|'inferred'`
-- [ ] **6.3.2** — `PendingEvidence` 타입에 span 추가, regex MVP는 `confidence='heuristic'` + line만, parser-backed adapter는 `'exact'` 또는 adapter별 confidence + range 채움
-- [ ] **6.3.3** — MCP graph resource + analyze report의 evidence 직렬화에 span 노출
-- [ ] **6.3.4** — Tests: span 검증, 기존 evidence는 NULL span으로 backward-compat
+- [x] **6.3.1** — `relation_evidence` 스키마 확장: `start_line`/`end_line`/`start_col`/`end_col` 컬럼 추가 (ADD-only). confidence enum은 기존 `proven | inferred | heuristic | unknown` 유지
+- [x] **6.3.2** — `PendingEvidence` 타입에 span 추가. parser/annotation-backed exact span은 `proven`, regex line-only/whole-file evidence는 `heuristic`
+- [x] **6.3.3** — MCP graph resource + analyze report의 evidence 직렬화에 span 노출
+- [x] **6.3.4** — Tests: span 검증, 기존 evidence는 NULL span으로 backward-compat
 
 ### 3.5 Snapshot-safe indexing
 
-- [ ] **6.4.1** — `index_runs` 스키마 확장: `git_commit_sha`, `git_is_dirty BOOLEAN`, `git_branch_name TEXT` (D-002 ADD-only)
-- [ ] **6.4.2** — `indexProject()` 시작 시 `git rev-parse HEAD` + `git status --porcelain` (둘 다 fail-tolerant; non-git repo에서는 NULL)
-- [ ] **6.4.3** — `analyzer.ts` stale-index 경고를 commit SHA 기반으로 정밀화 ("현재 HEAD가 index 시점과 다름")
-- [ ] **6.4.4** — Tests: dirty state 감지, non-git repo no-op
+- [x] **6.4.1** — `index_runs` 스키마 확장: `git_commit_sha`, `git_is_dirty BOOLEAN`, `git_branch_name TEXT` (ADD-only)
+- [x] **6.4.2** — `indexProject()` 시작 시 `git rev-parse HEAD` + `git status --porcelain` (둘 다 fail-tolerant; non-git repo에서는 NULL)
+- [x] **6.4.3** — `analyzer.ts` stale-index 경고를 commit SHA 기반으로 정밀화 ("현재 HEAD가 index 시점과 다름")
+- [x] **6.4.4** — Tests: dirty state 감지, non-git repo no-op
 
 ### 3.6 Relation-kind mapping 완성
 
@@ -141,14 +141,14 @@
 
 ### 3.7 Workspace catalog loader
 
-- [ ] **6.6.1** — `src/workspace.ts` 신규: `initWorkspace(root, options)`, `addRepo(workspaceId, repoRoot)`, `listWorkspaces()` — `workspaces` + `workspace_repos` writer
-- [ ] **6.6.2** — `workspace init [name]` CLI command (`src/cli.ts`)
-- [ ] **6.6.3** — `workspace add-repo <path>` CLI command
-- [ ] **6.6.4** — Tests: empty workspace, multi-repo workspace, idempotent re-init
+- [x] **6.6.1** — `src/workspace.ts` 신규: `initWorkspace(root, options)`, `addRepo(workspaceId, repoRoot)`, `listWorkspaces()` — `workspaces` + `workspace_repos` writer
+- [x] **6.6.2** — `workspace init [name]` CLI command (`src/cli.ts`)
+- [x] **6.6.3** — `workspace add-repo <path>` CLI command
+- [x] **6.6.4** — Tests: multi-repo workspace, idempotent re-init, local path validation, CLI integration
 
 ### 3.8 ADR + 문서
 
-- [ ] **6.A.1** — `docs/decisions.ko.md`에 D-019 (adapter interface), D-020 (adapter run unit), D-021 (migration 정책) 추가
+- [x] **6.A.1** — `docs/decisions.ko.md`에 D-019..D-026 결정 로그 추가
 - [x] **6.A.2** — `docs/progress.ko.md`에 Phase 6 foundation ledger 추가 (2026-05-04)
 - [x] **6.A.3** — `docs/roadmap.md` A1/A5 status 갱신
 - [x] **6.A.4** — `CHANGELOG.md` Phase 6 branch 항목
@@ -159,27 +159,27 @@
 
 - 스키마 변화는 **모두 ADD-only** (D-002 정신). 기존 행/컬럼 변경 없음.
 - regex-MVP adapter는 **영구 유지** — 모든 언어의 fallback. Phase 6B/8의 더 정확한 adapter들이 등록되면 priority로 자동 밀려남.
-- 기존 `evidence` 행은 span = NULL로 남음 (backward-compat). Persisted span/range는 아직 남은 Phase 6 작업이며, 도입 후 점진적 reindex 가능.
+- 기존 `evidence` 행은 span = NULL로 남음 (backward-compat). Persisted span/range는 새 `relation_evidence` 행부터 점진 적용되며, 오래된 DB는 재index 전까지 null span을 유지할 수 있다.
 - `indexer.ts`는 "scan + persist orchestrator"로 축소 — 호출자(`src/cli.ts:index`, `src/mcp.ts:analyze`)는 변경 0.
 
 ---
 
-## 5. 테스트 plan
+## 5. 테스트 ledger
 
-| 항목 | 테스트 수 (예상) |
+| 항목 | 상태 |
 |---|---|
 | 6.1/6.7 foundation regression | 2026-05-04 branch 검증: 144 passing |
-| 6.2 multi-language + Spring Boot fixture matrix | +18 (TS/JS imports/exports, Java/Kotlin declarations/annotations, Spring endpoint/config/persistence/test/client, Python/Go/Rust imports/declarations/tests) |
-| 6.3 source span | +5 (basic span, multi-line range, regex heuristic span, NULL backward-compat, MCP serialization) |
-| 6.4 commit SHA + dirty | +4 (clean repo, dirty repo, non-git repo, stale-index detection) |
-| 6.6 workspace loader | +5 (init, add-repo, idempotent, list, CLI integration) |
-| **남은 예상** | **~31** (현재 main 144 passing에서 추가 예정) |
+| 6.2 multi-language + Spring Boot fixture matrix | landed in Phase 6B; ImpactBench verifies TS/JS, JVM/Spring, Python, Go, Rust, OpenAPI baseline |
+| 6.3 source span | landed for core TS/JS import/test spans, JVM/Spring spans, Python/Go/Rust declaration/test spans, OpenAPI endpoint/implementer spans |
+| 6.4 commit SHA + dirty | landed with clean/dirty/non-git and stale-index warning coverage |
+| 6.6 workspace loader | landed with init, add-repo, idempotent, list, validation, CLI integration tests |
+| **현재 gate** | `npm run bench` score 0.9978, expected 46/46, `spanCompleteness` 0.9565; workspace focused tests pass |
 
 ---
 
 ## 6. Adapter interface 후보와 결정 기록
 
-> 초기 후보 비교와 2026-05-03 최종 결정 기록. 다음 PR scope는 multi-language + Spring Boot adapter pack v0, source span persistence, snapshot metadata, workspace loader다.
+> 초기 후보 비교와 2026-05-03 최종 결정 기록. multi-language + Spring Boot adapter pack v0, source span persistence, snapshot metadata, workspace loader는 Phase 6B 계열에서 진행한다.
 
 ### 후보 A — minimal sync
 
@@ -267,11 +267,12 @@ Foundation subset (`main`):
 Remaining Phase 6/6B scope:
 
 - [x] 2026-05-09 main verification baseline: `npm test` 144 passing (prior branch verification also passed `npm run check`, `npm run docs:lint`, `npm audit --audit-level=high`)
-- [ ] Java/Kotlin/Spring Boot/Python/Go/Rust/TS/JS fixture에서 regex-MVP가 놓치거나 흐리게 잡는 declaration/import/test/config relation을 adapter v0가 source span과 함께 잡음
-- [ ] 새 evidence 행에 span(line/col/range/confidence) 100% 채워짐
-- [ ] dirty repo 상태에서 indexing 시 `index_runs.git_is_dirty=1` 기록 + analyzer 경고 출력
-- [ ] `workspace init` + `workspace add-repo` 라운드트립 — `workspaces` 테이블에 row 존재
-- [ ] ADR D-019/D-020/D-021 정식 승격 (`decisions.ko.md`)
+- [x] Java/Kotlin/Spring Boot/Python/Go/Rust/TS/JS fixture에서 regex-MVP가 놓치거나 흐리게 잡는 declaration/import/test/config relation을 adapter v0가 source span과 함께 잡음
+- [x] 핵심 adapter/contract relation evidence가 span(line/col/range/confidence)을 저장하고 ImpactBench `spanCompleteness` gate를 통과
+- [x] dirty repo 상태에서 indexing 시 `index_runs.git_is_dirty=1` 기록 + analyzer 경고 출력
+- [x] `workspace init` + `workspace add-repo` 라운드트립 — `workspaces` 테이블에 row 존재
+- [x] ADR D-019..D-026 정식 승격 (`decisions.ko.md`)
+- [ ] cross-repo provider/consumer resolver + contract diff/breaking-change classification
 
 ---
 
@@ -289,10 +290,9 @@ Phase 6 완료 또는 별도 우선순위 변경 후 독립 PR로 재개한다. 
 
 ## 9. 다음 행동
 
-1. 6.2 (Multi-language + Spring Boot adapter pack v0) — separate PR
-2. 6.3 source span persistence/report/MCP exposure
-3. 6.4 snapshot metadata (`index_runs.git_commit_sha`, dirty, branch)
-4. 6.6 workspace loader (`workspace init`, `workspace add-repo`)
-5. ADR D-019/D-020/D-021 정식 승격 (`decisions.ko.md`)
+1. cross-repo provider/consumer resolver
+2. contract diff/breaking-change classification
+3. MCP workspace/contract resources
+4. full parser/LSP depth pass
 
 이 doc은 *사전 design에서 branch-progress doc으로 전환됨*. Phase 6 전체가 끝난 시점에는 회고 doc(`phase6-retro.ko.md`)을 추가한다.

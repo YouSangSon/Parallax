@@ -2,7 +2,7 @@
 
 > 이 문서는 *두 축* (영향 분석 + 에이전트 메모리)의 진척과 다음 작업을 한 페이지로 정리한다.
 > *왜* 이 방향인지는 [vision.md](vision.md) / [vision.ko.md](vision.ko.md), 제품 단위 계획은 [impact-context-layer-plan.ko.md](impact-context-layer-plan.ko.md), *왜* 각 결정인지는 [decisions.ko.md](decisions.ko.md), *날짜별 로그*는 [progress.ko.md](progress.ko.md).
-> 마지막 업데이트: 2026-05-12 (UI Explorer v0 + TS/JS/JVM/Spring/Python/Go/Rust spans + OpenAPI contract impact baseline + workspace catalog v0 + cross-repo contract resolver v0 + GraphQL consumer resolver v0 + OpenAPI nested endpoint/schema diff v0 + Protobuf contract diff v0 + GraphQL contract diff v0 + AsyncAPI contract diff v0 + MCP workspace/contract resources v0 landed; next is protobuf/AsyncAPI consumer resolver)
+> 마지막 업데이트: 2026-05-12 (UI Explorer v0 + TS/JS/JVM/Spring/Python/Go/Rust spans + OpenAPI contract impact baseline + workspace catalog v0 + cross-repo contract resolver v0 + GraphQL/Protobuf/AsyncAPI consumer resolver v0 + OpenAPI nested endpoint/schema diff v0 + Protobuf contract diff v0 + GraphQL contract diff v0 + AsyncAPI contract diff v0 + MCP workspace/contract resources v0 landed; next is full parser/LSP depth and build-system resolver)
 
 ## 한 눈에 보기
 
@@ -38,7 +38,7 @@ Phase 6 adapter foundations는 `main`에 반영됐다. 이 작업에는 다음 �
 - relation-kind → memory attribute mapping 명시화, static relation `attribute_defs.is_code_relation = 1` seed/promote
 - package public exports fence
 
-다음 live work는 [Phase 6B Multi-language + Spring Boot Adapter Pack v0 plan](phase6b-ts-accuracy-plan.ko.md)이다. 완료된 항목: ImpactBench thin spine, TS/JS/JVM-Spring/Python/Go/Rust v0 adapter routing, Spring Boot endpoint/config/persistence/test/client fixture coverage, adapter attribution scoring, TS/JS parser-backed import span v0, JVM/Spring lightweight evidence span v0, Python/Go/Rust lightweight evidence span v0, OpenAPI contract baseline + implementer reverse-link v0, workspace catalog v0, cross-repo contract resolver v0, GraphQL consumer resolver v0, OpenAPI endpoint-surface contract diff v0, JSON/YAML nested schema/body diff v0, Protobuf contract diff v0, GraphQL contract diff v0, AsyncAPI contract diff v0. 아직 완료로 표시하지 않는 항목: protobuf/AsyncAPI consumer resolver, full parser/LSP depth.
+다음 live work는 [Phase 6B Multi-language + Spring Boot Adapter Pack v0 plan](phase6b-ts-accuracy-plan.ko.md)이다. 완료된 항목: ImpactBench thin spine, TS/JS/JVM-Spring/Python/Go/Rust v0 adapter routing, Spring Boot endpoint/config/persistence/test/client fixture coverage, adapter attribution scoring, TS/JS parser-backed import span v0, JVM/Spring lightweight evidence span v0, Python/Go/Rust lightweight evidence span v0, OpenAPI contract baseline + implementer reverse-link v0, workspace catalog v0, cross-repo contract resolver v0, GraphQL/Protobuf/AsyncAPI consumer resolver v0, OpenAPI endpoint-surface contract diff v0, JSON/YAML nested schema/body diff v0, Protobuf contract diff v0, GraphQL contract diff v0, AsyncAPI contract diff v0. 아직 완료로 표시하지 않는 항목: full parser/LSP depth, build-system/package resolver depth.
 
 | 우선순위 | 작업 | 이유 / 시작 트리거 |
 |---|---|---|
@@ -48,7 +48,7 @@ Phase 6 adapter foundations는 `main`에 반영됐다. 이 작업에는 다음 �
 | A3 | Spring Boot depth pass | endpoint/config/persistence/test/client relation을 더 넓힘. `@RestController`, mapping annotations, `@Service`, `@Repository`, `@Configuration/@Bean`, `@ConfigurationProperties`, `application.yml/properties`, Spring test annotations, JPA, Spring Data, Feign/WebClient/RestTemplate. |
 | A4 | npm/pnpm/yarn + Maven/Gradle/Cargo/Go workspace 어댑터 | monorepo 첫 진입점. |
 | A5 | YAML / GitHub Actions / Docker / Terraform 어댑터 | enterprise repo의 실제 영향 경로. |
-| A6 | OpenAPI / protobuf / GraphQL / AsyncAPI 어댑터 + cross-repo resolver | OpenAPI contract baseline, workspace catalog v0, OpenAPI provider/consumer resolver v0, GraphQL consumer resolver v0, endpoint-surface contract diff v0, JSON/YAML nested schema/body diff v0, Protobuf contract diff v0, GraphQL contract diff v0, AsyncAPI contract diff v0는 landed. 다음은 protobuf/AsyncAPI consumer resolver. |
+| A6 | OpenAPI / protobuf / GraphQL / AsyncAPI 어댑터 + cross-repo resolver | OpenAPI contract baseline, workspace catalog v0, OpenAPI provider/consumer resolver v0, GraphQL/Protobuf/AsyncAPI consumer resolver v0, endpoint-surface contract diff v0, JSON/YAML nested schema/body diff v0, Protobuf contract diff v0, GraphQL contract diff v0, AsyncAPI contract diff v0는 landed. 다음은 generated-client/event topology와 full parser depth. |
 | A7 | Mermaid / DOT / JSON graph export | `analyze` 출력에 그래프 첨부 — 사람이 PR 본문에서 바로 봄. |
 
 ### P2 — Enterprise Language Adapter Pack
@@ -81,7 +81,7 @@ Phase 6 adapter foundations는 `main`에 반영됐다. 이 작업에는 다음 �
 | landed | persisted context pack id / repeated-query reuse — schema v15 `context_packs`, `impact-trace://context-packs/{id}`, first full pack + repeated `context_pack_reference` |
 | landed | UI Explorer v0 over the same MCP resource shapes — `impact-trace ui`, localhost read-only workbench, report/evidence/graph/coverage/context pack panels |
 | landed | MCP workspace/contract resources v0 — `impact_trace_contract_diff`, `impact-trace://workspaces/{name}`, `/contracts`, `/cross-repo-links`로 endpoint diff 결과와 provider/consumer links를 resource-on-demand로 확장 |
-| active next | protobuf/AsyncAPI consumer resolver — Protobuf/AsyncAPI compatibility signature rules 위에서 persisted downstream links로 확장 |
+| active next | full parser/LSP and build-system resolver depth — generated Protobuf clients, richer event topology, package/build graph, language-server-backed references로 v0 heuristics를 보강 |
 
 ### P4 — Optional Projections
 
@@ -156,7 +156,7 @@ Phase 4 code baseline은 `33c49f0`에서 **112 tests passing**, ADR D-001..D-018
 - **다음 작업이 뭔지 알고 싶다** → 이 문서의 "P1 next track" / "Phase 5 후보 ranked" 섹션
 - **MCP + UI + context 절감 제품 그림을 보고 싶다** → [impact-context-layer-plan.ko.md](impact-context-layer-plan.ko.md)
 - **agentmemory에서 무엇을 가져올지 보고 싶다** → [agentmemory-adoption-review.ko.md](agentmemory-adoption-review.ko.md)
-- **왜 이 결정인지 알고 싶다** → [decisions.ko.md](decisions.ko.md) (D-001..D-036)
+- **왜 이 결정인지 알고 싶다** → [decisions.ko.md](decisions.ko.md) (D-001..D-037)
 - **언제 무엇이 들어왔는지 알고 싶다** → [progress.ko.md](progress.ko.md) (chronological log) / [CHANGELOG.md](../CHANGELOG.md) (Phase별 grouping)
 - **새 contributor / agent에게 한 페이지로 설명** → [vision.ko.md](vision.ko.md)
 - **두 축의 어휘가 헷갈린다** → [glossary.md](glossary.md)

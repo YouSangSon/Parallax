@@ -3621,6 +3621,95 @@ test('analyzeContractDiff classifies removed Protobuf RPCs as breaking', async (
   ]);
 });
 
+test('analyzeContractDiff links removed Protobuf RPCs to resolved consumers', async () => {
+  const consumerRoot = await makeRepo('impact-trace-diff-protobuf-resolved-consumer-');
+  const providerRoot = await makeRepo('impact-trace-diff-protobuf-resolved-provider-');
+  const consumerReal = realpathSync(consumerRoot);
+  const providerReal = realpathSync(providerRoot);
+  await writeFile(
+    path.join(consumerRoot, 'src/users-client.ts'),
+    [
+      'import { createPromiseClient } from "@connectrpc/connect";',
+      'import { UserService } from "./gen/users_connect";',
+      '',
+      'export async function loadUsers(transport: unknown) {',
+      '  const client = createPromiseClient(UserService, transport);',
+      '  return client.listUsers({ pageSize: 50 });',
+      '}',
+      ''
+    ].join('\n')
+  );
+  await writeProtobufContract(providerRoot);
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'users-api'
+  });
+  const resolved = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+  assert.equal(resolved.links.length, 1);
+
+  await writeProtobufContract(providerRoot, { includeListUsers: false });
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/users.proto'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.equal(result.summary.impactedConsumerCount, 1);
+  assert.deepEqual(result.impactedConsumers, [
+    {
+      consumerService: 'web',
+      consumerRepoPath: consumerReal,
+      consumerPath: 'src/users-client.ts',
+      providerService: 'users-api',
+      providerRepoPath: providerReal,
+      providerContractPath: 'contracts/users.proto',
+      httpMethod: 'RPC',
+      routePath: 'UserService/ListUsers',
+      evidenceSnippet: 'return client.listUsers({ pageSize: 50 });'
+    }
+  ]);
+
+  const db = new DatabaseSync(databasePath(consumerRoot), { readOnly: true });
+  try {
+    const row = db
+      .prepare(
+        `SELECT kind, confidence, provenance
+         FROM cross_repo_links
+         WHERE kind = ?`
+      )
+      .get('BREAKS_COMPATIBILITY_WITH') as { kind: string; confidence: string; provenance: string };
+    assert.equal(row.kind, 'BREAKS_COMPATIBILITY_WITH');
+    assert.equal(row.confidence, 'heuristic');
+    const provenance = JSON.parse(row.provenance) as {
+      change: { kind: string; method: string; path: string; previousEndpointId: string };
+      evidence: { filePath: string; snippet: string };
+    };
+    assert.deepEqual(provenance.change, {
+      kind: 'removed_endpoint',
+      method: 'RPC',
+      path: 'UserService/ListUsers',
+      previousEndpointId: 'endpoint:protobuf:UserService.ListUsers'
+    });
+    assert.deepEqual(provenance.evidence, {
+      filePath: 'src/users-client.ts',
+      snippet: 'return client.listUsers({ pageSize: 50 });'
+    });
+  } finally {
+    db.close();
+  }
+});
+
 test('analyzeContractDiff classifies Protobuf response field type changes as breaking', async () => {
   const { consumerRoot, providerRoot } = await setupWorkspaceWithProtobufContract();
   await writeProtobufContract(providerRoot, { userNameFieldType: 'int64' });
@@ -4107,6 +4196,91 @@ test('analyzeContractDiff classifies removed AsyncAPI operations as breaking', a
       previousEndpointId: 'endpoint:asyncapi:SEND orders.submitted'
     }
   ]);
+});
+
+test('analyzeContractDiff links removed AsyncAPI operations to resolved event consumers', async () => {
+  const consumerRoot = await makeRepo('impact-trace-diff-asyncapi-resolved-consumer-');
+  const providerRoot = await makeRepo('impact-trace-diff-asyncapi-resolved-provider-');
+  const consumerReal = realpathSync(consumerRoot);
+  const providerReal = realpathSync(providerRoot);
+  await writeFile(
+    path.join(consumerRoot, 'src/orders-consumer.ts'),
+    [
+      'export function startOrdersConsumer(bus: { subscribe(topic: string, handler: () => void): void }) {',
+      '  bus.subscribe("orders.submitted", () => undefined);',
+      '}',
+      ''
+    ].join('\n')
+  );
+  await writeAsyncApiContract(providerRoot);
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'orders-events'
+  });
+  const resolved = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+  assert.equal(resolved.links.length, 1);
+
+  await writeAsyncApiContract(providerRoot, { includeOrderSubmittedOperation: false });
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'orders-events',
+    contractPath: 'contracts/asyncapi.yaml'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.equal(result.summary.impactedConsumerCount, 1);
+  assert.deepEqual(result.impactedConsumers, [
+    {
+      consumerService: 'web',
+      consumerRepoPath: consumerReal,
+      consumerPath: 'src/orders-consumer.ts',
+      providerService: 'orders-events',
+      providerRepoPath: providerReal,
+      providerContractPath: 'contracts/asyncapi.yaml',
+      httpMethod: 'SEND',
+      routePath: 'orders.submitted',
+      evidenceSnippet: 'bus.subscribe("orders.submitted", () => undefined);'
+    }
+  ]);
+
+  const db = new DatabaseSync(databasePath(consumerRoot), { readOnly: true });
+  try {
+    const row = db
+      .prepare(
+        `SELECT kind, confidence, provenance
+         FROM cross_repo_links
+         WHERE kind = ?`
+      )
+      .get('BREAKS_COMPATIBILITY_WITH') as { kind: string; confidence: string; provenance: string };
+    assert.equal(row.kind, 'BREAKS_COMPATIBILITY_WITH');
+    assert.equal(row.confidence, 'heuristic');
+    const provenance = JSON.parse(row.provenance) as {
+      change: { kind: string; method: string; path: string; previousEndpointId: string };
+      evidence: { filePath: string; snippet: string };
+    };
+    assert.deepEqual(provenance.change, {
+      kind: 'removed_endpoint',
+      method: 'SEND',
+      path: 'orders.submitted',
+      previousEndpointId: 'endpoint:asyncapi:SEND orders.submitted'
+    });
+    assert.deepEqual(provenance.evidence, {
+      filePath: 'src/orders-consumer.ts',
+      snippet: 'bus.subscribe("orders.submitted", () => undefined);'
+    });
+  } finally {
+    db.close();
+  }
 });
 
 test('analyzeContractDiff classifies removed AsyncAPI JSON operations as breaking', async () => {

@@ -629,7 +629,7 @@ flowchart LR
 | git snapshot metadata | stale index warning이 commit/branch/dirty state 기준 |
 | thin ImpactBench | `npm run bench` deterministic JSON 생성 |
 
-비범위: UI 본구현, full call graph, protobuf/AsyncAPI consumer resolver, GraphQL full parser depth.
+비범위: UI 본구현, full call graph, generated-client usage graph, event topology inference, GraphQL/protobuf/AsyncAPI full parser depth.
 
 ### Phase B: MCP Context Pack
 
@@ -685,12 +685,14 @@ flowchart LR
 | workspace catalog | v0 landed: `.impact-trace/workspace.json`에 여러 repo/service local path를 명시 등록하고 DB에 동기화 |
 | cross-repo resolver | v0 landed: indexed workspace repo에서 OpenAPI provider endpoint와 HTTP consumer file literal을 `cross_repo_links`로 연결 |
 | GraphQL consumer resolver | v0 landed: provider root field와 consumer operation document top-level selection을 `cross_repo_links`로 연결 |
+| Protobuf consumer resolver | v0 landed: provider RPC와 service-anchored consumer call/route literal을 `cross_repo_links`로 연결 |
+| AsyncAPI consumer resolver | v0 landed: provider event operation과 consumer source/config event address literal을 `cross_repo_links`로 연결 |
 | OpenAPI endpoint/schema contract diff | v0 landed: removed endpoint를 breaking, added endpoint를 non-breaking으로 분류하고, JSON/YAML nested request/response schema breaking change의 known consumer impact를 저장 |
 | Protobuf RPC/message contract diff | v0 landed: `.proto` compact signature로 removed RPC와 response message field breaking change를 분류 |
 | GraphQL schema contract diff | v0 landed: `.graphql`/`.gql` compact signature로 removed root field, response field removal/type change, required argument/input field addition을 breaking으로 분류 |
 | AsyncAPI operation/message contract diff | v0 landed: AsyncAPI YAML/JSON compact signature로 removed operation, message payload field removal/type change, required payload field addition을 breaking으로 분류 |
 | MCP workspace/contract resources | v0 landed: `impact_trace_contract_diff`와 `impact-trace://workspaces/{name}/contracts`, `/cross-repo-links`로 contract impact를 resource-on-demand로 확장 |
-| protobuf/AsyncAPI consumer resolver | producer/consumer relation 추출 |
+| generated-client/event topology resolver | Protobuf generated-client usage graph, AsyncAPI event topology/NATS/AMQP/Kafka binding depth |
 | UI owner/repo filter | cross-repo impact를 사람이 추적 |
 
 ### Phase F: Enrichment Adapters

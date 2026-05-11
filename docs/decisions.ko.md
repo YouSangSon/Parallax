@@ -46,6 +46,7 @@
 | [D-034](#d-034-graphql-contract-diff-uses-compact-schema-signatures) | GraphQL contract diff uses compact schema signatures | P0/P1 | 2026-05-12 |
 | [D-035](#d-035-asyncapi-contract-diff-uses-compact-operationmessage-signatures) | AsyncAPI contract diff uses compact operation/message signatures | P0/P1 | 2026-05-12 |
 | [D-036](#d-036-graphql-consumer-resolver-links-operation-documents-to-root-fields) | GraphQL consumer resolver links operation documents to root fields | P0/P1 | 2026-05-12 |
+| [D-037](#d-037-protobuf-and-asyncapi-consumer-resolver-reuses-the-cross-repo-link-envelope) | Protobuf and AsyncAPI consumer resolver reuses the cross-repo link envelope | P0/P1 | 2026-05-12 |
 
 ---
 
@@ -618,7 +619,7 @@
 - Protobuf endpoint-only diff만 유지 — removed RPC는 잡지만 response field removal/type change를 놓친다.
 - GraphQL/AsyncAPI까지 generic compatibility layer를 먼저 만든 뒤 Protobuf를 넣기 — 설계는 깔끔하지만 이번 slice의 사용자 가치가 늦어진다.
 
-**결과/위험:** v0 parser는 deterministic regex 기반이며 top-level service/message, unary/stream RPC, simple field/map/oneof-member field signature만 다룬다. imports, nested message diff, enum/reserved/options, oneof group semantics, proto2 default semantics, package-qualified cross-file type resolution, generated-client source compatibility는 후속이다. consumer impact persistence는 기존 `cross_repo_links`가 있을 때만 가능하므로 현재 Protobuf removed RPC/field break는 known consumer 없이도 summary에는 breaking으로 남지만, Protobuf consumer resolver가 들어오기 전까지 `BREAKS_COMPATIBILITY_WITH` link는 제한적이다. GraphQL diff는 D-034에서, AsyncAPI diff는 D-035에서 확장했다.
+**결과/위험:** v0 parser는 deterministic regex 기반이며 top-level service/message, unary/stream RPC, simple field/map/oneof-member field signature만 다룬다. imports, nested message diff, enum/reserved/options, oneof group semantics, proto2 default semantics, package-qualified cross-file type resolution, generated-client source compatibility는 후속이다. consumer impact persistence는 기존 `cross_repo_links`가 있을 때만 가능하다. D-037에서 service-anchored Protobuf RPC consumer resolver v0가 추가되어 removed RPC는 known consumer link가 있으면 `BREAKS_COMPATIBILITY_WITH`로 저장된다. response field break의 generated-client/source compatibility와 cross-file usage graph는 여전히 후속이다. GraphQL diff는 D-034에서, AsyncAPI diff는 D-035에서 확장했다.
 
 **관련 commit:** `feat(contracts): Protobuf contract diff 추가`
 
@@ -654,7 +655,7 @@
 - AsyncAPI를 OpenAPI YAML scanner에 계속 태움 — endpoint/operation이 비어 `unknown`이 되며 event contract risk를 놓친다.
 - consumer resolver부터 구현 — downstream link는 중요하지만 provider contract 자체의 breaking classifier가 없으면 어떤 변화가 위험한지 작은 payload로 설명할 수 없다.
 
-**결과/위험:** v0 parser는 deterministic compact extractor이며 AsyncAPI 3.x `operations`/`channels`와 2.x `publish`/`subscribe` 형태의 local `#/...` refs를 우선 지원한다. payload schema는 JSON-schema-like object required/properties, local refs, nested/array/composition fingerprint를 compact path로 저장한다. operation removal은 endpoint-equivalent breaking change로 분류되고, message payload field removal/type change 및 newly required payload field는 message-level breaking change로 분류된다. event consumer impact persistence는 기존 `cross_repo_links`가 있을 때만 가능하므로, AsyncAPI consumer resolver가 들어오기 전까지 `BREAKS_COMPATIBILITY_WITH` link는 제한적이다. message trait/security/binding semantics, external refs, schema registry integration, producer/consumer direction inference는 후속이다.
+**결과/위험:** v0 parser는 deterministic compact extractor이며 AsyncAPI 3.x `operations`/`channels`와 2.x `publish`/`subscribe` 형태의 local `#/...` refs를 우선 지원한다. payload schema는 JSON-schema-like object required/properties, local refs, nested/array/composition fingerprint를 compact path로 저장한다. operation removal은 endpoint-equivalent breaking change로 분류되고, message payload field removal/type change 및 newly required payload field는 message-level breaking change로 분류된다. event consumer impact persistence는 기존 `cross_repo_links`가 있을 때만 가능하다. D-037에서 event address literal consumer resolver v0가 추가되어 removed operation은 known consumer link가 있으면 `BREAKS_COMPATIBILITY_WITH`로 저장된다. message trait/security/binding semantics, external refs, schema registry integration, producer/consumer direction inference와 topology-level matching은 후속이다.
 
 **관련 commit:** `feat(contracts): AsyncAPI contract diff 추가`
 
@@ -675,6 +676,24 @@
 **결과/위험:** v0는 deterministic heuristic이다. `.graphql`, `.gql`, `.ts`, `.tsx`, `.js`, `.jsx` consumer file만 scan하고 `query`/`mutation`/`subscription` operation의 selection set에서 top-level root field만 본다. provider root type과 field name이 맞으면 link를 저장한다. indexed file과 live file hash가 다르면 기존 resolver처럼 skip하고 warning을 남긴다. fragment expansion, cross-file fragments, full schema validation, directive semantics, persisted query manifest, generated client mapping, Apollo client metadata, custom root operation type remap은 후속이다. Link kind 이름은 기존 envelope 재사용 때문에 아직 HTTP 명칭을 유지하지만 provenance method/path로 GraphQL 여부를 구분한다.
 
 **관련 commit:** `feat(workspace): GraphQL consumer resolver 추가`
+
+---
+
+## D-037: Protobuf and AsyncAPI consumer resolver reuses the cross-repo link envelope
+
+**결정:** `workspace resolve-contracts`는 Protobuf provider endpoint(`UserService.ListUsers`)를 `RPC UserService/ListUsers` key로, AsyncAPI provider operation(`SEND orders.submitted`, `RECEIVE users.requested`)을 event `ACTION address` key로 해석한다. consumer repo에서는 indexed fresh file만 읽고, Protobuf는 service anchor와 RPC call/route literal을, AsyncAPI는 source/config file의 exact event address literal을 매칭한다. 저장은 기존 `cross_repo_links`와 `CONSUMES_HTTP_ENDPOINT` provenance의 `http.method`/`http.path` envelope를 재사용한다.
+
+**맥락:** Protobuf contract diff(D-033)와 AsyncAPI contract diff(D-035)는 compact signature 기반 breaking classification을 이미 제공하지만, downstream consumer link가 없으면 `BREAKS_COMPATIBILITY_WITH`가 제한된다. Buf, grpcurl, Connect/protobuf-es, AsyncAPI parser/diff, EventCatalog, Microcks는 모두 descriptor/signature 또는 event catalog identity를 중심으로 producer/consumer 영향을 좁히지만, Impact Trace v0는 hosted registry, reflection network call, raw contract body persistence 없이 local-first로 동작해야 한다.
+
+**대안:**
+- Buf CLI/BSR 또는 protoc descriptor build를 resolver dependency로 추가 — descriptor fidelity는 높지만 build config, external module, registry surface가 커져 v0 local resolver에는 과하다.
+- gRPC reflection/grpcurl 방식으로 live service를 조회 — 런타임 네트워크와 credential surface가 생겨 Impact Trace의 offline index model과 맞지 않는다.
+- AsyncAPI parser/diff/EventCatalog를 core dependency로 도입 — validated/dereferenced document와 catalog model은 유용하지만 현재 compact signature + file hash model을 우회하고 payload가 커진다.
+- 새 `CONSUMES_RPC`/`CONSUMES_EVENT` link kind 추가 — 의미는 더 정확하지만 existing MCP/contract-diff resource가 이미 `CONSUMES_HTTP_ENDPOINT` envelope를 읽으므로 schema migration 없이 닫기 어렵다.
+
+**결과/위험:** v0는 deterministic heuristic이다. Protobuf consumer scan은 source file만 대상으로 하고 docs/examples/README와 generated protobuf descriptors(`gen/`, `generated/`, `*_pb.*`, `*_grpc_pb.*`)는 제외한다. RPC method-name-only match에는 `UserService` 같은 service anchor가 필요하고, exact gRPC route string(`/pkg.UserService/ListUsers`)은 직접 매칭한다. AsyncAPI consumer scan은 source/config file에서 exact address token을 찾고 docs/examples/README와 partial topic(`orders.submitted.v2`)은 제외한다. Java/Kotlin/Python/Go/Rust/TS/JS common client call shape와 Spring/Kafka config의 literal은 v0에서 잡지만, cross-file client data flow, generated-client usage graph, Buf descriptor import graph, AsyncAPI operationId-only matching, NATS wildcard semantics, AMQP exchange topology, schema registry integration은 후속이다. Link kind 이름은 기존 envelope 재사용 때문에 아직 HTTP 명칭을 유지하지만 `RPC`, `SEND`, `RECEIVE`, `PUBLISH`, `SUBSCRIBE` method로 contract type을 구분한다.
+
+**관련 commit:** `feat(workspace): Protobuf AsyncAPI consumer resolver 추가`
 
 ---
 

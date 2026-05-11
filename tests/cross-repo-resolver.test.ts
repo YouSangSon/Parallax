@@ -496,6 +496,444 @@ test('resolveCrossRepoContracts ignores TS comment backticks when detecting Grap
   assert.equal(result.links.length, 0);
 });
 
+test('resolveCrossRepoContracts links Protobuf RPC consumers to provider service methods', async () => {
+  const consumerRoot = await makeRepo('impact-trace-protobuf-consumer-');
+  const providerRoot = await makeRepo('impact-trace-protobuf-provider-');
+  const consumerReal = realpathSync(consumerRoot);
+  const providerReal = realpathSync(providerRoot);
+  await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
+
+  await writeFile(
+    path.join(consumerRoot, 'src/users-client.ts'),
+    [
+      'import { createPromiseClient } from "@connectrpc/connect";',
+      'import { UserService } from "./gen/users_connect";',
+      '',
+      'export async function loadUsers(transport: unknown) {',
+      '  const client = createPromiseClient(UserService, transport);',
+      '  return client.listUsers({ pageSize: 50 });',
+      '}',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(providerRoot, 'contracts/users.proto'),
+    [
+      'syntax = "proto3";',
+      '',
+      'service UserService {',
+      '  rpc ListUsers (ListUsersRequest) returns (ListUsersResponse);',
+      '}',
+      '',
+      'message ListUsersRequest {',
+      '  int32 page_size = 1;',
+      '}',
+      '',
+      'message ListUsersResponse {',
+      '  repeated string ids = 1;',
+      '}',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'users-grpc'
+  });
+
+  const result = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+
+  assert.equal(result.links.length, 1);
+  assert.deepEqual(result.links[0], {
+    kind: 'CONSUMES_HTTP_ENDPOINT',
+    confidence: 'heuristic',
+    consumerService: 'web',
+    consumerRepoPath: consumerReal,
+    consumerPath: 'src/users-client.ts',
+    providerService: 'users-grpc',
+    providerRepoPath: providerReal,
+    providerContractPath: 'contracts/users.proto',
+    providerEndpointId: 'endpoint:protobuf:UserService.ListUsers',
+    httpMethod: 'RPC',
+    routePath: 'UserService/ListUsers'
+  });
+
+  const db = new DatabaseSync(databasePath(consumerRoot), { readOnly: true });
+  try {
+    const row = db
+      .prepare(
+        `SELECT kind, confidence, provenance
+         FROM cross_repo_links`
+      )
+      .get() as { kind: string; confidence: string; provenance: string };
+    assert.equal(row.kind, 'CONSUMES_HTTP_ENDPOINT');
+    assert.equal(row.confidence, 'heuristic');
+    assert.deepEqual(JSON.parse(row.provenance), {
+      schemaVersion: 1,
+      resolver: 'cross-repo-contracts-v0',
+      consumer: {
+        serviceName: 'web',
+        repoPath: consumerReal,
+        path: 'src/users-client.ts'
+      },
+      provider: {
+        serviceName: 'users-grpc',
+        repoPath: providerReal,
+        contractPath: 'contracts/users.proto',
+        endpointId: 'endpoint:protobuf:UserService.ListUsers'
+      },
+      http: {
+        method: 'RPC',
+        path: 'UserService/ListUsers'
+      },
+      evidence: {
+        filePath: 'src/users-client.ts',
+        snippet: 'return client.listUsers({ pageSize: 50 });'
+      }
+    });
+  } finally {
+    db.close();
+  }
+});
+
+test('resolveCrossRepoContracts does not link Protobuf RPC names without service context', async () => {
+  const consumerRoot = await makeRepo('impact-trace-protobuf-false-consumer-');
+  const providerRoot = await makeRepo('impact-trace-protobuf-false-provider-');
+  await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
+
+  await writeFile(
+    path.join(consumerRoot, 'src/users.ts'),
+    [
+      'export function listUsers() {',
+      '  return ["local-only"];',
+      '}',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(providerRoot, 'contracts/users.proto'),
+    [
+      'syntax = "proto3";',
+      '',
+      'service UserService {',
+      '  rpc ListUsers (ListUsersRequest) returns (ListUsersResponse);',
+      '}',
+      '',
+      'message ListUsersRequest {}',
+      'message ListUsersResponse {}',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'users-grpc'
+  });
+
+  const result = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+
+  assert.equal(result.links.length, 0);
+});
+
+test('resolveCrossRepoContracts does not link Protobuf helper declarations with service context', async () => {
+  const consumerRoot = await makeRepo('impact-trace-protobuf-helper-consumer-');
+  const providerRoot = await makeRepo('impact-trace-protobuf-helper-provider-');
+  await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
+
+  await writeFile(
+    path.join(consumerRoot, 'src/users.ts'),
+    [
+      'import { UserService } from "./gen/users_connect";',
+      '',
+      'export function listUsers() {',
+      '  return { service: UserService, source: "local-only" };',
+      '}',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(providerRoot, 'contracts/users.proto'),
+    [
+      'syntax = "proto3";',
+      '',
+      'service UserService {',
+      '  rpc ListUsers (ListUsersRequest) returns (ListUsersResponse);',
+      '}',
+      '',
+      'message ListUsersRequest {}',
+      'message ListUsersResponse {}',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'users-grpc'
+  });
+
+  const result = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+
+  assert.equal(result.links.length, 0);
+});
+
+test('resolveCrossRepoContracts ignores generated Protobuf client descriptors', async () => {
+  const consumerRoot = await makeRepo('impact-trace-protobuf-generated-consumer-');
+  const providerRoot = await makeRepo('impact-trace-protobuf-generated-provider-');
+  await mkdir(path.join(consumerRoot, 'src/gen'), { recursive: true });
+  await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
+
+  await writeFile(
+    path.join(consumerRoot, 'src/gen/users_pb.ts'),
+    [
+      '// @generated by protoc-gen-es',
+      'export const UserService = {',
+      '  methods: {',
+      '    listUsers: { name: "ListUsers" }',
+      '  }',
+      '};',
+      'export function listUsers(input: unknown) {',
+      '  return input;',
+      '}',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(consumerRoot, 'src/users-client.ts'),
+    [
+      '// @generated by protoc-gen-connect-es',
+      'import { UserService } from "./gen/users_connect";',
+      '',
+      'export function listUsers(client: { listUsers(input: unknown): unknown }) {',
+      '  return client.listUsers({});',
+      '}',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(providerRoot, 'contracts/users.proto'),
+    [
+      'syntax = "proto3";',
+      '',
+      'service UserService {',
+      '  rpc ListUsers (ListUsersRequest) returns (ListUsersResponse);',
+      '}',
+      '',
+      'message ListUsersRequest {}',
+      'message ListUsersResponse {}',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'users-grpc'
+  });
+
+  const result = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+
+  assert.equal(result.links.length, 0);
+});
+
+test('resolveCrossRepoContracts links AsyncAPI event consumers to provider operations', async () => {
+  const consumerRoot = await makeRepo('impact-trace-asyncapi-consumer-');
+  const providerRoot = await makeRepo('impact-trace-asyncapi-provider-');
+  const consumerReal = realpathSync(consumerRoot);
+  const providerReal = realpathSync(providerRoot);
+  await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
+
+  await writeFile(
+    path.join(consumerRoot, 'src/orders-consumer.ts'),
+    [
+      'export function startOrdersConsumer(bus: { subscribe(topic: string, handler: () => void): void }) {',
+      '  bus.subscribe("orders.submitted", () => undefined);',
+      '}',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(providerRoot, 'contracts/asyncapi.yaml'),
+    [
+      'asyncapi: 3.0.0',
+      'info:',
+      '  title: Orders events',
+      '  version: 1.0.0',
+      'channels:',
+      '  orderSubmitted:',
+      '    address: orders.submitted',
+      '    messages:',
+      '      OrderSubmitted:',
+      '        payload:',
+      '          type: object',
+      '          required: [orderId]',
+      '          properties:',
+      '            orderId:',
+      '              type: string',
+      'operations:',
+      '  sendOrderSubmitted:',
+      '    action: send',
+      '    channel:',
+      '      $ref: "#/channels/orderSubmitted"',
+      '    messages:',
+      '      - $ref: "#/channels/orderSubmitted/messages/OrderSubmitted"',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'orders-events'
+  });
+
+  const result = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+
+  assert.equal(result.links.length, 1);
+  assert.deepEqual(result.links[0], {
+    kind: 'CONSUMES_HTTP_ENDPOINT',
+    confidence: 'heuristic',
+    consumerService: 'web',
+    consumerRepoPath: consumerReal,
+    consumerPath: 'src/orders-consumer.ts',
+    providerService: 'orders-events',
+    providerRepoPath: providerReal,
+    providerContractPath: 'contracts/asyncapi.yaml',
+    providerEndpointId: 'endpoint:asyncapi:SEND orders.submitted',
+    httpMethod: 'SEND',
+    routePath: 'orders.submitted'
+  });
+
+  const db = new DatabaseSync(databasePath(consumerRoot), { readOnly: true });
+  try {
+    const row = db
+      .prepare(
+        `SELECT kind, confidence, provenance
+         FROM cross_repo_links`
+      )
+      .get() as { kind: string; confidence: string; provenance: string };
+    assert.equal(row.kind, 'CONSUMES_HTTP_ENDPOINT');
+    assert.equal(row.confidence, 'heuristic');
+    assert.deepEqual(JSON.parse(row.provenance), {
+      schemaVersion: 1,
+      resolver: 'cross-repo-contracts-v0',
+      consumer: {
+        serviceName: 'web',
+        repoPath: consumerReal,
+        path: 'src/orders-consumer.ts'
+      },
+      provider: {
+        serviceName: 'orders-events',
+        repoPath: providerReal,
+        contractPath: 'contracts/asyncapi.yaml',
+        endpointId: 'endpoint:asyncapi:SEND orders.submitted'
+      },
+      http: {
+        method: 'SEND',
+        path: 'orders.submitted'
+      },
+      evidence: {
+        filePath: 'src/orders-consumer.ts',
+        snippet: 'bus.subscribe("orders.submitted", () => undefined);'
+      }
+    });
+  } finally {
+    db.close();
+  }
+});
+
+test('resolveCrossRepoContracts ignores AsyncAPI examples and partial topic matches', async () => {
+  const consumerRoot = await makeRepo('impact-trace-asyncapi-false-consumer-');
+  const providerRoot = await makeRepo('impact-trace-asyncapi-false-provider-');
+  await mkdir(path.join(consumerRoot, 'docs'), { recursive: true });
+  await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
+
+  await writeFile(
+    path.join(consumerRoot, 'docs/example.ts'),
+    [
+      'export const example = "orders.submitted";',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(consumerRoot, 'src/orders-consumer.ts'),
+    [
+      'export const topic = "orders.submitted.v2";',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(providerRoot, 'contracts/asyncapi.yaml'),
+    [
+      'asyncapi: 3.0.0',
+      'info:',
+      '  title: Orders events',
+      '  version: 1.0.0',
+      'channels:',
+      '  orderSubmitted:',
+      '    address: orders.submitted',
+      '    messages:',
+      '      OrderSubmitted:',
+      '        payload:',
+      '          type: object',
+      'operations:',
+      '  sendOrderSubmitted:',
+      '    action: send',
+      '    channel:',
+      '      $ref: "#/channels/orderSubmitted"',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'orders-events'
+  });
+
+  const result = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+
+  assert.equal(result.links.length, 0);
+});
+
 test('resolveCrossRepoContracts skips stale consumer files instead of linking unindexed edits', async () => {
   const consumerRoot = await makeRepo('impact-trace-consumer-stale-');
   const providerRoot = await makeRepo('impact-trace-provider-stale-');

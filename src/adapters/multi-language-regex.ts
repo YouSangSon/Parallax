@@ -1,6 +1,11 @@
 import path from 'node:path';
 import ts from 'typescript';
 
+import {
+  extractAsyncApiJsonCompatibility,
+  extractAsyncApiYamlCompatibility,
+  type AsyncApiOperationSignature
+} from '../asyncapi_compat.js';
 import { markdownEntityKindForPath } from '../artifacts.js';
 import { extractGraphqlCompatibility, stripGraphqlComments } from '../graphql_compat.js';
 import { extractOpenApiJsonCompatibility, extractOpenApiYamlCompatibility } from '../openapi_compat.js';
@@ -382,17 +387,20 @@ async function* extractContractEndpointEvents(
   file: ScannedFile,
   fileDescriptor: EntityDescriptor
 ): AsyncIterable<IndexEvent> {
+  const contractKind = contractKindForPath(file.relativePath);
   const endpoints =
     file.language === 'protobuf'
       ? extractProtobufEndpoints(file)
       : file.language === 'graphql'
         ? extractGraphqlEndpoints(file)
-        : extractOpenApiEndpoints(file);
+        : contractKind === 'asyncapi'
+          ? extractAsyncApiEndpoints(file)
+          : extractOpenApiEndpoints(file);
 
   for (const endpoint of endpoints) {
     const endpointDescriptor: EntityDescriptor = {
       kind: 'endpoint',
-      languageId: file.language,
+      languageId: endpoint.languageId ?? file.language,
       displayName: endpoint.displayName,
       metadata: endpoint.metadata
     };
@@ -421,6 +429,7 @@ async function* extractContractEndpointEvents(
 
 type ContractEndpoint = {
   displayName: string;
+  languageId?: string;
   metadata: Readonly<Record<string, unknown>>;
   evidence: EvidenceSpan;
 };
@@ -462,6 +471,7 @@ function openApiJsonMetadata(
   content: string,
   contractKind: string
 ): Readonly<Record<string, unknown>> {
+  if (contractKind === 'asyncapi') return asyncApiJsonMetadata(content);
   const metadata: Record<string, unknown> = { contractKind };
   try {
     const parsed = JSON.parse(content) as {
@@ -487,13 +497,43 @@ function openApiYamlMetadata(
   content: string,
   contractKind: string
 ): Readonly<Record<string, unknown>> {
+  if (contractKind === 'asyncapi') return asyncApiYamlMetadata(content);
   const metadata: Record<string, unknown> = { contractKind };
-  const schemaKey = contractKind === 'asyncapi' ? 'asyncapi' : '(?:openapi|swagger)';
-  const schemaMatch = new RegExp(`^\\s*${schemaKey}\\s*:\\s*['"]?([^'"\\s#]+)`, 'im').exec(content);
+  const schemaMatch = /^\s*(?:openapi|swagger)\s*:\s*['"]?([^'"\s#]+)/im.exec(content);
   if (schemaMatch?.[1]) metadata.schemaVersion = schemaMatch[1];
   const serviceMatch = /^\s*x-service-name\s*:\s*['"]?([^'"\n#]+)/im.exec(content);
   if (serviceMatch?.[1]) metadata.serviceName = serviceMatch[1].trim();
   const compatibility = extractOpenApiYamlCompatibility(content);
+  if (compatibility !== undefined) metadata.compatibility = compatibility;
+  return metadata;
+}
+
+function asyncApiJsonMetadata(content: string): Readonly<Record<string, unknown>> {
+  const metadata: Record<string, unknown> = { contractKind: 'asyncapi' };
+  try {
+    const parsed = JSON.parse(content) as {
+      asyncapi?: unknown;
+      info?: { version?: unknown; title?: unknown; 'x-service-name'?: unknown };
+      'x-service-name'?: unknown;
+    };
+    if (typeof parsed.asyncapi === 'string') metadata.schemaVersion = parsed.asyncapi;
+    const serviceName = parsed['x-service-name'] ?? parsed.info?.['x-service-name'] ?? parsed.info?.title;
+    if (typeof serviceName === 'string' && serviceName.length > 0) metadata.serviceName = serviceName;
+    const compatibility = extractAsyncApiJsonCompatibility(content);
+    if (compatibility !== undefined) metadata.compatibility = compatibility;
+  } catch {
+    // Path-obvious AsyncAPI contracts still get a baseline row even if the JSON is invalid.
+  }
+  return metadata;
+}
+
+function asyncApiYamlMetadata(content: string): Readonly<Record<string, unknown>> {
+  const metadata: Record<string, unknown> = { contractKind: 'asyncapi' };
+  const schemaMatch = /^\s*asyncapi\s*:\s*['"]?([^'"\s#]+)/im.exec(content);
+  if (schemaMatch?.[1]) metadata.schemaVersion = schemaMatch[1];
+  const serviceMatch = /^\s*x-service-name\s*:\s*['"]?([^'"\n#]+)/im.exec(content);
+  if (serviceMatch?.[1]) metadata.serviceName = serviceMatch[1].trim();
+  const compatibility = extractAsyncApiYamlCompatibility(content);
   if (compatibility !== undefined) metadata.compatibility = compatibility;
   return metadata;
 }
@@ -528,6 +568,39 @@ function extractOpenApiJsonEndpoints(file: ScannedFile): ContractEndpoint[] {
     }
   }
   return endpoints;
+}
+
+function extractAsyncApiEndpoints(file: ScannedFile): ContractEndpoint[] {
+  const compatibility = file.language === 'json'
+    ? extractAsyncApiJsonCompatibility(file.content)
+    : extractAsyncApiYamlCompatibility(file.content);
+  if (compatibility === undefined) return [];
+  return compatibility.operations.map((operation) => ({
+    displayName: `${operation.action.toUpperCase()} ${operation.address}`,
+    languageId: 'asyncapi',
+    metadata: {
+      contractKind: 'asyncapi',
+      action: operation.action,
+      channelId: operation.channelId,
+      address: operation.address,
+      messageIds: operation.messageIds
+    },
+    evidence: evidenceLineAt(file.content, asyncApiOperationOffset(file.content, operation))
+  }));
+}
+
+function asyncApiOperationOffset(content: string, operation: AsyncApiOperationSignature): number {
+  const candidates = [
+    operation.address,
+    operation.channelId,
+    ...operation.messageIds,
+    operation.action
+  ].filter((candidate) => candidate.length > 0);
+  for (const candidate of candidates) {
+    const index = content.indexOf(candidate);
+    if (index >= 0) return index;
+  }
+  return 0;
 }
 
 function jsonOpenApiMethodEvidence(

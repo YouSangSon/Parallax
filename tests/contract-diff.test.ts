@@ -186,6 +186,216 @@ async function writeGraphqlContract(
   );
 }
 
+type AsyncApiContractOptions = {
+  includeOrderSubmittedOperation?: boolean;
+  operationAction?: string;
+  includeCustomerEmailField?: boolean;
+  customerEmailFieldType?: 'string' | 'integer';
+  includeRequiredCustomerEmail?: boolean;
+  includeRequiredCurrency?: boolean;
+};
+
+async function writeAsyncApiContract(
+  repoRoot: string,
+  options: AsyncApiContractOptions = {}
+): Promise<void> {
+  await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
+  const includeOrderSubmittedOperation = options.includeOrderSubmittedOperation ?? true;
+  const includeCustomerEmailField = options.includeCustomerEmailField ?? true;
+  const includeRequiredCustomerEmail = options.includeRequiredCustomerEmail ?? true;
+  await writeFile(
+    path.join(repoRoot, 'contracts/asyncapi.yaml'),
+    [
+      "asyncapi: '3.0.0'",
+      'info:',
+      '  title: Orders Events',
+      "  version: '1.0.0'",
+      ...(includeOrderSubmittedOperation
+        ? [
+          'channels:',
+          '  orderSubmitted:',
+          '    address: orders.submitted',
+          '    messages:',
+          '      OrderSubmitted:',
+          "        $ref: '#/components/messages/OrderSubmitted'"
+        ]
+        : ['channels: {}']),
+      ...(includeOrderSubmittedOperation
+        ? [
+          'operations:',
+          '  publishOrderSubmitted:',
+          `    action: ${options.operationAction ?? 'send'}`,
+          '    channel:',
+          "      $ref: '#/channels/orderSubmitted'",
+          '    messages:',
+          "      - $ref: '#/channels/orderSubmitted/messages/OrderSubmitted'"
+        ]
+        : ['operations: {}']),
+      'components:',
+      '  messages:',
+      '    OrderSubmitted:',
+      '      payload:',
+      '        type: object',
+      '        required:',
+      '          - orderId',
+      ...(includeRequiredCustomerEmail && includeCustomerEmailField ? ['          - customerEmail'] : []),
+      ...(options.includeRequiredCurrency ? ['          - currency'] : []),
+      '        properties:',
+      '          orderId:',
+      '            type: string',
+      ...(includeCustomerEmailField
+        ? [
+          '          customerEmail:',
+          `            type: ${options.customerEmailFieldType ?? 'string'}`
+        ]
+        : []),
+      ...(options.includeRequiredCurrency
+        ? [
+          '          currency:',
+          '            type: string'
+        ]
+        : []),
+      ''
+    ].join('\n')
+  );
+}
+
+async function writeAsyncApiJsonContract(
+  repoRoot: string,
+  options: AsyncApiContractOptions = {}
+): Promise<void> {
+  await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
+  const includeOrderSubmittedOperation = options.includeOrderSubmittedOperation ?? true;
+  const includeCustomerEmailField = options.includeCustomerEmailField ?? true;
+  const includeRequiredCustomerEmail = options.includeRequiredCustomerEmail ?? true;
+  const required = [
+    'orderId',
+    ...(includeRequiredCustomerEmail && includeCustomerEmailField ? ['customerEmail'] : []),
+    ...(options.includeRequiredCurrency ? ['currency'] : [])
+  ];
+  const properties: Record<string, { type: string }> = {
+    orderId: { type: 'string' },
+    ...(includeCustomerEmailField
+      ? { customerEmail: { type: options.customerEmailFieldType ?? 'string' } }
+      : {}),
+    ...(options.includeRequiredCurrency ? { currency: { type: 'string' } } : {})
+  };
+  const document = {
+    asyncapi: '3.0.0',
+    info: {
+      title: 'Orders Events',
+      version: '1.0.0'
+    },
+    ...(includeOrderSubmittedOperation
+      ? {
+          channels: {
+            orderSubmitted: {
+              address: 'orders.submitted',
+              messages: {
+                OrderSubmitted: {
+                  $ref: '#/components/messages/OrderSubmitted'
+                }
+              }
+            }
+          },
+          operations: {
+            publishOrderSubmitted: {
+              action: options.operationAction ?? 'send',
+              channel: {
+                $ref: '#/channels/orderSubmitted'
+              },
+              messages: [
+                {
+                  $ref: '#/channels/orderSubmitted/messages/OrderSubmitted'
+                }
+              ]
+            }
+          }
+        }
+      : {
+          channels: {},
+          operations: {}
+        }),
+    components: {
+      messages: {
+        OrderSubmitted: {
+          payload: {
+            type: 'object',
+            required,
+            properties
+          }
+        }
+      }
+    }
+  };
+  await writeFile(path.join(repoRoot, 'contracts/asyncapi.json'), `${JSON.stringify(document, null, 2)}\n`);
+}
+
+async function writeMalformedAsyncApiYamlOperationsContract(repoRoot: string): Promise<void> {
+  await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
+  await writeFile(
+    path.join(repoRoot, 'contracts/asyncapi.yaml'),
+    [
+      "asyncapi: '3.0.0'",
+      'info:',
+      '  title: Orders Events',
+      "  version: '1.0.0'",
+      'channels:',
+      '  orderSubmitted:',
+      '    address: orders.submitted',
+      'operations: []',
+      'components:',
+      '  messages:',
+      '    OrderSubmitted:',
+      '      payload:',
+      '        type: object',
+      '        required:',
+      '          - orderId',
+      '        properties:',
+      '          orderId:',
+      '            type: string',
+      ''
+    ].join('\n')
+  );
+}
+
+async function writeMalformedAsyncApiJsonOperationContract(repoRoot: string): Promise<void> {
+  await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
+  await writeFile(
+    path.join(repoRoot, 'contracts/asyncapi.json'),
+    `${JSON.stringify({
+      asyncapi: '3.0.0',
+      info: {
+        title: 'Orders Events',
+        version: '1.0.0'
+      },
+      channels: {
+        orderSubmitted: {
+          address: 'orders.submitted'
+        }
+      },
+      operations: {
+        publishOrderSubmitted: {
+          action: 'send'
+        }
+      },
+      components: {
+        messages: {
+          OrderSubmitted: {
+            payload: {
+              type: 'object',
+              required: ['orderId'],
+              properties: {
+                orderId: { type: 'string' }
+              }
+            }
+          }
+        }
+      }
+    }, null, 2)}\n`
+  );
+}
+
 async function writeOpenApiContract(repoRoot: string, routes: string[]): Promise<void> {
   await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
   const routeLines = routes.flatMap((route) => [
@@ -1547,6 +1757,120 @@ async function setupWorkspaceWithGraphqlContract(options: Parameters<typeof writ
     consumerRoot,
     providerRoot
   };
+}
+
+async function setupWorkspaceWithAsyncApiContract(options: Parameters<typeof writeAsyncApiContract>[1] = {}): Promise<{
+  consumerRoot: string;
+  providerRoot: string;
+}> {
+  const consumerRoot = await makeRepo('impact-trace-diff-asyncapi-consumer-');
+  const providerRoot = await makeRepo('impact-trace-diff-asyncapi-provider-');
+  await writeConsumerClient(consumerRoot, '/events/orders');
+  await writeAsyncApiContract(providerRoot, options);
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'orders-events'
+  });
+
+  return {
+    consumerRoot,
+    providerRoot
+  };
+}
+
+async function setupWorkspaceWithAsyncApiJsonContract(options: AsyncApiContractOptions = {}): Promise<{
+  consumerRoot: string;
+  providerRoot: string;
+}> {
+  const consumerRoot = await makeRepo('impact-trace-diff-asyncapi-json-consumer-');
+  const providerRoot = await makeRepo('impact-trace-diff-asyncapi-json-provider-');
+  await writeConsumerClient(consumerRoot, '/events/orders');
+  await writeAsyncApiJsonContract(providerRoot, options);
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'orders-events'
+  });
+
+  return {
+    consumerRoot,
+    providerRoot
+  };
+}
+
+function seedAsyncApiConsumesLink(
+  consumerRoot: string,
+  providerRoot: string,
+  contractPath: string
+): void {
+  const consumerReal = realpathSync(consumerRoot);
+  const providerReal = realpathSync(providerRoot);
+  const db = new DatabaseSync(databasePath(consumerRoot));
+  try {
+    const workspace = db
+      .prepare('SELECT id FROM workspaces WHERE name = ?')
+      .get('platform') as { id: number };
+    const consumerRepo = db
+      .prepare('SELECT id FROM repos WHERE root = ?')
+      .get(consumerReal) as { id: number };
+    const providerRepo = db
+      .prepare('SELECT id FROM repos WHERE root = ?')
+      .get(providerReal) as { id: number };
+    db
+      .prepare(
+        `INSERT OR REPLACE INTO cross_repo_links (
+           id, workspace_id, source_repo_id, target_repo_id, source_entity_id,
+           target_entity_id, kind, confidence, provenance, index_run_id
+         )
+         VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, ?, NULL)`
+      )
+      .run(
+        `test-asyncapi-consumes-${contractPath}`,
+        workspace.id,
+        consumerRepo.id,
+        providerRepo.id,
+        'CONSUMES_HTTP_ENDPOINT',
+        'heuristic',
+        JSON.stringify({
+          schemaVersion: 1,
+          analyzer: 'test-seed',
+          consumer: {
+            serviceName: 'web',
+            repoPath: consumerReal,
+            path: 'src/client.ts'
+          },
+          provider: {
+            serviceName: 'orders-events',
+            repoPath: providerReal,
+            contractPath
+          },
+          http: {
+            method: 'SEND',
+            path: 'orders.submitted'
+          },
+          evidence: {
+            snippet: 'orders.submitted consumer'
+          }
+        })
+      );
+  } finally {
+    db.close();
+  }
 }
 
 async function setupWorkspaceWithResolvedJsonSchemaContract(): Promise<{
@@ -3717,6 +4041,339 @@ test('analyzeContractDiff classifies nested GraphQL response field removals as b
       schemaPath: 'response.Profile.fields.bio'
     }
   ]);
+});
+
+test('analyzeContractDiff classifies removed AsyncAPI operations as breaking', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithAsyncApiContract();
+  await writeAsyncApiContract(providerRoot, { includeOrderSubmittedOperation: false });
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'orders-events',
+    contractPath: 'contracts/asyncapi.yaml'
+  });
+
+  assert.equal(result.contract.kind, 'asyncapi');
+  assert.equal(result.summary.classification, 'breaking');
+  assert.equal(result.summary.impactedConsumerCount, 0);
+  const db = new DatabaseSync(databasePath(providerRoot), { readOnly: true });
+  try {
+    const row = db
+      .prepare(
+        `SELECT compatibility_json
+         FROM contracts c
+         INNER JOIN contract_versions v ON v.contract_id = c.id
+         INNER JOIN index_runs r ON r.id = v.index_run_id
+         WHERE c.path = ?
+           AND r.status = 'completed'
+         ORDER BY v.index_run_id DESC
+         LIMIT 1`
+      )
+      .get('contracts/asyncapi.yaml') as { compatibility_json: string };
+    const compatibility = JSON.parse(row.compatibility_json) as {
+      analyzer: string;
+      contractKind: string;
+      operations: Array<{ action: string; channelId: string; address: string; messageIds: string[] }>;
+      messages: Array<{ id: string; payload?: { required: string[]; properties: Record<string, { type: string }> } }>;
+    };
+    assert.equal(compatibility.analyzer, 'asyncapi-compat-v0');
+    assert.equal(compatibility.contractKind, 'asyncapi');
+    assert.deepEqual(compatibility.operations, [
+      {
+        action: 'send',
+        channelId: 'orderSubmitted',
+        address: 'orders.submitted',
+        messageIds: ['OrderSubmitted']
+      }
+    ]);
+    assert.deepEqual(compatibility.messages.find((message) => message.id === 'OrderSubmitted')?.payload, {
+      required: ['customerEmail', 'orderId'],
+      properties: {
+        customerEmail: { type: 'string' },
+        orderId: { type: 'string' }
+      }
+    });
+  } finally {
+    db.close();
+  }
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'removed_endpoint',
+      classification: 'breaking',
+      reason: 'endpoint removed from current contract',
+      httpMethod: 'SEND',
+      routePath: 'orders.submitted',
+      previousEndpointId: 'endpoint:asyncapi:SEND orders.submitted'
+    }
+  ]);
+});
+
+test('analyzeContractDiff classifies removed AsyncAPI JSON operations as breaking', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithAsyncApiJsonContract();
+  await writeAsyncApiJsonContract(providerRoot, { includeOrderSubmittedOperation: false });
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'orders-events',
+    contractPath: 'contracts/asyncapi.json'
+  });
+
+  assert.equal(result.contract.kind, 'asyncapi');
+  assert.equal(result.summary.classification, 'breaking');
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'removed_endpoint',
+      classification: 'breaking',
+      reason: 'endpoint removed from current contract',
+      httpMethod: 'SEND',
+      routePath: 'orders.submitted',
+      previousEndpointId: 'endpoint:asyncapi:SEND orders.submitted'
+    }
+  ]);
+});
+
+test('analyzeContractDiff classifies removed AsyncAPI payload fields as breaking', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithAsyncApiContract();
+  await writeAsyncApiContract(providerRoot, { includeCustomerEmailField: false });
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'orders-events',
+    contractPath: 'contracts/asyncapi.yaml'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'removed_response_required_property',
+      classification: 'breaking',
+      reason: 'asyncapi message payload field removed from current contract',
+      httpMethod: 'SEND',
+      routePath: 'orders.submitted',
+      propertyName: 'OrderSubmitted.customerEmail',
+      schemaPath: 'messages.OrderSubmitted.payload.properties.customerEmail'
+    }
+  ]);
+});
+
+test('analyzeContractDiff classifies AsyncAPI payload field type changes as breaking', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithAsyncApiContract();
+  await writeAsyncApiContract(providerRoot, { customerEmailFieldType: 'integer' });
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'orders-events',
+    contractPath: 'contracts/asyncapi.yaml'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'changed_response_property_type',
+      classification: 'breaking',
+      reason: 'asyncapi message payload field type changed in current contract',
+      httpMethod: 'SEND',
+      routePath: 'orders.submitted',
+      propertyName: 'OrderSubmitted.customerEmail',
+      schemaPath: 'messages.OrderSubmitted.payload.properties.customerEmail',
+      previousSchemaType: 'string',
+      currentSchemaType: 'integer'
+    }
+  ]);
+});
+
+test('analyzeContractDiff classifies added AsyncAPI required payload fields as breaking', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithAsyncApiContract();
+  await writeAsyncApiContract(providerRoot, { includeRequiredCurrency: true });
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'orders-events',
+    contractPath: 'contracts/asyncapi.yaml'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'added_request_required_property',
+      classification: 'breaking',
+      reason: 'asyncapi message required payload field added to current contract',
+      httpMethod: 'SEND',
+      routePath: 'orders.submitted',
+      propertyName: 'OrderSubmitted.currency',
+      schemaPath: 'messages.OrderSubmitted.payload.required.currency',
+      currentSchemaType: 'string'
+    }
+  ]);
+});
+
+test('analyzeContractDiff treats malformed AsyncAPI YAML operations as unknown and preserves existing breaking links', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithAsyncApiContract();
+  seedAsyncApiConsumesLink(consumerRoot, providerRoot, 'contracts/asyncapi.yaml');
+  await writeAsyncApiContract(providerRoot, { includeOrderSubmittedOperation: false });
+  const breakingResult = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'orders-events',
+    contractPath: 'contracts/asyncapi.yaml'
+  });
+  assert.equal(breakingResult.summary.classification, 'breaking');
+  assert.equal(breakingResult.summary.impactedConsumerCount, 1);
+
+  await writeMalformedAsyncApiYamlOperationsContract(providerRoot);
+  const unknownResult = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'orders-events',
+    contractPath: 'contracts/asyncapi.yaml'
+  });
+
+  assert.equal(unknownResult.summary.classification, 'unknown');
+  assert.deepEqual(unknownResult.changes, [
+    {
+      kind: 'unparsed_current_contract',
+      classification: 'unknown',
+      reason: 'current AsyncAPI YAML could not be parsed: operations must be an object'
+    }
+  ]);
+
+  const db = new DatabaseSync(databasePath(consumerRoot), { readOnly: true });
+  try {
+    const count = db
+      .prepare('SELECT count(*) AS count FROM cross_repo_links WHERE kind = ?')
+      .get('BREAKS_COMPATIBILITY_WITH') as { count: number };
+    assert.equal(count.count, 1, 'malformed AsyncAPI YAML must not delete existing breaking links');
+  } finally {
+    db.close();
+  }
+});
+
+test('analyzeContractDiff treats malformed AsyncAPI JSON operations as unknown and preserves existing breaking links', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithAsyncApiJsonContract();
+  seedAsyncApiConsumesLink(consumerRoot, providerRoot, 'contracts/asyncapi.json');
+  await writeAsyncApiJsonContract(providerRoot, { includeOrderSubmittedOperation: false });
+  const breakingResult = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'orders-events',
+    contractPath: 'contracts/asyncapi.json'
+  });
+  assert.equal(breakingResult.summary.classification, 'breaking');
+  assert.equal(breakingResult.summary.impactedConsumerCount, 1);
+
+  await writeMalformedAsyncApiJsonOperationContract(providerRoot);
+  const unknownResult = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'orders-events',
+    contractPath: 'contracts/asyncapi.json'
+  });
+
+  assert.equal(unknownResult.summary.classification, 'unknown');
+  assert.deepEqual(unknownResult.changes, [
+    {
+      kind: 'unparsed_current_contract',
+      classification: 'unknown',
+      reason: 'current AsyncAPI JSON could not be parsed: operation channel must resolve to an object for publishOrderSubmitted'
+    }
+  ]);
+
+  const db = new DatabaseSync(databasePath(consumerRoot), { readOnly: true });
+  try {
+    const count = db
+      .prepare('SELECT count(*) AS count FROM cross_repo_links WHERE kind = ?')
+      .get('BREAKS_COMPATIBILITY_WITH') as { count: number };
+    assert.equal(count.count, 1, 'malformed AsyncAPI JSON must not delete existing breaking links');
+  } finally {
+    db.close();
+  }
+});
+
+test('analyzeContractDiff treats invalid AsyncAPI YAML v3 actions as unknown and preserves existing breaking links', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithAsyncApiContract();
+  seedAsyncApiConsumesLink(consumerRoot, providerRoot, 'contracts/asyncapi.yaml');
+  await writeAsyncApiContract(providerRoot, { includeOrderSubmittedOperation: false });
+  const breakingResult = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'orders-events',
+    contractPath: 'contracts/asyncapi.yaml'
+  });
+  assert.equal(breakingResult.summary.classification, 'breaking');
+  assert.equal(breakingResult.summary.impactedConsumerCount, 1);
+
+  await writeAsyncApiContract(providerRoot, { operationAction: 'publish' });
+  const unknownResult = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'orders-events',
+    contractPath: 'contracts/asyncapi.yaml'
+  });
+
+  assert.equal(unknownResult.summary.classification, 'unknown');
+  assert.deepEqual(unknownResult.changes, [
+    {
+      kind: 'unparsed_current_contract',
+      classification: 'unknown',
+      reason: 'current AsyncAPI YAML could not be parsed: operation action must be send or receive for publishOrderSubmitted'
+    }
+  ]);
+
+  const db = new DatabaseSync(databasePath(consumerRoot), { readOnly: true });
+  try {
+    const count = db
+      .prepare('SELECT count(*) AS count FROM cross_repo_links WHERE kind = ?')
+      .get('BREAKS_COMPATIBILITY_WITH') as { count: number };
+    assert.equal(count.count, 1, 'invalid AsyncAPI YAML actions must not delete existing breaking links');
+  } finally {
+    db.close();
+  }
+});
+
+test('analyzeContractDiff treats invalid AsyncAPI JSON v3 actions as unknown and preserves existing breaking links', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithAsyncApiJsonContract();
+  seedAsyncApiConsumesLink(consumerRoot, providerRoot, 'contracts/asyncapi.json');
+  await writeAsyncApiJsonContract(providerRoot, { includeOrderSubmittedOperation: false });
+  const breakingResult = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'orders-events',
+    contractPath: 'contracts/asyncapi.json'
+  });
+  assert.equal(breakingResult.summary.classification, 'breaking');
+  assert.equal(breakingResult.summary.impactedConsumerCount, 1);
+
+  await writeAsyncApiJsonContract(providerRoot, { operationAction: 'publish' });
+  const unknownResult = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'orders-events',
+    contractPath: 'contracts/asyncapi.json'
+  });
+
+  assert.equal(unknownResult.summary.classification, 'unknown');
+  assert.deepEqual(unknownResult.changes, [
+    {
+      kind: 'unparsed_current_contract',
+      classification: 'unknown',
+      reason: 'current AsyncAPI JSON could not be parsed: operation action must be send or receive for publishOrderSubmitted'
+    }
+  ]);
+
+  const db = new DatabaseSync(databasePath(consumerRoot), { readOnly: true });
+  try {
+    const count = db
+      .prepare('SELECT count(*) AS count FROM cross_repo_links WHERE kind = ?')
+      .get('BREAKS_COMPATIBILITY_WITH') as { count: number };
+    assert.equal(count.count, 1, 'invalid AsyncAPI JSON actions must not delete existing breaking links');
+  } finally {
+    db.close();
+  }
 });
 
 test('analyzeContractDiff does not treat overlapping OpenAPI JSON allOf branch reordering as breaking', async () => {

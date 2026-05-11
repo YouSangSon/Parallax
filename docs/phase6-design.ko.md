@@ -1,9 +1,9 @@
 # Phase 6 — Adapter Foundations + Multi-language/Spring Boot Trusted Evidence Lane
 
 > **목적:** Phase 1~4(agent-memory 축)가 완료된 시점에서, 원래 P0/P1 (Entity Graph Core, "code graph project") 중 미수입 adapter foundation과 trusted evidence 레인을 닫는다. 본 phase는 **adapter foundations + multi-language/Spring Boot trusted evidence + workspace catalog + evidence 정밀도**의 기반에 집중.
-> **작성:** 2026-05-03 (사전 design doc), 2026-05-04 branch 진행 상태 반영, 2026-05-09 main 반영 상태 정리, 2026-05-11 Phase 6B 진행 상태 반영, 2026-05-12 Protobuf/GraphQL contract diff 반영
-> **상태:** foundation subset은 `main`에 반영됨 (`3cba0a2`). Phase 6B에서는 multi-language/Spring/Python/Go/Rust/TS/JS spans, OpenAPI contract baseline, workspace catalog v0, cross-repo contract resolver v0, OpenAPI endpoint/nested schema diff v0, Protobuf contract diff v0, GraphQL contract diff v0, MCP workspace/contract resources v0가 landed. 다음 slice는 AsyncAPI diff와 GraphQL consumer resolver다.
-> **참고:** [decisions.ko.md](decisions.ko.md) (D-001..D-034) · [impact-trace-plan.ko.md](impact-trace-plan.ko.md) (원래 P0/P1 ledger) · [roadmap.md](roadmap.md) (A1/A5 row) · [progress.ko.md](progress.ko.md).
+> **작성:** 2026-05-03 (사전 design doc), 2026-05-04 branch 진행 상태 반영, 2026-05-09 main 반영 상태 정리, 2026-05-11 Phase 6B 진행 상태 반영, 2026-05-12 Protobuf/GraphQL/AsyncAPI contract diff 반영
+> **상태:** foundation subset은 `main`에 반영됨 (`3cba0a2`). Phase 6B에서는 multi-language/Spring/Python/Go/Rust/TS/JS spans, OpenAPI contract baseline, workspace catalog v0, cross-repo contract resolver v0, OpenAPI endpoint/nested schema diff v0, Protobuf contract diff v0, GraphQL contract diff v0, AsyncAPI contract diff v0, MCP workspace/contract resources v0가 landed. 다음 slice는 GraphQL/protobuf/AsyncAPI consumer resolver다.
+> **참고:** [decisions.ko.md](decisions.ko.md) (D-001..D-035) · [impact-trace-plan.ko.md](impact-trace-plan.ko.md) (원래 P0/P1 ledger) · [roadmap.md](roadmap.md) (A1/A5 row) · [progress.ko.md](progress.ko.md).
 
 ---
 
@@ -37,10 +37,11 @@ Phase 6/6B에서 반영됨:
 - ✅ OpenAPI contract diff v0 — latest indexed endpoint surface와 current contract file 비교, known consumer breaking link 저장
 - ✅ Protobuf contract diff v0 — compact service/RPC/message field signature로 removed RPC와 response field breaking change 분류
 - ✅ GraphQL contract diff v0 — compact root operation/object/input signature로 removed root field와 schema field breaking change 분류
+- ✅ AsyncAPI contract diff v0 — compact operation/channel/message payload signature로 removed operation과 message payload breaking change 분류
 
 미수입 (Phase 6 scope **외** — Phase 7 이후):
 
-- Phase 7: AsyncAPI breaking-change classifier, GraphQL/protobuf consumer resolver
+- Phase 7: GraphQL/protobuf/AsyncAPI consumer resolver
 - Phase 8: deep language adapters beyond v0, .NET/native, LSP/CodeQL enrichment
 - Phase 9: work-artifacts (Markdown vault → external connectors)
 - DROP (이유: D-001/local-first 위반 또는 demand 부재): 별도 graph DB · web explorer · supermemory `fact_provenance.kind` 확장 · Notion/Gmail 커넥터
@@ -75,7 +76,7 @@ Phase 6/6B에서 반영됨:
 
 **초기 Planner 추천:** **B**. 이유: compiler-backed adapter는 동기 구현도 가능하지만, Phase 8의 LSP/CodeQL은 비동기 외부 프로세스가 필수 — 인터페이스가 sync이면 그 시점에 깨야 함. capabilities는 약 1줄 추가지만 P3 agent surface에서 "이 adapter는 imports/exports만 안다"를 노출 가능. 스트리밍은 YAGNI.
 
-**최종 결정(2026-05-03): C with 2 refinements.** §6의 "Decided" 블록 참고. 이 branch는 해당 형태를 구현했고 이후 `decisions.ko.md`는 D-032까지 승격된 결정을 보유한다.
+**최종 결정(2026-05-03): C with 2 refinements.** §6의 "Decided" 블록 참고. 이 branch는 해당 형태를 구현했고 이후 `decisions.ko.md`는 D-035까지 승격된 결정을 보유한다.
 
 **대안 시그니처 후보 (5–10줄, 사용자 picks):** §6 참조.
 
@@ -151,7 +152,7 @@ Phase 6/6B에서 반영됨:
 
 ### 3.8 ADR + 문서
 
-- [x] **6.A.1** — `docs/decisions.ko.md`에 D-019..D-032 결정 로그 추가
+- [x] **6.A.1** — `docs/decisions.ko.md`에 D-019..D-035 결정 로그 추가
 - [x] **6.A.2** — `docs/progress.ko.md`에 Phase 6 foundation ledger 추가 (2026-05-04)
 - [x] **6.A.3** — `docs/roadmap.md` A1/A5 status 갱신
 - [x] **6.A.4** — `CHANGELOG.md` Phase 6 branch 항목
@@ -274,10 +275,11 @@ Remaining Phase 6/6B scope:
 - [x] 핵심 adapter/contract relation evidence가 span(line/col/range/confidence)을 저장하고 ImpactBench `spanCompleteness` gate를 통과
 - [x] dirty repo 상태에서 indexing 시 `index_runs.git_is_dirty=1` 기록 + analyzer 경고 출력
 - [x] `workspace init` + `workspace add-repo` 라운드트립 — `workspaces` 테이블에 row 존재
-- [x] ADR D-019..D-032 정식 승격 (`decisions.ko.md`)
+- [x] ADR D-019..D-035 정식 승격 (`decisions.ko.md`)
 - [x] cross-repo provider/consumer resolver v0
 - [x] OpenAPI endpoint-surface contract diff/breaking-change classification v0
 - [x] OpenAPI nested schema/allOf/oneOf contract diff/breaking-change classification v0
+- [x] Protobuf/GraphQL/AsyncAPI compact signature contract diff/breaking-change classification v0
 - [x] MCP workspace/contract resources v0
 
 ---
@@ -296,8 +298,8 @@ Phase 6 완료 또는 별도 우선순위 변경 후 독립 PR로 재개한다. 
 
 ## 9. 다음 행동
 
-1. AsyncAPI contract diff
+1. GraphQL/protobuf/AsyncAPI consumer resolver
 2. full parser/LSP depth pass
-3. GraphQL/protobuf consumer resolver
+3. build-system/package resolver depth
 
 이 doc은 *사전 design에서 branch-progress doc으로 전환됨*. Phase 6 전체가 끝난 시점에는 회고 doc(`phase6-retro.ko.md`)을 추가한다.

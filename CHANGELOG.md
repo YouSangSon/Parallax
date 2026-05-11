@@ -21,6 +21,7 @@ For day-by-day developer log see [docs/progress.ko.md](docs/progress.ko.md). For
 - **OpenAPI nested schema diff v0** — JSON/YAML OpenAPI compatibility signatures now use schemaVersion 2 with nested object paths, root/nested array item paths, allOf object merges, and oneOf/anyOf property/root body fingerprints so contract diff can report nested body breaking changes without sending whole contract files to the agent.
 - **Protobuf contract diff v0** — `.proto` baselines now store compact `protobuf-compat-v0` service/RPC/message signatures, and `workspace contract-diff` classifies removed RPCs plus response message field removals/type changes as breaking without requiring Buf, BSR, or raw contract snapshots in SQLite.
 - **GraphQL contract diff v0** — `.graphql`/`.gql` baselines now store compact `graphql-compat-v0` root operation/object/input signatures, and `workspace contract-diff` classifies removed root fields, response field removals/type changes, required argument additions, and required input field additions as breaking without requiring Hive, GraphQL Inspector, or raw SDL snapshots in SQLite.
+- **AsyncAPI contract diff v0** — AsyncAPI YAML/JSON baselines now store compact `asyncapi-compat-v0` operation/channel/message payload signatures, and `workspace contract-diff` classifies removed operations plus message payload field removal/type changes and newly required payload fields as breaking without requiring `@asyncapi/parser` or `@asyncapi/diff` at runtime.
 - **MCP workspace/contract resources v0** — `impact_trace_contract_diff` exposes the endpoint-surface classifier to coding agents and returns `impact-trace://workspaces/{name}` resource links for workspace membership, latest contract baselines, and provider/consumer impact links.
 - **MCP context pack v0** — `impact_trace_context_for_change` returns budgeted `brief`/`standard`/`deep` context packs with top impact paths, compact evidence, actions, omitted counts, and entity/coverage resource links without persisting a full report.
 - **Docs root cleanup** — root `docs/` keeps the current high-signal docs for planning, onboarding, and implementation.
@@ -48,7 +49,7 @@ Originally developed on `feature/phase6-adapter-foundations`; landed on `main` a
 
 ### Follow-up scope
 
-- AsyncAPI contract diff, GraphQL consumer resolver, and full parser/LSP depth.
+- GraphQL/protobuf/AsyncAPI consumer resolver and full parser/LSP depth.
 
 ---
 

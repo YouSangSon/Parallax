@@ -1,4 +1,5 @@
 import path from 'node:path';
+import ts from 'typescript';
 
 import { markdownEntityKindForPath } from '../artifacts.js';
 import type { Confidence, RelationKind, ScannedFile } from '../types.js';
@@ -27,6 +28,20 @@ type ExtractedSymbol = {
   name: string;
   kind: string;
   exported: boolean;
+};
+
+type ExtractedImport = {
+  specifier: string;
+  snippet: string;
+  startLine: number;
+  endLine: number;
+  startCol: number;
+  endCol: number;
+};
+
+type InferredTestTarget = {
+  path: string;
+  evidence?: ExtractedImport;
 };
 
 type SpringClass = {
@@ -200,7 +215,7 @@ async function* extractEvents(
   }
 
   for (const imported of extractImports(file)) {
-    const resolved = resolveImportPath(file.relativePath, imported, filePathSet, importResolver.resolve);
+    const resolved = resolveImportPath(file.relativePath, imported.specifier, filePathSet, importResolver.resolve);
     if (resolved) {
       yield {
         kind: 'relation',
@@ -209,20 +224,24 @@ async function* extractEvents(
           target: { kind: 'file', path: resolved, languageId: file.language },
           kind: 'DEPENDS_ON',
           confidence: 'proven',
-          provenance: imported,
+          provenance: imported.specifier,
           evidenceFile,
-          evidenceSnippet
+          evidenceSnippet: imported.snippet,
+          startLine: imported.startLine,
+          endLine: imported.endLine,
+          startCol: imported.startCol,
+          endCol: imported.endCol
         })
       };
     } else {
       const externalDescriptor: EntityDescriptor = {
         kind: 'external_entity',
         languageId: file.language,
-        displayName: imported
+        displayName: imported.specifier
       };
       yield {
         kind: 'entity',
-        entity: { ...externalDescriptor, metadata: { specifier: imported } }
+        entity: { ...externalDescriptor, metadata: { specifier: imported.specifier } }
       };
       yield {
         kind: 'relation',
@@ -231,26 +250,38 @@ async function* extractEvents(
           target: externalDescriptor,
           kind: 'DEPENDS_ON',
           confidence: 'heuristic',
-          provenance: imported,
+          provenance: imported.specifier,
           evidenceFile,
-          evidenceSnippet
+          evidenceSnippet: imported.snippet,
+          startLine: imported.startLine,
+          endLine: imported.endLine,
+          startCol: imported.startCol,
+          endCol: imported.endCol
         })
       };
     }
   }
 
   if (isTestSource(file)) {
-    for (const sourcePath of inferTestTargets(file.relativePath, file.content, file.language, filePathSet, importResolver.resolve)) {
+    for (const target of inferTestTargets(file.relativePath, file.content, file.language, filePathSet, importResolver.resolve)) {
       yield {
         kind: 'relation',
         relation: makeRelation({
           source: fileDescriptor,
-          target: { kind: 'file', path: sourcePath },
+          target: { kind: 'file', path: target.path },
           kind: 'VERIFIES',
           confidence: 'inferred',
           provenance: 'test import/name',
           evidenceFile,
-          evidenceSnippet
+          evidenceSnippet: target.evidence?.snippet ?? evidenceSnippet,
+          ...(target.evidence
+            ? {
+                startLine: target.evidence.startLine,
+                endLine: target.evidence.endLine,
+                startCol: target.evidence.startCol,
+                endCol: target.evidence.endCol
+              }
+            : {})
         })
       };
     }
@@ -302,12 +333,18 @@ function makeRelation(input: {
   evidenceFile: string;
   evidenceSnippet: string;
   startLine?: number;
+  endLine?: number;
+  startCol?: number;
+  endCol?: number;
 }): PendingRelation {
   const evidence: PendingEvidence = {
     file: input.evidenceFile,
     snippet: input.evidenceSnippet,
     confidence: input.confidence,
-    ...(input.startLine !== undefined ? { startLine: input.startLine } : {})
+    ...(input.startLine !== undefined ? { startLine: input.startLine } : {}),
+    ...(input.endLine !== undefined ? { endLine: input.endLine } : {}),
+    ...(input.startCol !== undefined ? { startCol: input.startCol } : {}),
+    ...(input.endCol !== undefined ? { endCol: input.endCol } : {})
   };
   return {
     source: input.source,
@@ -777,18 +814,14 @@ function extractSymbols(file: ScannedFile): ExtractedSymbol[] {
   return dedupeSymbols(symbols);
 }
 
-function extractImports(file: ScannedFile): string[] {
+function extractImports(file: ScannedFile): ExtractedImport[] {
   if (file.relativePath.endsWith('.md')) return [];
-  const imports = new Set<string>();
-  const patterns: RegExp[] = [];
   if (file.language === 'typescript' || file.language === 'javascript') {
-    patterns.push(
-      /import\s+[^'"]*from\s+['"]([^'"]+)['"]/g,
-      /import\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
-      /require\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
-      /export\s+(?:[^'"]*\s+from\s+)?['"]([^'"]+)['"]/g
-    );
-  } else if (file.language === 'python') {
+    return extractTypeScriptJavaScriptImports(file);
+  }
+  const imports: ExtractedImport[] = [];
+  const patterns: RegExp[] = [];
+  if (file.language === 'python') {
     patterns.push(/^\s*from\s+([A-Za-z_][\w.]*)\s+import\b/gm, /^\s*import\s+([A-Za-z_][\w.]*)/gm);
   } else if (file.language === 'go') {
     patterns.push(/\bimport\s+"([^"]+)"/g, /^\s*"([^"]+)"\s*$/gm);
@@ -810,10 +843,89 @@ function extractImports(file: ScannedFile): string[] {
   for (const pattern of patterns) {
     let match: RegExpExecArray | null;
     while ((match = pattern.exec(file.content))) {
-      imports.add(match[1]!);
+      const specifier = match[1]!;
+      imports.push(importEvidence(file.content, specifier, match.index, match.index + match[0]!.length));
     }
   }
-  return [...imports].sort();
+  return dedupeImports(imports);
+}
+
+function extractTypeScriptJavaScriptImports(file: ScannedFile): ExtractedImport[] {
+  const sourceFile = ts.createSourceFile(
+    file.relativePath,
+    file.content,
+    ts.ScriptTarget.Latest,
+    true,
+    scriptKindFor(file.relativePath)
+  );
+  const imports: ExtractedImport[] = [];
+  const addImport = (specifier: string | undefined, node: ts.Node): void => {
+    if (!specifier) return;
+    imports.push(importEvidence(file.content, specifier, node.getStart(sourceFile), node.getEnd()));
+  };
+  const visit = (node: ts.Node): void => {
+    if (ts.isImportDeclaration(node)) {
+      addImport(moduleSpecifierText(node.moduleSpecifier), node);
+    } else if (ts.isExportDeclaration(node)) {
+      addImport(moduleSpecifierText(node.moduleSpecifier), node);
+    } else if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)) {
+      addImport(moduleSpecifierText(node.moduleReference.expression), node);
+    } else if (ts.isCallExpression(node)) {
+      if (node.expression.kind === ts.SyntaxKind.ImportKeyword) {
+        addImport(moduleSpecifierText(node.arguments[0]), node);
+      } else if (ts.isIdentifier(node.expression) && node.expression.text === 'require') {
+        addImport(moduleSpecifierText(node.arguments[0]), node);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return dedupeImports(imports);
+}
+
+function moduleSpecifierText(node: ts.Node | undefined): string | undefined {
+  return node && ts.isStringLiteralLike(node) ? node.text : undefined;
+}
+
+function scriptKindFor(relativePath: string): ts.ScriptKind {
+  if (relativePath.endsWith('.tsx')) return ts.ScriptKind.TSX;
+  if (relativePath.endsWith('.jsx')) return ts.ScriptKind.JSX;
+  if (relativePath.endsWith('.js')) return ts.ScriptKind.JS;
+  return ts.ScriptKind.TS;
+}
+
+function importEvidence(content: string, specifier: string, startIndex: number, endIndex: number): ExtractedImport {
+  const start = offsetPosition(content, startIndex);
+  const end = offsetPosition(content, endIndex);
+  return {
+    specifier,
+    snippet: content.slice(startIndex, endIndex).trim(),
+    startLine: start.line,
+    endLine: end.line,
+    startCol: start.col,
+    endCol: end.col
+  };
+}
+
+function offsetPosition(content: string, index: number): { line: number; col: number } {
+  const prefix = content.slice(0, Math.max(0, index));
+  const lines = prefix.split(/\r?\n/);
+  return {
+    line: lines.length,
+    col: (lines.at(-1)?.length ?? 0) + 1
+  };
+}
+
+function dedupeImports(imports: readonly ExtractedImport[]): ExtractedImport[] {
+  return [...new Map(imports.map((item) => [`${item.specifier}:${item.startLine}:${item.startCol}`, item])).values()]
+    .sort(compareImports);
+}
+
+function compareImports(a: ExtractedImport, b: ExtractedImport): number {
+  const bySpecifier = a.specifier.localeCompare(b.specifier);
+  if (bySpecifier !== 0) return bySpecifier;
+  if (a.startLine !== b.startLine) return a.startLine - b.startLine;
+  return a.startCol - b.startCol;
 }
 
 function resolveImportPath(
@@ -1052,20 +1164,34 @@ function inferTestTargets(
   language: string,
   filePathSet: ReadonlySet<string>,
   importResolver?: ImportResolver
-): string[] {
+): InferredTestTarget[] {
   const imported = extractImports({
     absolutePath: '',
     relativePath,
     content,
     hash: '',
     language
-  }).flatMap((specifier) => {
-    const resolved = resolveImportPath(relativePath, specifier, filePathSet, importResolver);
-    return resolved ? [resolved] : inferUnresolvedImportTargets(specifier, language, filePathSet);
+  }).flatMap((importedItem) => {
+    const resolved = resolveImportPath(relativePath, importedItem.specifier, filePathSet, importResolver);
+    const paths = resolved ? [resolved] : inferUnresolvedImportTargets(importedItem.specifier, language, filePathSet);
+    return paths.map((targetPath) => ({ path: targetPath, evidence: importedItem }));
   });
-  return [...new Set([...imported, ...inferFilenameTestTargets(relativePath, language, filePathSet)])]
-    .filter((target) => target !== relativePath)
-    .sort();
+  const filenameTargets = inferFilenameTestTargets(relativePath, language, filePathSet)
+    .map((targetPath) => ({ path: targetPath }));
+  return dedupeTestTargets([...imported, ...filenameTargets])
+    .filter((target) => target.path !== relativePath)
+    .sort((a, b) => a.path.localeCompare(b.path));
+}
+
+function dedupeTestTargets(targets: readonly InferredTestTarget[]): InferredTestTarget[] {
+  const byPath = new Map<string, InferredTestTarget>();
+  for (const target of targets) {
+    const existing = byPath.get(target.path);
+    if (!existing || (!existing.evidence && target.evidence)) {
+      byPath.set(target.path, target);
+    }
+  }
+  return [...byPath.values()];
 }
 
 function isJvmLanguage(languageId: string): boolean {

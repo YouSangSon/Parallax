@@ -283,6 +283,7 @@ export async function runImpactBench(options: RunImpactBenchOptions = {}): Promi
       relationPrecision >= 0.95 &&
       affectedFileRecall === 1 &&
       evidencePresence === 1 &&
+      spanCompleteness >= 0.75 &&
       adapterAttribution === 1 &&
       contextPackReadiness === 1 &&
       score >= 0.9;

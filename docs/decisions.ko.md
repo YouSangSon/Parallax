@@ -31,6 +31,7 @@
 | [D-019](#d-019-search-context-uses-persistent-projections-in-read-only-mode) | search_context uses persistent projections in read-only mode | P3 | 2026-05-11 |
 | [D-020](#d-020-context-packs-are-persisted-by-cache-key-and-reused-by-reference) | context packs are persisted by cache key and reused by reference | P3 | 2026-05-11 |
 | [D-021](#d-021-ui-explorer-is-local-read-only-and-resource-shaped) | UI Explorer is local, read-only, and resource-shaped | P3 | 2026-05-11 |
+| [D-022](#d-022-tsjs-import-spans-use-typescript-parser-without-project-resolution) | TS/JS import spans use TypeScript parser without project resolution | P1 | 2026-05-11 |
 
 ---
 
@@ -390,6 +391,24 @@
 **결과/위험:** UI server는 loopback host에만 bind하고 DB를 read-only로 연다. 기본 포트가 사용 중이면 빈 포트로 fallback한다. `/api/reports/{id}/graph/json`은 `limit/cursor` pagination을 유지해 큰 graph를 한 번에 밀어 넣지 않는다. v0는 vanilla HTML/CSS/JS라 유지비가 작지만, session timeline, rank feedback, multi-repo workspace view 같은 richer interaction은 후속 slice에서 별도 설계가 필요하다.
 
 **관련 commit:** `feat(ui): add local report workbench`
+
+---
+
+## D-022: TS/JS import spans use TypeScript parser without project resolution
+
+**결정:** TS/JS import-backed evidence는 regex line guessing이 아니라 TypeScript compiler의 `ts.createSourceFile` parser로 뽑는다. 범위는 static import, type-only import, namespace import, export-from, dynamic `import()`, string-literal `require()`까지로 제한한다. `ts.createProgram`/tsconfig resolution/type-checker는 이 slice에 넣지 않는다.
+
+**맥락:** Impact Trace가 agent context를 줄이려면 relation이 맞는 것뿐 아니라 "근거가 파일의 어느 위치인지"를 작게 보내야 한다. 기존 v0 adapter는 import relation을 만들었지만 evidence snippet이 파일 전체에 가깝거나 span이 비어 `spanCompleteness`가 낮았다. TS/JS는 ImpactBench의 핵심 fixture가 이미 re-export/type-only/namespace/dynamic/require를 포함하므로 parser-backed span을 가장 작게 넣을 수 있는 첫 대상이다.
+
+**대안:**
+- regex span만 확장 — 구현은 빠르지만 TS/JS grammar edge에서 line/col 신뢰도가 낮다.
+- `ts.createProgram`으로 alias/type resolution까지 처리 — 정확도는 높지만 tsconfig/project graph/build setup까지 끌어와 blast radius가 커진다.
+- Tree-sitter 공통 parser 도입 — multi-language 확장성은 좋지만 새 native dependency와 packaging surface가 생긴다.
+- whole-file evidence에 `startLine=1`만 채움 — metric은 좋아지지만 사용자가 신뢰할 수 있는 근거가 아니다.
+
+**결과/위험:** `typescript`는 runtime dependency가 된다. relation provenance와 resolver는 기존 specifier 문자열을 유지해 relation id churn을 줄인다. import-backed `VERIFIES`는 같은 import evidence span을 재사용한다. parser는 syntax tree만 쓰므로 path alias/type resolution은 기존 resolver와 후속 depth pass에 남는다. ImpactBench는 `spanCompleteness >= 0.75`를 gate로 둔다.
+
+**관련 commit:** `feat(adapters): add ts js parser import spans`
 
 ---
 

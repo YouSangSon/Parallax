@@ -215,12 +215,13 @@ async function makeWideContextRepo(): Promise<string> {
 
   await writeFile(path.join(repoRoot, 'src/a.ts'), 'export const a = 1;\n');
   for (const name of ['b', 'c', 'd', 'e', 'f', 'g']) {
+    const alias = `a${name.toUpperCase()}${'x'.repeat(420)}`;
     await writeFile(
       path.join(repoRoot, `src/${name}.ts`),
       [
-        'import { a } from "./a";',
+        `import { a as ${alias} } from "./a";`,
         `const padded${name.toUpperCase()} = "${'x'.repeat(420)}";`,
-        `export const ${name} = a + padded${name.toUpperCase()}.length;`
+        `export const ${name} = ${alias} + padded${name.toUpperCase()}.length;`
       ].join('\n')
     );
   }

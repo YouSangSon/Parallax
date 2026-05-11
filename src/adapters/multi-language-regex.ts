@@ -30,8 +30,7 @@ type ExtractedSymbol = {
   exported: boolean;
 };
 
-type ExtractedImport = {
-  specifier: string;
+type EvidenceSpan = {
   snippet: string;
   startLine: number;
   endLine: number;
@@ -39,9 +38,13 @@ type ExtractedImport = {
   endCol: number;
 };
 
+type ExtractedImport = EvidenceSpan & {
+  specifier: string;
+};
+
 type InferredTestTarget = {
   path: string;
-  evidence?: ExtractedImport;
+  evidence?: EvidenceSpan;
 };
 
 type SpringClass = {
@@ -51,6 +54,7 @@ type SpringClass = {
   declaration: string;
   body: string;
   bodyOffset: number;
+  evidence: EvidenceSpan;
 };
 
 type SpringAnnotation = {
@@ -307,17 +311,21 @@ async function* extractEvents(
 
   if (isSystemOrContractLanguage(file.language)) {
     const relationKind = relationKindForSystemReference(file.language) as RelationKind;
-    for (const sourcePath of inferTextTargets(file.relativePath, file.content, filePathSet)) {
+    for (const target of inferTextTargetsWithEvidence(file.relativePath, file.content, filePathSet)) {
       yield {
         kind: 'relation',
         relation: makeRelation({
           source: fileDescriptor,
-          target: { kind: 'file', path: sourcePath },
+          target: { kind: 'file', path: target.path },
           kind: relationKind,
           confidence: 'heuristic',
           provenance: 'system/config mention',
           evidenceFile,
-          evidenceSnippet
+          evidenceSnippet: target.evidence.snippet,
+          startLine: target.evidence.startLine,
+          endLine: target.evidence.endLine,
+          startCol: target.evidence.startCol,
+          endCol: target.evidence.endCol
         })
       };
     }
@@ -371,7 +379,6 @@ function* extractSpringEvents(
     };
 
     for (const role of springRolesForClass(springClass)) {
-      const snippet = springDeclarationSnippet(springClass);
       yield {
         kind: 'entity',
         entity: {
@@ -388,8 +395,11 @@ function* extractSpringEvents(
           confidence: 'proven',
           provenance: `spring:${role}:${springClass.name}`,
           evidenceFile: file.relativePath,
-          evidenceSnippet: snippet,
-          startLine: lineNumberAt(file.content, springClass.annotations[0]?.index ?? file.content.indexOf(springClass.declaration))
+          evidenceSnippet: springClass.evidence.snippet,
+          startLine: springClass.evidence.startLine,
+          endLine: springClass.evidence.endLine,
+          startCol: springClass.evidence.startCol,
+          endCol: springClass.evidence.endCol
         })
       };
     }
@@ -422,8 +432,11 @@ function* extractSpringEvents(
         confidence: 'proven',
         provenance: `spring:Bean:${bean.name}`,
         evidenceFile: file.relativePath,
-        evidenceSnippet: bean.snippet,
-        startLine: bean.startLine
+        evidenceSnippet: bean.evidence.snippet,
+        startLine: bean.evidence.startLine,
+        endLine: bean.evidence.endLine,
+        startCol: bean.evidence.startCol,
+        endCol: bean.evidence.endCol
       })
     };
   }
@@ -462,8 +475,11 @@ function* extractSpringEndpoints(
         confidence: 'proven' as const,
         provenance: `spring:endpoint:${springClass.name}.${mapping.methodName}`,
         evidenceFile: file.relativePath,
-        evidenceSnippet: mapping.snippet,
-        startLine: mapping.startLine
+        evidenceSnippet: mapping.evidence.snippet,
+        startLine: mapping.evidence.startLine,
+        endLine: mapping.evidence.endLine,
+        startCol: mapping.evidence.startCol,
+        endCol: mapping.evidence.endCol
       };
       yield {
         kind: 'entity',
@@ -500,13 +516,18 @@ function extractSpringClasses(content: string): SpringClass[] {
     const openBrace = content.indexOf('{', startIndex + declaration.length);
     const bodyOffset = openBrace >= 0 ? openBrace + 1 : startIndex + declaration.length;
     const bodyEnd = openBrace >= 0 ? matchingBraceEnd(content, openBrace) : content.length;
+    const annotations = parseSpringAnnotations(annotationBlock, startIndex);
+    const annotationStart = annotations.at(0)?.index;
+    const evidenceStart = annotationStart ?? firstNonWhitespaceIndex(content, startIndex);
+    const evidenceEnd = lineEndIndex(content, openBrace >= 0 ? openBrace + 1 : startIndex + declaration.length);
     classes.push({
       name: match[3]!,
       kind: match[2]!,
-      annotations: parseSpringAnnotations(annotationBlock, startIndex),
+      annotations,
       declaration,
       body: content.slice(bodyOffset, bodyEnd),
-      bodyOffset
+      bodyOffset,
+      evidence: evidenceSpanFromRange(content, evidenceStart, evidenceEnd)
     });
   }
   return classes;
@@ -623,12 +644,6 @@ function isSpringController(springClass: SpringClass): boolean {
   );
 }
 
-function springDeclarationSnippet(springClass: SpringClass): string {
-  const annotations = springClass.annotations.map((annotation) => annotation.text);
-  const declaration = springClass.declaration.split(/\r?\n/).at(-1)?.trim() ?? springClass.declaration.trim();
-  return [...annotations, declaration].filter(Boolean).join('\n');
-}
-
 function extractSpringMethodMappings(
   content: string,
   springClass: SpringClass
@@ -636,15 +651,13 @@ function extractSpringMethodMappings(
   methodName: string;
   httpMethod?: string;
   paths: readonly string[];
-  snippet: string;
-  startLine: number;
+  evidence: EvidenceSpan;
 }> {
   const mappings: Array<{
     methodName: string;
     httpMethod?: string;
     paths: readonly string[];
-    snippet: string;
-    startLine: number;
+    evidence: EvidenceSpan;
   }> = [];
   const mappingPattern =
     /@([A-Za-z_][\w.]*Mapping)\s*(\([^)]*\))?/g;
@@ -654,18 +667,17 @@ function extractSpringMethodMappings(
     if (!springMappingMethods.has(annotationName)) continue;
 
     const afterAnnotation = springClass.body.slice(match.index + match[0]!.length);
-    const methodName = methodNameAfterSpringAnnotation(afterAnnotation);
-    if (!methodName) continue;
+    const signature = methodSignatureAfterSpringAnnotation(afterAnnotation);
+    if (!signature) continue;
 
     const startIndex = springClass.bodyOffset + match.index;
-    const snippet = snippetFrom(content, startIndex, startIndex + match[0]!.length + 160);
+    const endIndex = springClass.bodyOffset + match.index + match[0]!.length + signature.endOffset;
     const httpMethod =
       springMappingMethods.get(annotationName) ?? httpMethodFromRequestMapping(match[2] ?? '');
     mappings.push({
-      methodName,
+      methodName: signature.methodName,
       paths: routePathsFromAnnotationArgs(match[2] ?? ''),
-      snippet,
-      startLine: lineNumberAt(content, startIndex),
+      evidence: evidenceSpanFromRange(content, startIndex, endIndex),
       ...(httpMethod ? { httpMethod } : {})
     });
   }
@@ -673,14 +685,32 @@ function extractSpringMethodMappings(
 }
 
 function methodNameAfterSpringAnnotation(afterAnnotation: string): string | undefined {
+  return methodSignatureAfterSpringAnnotation(afterAnnotation)?.methodName;
+}
+
+function methodSignatureAfterSpringAnnotation(
+  afterAnnotation: string
+): { methodName: string; endOffset: number } | undefined {
   const kotlin = afterAnnotation.match(
     /^\s*(?:@[A-Za-z_][\w.]*\s*(?:\([^)]*\))?\s*)*(?:(?:public|private|protected|internal|open|override|suspend)\s+)*fun\s+([A-Za-z_]\w*)\s*\(/
   );
-  if (kotlin) return kotlin[1]!;
+  if (kotlin) return methodSignatureMatch(afterAnnotation, kotlin);
   const java = afterAnnotation.match(
     /^\s*(?:@[A-Za-z_][\w.]*\s*(?:\([^)]*\))?\s*)*(?:(?:public|private|protected|static|final|abstract|synchronized)\s+)*(?:[A-Za-z_][\w$<>,.?[\]\s]*\s+)?([A-Za-z_]\w*)\s*\(/
   );
-  return java?.[1];
+  return java ? methodSignatureMatch(afterAnnotation, java) : undefined;
+}
+
+function methodSignatureMatch(
+  source: string,
+  match: RegExpMatchArray
+): { methodName: string; endOffset: number } {
+  const methodName = match[1]!;
+  const nameOffset = match[0]!.lastIndexOf(methodName);
+  return {
+    methodName,
+    endOffset: lineEndIndex(source, nameOffset)
+  };
 }
 
 function httpMethodFromRequestMapping(args: string): string | undefined {
@@ -728,19 +758,22 @@ function normalizeSpringPath(base: string, method: string): string {
 
 function extractSpringBeanMethods(
   file: ScannedFile
-): Array<{ name: string; snippet: string; startLine: number }> {
-  const beans: Array<{ name: string; snippet: string; startLine: number }> = [];
+): Array<{ name: string; evidence: EvidenceSpan }> {
+  const beans: Array<{ name: string; evidence: EvidenceSpan }> = [];
   const beanPattern = /@(?:[A-Za-z_][\w.]*\.)?Bean\s*(?:\([^)]*\))?/g;
   let match: RegExpExecArray | null;
   while ((match = beanPattern.exec(file.content))) {
-    const methodName = methodNameAfterSpringAnnotation(
+    const signature = methodSignatureAfterSpringAnnotation(
       file.content.slice(match.index + match[0]!.length)
     );
-    if (!methodName) continue;
+    if (!signature) continue;
     beans.push({
-      name: methodName,
-      snippet: snippetFrom(file.content, match.index, match.index + match[0]!.length + 160),
-      startLine: lineNumberAt(file.content, match.index)
+      name: signature.methodName,
+      evidence: evidenceSpanFromRange(
+        file.content,
+        match.index,
+        match.index + match[0]!.length + signature.endOffset
+      )
     });
   }
   return beans;
@@ -753,8 +786,28 @@ function snippetFrom(content: string, startIndex: number, endIndex: number): str
   return content.slice(start, end).trim();
 }
 
-function lineNumberAt(content: string, index: number): number {
-  return content.slice(0, Math.max(0, index)).split(/\r?\n/).length;
+function evidenceSpanFromRange(content: string, startIndex: number, endIndex: number): EvidenceSpan {
+  const boundedEnd = Math.max(startIndex, endIndex);
+  const start = offsetPosition(content, startIndex);
+  const end = offsetPosition(content, boundedEnd);
+  return {
+    snippet: snippetFrom(content, startIndex, boundedEnd),
+    startLine: start.line,
+    endLine: end.line,
+    startCol: start.col,
+    endCol: end.col
+  };
+}
+
+function lineEndIndex(content: string, index: number): number {
+  const nextNewline = content.indexOf('\n', Math.max(0, index));
+  return nextNewline === -1 ? content.length : nextNewline;
+}
+
+function firstNonWhitespaceIndex(content: string, index: number): number {
+  const lineStart = content.lastIndexOf('\n', Math.max(0, index)) + 1;
+  const match = content.slice(lineStart).match(/[^\s]/);
+  return match ? lineStart + match.index! : lineStart;
 }
 
 function extractSymbols(file: ScannedFile): ExtractedSymbol[] {
@@ -1177,10 +1230,41 @@ function inferTestTargets(
     return paths.map((targetPath) => ({ path: targetPath, evidence: importedItem }));
   });
   const filenameTargets = inferFilenameTestTargets(relativePath, language, filePathSet)
-    .map((targetPath) => ({ path: targetPath }));
+    .map((targetPath) => {
+      const evidence = isJvmLanguage(language)
+        ? testDeclarationEvidence(content, language)
+        : undefined;
+      return {
+        path: targetPath,
+        ...(evidence ? { evidence } : {})
+      };
+    });
   return dedupeTestTargets([...imported, ...filenameTargets])
     .filter((target) => target.path !== relativePath)
     .sort((a, b) => a.path.localeCompare(b.path));
+}
+
+function testDeclarationEvidence(content: string, language: string): EvidenceSpan | undefined {
+  if (language === 'java' || language === 'kotlin') {
+    return firstJvmTestDeclarationEvidence(content);
+  }
+  return undefined;
+}
+
+function firstJvmTestDeclarationEvidence(content: string): EvidenceSpan | undefined {
+  const classPattern =
+    /^\s*(?:(?:@[A-Za-z_][\w.]*\s*(?:\([^)]*\))?)\s*)*(?:(?:public|private|protected|internal|abstract|final|open|data|sealed|static)\s+)*(?:class|interface|enum|record|object)\s+[A-Za-z_]\w*\b[^{\n]*/gm;
+  const methodPattern =
+    /^\s*(?:(?:@[A-Za-z_][\w.]*\s*(?:\([^)]*\))?)\s*)*(?:(?:public|private|protected|internal|static|final|open|override|suspend)\s+)*(?:fun\s+[A-Za-z_]\w*\s*\(|(?:[A-Za-z_][\w$<>,.?[\]\s]*\s+)?[A-Za-z_]\w*\s*\()/gm;
+  const classMatch = classPattern.exec(content);
+  const match = classMatch ?? methodPattern.exec(content);
+  if (!match) return undefined;
+  const startIndex = firstNonWhitespaceIndex(content, match.index);
+  return evidenceSpanFromRange(
+    content,
+    startIndex,
+    lineEndIndex(content, match.index + match[0]!.length)
+  );
 }
 
 function dedupeTestTargets(targets: readonly InferredTestTarget[]): InferredTestTarget[] {
@@ -1318,6 +1402,14 @@ function inferTextTargets(
   content: string,
   filePathSet: ReadonlySet<string>
 ): string[] {
+  return inferTextTargetsWithEvidence(relativePath, content, filePathSet).map((target) => target.path);
+}
+
+function inferTextTargetsWithEvidence(
+  relativePath: string,
+  content: string,
+  filePathSet: ReadonlySet<string>
+): Array<{ path: string; evidence: EvidenceSpan }> {
   const targets: string[] = [];
   const normalizedContent = content.toLowerCase();
   for (const file of filePathSet) {
@@ -1330,12 +1422,36 @@ function inferTextTargets(
       targets.push(file);
     }
   }
-  return targets.sort();
+  return targets.sort().map((targetPath) => ({
+    path: targetPath,
+    evidence: textTargetEvidence(content, targetPath)
+  }));
+}
+
+function textTargetEvidence(content: string, targetPath: string): EvidenceSpan {
+  const normalizedContent = content.toLowerCase();
+  const pathIndex = normalizedContent.indexOf(targetPath.toLowerCase());
+  if (pathIndex >= 0) {
+    return evidenceLineAt(content, pathIndex);
+  }
+  const stem = path.posix.basename(targetPath).replace(/\.[^.]+$/, '').toLowerCase();
+  const tokenIndex = findTokenIndex(normalizedContent, stem);
+  return evidenceLineAt(content, tokenIndex >= 0 ? tokenIndex : 0);
+}
+
+function evidenceLineAt(content: string, index: number): EvidenceSpan {
+  const start = content.lastIndexOf('\n', Math.max(0, index)) + 1;
+  return evidenceSpanFromRange(content, firstNonWhitespaceIndex(content, start), lineEndIndex(content, index));
 }
 
 function contentContainsToken(normalizedContent: string, token: string): boolean {
+  return findTokenIndex(normalizedContent, token) >= 0;
+}
+
+function findTokenIndex(normalizedContent: string, token: string): number {
   const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`(^|[^a-z0-9_-])${escaped}($|[^a-z0-9_-])`).test(normalizedContent);
+  const match = new RegExp(`(^|[^a-z0-9_-])(${escaped})($|[^a-z0-9_-])`).exec(normalizedContent);
+  return match?.index === undefined ? -1 : match.index + (match[1]?.length ?? 0);
 }
 
 export function isSystemOrContractLanguage(languageId: string): boolean {

@@ -32,6 +32,7 @@
 | [D-020](#d-020-context-packs-are-persisted-by-cache-key-and-reused-by-reference) | context packs are persisted by cache key and reused by reference | P3 | 2026-05-11 |
 | [D-021](#d-021-ui-explorer-is-local-read-only-and-resource-shaped) | UI Explorer is local, read-only, and resource-shaped | P3 | 2026-05-11 |
 | [D-022](#d-022-tsjs-import-spans-use-typescript-parser-without-project-resolution) | TS/JS import spans use TypeScript parser without project resolution | P1 | 2026-05-11 |
+| [D-023](#d-023-jvmspring-spans-stay-lightweight-before-build-system-resolution) | JVM/Spring spans stay lightweight before build-system resolution | P1 | 2026-05-11 |
 
 ---
 
@@ -406,9 +407,27 @@
 - Tree-sitter 공통 parser 도입 — multi-language 확장성은 좋지만 새 native dependency와 packaging surface가 생긴다.
 - whole-file evidence에 `startLine=1`만 채움 — metric은 좋아지지만 사용자가 신뢰할 수 있는 근거가 아니다.
 
-**결과/위험:** `typescript`는 runtime dependency가 된다. relation provenance와 resolver는 기존 specifier 문자열을 유지해 relation id churn을 줄인다. import-backed `VERIFIES`는 같은 import evidence span을 재사용한다. parser는 syntax tree만 쓰므로 path alias/type resolution은 기존 resolver와 후속 depth pass에 남는다. ImpactBench는 `spanCompleteness >= 0.75`를 gate로 둔다.
+**결과/위험:** `typescript`는 runtime dependency가 된다. relation provenance와 resolver는 기존 specifier 문자열을 유지해 relation id churn을 줄인다. import-backed `VERIFIES`는 같은 import evidence span을 재사용한다. parser는 syntax tree만 쓰므로 path alias/type resolution은 기존 resolver와 후속 depth pass에 남는다. 이 slice에서 ImpactBench `spanCompleteness >= 0.75`가 첫 gate가 됐고, D-023에서 JVM/Spring span까지 반영해 0.85로 올린다.
 
 **관련 commit:** `feat(adapters): add ts js parser import spans`
+
+---
+
+## D-023: JVM/Spring spans stay lightweight before build-system resolution
+
+**결정:** JVM/Spring depth v0는 Java/Kotlin parser, Tree-sitter, Maven/Gradle model 없이 기존 regex-backed adapter 안에서 line/annotation scanning으로 evidence span만 정밀화한다. 대상은 Spring endpoint `IMPLEMENTS`, Spring role/bean `DECLARES`, config path mention `CONFIGURES`, filename-inferred JVM `VERIFIES`다.
+
+**맥락:** 사용자는 Spring Boot를 실제 stack으로 쓴다. TS/JS span만 정밀하면 MCP/UI가 Spring 변경 영향의 위치를 충분히 보여주지 못한다. 그러나 Maven/Gradle classpath, annotation processor, Kotlin compiler까지 한 번에 붙이면 dependency와 blast radius가 커진다. 먼저 agent가 바로 펼칠 수 있는 source span 신뢰도를 높인다.
+
+**대안:**
+- Tree-sitter/JavaParser/Kotlin compiler 도입 — 정확도는 높지만 native/package surface와 setup 부담이 늘어난다.
+- Maven/Gradle resolver 선행 — cross-module classpath는 풀 수 있지만 단일 repo evidence 품질 개선보다 범위가 크다.
+- config key semantic binding까지 구현 — `@ConfigurationProperties(prefix=...)`와 YAML tree 매칭은 가치가 있지만 별도 parser/contract가 필요하다.
+- whole-file evidence 유지 — context 절감 목표와 UI evidence panel 신뢰도가 약하다.
+
+**결과/위험:** Spring/Spring Boot fixture의 핵심 relation은 bounded snippet과 `startLine/endLine/startCol/endCol`를 갖는다. ImpactBench `spanCompleteness` gate는 0.85로 올라간다. v0는 shallow regex라 nested annotation expression, build-generated symbols, runtime wiring은 여전히 다루지 않는다. Python/Go/Rust parser-backed depth와 workspace resolver는 후속으로 남긴다.
+
+**관련 commit:** `feat(adapters): add jvm spring evidence spans`
 
 ---
 

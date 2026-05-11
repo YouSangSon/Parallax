@@ -10,6 +10,14 @@ import { databasePath } from '../src/store.js';
 
 process.env.IMPACT_TRACE_EMBEDDING_MODEL = 'stub-sha256';
 
+type EvidenceSpanRow = {
+  snippet: string;
+  start_line: number | null;
+  end_line: number | null;
+  start_col: number | null;
+  end_col: number | null;
+};
+
 test('indexProject emits Spring Boot endpoints, component declarations, and JVM/Python/Go/Rust VERIFIES relations', async () => {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-spring-'));
   await mkdir(path.join(repoRoot, 'src/main/java/com/example/orders'), { recursive: true });
@@ -17,6 +25,7 @@ test('indexProject emits Spring Boot endpoints, component declarations, and JVM/
   await mkdir(path.join(repoRoot, 'src/main/java/com/example/internal'), { recursive: true });
   await mkdir(path.join(repoRoot, 'src/main/java/com/example/users'), { recursive: true });
   await mkdir(path.join(repoRoot, 'src/main/kotlin/com/example/kotlin'), { recursive: true });
+  await mkdir(path.join(repoRoot, 'src/main/resources'), { recursive: true });
   await mkdir(path.join(repoRoot, 'src/main/java/com/a'), { recursive: true });
   await mkdir(path.join(repoRoot, 'src/main/java/com/b'), { recursive: true });
   await mkdir(path.join(repoRoot, 'src/main/java/com/junitlocal'), { recursive: true });
@@ -143,6 +152,21 @@ test('indexProject emits Spring Boot endpoints, component declarations, and JVM/
       '@FeignClient(name = "catalog")',
       'public interface CatalogClient {',
       '}',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(repoRoot, 'src/main/resources/application.yml'),
+    [
+      'orders:',
+      '  service-ref: src/main/java/com/example/orders/OrderService.java',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(repoRoot, 'src/main/resources/application.properties'),
+    [
+      'orders.properties-ref=src/main/java/com/example/orders/OrderProperties.java',
       ''
     ].join('\n')
   );
@@ -459,7 +483,7 @@ test('indexProject emits Spring Boot endpoints, component declarations, and JVM/
 
     const getEndpointEvidence = db
       .prepare(
-        `SELECT ev.start_line
+        `SELECT ev.snippet, ev.start_line, ev.end_line, ev.start_col, ev.end_col
          FROM relations r
          INNER JOIN entities source ON source.id = r.source_entity_id
          INNER JOIN entities target ON target.id = r.target_entity_id
@@ -470,10 +494,20 @@ test('indexProject emits Spring Boot endpoints, component declarations, and JVM/
            AND target.display_name = ?`
       )
       .get(index.indexRunId, 'IMPLEMENTS', 'OrderController', 'GET /api/orders/{id}') as
-      | { start_line: number | null }
+      | EvidenceSpanRow
       | undefined;
     assert.ok(getEndpointEvidence, 'expected persisted endpoint relation evidence');
+    assertBoundedSpan(getEndpointEvidence, 'OrderController GET endpoint');
     assert.equal(getEndpointEvidence.start_line, 17);
+    assert.equal(getEndpointEvidence.end_line, 18);
+    assert.equal(getEndpointEvidence.start_col, 3);
+    assert.match(getEndpointEvidence.snippet, /@GetMapping\("\/\{id\}"\)/);
+    assert.match(getEndpointEvidence.snippet, /public OrderDto getOrder\(String id\)/);
+    assert.equal(
+      getEndpointEvidence.snippet.includes('@PostMapping'),
+      false,
+      'endpoint evidence should not include the next handler'
+    );
 
     const springDeclarationProvenances = db
       .prepare(
@@ -499,6 +533,88 @@ test('indexProject emits Spring Boot endpoints, component declarations, and JVM/
         `missing ${expected}`
       );
     }
+
+    const springDeclarationEvidence = db
+      .prepare(
+        `SELECT r.provenance, ev.snippet, ev.start_line, ev.end_line, ev.start_col, ev.end_col
+         FROM relations r
+         INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+         WHERE r.index_run_id = ?
+           AND r.kind = ?
+           AND r.provenance IN (
+             'spring:Bean:orderClient',
+             'spring:Configuration:OrderConfig',
+             'spring:ConfigurationProperties:OrderProperties',
+             'spring:Entity:OrderEntity',
+             'spring:FeignClient:CatalogClient',
+             'spring:Service:OrderService',
+             'spring:SpringDataRepository:OrderRepository'
+           )
+         ORDER BY r.provenance`
+      )
+      .all(index.indexRunId, 'DECLARES') as Array<EvidenceSpanRow & { provenance: string }>;
+    assert.equal(springDeclarationEvidence.length, 7);
+    for (const row of springDeclarationEvidence) {
+      assertBoundedSpan(row, row.provenance);
+      assert.equal(
+        row.snippet.includes('package com.example'),
+        false,
+        `${row.provenance} should not use whole-file evidence`
+      );
+    }
+    assert.match(
+      findEvidenceByProvenance(springDeclarationEvidence, 'spring:Configuration:OrderConfig').snippet,
+      /@Configuration/
+    );
+    assert.match(
+      findEvidenceByProvenance(springDeclarationEvidence, 'spring:Bean:orderClient').snippet,
+      /@Bean/
+    );
+    assert.match(
+      findEvidenceByProvenance(springDeclarationEvidence, 'spring:SpringDataRepository:OrderRepository').snippet,
+      /interface OrderRepository extends JpaRepository/
+    );
+
+    const configEvidence = db
+      .prepare(
+        `SELECT source.path AS source_path, target.path AS target_path,
+                ev.snippet, ev.start_line, ev.end_line, ev.start_col, ev.end_col
+         FROM relations r
+         INNER JOIN entities source ON source.id = r.source_entity_id
+         INNER JOIN entities target ON target.id = r.target_entity_id
+         INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+         WHERE r.index_run_id = ?
+           AND r.kind = ?
+           AND source.path IN (?, ?)
+           AND target.path IN (?, ?)
+         ORDER BY source.path, target.path`
+      )
+      .all(
+        index.indexRunId,
+        'CONFIGURES',
+        'src/main/resources/application.properties',
+        'src/main/resources/application.yml',
+        'src/main/java/com/example/orders/OrderProperties.java',
+        'src/main/java/com/example/orders/OrderService.java'
+      ) as Array<EvidenceSpanRow & { source_path: string; target_path: string }>;
+    assert.equal(configEvidence.length, 2);
+    for (const row of configEvidence) {
+      assertBoundedSpan(row, `${row.source_path} -> ${row.target_path}`);
+      assert.equal(row.start_line, row.end_line);
+      assert.equal(
+        row.snippet.includes('\n'),
+        false,
+        `${row.source_path} config evidence should be the matched line only`
+      );
+    }
+    assert.match(
+      configEvidence.find((row) => row.source_path.endsWith('application.yml'))?.snippet ?? '',
+      /OrderService\.java/
+    );
+    assert.match(
+      configEvidence.find((row) => row.source_path.endsWith('application.properties'))?.snippet ?? '',
+      /OrderProperties\.java/
+    );
 
     const verifiesRelations = db
       .prepare(
@@ -550,6 +666,33 @@ test('indexProject emits Spring Boot endpoints, component declarations, and JVM/
       ),
       true,
       'UserServiceTest should verify UserService.java from the test filename'
+    );
+    const filenameInferredVerifyEvidence = db
+      .prepare(
+        `SELECT ev.snippet, ev.start_line, ev.end_line, ev.start_col, ev.end_col
+         FROM relations r
+         INNER JOIN entities source ON source.id = r.source_entity_id
+         INNER JOIN entities target ON target.id = r.target_entity_id
+         INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+         WHERE r.index_run_id = ?
+           AND r.kind = ?
+           AND source.path = ?
+           AND target.path = ?`
+      )
+      .get(
+        index.indexRunId,
+        'VERIFIES',
+        'src/test/java/com/example/users/UserServiceTest.java',
+        'src/main/java/com/example/users/UserService.java'
+      ) as EvidenceSpanRow | undefined;
+    assert.ok(filenameInferredVerifyEvidence, 'expected filename-inferred JVM VERIFIES evidence');
+    assertBoundedSpan(filenameInferredVerifyEvidence, 'filename-inferred JVM VERIFIES');
+    assert.equal(filenameInferredVerifyEvidence.start_line, 3);
+    assert.match(filenameInferredVerifyEvidence.snippet, /class UserServiceTest/);
+    assert.equal(
+      filenameInferredVerifyEvidence.snippet.includes('UserService service = null'),
+      false,
+      'filename-inferred JVM VERIFIES should not use whole-file evidence'
     );
     assert.deepEqual(
       verifiesRelations
@@ -603,3 +746,20 @@ test('indexProject emits Spring Boot endpoints, component declarations, and JVM/
     'expected analyzeDiff evidence to include Spring endpoint relation span'
   );
 });
+
+function assertBoundedSpan(row: EvidenceSpanRow, label: string): void {
+  assert.equal(row.start_line === null, false, `${label} should have start_line`);
+  assert.equal(row.end_line === null, false, `${label} should have end_line`);
+  assert.equal(row.start_col === null, false, `${label} should have start_col`);
+  assert.equal(row.end_col === null, false, `${label} should have end_col`);
+  assert.ok(row.snippet.length > 0, `${label} should have snippet`);
+}
+
+function findEvidenceByProvenance(
+  rows: ReadonlyArray<EvidenceSpanRow & { provenance: string }>,
+  provenance: string
+): EvidenceSpanRow {
+  const row = rows.find((item) => item.provenance === provenance);
+  assert.ok(row, `missing evidence for ${provenance}`);
+  return row;
+}

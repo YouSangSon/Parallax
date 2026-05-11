@@ -34,7 +34,7 @@ test('ImpactBench runner writes deterministic report shape', async () => {
     assert.equal(report.summary.unexpectedRelations, 0);
     assert.equal(report.scores.affectedFileRecall, 1);
     assert.equal(report.scores.evidencePresence, 1);
-    assert.ok(report.scores.spanCompleteness >= 0.75);
+    assert.ok(report.scores.spanCompleteness >= 0.85);
     assert.equal(report.scores.adapterAttribution, 1);
     assert.equal(report.scores.contextPackReadiness, 1);
     assert.ok(report.summary.score >= 0.9);

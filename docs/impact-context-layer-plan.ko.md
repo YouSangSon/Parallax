@@ -693,7 +693,7 @@ flowchart LR
 | AsyncAPI operation/message contract diff | v0 landed: AsyncAPI YAML/JSON compact signature로 removed operation, message payload field removal/type change, required payload field addition을 breaking으로 분류 |
 | Build-system/package resolver | v0 landed: `package.json`, `pom.xml`, `build.gradle(.kts)`, `go.mod`, `Cargo.toml`, `pyproject.toml` manifest-only package graph로 manifest change impact를 축소 |
 | MCP workspace/contract resources | v0 landed: `impact_trace_contract_diff`와 `impact-trace://workspaces/{name}/contracts`, `/cross-repo-links`로 contract impact를 resource-on-demand로 확장 |
-| generated-client/event topology resolver | v0 landed: Connect-ES style generated client call, Protobuf full route string, common event producer/consumer hint. 다음은 cross-file generated-client data flow와 NATS/AMQP/Kafka binding depth |
+| generated-client/event topology resolver | v0 landed: Connect-ES style generated client call, Protobuf full route string, common event producer/consumer hint. Contract diff가 topology hint를 impacted consumer와 breaking provenance까지 보존한다. 다음은 cross-file generated-client data flow와 NATS/AMQP/Kafka binding depth |
 | UI owner/repo filter | cross-repo impact를 사람이 추적 |
 
 ### Phase F: Enrichment Adapters

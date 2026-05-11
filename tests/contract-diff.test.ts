@@ -4249,7 +4249,12 @@ test('analyzeContractDiff links removed AsyncAPI operations to resolved event co
       providerContractPath: 'contracts/asyncapi.yaml',
       httpMethod: 'SEND',
       routePath: 'orders.submitted',
-      evidenceSnippet: 'bus.subscribe("orders.submitted", () => undefined);'
+      evidenceSnippet: 'bus.subscribe("orders.submitted", () => undefined);',
+      eventTopology: {
+        providerAction: 'SEND',
+        counterpartyRole: 'consumer',
+        pattern: 'subscriber-call'
+      }
     }
   ]);
 
@@ -4267,6 +4272,7 @@ test('analyzeContractDiff links removed AsyncAPI operations to resolved event co
     const provenance = JSON.parse(row.provenance) as {
       change: { kind: string; method: string; path: string; previousEndpointId: string };
       evidence: { filePath: string; snippet: string };
+      eventTopology: { providerAction: string; counterpartyRole: string; pattern: string };
     };
     assert.deepEqual(provenance.change, {
       kind: 'removed_endpoint',
@@ -4277,6 +4283,11 @@ test('analyzeContractDiff links removed AsyncAPI operations to resolved event co
     assert.deepEqual(provenance.evidence, {
       filePath: 'src/orders-consumer.ts',
       snippet: 'bus.subscribe("orders.submitted", () => undefined);'
+    });
+    assert.deepEqual(provenance.eventTopology, {
+      providerAction: 'SEND',
+      counterpartyRole: 'consumer',
+      pattern: 'subscriber-call'
     });
   } finally {
     db.close();

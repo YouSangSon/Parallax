@@ -112,6 +112,13 @@ export type ImpactedContractConsumer = {
   httpMethod: string;
   routePath: string;
   evidenceSnippet: string;
+  eventTopology?: EventTopologyProvenance;
+};
+
+export type EventTopologyProvenance = {
+  providerAction: string;
+  counterpartyRole: 'consumer' | 'producer' | 'unknown';
+  pattern: string;
 };
 
 export type AnalyzeContractDiffResult = {
@@ -1198,7 +1205,8 @@ function impactedConsumersForChanges(
       providerContractPath: contractPath,
       httpMethod: link.http.method,
       routePath: link.http.path,
-      evidenceSnippet: link.evidence.snippet
+      evidenceSnippet: link.evidence.snippet,
+      ...(link.eventTopology !== undefined ? { eventTopology: link.eventTopology } : {})
     });
   }
   return dedupeConsumers(consumers).sort(compareConsumers);
@@ -1889,12 +1897,14 @@ function parseConsumesLink(provenanceJson: string): {
   provider: { repoPath: string; contractPath: string };
   http: { method: string; path: string };
   evidence: { snippet: string };
+  eventTopology?: EventTopologyProvenance;
 } | undefined {
   const provenance = parseJsonObject(provenanceJson);
   const consumer = objectAt(provenance, 'consumer');
   const provider = objectAt(provenance, 'provider');
   const http = objectAt(provenance, 'http');
   const evidence = objectAt(provenance, 'evidence');
+  const eventTopology = parseEventTopology(objectAt(provenance, 'eventTopology'));
   const parsed = {
     consumer: {
       serviceName: stringAt(consumer, 'serviceName'),
@@ -1911,7 +1921,8 @@ function parseConsumesLink(provenanceJson: string): {
     },
     evidence: {
       snippet: stringAt(evidence, 'snippet')
-    }
+    },
+    ...(eventTopology !== undefined ? { eventTopology } : {})
   };
   if (
     !parsed.consumer.serviceName ||
@@ -1924,6 +1935,21 @@ function parseConsumesLink(provenanceJson: string): {
   ) {
     return undefined;
   }
+  return parsed;
+}
+
+function parseEventTopology(value: Record<string, unknown> | undefined): EventTopologyProvenance | undefined {
+  if (value === undefined) return undefined;
+  const rawCounterpartyRole = stringAt(value, 'counterpartyRole');
+  if (rawCounterpartyRole !== 'consumer' && rawCounterpartyRole !== 'producer' && rawCounterpartyRole !== 'unknown') {
+    return undefined;
+  }
+  const parsed = {
+    providerAction: stringAt(value, 'providerAction'),
+    counterpartyRole: rawCounterpartyRole,
+    pattern: stringAt(value, 'pattern')
+  } satisfies EventTopologyProvenance;
+  if (!parsed.providerAction || !parsed.pattern) return undefined;
   return parsed;
 }
 
@@ -2089,6 +2115,7 @@ function breakingLinkProvenance(link: PersistableBreakLink): string {
       ...(link.change.previousSchemaType !== undefined ? { previousSchemaType: link.change.previousSchemaType } : {}),
       ...(link.change.currentSchemaType !== undefined ? { currentSchemaType: link.change.currentSchemaType } : {})
     },
+    ...(link.consumer.eventTopology !== undefined ? { eventTopology: link.consumer.eventTopology } : {}),
     evidence: {
       filePath: link.consumer.consumerPath,
       snippet: link.consumer.evidenceSnippet

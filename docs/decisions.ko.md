@@ -53,6 +53,7 @@
 | [D-041](#d-041-contract-topology-surface-stays-compact-and-optional) | Contract topology surface stays compact and optional | P0/P1 | 2026-05-12 |
 | [D-042](#d-042-ui-workspace-topology-reuses-compact-resource-shapes) | UI workspace topology reuses compact resource shapes | P3/P0 | 2026-05-12 |
 | [D-043](#d-043-ui-work-artifact-impact-is-report-derived-and-resource-linked) | UI work artifact impact is report-derived and resource-linked | P3/P0 | 2026-05-12 |
+| [D-044](#d-044-ui-work-artifact-metadata-stays-compact-and-body-free) | UI work artifact metadata stays compact and body-free | P3/P0 | 2026-05-12 |
 
 ---
 
@@ -805,6 +806,23 @@
 **결과/위험:** Work Artifacts panel은 report-derived라 selected report와 일관된다. 자세한 문서 근거가 필요하면 entity/evidence resource를 expand-on-demand로 읽는다. v0는 freshness/staleness 계산, owner/reviewer routing, external docs connector는 다루지 않으며, 후속 work artifact depth에서 별도 relation과 resource를 추가한다.
 
 **관련 commit:** `feat(ui): work artifact impact panel 추가`
+
+---
+
+## D-044: UI work artifact metadata stays compact and body-free
+
+**결정:** Work Artifacts preview는 selected report의 artifact evidence에서 Markdown frontmatter와 문서 선두의 첫 `#` heading만 파싱해 `title`, `owner`, `status`, `updatedAt` 같은 작은 metadata를 보여준다. 본문 중간 heading이나 fenced code block 안의 heading은 title로 승격하지 않는다. UI bootstrap에는 artifact 본문을 싣지 않고, metadata를 찾지 못하면 기존 path/display name으로 fallback한다.
+
+**맥락:** Work Artifacts panel이 생겼지만 path와 reason만으로는 사용자가 정책/제안서/PRD의 현재 상태를 빠르게 판단하기 어렵다. 그렇다고 문서 본문을 첫 화면 JSON에 넣으면 context 절감과 privacy 원칙이 깨진다. 따라서 metadata는 deterministic Markdown parsing으로만 추출하고 본문은 resource expand-on-demand로 유지한다.
+
+**대안:**
+- Markdown 본문 앞부분을 panel에 그대로 표시 — 빠르지만 body leakage surface가 커져 거부한다.
+- YAML parser dependency 추가 — v0 metadata key/value 몇 개에는 과하다.
+- DB `work_artifacts` table을 먼저 완성 — external connector까지 포함한 저장 모델은 후속으로 두고, UI v0는 selected report와 일관되는 preview를 우선한다.
+
+**결과/위험:** 사람이 title/owner/status/updated date를 보고 review 대상 우선순위를 더 빨리 잡을 수 있다. v0 parser는 단순 scalar frontmatter와 문서 선두 H1만 지원한다. freshness/staleness 판정, reviewer routing, external docs metadata sync는 후속 slice에서 다룬다.
+
+**관련 commit:** `feat(ui): work artifact metadata preview 추가`
 
 ---
 

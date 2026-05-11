@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
+import { markdownArtifactMetadataFromContent, type MarkdownArtifactMetadata } from './artifacts.js';
 import { doctorProject, type DoctorReport } from './doctor.js';
 import { exportImpactGraph } from './graph.js';
 import { databasePath, getRepoId, latestCompletedIndexRun, openDatabase } from './store.js';
@@ -104,6 +105,7 @@ export type UiWorkArtifactImpact = {
   relations: string[];
   resourceUri: string;
   depth?: number;
+  metadata?: MarkdownArtifactMetadata;
 };
 
 export type UiWorkspaceSnapshot = {
@@ -362,15 +364,19 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       <span>${escapeHtml(item.status)} · ${escapeHtml(item.adapterId)} · ${escapeHtml(item.reason)}</span>
     </li>
   `).join('');
-  const workArtifactRows = snapshot.workArtifacts.slice(0, 30).map((item) => `
-    <li class="work-artifact-row" data-filter-text="${escapeHtml(`${item.kind} ${item.path} ${item.reason} ${item.relations.join(' ')}`)}">
+  const workArtifactRows = snapshot.workArtifacts.slice(0, 30).map((item) => {
+    const metadataText = workArtifactMetadataText(item.metadata);
+    return `
+    <li class="work-artifact-row" data-filter-text="${escapeHtml(`${item.kind} ${item.path} ${item.reason} ${item.relations.join(' ')} ${metadataText}`)}">
       <div>
         <strong>${escapeHtml(item.displayName)}</strong>
         <span>${escapeHtml(item.kind)} · ${escapeHtml(item.reason)} · ${escapeHtml(item.confidence)}</span>
+        ${metadataText ? `<small>${escapeHtml(metadataText)}</small>` : ''}
         <small>${escapeHtml(item.resourceUri)}</small>
       </div>
     </li>
-  `).join('');
+  `;
+  }).join('');
   const workspaceRows = snapshot.workspaces.flatMap((workspace) => [
     `
       <li class="workspace-row" data-filter-text="${escapeHtml(`${workspace.name} ${workspace.repoCount}`)}">
@@ -827,22 +833,25 @@ function evidencePreviewFromReport(report: ImpactReport): UiEvidencePreview[] {
 function workArtifactsFromReportRow(row: ReportRow): UiWorkArtifactImpact[] {
   const report = JSON.parse(row.json) as ImpactReport;
   const affectedByPath = new Map(report.affectedFiles.map((item) => [item.path, item]));
+  const metadataByPath = workArtifactMetadataByPath(report);
   const byKey = new Map<string, UiWorkArtifactImpact>();
   for (const item of report.affected) {
     const targetPath = item.target.path;
     if (!targetPath || !workArtifactKinds.has(item.target.kind)) continue;
     const affectedFile = affectedByPath.get(targetPath);
+    const metadata = metadataByPath.get(targetPath);
     const key = `${item.target.kind}:${targetPath}`;
     if (byKey.has(key)) continue;
     byKey.set(key, {
       kind: item.target.kind,
       path: targetPath,
-      displayName: item.target.displayName ?? targetPath,
+      displayName: metadata?.title ?? item.target.displayName ?? targetPath,
       reason: affectedFile?.reason ?? item.relations.join(' -> '),
       confidence: affectedFile?.confidence ?? item.confidence,
       relations: item.relations,
       resourceUri: entityResourceUri(item.target),
-      ...(affectedFile?.depth !== undefined ? { depth: affectedFile.depth } : {})
+      ...(affectedFile?.depth !== undefined ? { depth: affectedFile.depth } : {}),
+      ...(metadata && hasArtifactMetadata(metadata) ? { metadata } : {})
     });
   }
   return [...byKey.values()].sort(compareWorkArtifacts);
@@ -871,6 +880,42 @@ function workArtifactEvidenceResourceUri(
     return `impact-trace://entities/${encodeURIComponent(`file:${evidence.file}`)}`;
   }
   return undefined;
+}
+
+function workArtifactMetadataByPath(report: ImpactReport): Map<string, MarkdownArtifactMetadata> {
+  const workArtifactPaths = workArtifactPathSet(report);
+  const out = new Map<string, MarkdownArtifactMetadata>();
+  for (const evidence of report.evidence) {
+    const path = workArtifactEvidencePath(evidence, workArtifactPaths);
+    if (!path || out.has(path)) continue;
+    const metadata = markdownArtifactMetadataFromContent(evidence.snippet);
+    if (hasArtifactMetadata(metadata)) out.set(path, metadata);
+  }
+  return out;
+}
+
+function workArtifactEvidencePath(
+  evidence: ImpactReport['evidence'][number],
+  workArtifactPaths: ReadonlySet<string>
+): string | undefined {
+  if (evidence.subject?.path && workArtifactPaths.has(evidence.subject.path)) {
+    return evidence.subject.path;
+  }
+  if (workArtifactPaths.has(evidence.file)) return evidence.file;
+  return undefined;
+}
+
+function hasArtifactMetadata(metadata: MarkdownArtifactMetadata): boolean {
+  return Boolean(metadata.title || metadata.owner || metadata.status || metadata.updatedAt);
+}
+
+function workArtifactMetadataText(metadata: MarkdownArtifactMetadata | undefined): string {
+  if (!metadata) return '';
+  return [
+    metadata.owner ? `owner ${metadata.owner}` : undefined,
+    metadata.status ? `status ${metadata.status}` : undefined,
+    metadata.updatedAt ? `updated ${metadata.updatedAt}` : undefined
+  ].filter((item): item is string => Boolean(item)).join(' · ');
 }
 
 function compareWorkArtifacts(left: UiWorkArtifactImpact, right: UiWorkArtifactImpact): number {

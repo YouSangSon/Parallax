@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net';
 
 import { doctorProject, type DoctorReport } from './doctor.js';
 import { exportImpactGraph } from './graph.js';
-import { databasePath, getRepoId, openDatabase } from './store.js';
+import { databasePath, getRepoId, latestCompletedIndexRun, openDatabase } from './store.js';
 import { normalizeRepoRoot } from './security.js';
 import type { GraphExport, ImpactAction, ImpactReport } from './types.js';
 
@@ -30,6 +30,7 @@ export type UiSnapshot = {
   graph: UiGraphPreview | null;
   coverage: UiCoverageSnapshot | null;
   contextPacks: UiContextPackSummary[];
+  workspaces: UiWorkspaceSnapshot[];
 };
 
 export type UiError = {
@@ -87,6 +88,52 @@ export type UiCoverageSnapshot = {
   truncated: boolean;
 };
 
+export type UiWorkspaceSnapshot = {
+  name: string;
+  repoCount: number;
+  contracts: UiWorkspaceContract[];
+  links: UiWorkspaceLink[];
+  warnings: string[];
+  resources: {
+    workspace: string;
+    contracts: string;
+    crossRepoLinks: string;
+  };
+  limits: {
+    contracts: number;
+    links: number;
+    contractsTruncated: boolean;
+    linksTruncated: boolean;
+  };
+};
+
+export type UiWorkspaceContract = {
+  id: string;
+  serviceName: string;
+  repoPath: string;
+  path: string;
+  kind: string;
+  indexRunId: number;
+  endpointCount: number;
+  schemaVersion?: string;
+};
+
+export type UiWorkspaceLink = {
+  id: string;
+  kind: string;
+  confidence: string;
+  sourceService: string;
+  targetService: string;
+  routeLabel?: string;
+  consumerPath?: string;
+  providerContractPath?: string;
+  eventTopology?: {
+    providerAction: string;
+    counterpartyRole: 'consumer' | 'producer' | 'unknown';
+    pattern: string;
+  };
+};
+
 type ReportRow = {
   id: string;
   index_run_id: number;
@@ -109,6 +156,36 @@ type GraphPageCursor = {
   edgeOffset: number;
 };
 
+type WorkspaceRow = {
+  id: number;
+  name: string;
+};
+
+type WorkspaceRepoRow = {
+  local_path: string;
+  service_name: string | null;
+};
+
+type WorkspaceContractRow = {
+  id: string;
+  kind: string;
+  service_name: string | null;
+  path: string | null;
+  schema_version: string | null;
+  endpoint_count: number;
+};
+
+type WorkspaceLinkRow = {
+  id: string;
+  kind: string;
+  confidence: string;
+  provenance: string;
+  source_path: string;
+  source_service: string | null;
+  target_path: string;
+  target_service: string | null;
+};
+
 export async function buildUiSnapshot(options: UiOptions): Promise<UiSnapshot> {
   const repoRoot = normalizeRepoRoot(options.repoRoot);
   const doctor = doctorProject({ repoRoot });
@@ -129,7 +206,8 @@ export async function buildUiSnapshot(options: UiOptions): Promise<UiSnapshot> {
       selectedReport: null,
       graph: null,
       coverage: null,
-      contextPacks: []
+      contextPacks: [],
+      workspaces: []
     };
   }
 
@@ -179,7 +257,8 @@ export async function buildUiSnapshot(options: UiOptions): Promise<UiSnapshot> {
       selectedReport,
       graph,
       coverage: readLatestCoverage(db, repoId),
-      contextPacks: readContextPacks(db, repoId)
+      contextPacks: readContextPacks(db, repoId),
+      workspaces: readWorkspaceSnapshots(db)
     };
   } finally {
     db.close();
@@ -262,6 +341,34 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       <span>${escapeHtml(item.status)} · ${escapeHtml(item.adapterId)} · ${escapeHtml(item.reason)}</span>
     </li>
   `).join('');
+  const workspaceRows = snapshot.workspaces.flatMap((workspace) => [
+    `
+      <li class="workspace-row" data-filter-text="${escapeHtml(`${workspace.name} ${workspace.repoCount}`)}">
+        <div>
+          <strong>${escapeHtml(workspace.name)}</strong>
+          <span>${workspace.repoCount} repos · ${workspace.contracts.length} contracts · ${workspace.links.length} links</span>
+        </div>
+      </li>
+    `,
+    ...workspace.links.slice(0, 24).map((link) => `
+      <li class="workspace-link-row" data-filter-text="${escapeHtml(`${workspace.name} ${link.kind} ${link.sourceService} ${link.targetService} ${link.routeLabel ?? ''} ${link.eventTopology?.pattern ?? ''}`)}">
+        <div>
+          <strong>${escapeHtml(link.sourceService)} → ${escapeHtml(link.targetService)}</strong>
+          <span>${escapeHtml(link.kind)}${link.routeLabel ? ` · ${escapeHtml(link.routeLabel)}` : ''}${link.eventTopology ? ` · ${escapeHtml(link.eventTopology.pattern)}` : ''}</span>
+          ${link.consumerPath ? `<small>${escapeHtml(link.consumerPath)}</small>` : ''}
+        </div>
+        ${link.eventTopology ? `<span class="badge">${escapeHtml(link.eventTopology.providerAction)} → ${escapeHtml(link.eventTopology.counterpartyRole)}</span>` : `<span class="badge confidence-${escapeHtml(link.confidence)}">${escapeHtml(link.confidence)}</span>`}
+      </li>
+    `),
+    ...workspace.contracts.slice(0, 12).map((contract) => `
+      <li class="workspace-contract-row" data-filter-text="${escapeHtml(`${workspace.name} ${contract.serviceName} ${contract.path} ${contract.kind}`)}">
+        <div>
+          <strong>${escapeHtml(contract.serviceName)} · ${escapeHtml(contract.path)}</strong>
+          <span>${escapeHtml(contract.kind)} · endpoints ${contract.endpointCount} · index ${contract.indexRunId}</span>
+        </div>
+      </li>
+    `)
+  ]).join('');
   const dataJson = JSON.stringify(snapshot).replaceAll('<', '\\u003c');
 
   return `<!doctype html>
@@ -348,15 +455,15 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       background: #fdfaf2;
     }
     .list { list-style: none; margin: 0; padding: 0; max-height: 520px; overflow: auto; }
-    .entity-row, .impact-row, .evidence-row, .action-row, .pack-row, .coverage-row, .finding {
+    .entity-row, .impact-row, .evidence-row, .action-row, .pack-row, .coverage-row, .workspace-row, .workspace-link-row, .workspace-contract-row, .finding {
       padding: 10px 12px;
       border-bottom: 1px solid var(--line);
       min-width: 0;
     }
     .entity-row, .action-row { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; align-items: center; }
-    .impact-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; }
-    .impact-row strong, .pack-row strong, .coverage-row strong { display: block; overflow-wrap: anywhere; }
-    .impact-row span, .pack-row span, .coverage-row span, .evidence-meta span { color: var(--muted); font-size: 12px; }
+    .impact-row, .workspace-link-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+    .impact-row strong, .pack-row strong, .coverage-row strong, .workspace-row strong, .workspace-link-row strong, .workspace-contract-row strong { display: block; overflow-wrap: anywhere; }
+    .impact-row span, .pack-row span, .coverage-row span, .workspace-row span, .workspace-link-row span, .workspace-link-row small, .workspace-contract-row span, .evidence-meta span { color: var(--muted); font-size: 12px; }
     .kind, .badge {
       border: 1px solid var(--line);
       border-radius: 999px;
@@ -412,7 +519,7 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
     @media (max-width: 560px) {
       .shell { padding: 10px; }
       .metrics { grid-template-columns: 1fr; }
-      .impact-row { grid-template-columns: 1fr; }
+      .impact-row, .workspace-link-row { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -435,6 +542,7 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       <div class="metric"><span>Evidence</span><strong>${escapeHtml(String(report?.evidenceCount ?? 0))}</strong></div>
       <div class="metric"><span>Actions</span><strong>${escapeHtml(String(report?.actionCount ?? 0))}</strong></div>
       <div class="metric"><span>Coverage gaps</span><strong>${escapeHtml(String(doctor.index.coverage?.skippedPaths ?? 0))}</strong></div>
+      <div class="metric"><span>Workspaces</span><strong>${escapeHtml(String(snapshot.workspaces.length))}</strong></div>
     </section>
     <section class="workbench" aria-label="Impact report workbench">
       <section class="panel">
@@ -475,6 +583,23 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
     </section>
     <section class="bottom">
       <section class="panel">
+        <h2>Workspace Contracts</h2>
+        <ul class="list filterable">${workspaceRows || '<li class="empty">No workspace contract links available.</li>'}</ul>
+      </section>
+      <section class="panel">
+        <h2>Workspace Resources</h2>
+        <ul class="list">
+          ${snapshot.workspaces.map((workspace) => `
+            <li class="pack-row">
+              <strong>${escapeHtml(workspace.name)}</strong>
+              <span>${escapeHtml(workspace.resources.workspace)} · ${escapeHtml(workspace.resources.contracts)} · ${escapeHtml(workspace.resources.crossRepoLinks)}</span>
+            </li>
+          `).join('') || '<li class="empty">No workspace resources available.</li>'}
+        </ul>
+      </section>
+    </section>
+    <section class="bottom">
+      <section class="panel">
         <h2>Coverage Gaps</h2>
         <ul class="list">${coverageRows || '<li class="empty">No coverage rows available.</li>'}</ul>
       </section>
@@ -486,6 +611,7 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
           <li class="pack-row"><strong>/api/reports/{id}/graph/json</strong><span>GraphExport JSON shape with limit/cursor pagination</span></li>
           <li class="pack-row"><strong>/api/coverage/latest</strong><span>Coverage resource shape</span></li>
           <li class="pack-row"><strong>/api/context-packs/{id}</strong><span>Persisted context pack resource shape</span></li>
+          <li class="pack-row"><strong>/api/workspaces/{name}</strong><span>Workspace contracts and cross-repo link preview shape</span></li>
         </ul>
       </section>
     </section>
@@ -609,6 +735,10 @@ async function uiApiResponse(repoRootInput: string, url: URL): Promise<unknown |
   const packMatch = /^\/api\/context-packs\/([^/]+)$/.exec(url.pathname);
   if (packMatch) {
     return readContextPack(repoRoot, decodeURIComponent(packMatch[1]!));
+  }
+  const workspaceMatch = /^\/api\/workspaces\/([^/]+)$/.exec(url.pathname);
+  if (workspaceMatch) {
+    return readWorkspace(repoRoot, decodeURIComponent(workspaceMatch[1]!));
   }
   return null;
 }
@@ -738,6 +868,248 @@ function readLatestCoverage(db: ReturnType<typeof openDatabase>, repoId: number)
     limit,
     truncated: rows.length > limit
   };
+}
+
+function readWorkspace(repoRoot: string, workspaceName: string): unknown {
+  const db = openDatabase(repoRoot, { readOnly: true });
+  try {
+    const workspace = readWorkspaceSnapshots(db).find((item) => item.name === workspaceName);
+    if (!workspace) {
+      return { error: { code: 'workspace_not_found', message: `Workspace not found: ${workspaceName}` } };
+    }
+    return workspace;
+  } finally {
+    db.close();
+  }
+}
+
+function readWorkspaceSnapshots(db: ReturnType<typeof openDatabase>): UiWorkspaceSnapshot[] {
+  if (!tableExists(db, 'workspaces') || !tableExists(db, 'workspace_repos')) return [];
+  const rows = db
+    .prepare('SELECT id, name FROM workspaces ORDER BY name')
+    .all() as WorkspaceRow[];
+  return rows.map((workspace) => {
+    const warnings: string[] = [];
+    const repos = readWorkspaceReposForUi(db, workspace.id);
+    const contractResult = readWorkspaceContractsForUi(workspace.name, repos, warnings);
+    const linkResult = readWorkspaceLinksForUi(db, workspace.id);
+    return {
+      name: workspace.name,
+      repoCount: repos.length,
+      contracts: contractResult.contracts,
+      links: linkResult.links,
+      warnings,
+      resources: workspaceResources(workspace.name),
+      limits: {
+        contracts: contractResult.limit,
+        links: linkResult.limit,
+        contractsTruncated: contractResult.truncated,
+        linksTruncated: linkResult.truncated
+      }
+    };
+  });
+}
+
+function readWorkspaceReposForUi(db: ReturnType<typeof openDatabase>, workspaceId: number): WorkspaceRepoRow[] {
+  return db
+    .prepare(`
+      SELECT local_path, service_name
+      FROM workspace_repos
+      WHERE workspace_id = ?
+      ORDER BY local_path
+    `)
+    .all(workspaceId) as WorkspaceRepoRow[];
+}
+
+function readWorkspaceContractsForUi(
+  workspaceName: string,
+  repos: WorkspaceRepoRow[],
+  warnings: string[]
+): { contracts: UiWorkspaceContract[]; limit: number; truncated: boolean } {
+  const limit = 80;
+  const contracts: UiWorkspaceContract[] = [];
+  let truncated = false;
+  for (const repo of repos) {
+    if (contracts.length >= limit) {
+      truncated = true;
+      break;
+    }
+    let repoDb: ReturnType<typeof openDatabase> | undefined;
+    try {
+      repoDb = openDatabase(repo.local_path, { readOnly: true });
+      const repoId = getRepoId(repoDb, repo.local_path);
+      const indexRunId = latestCompletedIndexRun(repoDb, repoId);
+      const remaining = limit - contracts.length;
+      const rows = repoDb
+        .prepare(`
+          SELECT
+            c.id,
+            c.kind,
+            c.service_name,
+            c.path,
+            v.schema_version,
+            (
+              SELECT count(*)
+              FROM relations r
+              INNER JOIN entities target
+                 ON target.id = r.target_entity_id
+                AND target.repo_id = r.repo_id
+              WHERE r.repo_id = c.repo_id
+                AND r.index_run_id = ?
+                AND r.source_entity_id = c.id
+                AND r.kind = 'DECLARES'
+                AND target.kind = 'endpoint'
+            ) AS endpoint_count
+          FROM contracts c
+          INNER JOIN contract_versions v
+             ON v.contract_id = c.id
+            AND v.index_run_id = ?
+          WHERE c.repo_id = ?
+          ORDER BY COALESCE(c.service_name, ''), c.path, c.id
+          LIMIT ?
+        `)
+        .all(indexRunId, indexRunId, repoId, remaining + 1) as WorkspaceContractRow[];
+      if (rows.length > remaining) truncated = true;
+      contracts.push(...rows.slice(0, remaining).map((row) => ({
+        id: row.id,
+        serviceName: row.service_name ?? repo.service_name ?? repo.local_path,
+        repoPath: repo.local_path,
+        path: row.path ?? row.id,
+        kind: row.kind,
+        indexRunId,
+        endpointCount: row.endpoint_count,
+        ...(row.schema_version !== null ? { schemaVersion: row.schema_version } : {})
+      })));
+    } catch (error) {
+      warnings.push(`workspace contract repo skipped: ${workspaceName}:${repo.local_path}: ${errorMessage(error)}`);
+    } finally {
+      repoDb?.close();
+    }
+  }
+  return { contracts, limit, truncated };
+}
+
+function readWorkspaceLinksForUi(
+  db: ReturnType<typeof openDatabase>,
+  workspaceId: number
+): { links: UiWorkspaceLink[]; limit: number; truncated: boolean } {
+  const limit = 120;
+  if (!tableExists(db, 'cross_repo_links')) return { links: [], limit, truncated: false };
+  const rows = db
+    .prepare(`
+      SELECT
+        link.id,
+        link.kind,
+        link.confidence,
+        link.provenance,
+        source_member.local_path AS source_path,
+        source_member.service_name AS source_service,
+        target_member.local_path AS target_path,
+        target_member.service_name AS target_service
+      FROM cross_repo_links link
+      INNER JOIN workspace_repos source_member
+         ON source_member.workspace_id = link.workspace_id
+        AND source_member.repo_id = link.source_repo_id
+      INNER JOIN workspace_repos target_member
+         ON target_member.workspace_id = link.workspace_id
+        AND target_member.repo_id = link.target_repo_id
+      WHERE link.workspace_id = ?
+      ORDER BY link.kind, source_member.service_name, target_member.service_name, link.id
+      LIMIT ?
+    `)
+    .all(workspaceId, limit + 1) as WorkspaceLinkRow[];
+  return {
+    links: rows.slice(0, limit).map((row) => {
+      const provenance = parsedProvenance(row.provenance);
+      const routeLabel = routeLabelFromProvenance(provenance);
+      const consumerPath =
+        stringAt(objectAt(provenance, 'consumer'), 'path')
+        ?? stringAt(objectAt(provenance, 'evidence'), 'filePath');
+      const providerContractPath = stringAt(objectAt(provenance, 'provider'), 'contractPath');
+      const eventTopology = eventTopologyFromProvenance(provenance);
+      return {
+        id: row.id,
+        kind: row.kind,
+        confidence: row.confidence,
+        sourceService: row.source_service ?? row.source_path,
+        targetService: row.target_service ?? row.target_path,
+        ...(routeLabel !== undefined ? { routeLabel } : {}),
+        ...(consumerPath !== undefined ? { consumerPath } : {}),
+        ...(providerContractPath !== undefined ? { providerContractPath } : {}),
+        ...(eventTopology !== undefined ? { eventTopology } : {})
+      };
+    }),
+    limit,
+    truncated: rows.length > limit
+  };
+}
+
+function workspaceResourceUri(workspaceName: string): string {
+  return `impact-trace://workspaces/${encodeURIComponent(workspaceName)}`;
+}
+
+function workspaceResources(workspaceName: string): UiWorkspaceSnapshot['resources'] {
+  const workspace = workspaceResourceUri(workspaceName);
+  return {
+    workspace,
+    contracts: `${workspace}/contracts`,
+    crossRepoLinks: `${workspace}/cross-repo-links`
+  };
+}
+
+function parsedProvenance(value: string): unknown {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return value;
+  }
+}
+
+function routeLabelFromProvenance(provenance: unknown): string | undefined {
+  const http = objectAt(provenance, 'http');
+  const method = stringAt(http, 'method');
+  const routePath = stringAt(http, 'path');
+  if (method && routePath) return `${method} ${routePath}`;
+
+  const change = objectAt(provenance, 'change');
+  const changeMethod = stringAt(change, 'method');
+  const changePath = stringAt(change, 'path');
+  if (changeMethod && changePath) return `${changeMethod} ${changePath}`;
+  return routePath ?? changePath;
+}
+
+function eventTopologyFromProvenance(provenance: unknown): UiWorkspaceLink['eventTopology'] | undefined {
+  const topology = objectAt(provenance, 'eventTopology');
+  const providerAction = stringAt(topology, 'providerAction');
+  const counterpartyRole = stringAt(topology, 'counterpartyRole');
+  const pattern = stringAt(topology, 'pattern');
+  if (!providerAction || !pattern) return undefined;
+  if (counterpartyRole !== 'consumer' && counterpartyRole !== 'producer' && counterpartyRole !== 'unknown') {
+    return undefined;
+  }
+  return { providerAction, counterpartyRole, pattern };
+}
+
+function objectAt(value: unknown, key: string): Record<string, unknown> | undefined {
+  if (!isRecord(value)) return undefined;
+  const child = value[key];
+  return isRecord(child) ? child : undefined;
+}
+
+function stringAt(value: unknown, key: string): string | undefined {
+  if (!isRecord(value)) return undefined;
+  const child = value[key];
+  return typeof child === 'string' && child.length > 0 ? child : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  return 'unknown error';
 }
 
 function tableExists(db: ReturnType<typeof openDatabase>, name: string): boolean {

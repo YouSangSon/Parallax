@@ -1,8 +1,8 @@
 # Phase 6B — Multi-language + Spring Boot Adapter Pack v0 + Trusted Evidence
 
 > **작성:** 2026-05-09 (`main` @ `3cba0a2`)
-> **상태:** `/autoplan` + `/team-builder` 이후 사용자 stack 정정 반영. 2026-05-11 현재 ImpactBench, adapter pack v0 routing, TS/JS parser-backed import span v0, JVM/Spring lightweight evidence span v0, Python/Go/Rust lightweight evidence span v0, OpenAPI contract impact baseline, workspace catalog v0, cross-repo contract resolver v0가 landed. 파일명은 기존 링크 유지를 위해 유지한다.
-> **결론:** 이 phase는 **Java/Kotlin/Spring Boot/Python/Go/Rust/TS/JS adapter pack v0 + source-span evidence + git snapshot metadata + OpenAPI baseline + workspace catalog + cross-repo resolver**를 닫았다. 다음 제품 slice는 contract diff다.
+> **상태:** `/autoplan` + `/team-builder` 이후 사용자 stack 정정 반영. 2026-05-11 현재 ImpactBench, adapter pack v0 routing, TS/JS parser-backed import span v0, JVM/Spring lightweight evidence span v0, Python/Go/Rust lightweight evidence span v0, OpenAPI contract impact baseline, workspace catalog v0, cross-repo contract resolver v0, OpenAPI endpoint-surface contract diff v0가 landed. 파일명은 기존 링크 유지를 위해 유지한다.
+> **결론:** 이 phase는 **Java/Kotlin/Spring Boot/Python/Go/Rust/TS/JS adapter pack v0 + source-span evidence + git snapshot metadata + OpenAPI baseline + workspace catalog + cross-repo resolver + endpoint-surface contract diff**를 닫았다. 다음 제품 slice는 schema/body-level contract diff와 MCP workspace/contract resources다.
 
 ---
 
@@ -49,7 +49,7 @@ Phase 6B는 이 제품 전체가 아니라 첫 필수 조건이다. UI와 MCP가
 - report/MCP evidence output의 optional span 노출
 - `index_runs` git snapshot metadata: commit SHA, branch name, dirty state
 - stale-index warning을 git snapshot 기반으로 정밀화
-- docs/ADR 정리: Phase 6 foundation landed, decisions log D-027까지 갱신
+- docs/ADR 정리: Phase 6 foundation landed, decisions log D-028까지 갱신
 
 v0 target languages/frameworks:
 
@@ -68,11 +68,11 @@ v0 target languages/frameworks:
 - full interprocedural call graph, data-flow, symbol reference graph
 - JVM bytecode analysis, full Maven/Gradle model, annotation processor resolution
 - Python virtualenv/package resolver, Go workspace resolver, Cargo feature resolver
-- contract diff
+- schema/body-level contract diff
 - LSP/CodeQL enrichment, graph DB projection, full web explorer
 - agent가 report를 보고 자동으로 코드 수정하는 기능
 
-단, 현재 v0 adapter들은 deterministic heuristic extractor를 공유한다. TS/JS import-like syntax는 `ts.createSourceFile` 기반 parser span으로 한 단계 깊어졌고, JVM/Spring은 endpoint/declaration/config/test relation에 lightweight line/annotation spans를 저장한다. Python/Go/Rust는 declaration/test relation에 lightweight declaration-line spans를 저장한다. OpenAPI/Swagger/AsyncAPI YAML/JSON은 contract baseline과 명시적 code path 기반 implementer reverse-link를 저장한다. workspace catalog v0는 `.impact-trace/workspace.json` local allowlist를 기존 `workspaces`/`workspace_repos` 테이블에 동기화한다. cross-repo contract resolver v0는 indexed workspace repo의 OpenAPI provider endpoint와 HTTP consumer literal을 `cross_repo_links`로 연결한다. full type-checker, full parser-backed Python/Go/Rust resolution, Tree-sitter/LSP/CodeQL enrichment, full source span coverage, contract diff는 후속 pass로 둔다. UI의 첫 버전에서 필요할 graph JSON contract와 evidence/resource shape는 이 phase의 output에서 깨지지 않게 둔다.
+단, 현재 v0 adapter들은 deterministic heuristic extractor를 공유한다. TS/JS import-like syntax는 `ts.createSourceFile` 기반 parser span으로 한 단계 깊어졌고, JVM/Spring은 endpoint/declaration/config/test relation에 lightweight line/annotation spans를 저장한다. Python/Go/Rust는 declaration/test relation에 lightweight declaration-line spans를 저장한다. OpenAPI/Swagger/AsyncAPI YAML/JSON은 contract baseline과 명시적 code path 기반 implementer reverse-link를 저장한다. workspace catalog v0는 `.impact-trace/workspace.json` local allowlist를 기존 `workspaces`/`workspace_repos` 테이블에 동기화한다. cross-repo contract resolver v0는 indexed workspace repo의 OpenAPI provider endpoint와 HTTP consumer literal을 `cross_repo_links`로 연결한다. contract diff v0는 latest indexed OpenAPI endpoint surface와 current contract file을 비교해 removed endpoint를 breaking, added endpoint를 non-breaking으로 분류하고 known consumer를 `BREAKS_COMPATIBILITY_WITH` link로 저장한다. full type-checker, full parser-backed Python/Go/Rust resolution, Tree-sitter/LSP/CodeQL enrichment, full source span coverage, schema/body-level contract diff는 후속 pass로 둔다. UI의 첫 버전에서 필요할 graph JSON contract와 evidence/resource shape는 이 phase의 output에서 깨지지 않게 둔다.
 
 ## 3. Architecture
 
@@ -245,9 +245,9 @@ full MemoryBench가 아니라 adapter accuracy용 얇은 evaluation spine을 먼
    - `brief`/`standard`/`deep` context budget, dedupe, ranking, resource-on-demand evidence가 v0에 포함됐다.
    - multi-language adapter 결과는 language/framework별 top impact path로 압축되어 AI context 사용량을 줄인다.
 2. **UI explorer v0:** 저장된 report/graph JSON을 읽어 changed/affected/evidence/action을 필터링해 보여주는 read-only local UI가 `impact-trace ui`로 landed 상태다.
-3. **Workspace catalog + resolver v0:** `.impact-trace/workspace.json` local allowlist와 `workspace init/add-repo/list/resolve-contracts` CLI가 landed 상태다.
+3. **Workspace catalog + resolver + contract diff v0:** `.impact-trace/workspace.json` local allowlist와 `workspace init/add-repo/list/resolve-contracts/contract-diff` CLI가 landed 상태다.
 
-다음 제품 slice는 workspace catalog, contract baseline, cross-repo links를 사용해 contract diff와 breaking-change classification을 붙이는 것이다.
+다음 제품 slice는 endpoint-surface diff 결과를 MCP workspace/contract resource로 노출하고, request/response schema와 protobuf/GraphQL/AsyncAPI breaking rules로 넓히는 것이다.
 
 ## 6. Acceptance Criteria
 

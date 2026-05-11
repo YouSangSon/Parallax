@@ -139,7 +139,39 @@ async function main(): Promise<void> {
       }
       return;
     }
-    throw new Error('workspace requires init, add-repo, list, or resolve-contracts');
+    if (subcommand === 'contract-diff') {
+      const { analyzeContractDiff } = await import('./index.js');
+      const name = parseOptionalWorkspaceArg(workspaceArgs, '--name');
+      const providerServiceName = parseOptionalWorkspaceArg(workspaceArgs, '--provider');
+      const providerRepoPath = parseOptionalWorkspaceArg(workspaceArgs, '--provider-path');
+      const contractPath = parseRequiredArg(workspaceArgs, '--contract');
+      const result = analyzeContractDiff({
+        repoRoot,
+        contractPath,
+        ...(name !== undefined ? { workspaceName: name } : {}),
+        ...(providerServiceName !== undefined ? { providerServiceName } : {}),
+        ...(providerRepoPath !== undefined ? { providerRepoPath } : {})
+      });
+      if (workspaceArgs.includes('--json')) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.log(`Contract diff: ${result.summary.classification}`);
+        console.log(`Breaking changes: ${result.summary.breakingChangeCount}`);
+        console.log(`Impacted consumers: ${result.summary.impactedConsumerCount}`);
+        for (const change of result.changes) {
+          const endpoint = change.httpMethod && change.routePath ? ` ${change.httpMethod} ${change.routePath}` : '';
+          console.log(`${change.classification}: ${change.kind}${endpoint}`);
+        }
+        for (const consumer of result.impactedConsumers) {
+          console.log(`consumer: ${consumer.consumerService}:${consumer.consumerPath} -> ${consumer.providerService}:${consumer.httpMethod} ${consumer.routePath}`);
+        }
+        for (const warning of result.warnings) {
+          console.error(`warning: ${warning}`);
+        }
+      }
+      return;
+    }
+    throw new Error('workspace requires init, add-repo, list, resolve-contracts, or contract-diff');
   }
 
   if (command === 'analyze') {
@@ -503,6 +535,8 @@ Commands:
   impact-trace workspace add-repo <path> [--name <name>] [--service <service>] [--remote <url>]
   impact-trace workspace list [--name <name>] [--json]
   impact-trace workspace resolve-contracts [--name <name>] [--json]
+  impact-trace workspace contract-diff --contract <path> [--name <name>]
+                                      [--provider <service>] [--provider-path <path>] [--json]
   impact-trace analyze --changed src/file.ts [--depth 2] [--json]
   impact-trace analyze --base main [--head HEAD] [--depth 2] [--json]
   impact-trace graph export --report <id> [--format mermaid|json|dot]

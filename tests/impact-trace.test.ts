@@ -580,6 +580,336 @@ test('indexProject persists OpenAPI contracts and analyzeDiff reaches implementi
   );
 });
 
+test('indexProject ignores nested OpenAPI YAML callback method keys as endpoint declarations', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-openapi-callback-'));
+  await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
+  await writeFile(
+    path.join(repoRoot, 'contracts/openapi.yaml'),
+    [
+      'openapi: 3.0.3',
+      'info:',
+      '  title: Callback API',
+      '  version: 1.0.0',
+      'paths:',
+      '  /api/users:',
+      '    post:',
+      '      operationId: createUser',
+      '      callbacks:',
+      '        onData:',
+      "          '{$request.body#/callbackUrl}':",
+      '            get:',
+      '              operationId: callbackGet',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const endpoints = db
+      .prepare(
+        `SELECT e.display_name
+         FROM relations r
+         INNER JOIN entities e ON e.id = r.target_entity_id
+         WHERE r.index_run_id = ?
+           AND r.kind = ?
+           AND r.source_entity_id = ?
+           AND e.kind = ?
+         ORDER BY e.display_name`
+      )
+      .all(index.indexRunId, 'DECLARES', 'file:contracts/openapi.yaml', 'endpoint') as Array<{
+      display_name: string;
+    }>;
+    assert.deepEqual(
+      endpoints.map((row) => row.display_name),
+      ['POST /api/users']
+    );
+  } finally {
+    db.close();
+  }
+});
+
+test('indexProject declares inline OpenAPI YAML operation objects', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-openapi-inline-'));
+  await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
+  await writeFile(
+    path.join(repoRoot, 'contracts/openapi.yaml'),
+    [
+      'openapi: 3.0.3',
+      'paths: # endpoint map',
+      '  /api/users:',
+      '    get: { operationId: listUsers }',
+      "  '/v1/{name}:cancel': # action-style path",
+      '    post: { operationId: cancelUser }',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const endpoints = db
+      .prepare(
+        `SELECT e.display_name
+         FROM relations r
+         INNER JOIN entities e ON e.id = r.target_entity_id
+         WHERE r.index_run_id = ?
+           AND r.kind = ?
+           AND r.source_entity_id = ?
+           AND e.kind = ?
+         ORDER BY e.display_name`
+      )
+      .all(index.indexRunId, 'DECLARES', 'file:contracts/openapi.yaml', 'endpoint') as Array<{
+      display_name: string;
+    }>;
+    assert.deepEqual(
+      endpoints.map((row) => row.display_name),
+      ['GET /api/users', 'POST /v1/{name}:cancel']
+    );
+  } finally {
+    db.close();
+  }
+});
+
+test('indexProject skips invalid OpenAPI YAML operation shapes', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-openapi-invalid-shapes-'));
+  await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
+  await writeFile(
+    path.join(repoRoot, 'contracts/openapi-empty.yaml'),
+    [
+      'openapi: 3.0.3',
+      'paths:',
+      '  /api/status:',
+      '    get:',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(repoRoot, 'contracts/openapi-list.yaml'),
+    [
+      'openapi: 3.0.3',
+      'paths:',
+      '  /api/status:',
+      '    get:',
+      '      - operationId: status',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(repoRoot, 'contracts/openapi-mixed-invalid.yaml'),
+    [
+      'openapi: 3.0.3',
+      'paths:',
+      '  /api/good:',
+      '    get:',
+      '      operationId: good',
+      '  /api/bad:',
+      '    get: []',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(repoRoot, 'contracts/openapi-missing-marker.yaml'),
+    [
+      'paths:',
+      '  /api/good:',
+      '    get:',
+      '      operationId: good',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const endpoints = db
+      .prepare(
+        `SELECT r.source_entity_id, e.display_name
+         FROM relations r
+         INNER JOIN entities e ON e.id = r.target_entity_id
+         WHERE r.index_run_id = ?
+           AND r.kind = ?
+           AND r.source_entity_id IN (?, ?, ?, ?)
+           AND e.kind = ?
+         ORDER BY r.source_entity_id, e.display_name`
+      )
+      .all(
+        index.indexRunId,
+        'DECLARES',
+        'file:contracts/openapi-empty.yaml',
+        'file:contracts/openapi-list.yaml',
+        'file:contracts/openapi-mixed-invalid.yaml',
+        'file:contracts/openapi-missing-marker.yaml',
+        'endpoint'
+      ) as Array<{
+      source_entity_id: string;
+      display_name: string;
+    }>;
+    assert.deepEqual(endpoints, []);
+  } finally {
+    db.close();
+  }
+});
+
+test('indexProject skips tab-indented and nested-paths OpenAPI YAML surfaces', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-openapi-yaml-depth-'));
+  await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
+  await writeFile(
+    path.join(repoRoot, 'contracts/openapi-tabs.yaml'),
+    [
+      'openapi: 3.0.3',
+      'paths:',
+      '\t/api/users:',
+      '\t\tget:',
+      '\t\t\toperationId: listUsers',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(repoRoot, 'contracts/openapi-nested-paths.yaml'),
+    [
+      'openapi: 3.0.3',
+      'components:',
+      '  schemas:',
+      '    Example:',
+      '      properties:',
+      '        paths:',
+      '          /nested-only:',
+      '            get:',
+      '              operationId: nestedOnly',
+      'paths:',
+      '  /real:',
+      '    post:',
+      '      operationId: real',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const endpoints = db
+      .prepare(
+        `SELECT r.source_entity_id, e.display_name
+         FROM relations r
+         INNER JOIN entities e ON e.id = r.target_entity_id
+         WHERE r.index_run_id = ?
+           AND r.kind = ?
+           AND r.source_entity_id IN (?, ?)
+           AND e.kind = ?
+         ORDER BY r.source_entity_id, e.display_name`
+      )
+      .all(
+        index.indexRunId,
+        'DECLARES',
+        'file:contracts/openapi-tabs.yaml',
+        'file:contracts/openapi-nested-paths.yaml',
+        'endpoint'
+      ) as Array<{
+      source_entity_id: string;
+      display_name: string;
+    }>;
+    assert.deepEqual(
+      endpoints.map((row) => ({
+        source_entity_id: row.source_entity_id,
+        display_name: row.display_name
+      })),
+      [
+      {
+        source_entity_id: 'file:contracts/openapi-nested-paths.yaml',
+        display_name: 'POST /real'
+      }
+      ]
+    );
+  } finally {
+    db.close();
+  }
+});
+
+test('indexProject skips invalid OpenAPI JSON operation shapes', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-openapi-json-invalid-shapes-'));
+  await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
+  await writeFile(
+    path.join(repoRoot, 'contracts/openapi-array-operation.json'),
+    `${JSON.stringify({
+      openapi: '3.0.3',
+      paths: {
+        '/api/users': {
+          get: []
+        }
+      }
+    }, null, 2)}\n`
+  );
+  await writeFile(
+    path.join(repoRoot, 'contracts/openapi-missing-marker.json'),
+    `${JSON.stringify({
+      paths: {
+        '/api/status': {
+          get: {
+            operationId: 'status'
+          }
+        }
+      }
+    }, null, 2)}\n`
+  );
+  await writeFile(
+    path.join(repoRoot, 'contracts/openapi-mixed-invalid.json'),
+    `${JSON.stringify({
+      openapi: '3.0.3',
+      paths: {
+        '/api/good': {
+          get: {
+            operationId: 'good'
+          }
+        },
+        '/api/bad': {
+          get: []
+        }
+      }
+    }, null, 2)}\n`
+  );
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const endpoints = db
+      .prepare(
+        `SELECT r.source_entity_id, e.display_name
+         FROM relations r
+         INNER JOIN entities e ON e.id = r.target_entity_id
+         WHERE r.index_run_id = ?
+           AND r.kind = ?
+           AND r.source_entity_id IN (?, ?, ?)
+           AND e.kind = ?
+         ORDER BY r.source_entity_id, e.display_name`
+      )
+      .all(
+        index.indexRunId,
+        'DECLARES',
+        'file:contracts/openapi-array-operation.json',
+        'file:contracts/openapi-missing-marker.json',
+        'file:contracts/openapi-mixed-invalid.json',
+        'endpoint'
+      ) as Array<{
+      source_entity_id: string;
+      display_name: string;
+    }>;
+    assert.deepEqual(endpoints, []);
+  } finally {
+    db.close();
+  }
+});
+
 test('indexProject does not persist contract baseline rows for relation-only placeholders', async () => {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-contract-placeholder-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });

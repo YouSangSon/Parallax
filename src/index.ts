@@ -18,6 +18,17 @@ export type {
   TraceResult
 } from './agent_memory.js';
 export { analyzeDiff } from './analyzer.js';
+export { analyzeContractDiff } from './contract_diff.js';
+export type {
+  AnalyzeContractDiffOptions,
+  AnalyzeContractDiffResult,
+  ContractDiffChange,
+  ContractDiffChangeKind,
+  ContractDiffClassification,
+  ContractDiffContract,
+  ContractDiffProvider,
+  ImpactedContractConsumer
+} from './contract_diff.js';
 export { resolveCrossRepoContracts } from './cross_repo_resolver.js';
 export type {
   CrossRepoContractLink,

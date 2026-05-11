@@ -37,6 +37,7 @@
 | [D-025](#d-025-contract-files-reverse-link-to-implementers-before-cross-repo-resolution) | contract files reverse-link to implementers before cross-repo resolution | P0/P1 | 2026-05-11 |
 | [D-026](#d-026-workspace-catalog-is-an-explicit-local-allowlist) | workspace catalog is an explicit local allowlist | P0/P1 | 2026-05-11 |
 | [D-027](#d-027-cross-repo-contract-resolution-reads-indexed-local-repos-only) | cross-repo contract resolution reads indexed local repos only | P0/P1 | 2026-05-11 |
+| [D-028](#d-028-contract-diff-v0-compares-indexed-openapi-endpoints-to-current-files) | contract diff v0 compares indexed OpenAPI endpoints to current files | P0/P1 | 2026-05-11 |
 
 ---
 
@@ -465,7 +466,7 @@
 - YAML/JSON stem matching 유지 — `User API` 같은 일반 단어가 `User.java`로 연결되는 false positive가 생긴다.
 - OpenAPI parser/library 도입 — 정확도는 높지만 v0의 local deterministic adapter blast radius보다 크다.
 
-**결과/위험:** OpenAPI contract는 endpoint `DECLARES`와 구현자 `IMPLEMENTS` relation을 bounded line/col evidence로 갖는다. `contracts` row는 `kind=openapi`, `service_name`, metadata를 저장하고 `contract_versions.schema_version`은 OpenAPI schema version을 기록한다. ImpactBench expected relation은 46개로 늘고 `spanCompleteness`는 0.9565다. 단일 repo 안에서는 명시적 repo path mention만 구현자로 인정한다. cross-repo consumer mapping의 첫 v0는 D-027에서 별도 resolver로 처리했고, 자동 route-method matching 확대, package/service discovery, contract diff는 후속으로 남긴다.
+**결과/위험:** OpenAPI contract는 endpoint `DECLARES`와 구현자 `IMPLEMENTS` relation을 bounded line/col evidence로 갖는다. `contracts` row는 `kind=openapi`, `service_name`, metadata를 저장하고 `contract_versions.schema_version`은 OpenAPI schema version을 기록한다. ImpactBench expected relation은 46개로 늘고 `spanCompleteness`는 0.9565다. 단일 repo 안에서는 명시적 repo path mention만 구현자로 인정한다. cross-repo consumer mapping의 첫 v0는 D-027에서 별도 resolver로 처리했고, endpoint-surface contract diff는 D-028에서 처리했다. 자동 route-method matching 확대, package/service discovery, schema/body-level diff는 후속으로 남긴다.
 
 **관련 commit:** `feat(contracts): add OpenAPI impact baseline`
 
@@ -483,7 +484,7 @@
 - MCP tool에서 workspace path를 임의 입력으로 매번 받음 — 빠르지만 반복 호출마다 trust boundary를 다시 검증해야 하고 UI/list UX가 없다.
 - workspace catalog 없이 contract resolver부터 구현 — consumer/provider graph가 어떤 repo 범위에서 유효한지 설명할 수 없다.
 
-**결과/위험:** workspace catalog는 config file 기준 상대경로를 사용하고 DB에는 canonical realpath를 저장한다. `add-repo` 재실행은 같은 path row를 업데이트하므로 idempotent하다. v0는 repo 등록/조회만 제공한다. indexed local repo를 읽는 첫 cross-repo resolver는 D-027에서 추가됐고, contract diff와 MCP workspace resource는 후속 slice다.
+**결과/위험:** workspace catalog는 config file 기준 상대경로를 사용하고 DB에는 canonical realpath를 저장한다. `add-repo` 재실행은 같은 path row를 업데이트하므로 idempotent하다. v0는 repo 등록/조회만 제공한다. indexed local repo를 읽는 첫 cross-repo resolver는 D-027에서 추가됐고, OpenAPI endpoint-surface contract diff는 D-028에서 추가됐다. MCP workspace resource는 후속 slice다.
 
 **관련 commit:** `feat(workspace): add local catalog CLI`
 
@@ -501,9 +502,27 @@
 - package manager/service discovery를 먼저 구현 — 정확도는 좋아지지만 Java/Kotlin/Spring/Python/Go/Rust/TS/JS 전체 build model이 필요해 blast radius가 크다.
 - `relations`에 cross-repo edge를 직접 삽입 — 기존 canonical relation은 single-repo `repo_id` invariant가 강해서 schema/ID 충돌 위험이 크다.
 
-**결과/위험:** v0는 provider contract와 consumer file 모두 repo-root fence를 통과한 뒤 읽고, indexed file hash와 live file hash가 다르면 link 생성을 skip하고 warning을 반환한다. 링크는 `CONSUMES_HTTP_ENDPOINT` kind와 provenance JSON에 consumer/provider service, repo path, contract path, endpoint id, HTTP method/path, evidence snippet을 담는다. 현재 매칭은 deterministic literal/path heuristic이므로 generated client, service discovery, auth/config binding, contract diff/breaking-change classification은 후속 slice다.
+**결과/위험:** v0는 provider contract와 consumer file 모두 repo-root fence를 통과한 뒤 읽고, indexed file hash와 live file hash가 다르면 link 생성을 skip하고 warning을 반환한다. 링크는 `CONSUMES_HTTP_ENDPOINT` kind와 provenance JSON에 consumer/provider service, repo path, contract path, endpoint id, HTTP method/path, evidence snippet을 담는다. 현재 매칭은 deterministic literal/path heuristic이다. 이 링크를 사용한 OpenAPI endpoint-surface breaking-change classification은 D-028에서 추가됐고, generated client, service discovery, auth/config binding은 후속 slice다.
 
 **관련 commit:** `feat(workspace): cross-repo contract resolver 추가`
+
+---
+
+## D-028: contract diff v0 compares indexed OpenAPI endpoints to current files
+
+**결정:** contract diff v0는 workspace root에서 `impact-trace workspace contract-diff --contract <path> [--name <workspace>] [--provider <service>] [--provider-path <path>] [--json]`로 실행한다. provider repo의 latest completed index에 저장된 OpenAPI endpoint `DECLARES` surface와 현재 contract 파일을 비교해 removed endpoint를 `breaking`, added endpoint를 `non-breaking`, unreadable/unparsed/body-only change를 `unknown`으로 분류한다. 기존 `CONSUMES_HTTP_ENDPOINT` cross-repo link와 만나는 removed endpoint만 root workspace DB에 `BREAKS_COMPATIBILITY_WITH` link로 저장한다.
+
+**맥락:** 사용자가 Claude/Codex로 provider API contract를 수정했을 때 agent에게 전체 workspace를 다시 읽히면 context가 낭비된다. 이미 OpenAPI baseline과 cross-repo consumer links가 있으므로, 변경된 contract endpoint surface와 known consumer만 작은 JSON으로 반환하면 된다. diff 대상은 "latest indexed baseline vs current working tree file"이다. 이렇게 해야 코드 수정 직후 re-index 전에 breaking risk를 볼 수 있다.
+
+**대안:**
+- 두 index run 사이를 비교 — raw contract content를 저장하지 않으므로 re-index 전 변경 영향 확인이 늦고, agent 수정 직후 UX가 나쁘다.
+- resolver 실행 중 모든 repo를 live scan — D-027의 completed-index 신뢰 경계를 깨고 stale/dirty consumer를 근거로 만들 수 있다.
+- OpenAPI schema parser 라이브러리 도입 — request/response body rule에는 필요하지만 v0 endpoint surface classification보다 dependency/blast radius가 크다.
+- breaking relation을 provider repo의 `relations`에 저장 — existing relation schema는 single-repo `repo_id` invariant가 강하고 consumer repo path를 자연스럽게 담기 어렵다.
+
+**결과/위험:** v0는 OpenAPI YAML/JSON endpoint surface에 한정된다. endpoint removal은 known HTTP literal consumer가 있을 때만 persisted breaking link가 되며, consumer가 없더라도 result summary에는 breaking change로 남는다. unreadable/unparsed current contract는 unknown으로 반환하고 기존 breaking links를 지우지 않는다. path는 provider repo root fence를 통과해야 하며 post-index symlink escape를 읽지 않는다. response schema, required field, status code, auth scope, protobuf/GraphQL/AsyncAPI diff는 후속 slice다.
+
+**관련 commit:** `feat(contracts): OpenAPI contract diff 추가`
 
 ---
 

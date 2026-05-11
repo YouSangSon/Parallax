@@ -486,15 +486,21 @@ function extractOpenApiJsonEndpoints(file: ScannedFile): ContractEndpoint[] {
   } catch {
     return [];
   }
-  if (!parsed || typeof parsed !== 'object') return [];
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return [];
+  const marker = (parsed as { openapi?: unknown; swagger?: unknown }).openapi ??
+    (parsed as { openapi?: unknown; swagger?: unknown }).swagger;
+  if (typeof marker !== 'string' || marker.length === 0) return [];
   const paths = (parsed as { paths?: unknown }).paths;
-  if (!paths || typeof paths !== 'object') return [];
+  if (!paths || typeof paths !== 'object' || Array.isArray(paths)) return [];
   const endpoints: ContractEndpoint[] = [];
   for (const [apiPath, pathItem] of Object.entries(paths as Record<string, unknown>)) {
-    if (!apiPath.startsWith('/') || !pathItem || typeof pathItem !== 'object') continue;
+    if (!apiPath.startsWith('/')) continue;
+    if (!pathItem || typeof pathItem !== 'object' || Array.isArray(pathItem)) return [];
     for (const method of Object.keys(pathItem as Record<string, unknown>)) {
       const normalizedMethod = method.toLowerCase();
       if (!openApiMethods.has(normalizedMethod)) continue;
+      const operation = (pathItem as Record<string, unknown>)[method];
+      if (!operation || typeof operation !== 'object' || Array.isArray(operation)) return [];
       endpoints.push({
         displayName: `${normalizedMethod.toUpperCase()} ${apiPath}`,
         metadata: { path: apiPath, method: normalizedMethod.toUpperCase() },
@@ -627,42 +633,76 @@ function findNextNonWhitespaceIndex(content: string, start: number): number {
 }
 
 function extractOpenApiYamlEndpoints(file: ScannedFile): ContractEndpoint[] {
+  if (!/^\s*(?:openapi|swagger)\s*:/im.test(file.content)) return [];
+
   const endpoints: ContractEndpoint[] = [];
   const lines = file.content.split(/\r?\n/);
   let inPaths = false;
-  let currentPath: { value: string; indent: number } | undefined;
+  let currentPath: { value: string; indent: number; childIndent?: number } | undefined;
+  let pathsIndent = -1;
   let offset = 0;
 
-  for (const line of lines) {
-    const trimmed = line.trim();
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const line = lines[lineIndex]!;
+    if (line.includes('\t')) return [];
+    const trimmed = stripYamlComment(line).trim();
+    if (trimmed.length === 0) {
+      offset += line.length + 1;
+      continue;
+    }
     const indent = line.length - line.trimStart().length;
-    if (/^paths\s*:\s*$/.test(trimmed)) {
-      inPaths = true;
-      currentPath = undefined;
-      offset += line.length + 1;
-      continue;
-    }
-    if (inPaths && indent === 0 && trimmed.length > 0 && !trimmed.startsWith('#') && !trimmed.startsWith('/')) {
-      inPaths = false;
-      currentPath = undefined;
-    }
     if (!inPaths) {
+      if (indent !== 0) {
+        offset += line.length + 1;
+        continue;
+      }
+      if (/^paths\s*:\s*\{\s*\}\s*(?:#.*)?$/.test(trimmed)) return [];
+      if (/^paths\s*:\s*(?:#.*)?$/.test(trimmed)) {
+        inPaths = true;
+        pathsIndent = indent;
+        currentPath = undefined;
+        offset += line.length + 1;
+        continue;
+      }
       offset += line.length + 1;
       continue;
     }
-    const pathMatch = /^(['"]?)(\/[^'":]+)\1\s*:\s*(?:#.*)?$/.exec(trimmed);
-    if (pathMatch) {
-      currentPath = { value: pathMatch[2]!, indent };
+
+    if (indent <= pathsIndent) break;
+    const pathValue = parseYamlPathEntry(trimmed);
+    if (pathValue !== undefined) {
+      currentPath = { value: pathValue, indent };
       offset += line.length + 1;
       continue;
     }
-    const methodMatch = /^([A-Za-z]+)\s*:\s*(?:#.*)?$/.exec(trimmed);
+    if (/^['"]?\//.test(trimmed)) return [];
+
+    const methodWithoutColon = /^([A-Za-z]+)\s*$/.exec(trimmed);
+    if (methodWithoutColon && openApiMethods.has(methodWithoutColon[1]!.toLowerCase())) return [];
+
+    if (!currentPath || indent <= currentPath.indent) {
+      const methodBeforePath = /^([A-Za-z]+)\s*:/.exec(trimmed);
+      if (methodBeforePath && openApiMethods.has(methodBeforePath[1]!.toLowerCase())) return [];
+      offset += line.length + 1;
+      continue;
+    }
+
+    if (currentPath && indent > currentPath.indent && trimmed.length > 0 && !trimmed.startsWith('#')) {
+      if (currentPath.childIndent === undefined || indent < currentPath.childIndent) {
+        currentPath.childIndent = indent;
+      }
+    }
+    const methodMatch = /^([A-Za-z]+)\s*:\s*(.*)$/.exec(trimmed);
     if (
       currentPath &&
       methodMatch &&
       indent > currentPath.indent &&
+      indent === currentPath.childIndent &&
       openApiMethods.has(methodMatch[1]!.toLowerCase())
     ) {
+      const inlineValue = methodMatch[2]!.trim();
+      if (inlineValue.length > 0 && !(inlineValue.startsWith('{') && inlineValue.endsWith('}'))) return [];
+      if (inlineValue.length === 0 && !hasYamlMappingChild(lines, lineIndex, indent)) return [];
       const method = methodMatch[1]!.toUpperCase();
       endpoints.push({
         displayName: `${method} ${currentPath.value}`,
@@ -672,7 +712,44 @@ function extractOpenApiYamlEndpoints(file: ScannedFile): ContractEndpoint[] {
     }
     offset += line.length + 1;
   }
-  return endpoints;
+  return inPaths ? endpoints : [];
+}
+
+function parseYamlPathEntry(trimmed: string): string | undefined {
+  const quoted = /^(['"])(\/.*?)\1\s*:\s*(?:#.*)?$/.exec(trimmed);
+  if (quoted) return quoted[2]!;
+  const unquoted = /^(\/.*)\s*:\s*(?:#.*)?$/.exec(trimmed);
+  return unquoted?.[1]?.trimEnd();
+}
+
+function hasYamlMappingChild(lines: string[], parentLineIndex: number, parentIndent: number): boolean {
+  for (const line of lines.slice(parentLineIndex + 1)) {
+    const trimmed = stripYamlComment(line).trim();
+    if (trimmed.length === 0) continue;
+    if (line.length - line.trimStart().length <= parentIndent) return false;
+    return /^['"]?[A-Za-z0-9_$.-]+['"]?\s*:/.test(trimmed);
+  }
+  return false;
+}
+
+function stripYamlComment(line: string): string {
+  let quote: '"' | "'" | undefined;
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    const previous = index > 0 ? line[index - 1] : undefined;
+    if (quote === undefined && (char === '"' || char === "'")) {
+      quote = char;
+      continue;
+    }
+    if (quote !== undefined && char === quote && previous !== '\\') {
+      quote = undefined;
+      continue;
+    }
+    if (quote === undefined && char === '#') {
+      return line.slice(0, index);
+    }
+  }
+  return line;
 }
 
 function extractProtobufEndpoints(file: ScannedFile): ContractEndpoint[] {

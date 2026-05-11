@@ -47,6 +47,7 @@
 | [D-035](#d-035-asyncapi-contract-diff-uses-compact-operationmessage-signatures) | AsyncAPI contract diff uses compact operation/message signatures | P0/P1 | 2026-05-12 |
 | [D-036](#d-036-graphql-consumer-resolver-links-operation-documents-to-root-fields) | GraphQL consumer resolver links operation documents to root fields | P0/P1 | 2026-05-12 |
 | [D-037](#d-037-protobuf-and-asyncapi-consumer-resolver-reuses-the-cross-repo-link-envelope) | Protobuf and AsyncAPI consumer resolver reuses the cross-repo link envelope | P0/P1 | 2026-05-12 |
+| [D-038](#d-038-build-system-package-resolver-stays-manifest-only-in-v0) | Build-system package resolver stays manifest-only in v0 | P1/P2 | 2026-05-12 |
 
 ---
 
@@ -694,6 +695,24 @@
 **결과/위험:** v0는 deterministic heuristic이다. Protobuf consumer scan은 source file만 대상으로 하고 docs/examples/README와 generated protobuf descriptors(`gen/`, `generated/`, `*_pb.*`, `*_grpc_pb.*`)는 제외한다. RPC method-name-only match에는 `UserService` 같은 service anchor가 필요하고, exact gRPC route string(`/pkg.UserService/ListUsers`)은 직접 매칭한다. AsyncAPI consumer scan은 source/config file에서 exact address token을 찾고 docs/examples/README와 partial topic(`orders.submitted.v2`)은 제외한다. Java/Kotlin/Python/Go/Rust/TS/JS common client call shape와 Spring/Kafka config의 literal은 v0에서 잡지만, cross-file client data flow, generated-client usage graph, Buf descriptor import graph, AsyncAPI operationId-only matching, NATS wildcard semantics, AMQP exchange topology, schema registry integration은 후속이다. Link kind 이름은 기존 envelope 재사용 때문에 아직 HTTP 명칭을 유지하지만 `RPC`, `SEND`, `RECEIVE`, `PUBLISH`, `SUBSCRIBE` method로 contract type을 구분한다.
 
 **관련 commit:** `feat(workspace): Protobuf AsyncAPI consumer resolver 추가`
+
+---
+
+## D-038: Build-system package resolver stays manifest-only in v0
+
+**결정:** build-system/package resolver v0는 새 `build-system-package-resolver-v0` adapter로 둔다. 기본 registry에서 언어별 adapter와 regex fallback보다 먼저 `package.json`, `pom.xml`, `build.gradle(.kts)`, `go.mod`, `Cargo.toml`, `pyproject.toml`을 읽고, local package entity와 manifest file의 `DECLARES`, package → manifest identity `DEPENDS_ON`, package → package `DEPENDS_ON` relation을 저장한다. `settings.gradle(.kts)`, `go.work`, `pnpm-workspace.yaml`은 build-system manifest로 인식하지만 v0에서는 실행 없이 scope fence로만 다룬다.
+
+**맥락:** 사용자는 Java/Kotlin/Spring Boot/Python/Go/Rust/TS/JS repo에서 AI context를 줄이고 싶다고 했다. 언어 adapter만으로는 monorepo package 경계, local package dependency, Maven/Gradle/Go/Cargo/Python manifest 영향이 빠져서 변경된 manifest가 dependent app/package까지 전파되지 않는다. Renovate/Dependabot/Syft/OSV Scanner 같은 도구들은 ecosystem별 manifest/lockfile cataloging을 분리하지만, Impact Trace v0는 "AI에게 줄 compact impact graph"가 목적이므로 package manager나 build tool을 실행하지 않는 deterministic manifest-first lane이 먼저 필요하다.
+
+**대안:**
+- npm/pnpm/yarn, Maven, Gradle, Go, Cargo, Python tooling을 실행해 실제 resolved graph를 만든다 — 정확도는 높지만 설치 상태, 네트워크, credential, build side effect, 실행 시간 표면이 커져 local-first/offline index model과 맞지 않는다.
+- Renovate/Dependabot/Syft 같은 resolver를 core dependency로 통합한다 — coverage는 넓지만 의존성과 output model이 커지고, 현재 `Entity`/`Relation` graph에 필요한 compact edge만 고르기 어렵다.
+- 언어 adapter나 regex fallback에 manifest 처리를 계속 섞는다 — 빠르지만 package graph attribution, adapter diagnostics, bench coverage가 흐려진다.
+- lockfile/transitive/semver/Gradle DSL/Maven profile/Cargo feature/Go workspace까지 한 번에 구현한다 — 제품 가치는 있지만 scope가 커서 v0 regression gate를 만들기 어렵다.
+
+**결과/위험:** v0는 manifest-only extractor라 dependency resolution의 실제 build semantics를 보장하지 않는다. npm workspace/file dependency, Gradle `project(":x")`, Cargo path dependency는 proven local signal로 취급하고, registry/external coordinate는 heuristic package dependency로 남긴다. package → manifest identity edge를 저장하므로 manifest file 변경은 dependent package manifests까지 도달한다. exact repo-local path mention은 `CONFIGURES`로 보존해 build manifest가 기존 system/config reference lane을 완전히 잃지 않게 한다. lockfile drift, transitive dependency, Gradle version catalog, Maven parent/profile/property interpolation, Go replace/workspace, Python optional dependencies/Poetry/uv, generated-client/source usage graph는 후속이다.
+
+**관련 commit:** `feat(adapters): build-system package resolver 추가`
 
 ---
 

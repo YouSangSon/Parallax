@@ -39,7 +39,8 @@ export type AdapterCapability =
   | 'types'
   | 'symbols'
   | 'docrefs'
-  | 'tests';
+  | 'tests'
+  | 'packages';
 
 export type IndexEvent =
   | { readonly kind: 'entity'; readonly entity: PendingEntity }

@@ -14,6 +14,7 @@ import {
   RUST_SEMANTIC_ADAPTER_ID,
   TS_JS_SEMANTIC_ADAPTER_ID
 } from '../src/adapters/multi-language-regex.js';
+import { BUILD_SYSTEM_PACKAGE_ADAPTER_ID } from '../src/adapters/build-system-package.js';
 
 const fixtureId = 'phase6b-multilanguage-v0';
 const schemaVersion = 2;
@@ -159,6 +160,9 @@ const expectedRelations: readonly ExpectedRelation[] = [
   languageRelation('VERIFIES', 'tests/session.test.ts', 'src/ts/session.ts', 'TS test verifies session'),
   fallbackRelation('DOCUMENTS', 'README.md', 'src/ts/session.ts', 'Markdown documents session'),
   fallbackRelation('CONFIGURES', '.github/workflows/ci.yml', 'src/ts/session.ts', 'Workflow config references session'),
+  packageDeclareRelation('package.json', '@acme/impact-bench', 'npm package declares bench workspace package'),
+  packageManifestIdentityRelation('package.json', 'npm package identity depends on package manifest'),
+  packageDependencyRelation('package.json', 'typescript', 'npm package depends on TypeScript package'),
   endpointRelation('src/main/java/com/example/UserController.java', 'GET /api/users', 'Spring Java GET endpoint'),
   endpointRelation('src/main/java/com/example/UserController.java', 'POST /api/users', 'Spring Java POST endpoint'),
   languageRelation('DEPENDS_ON', 'src/main/java/com/example/UserController.java', 'src/main/java/com/example/UserService.java', 'Spring controller imports service'),
@@ -604,7 +608,56 @@ function contractImplementerRelation(
   };
 }
 
+function packageDeclareRelation(
+  sourcePath: string,
+  targetDisplayName: string,
+  label: string
+): ExpectedRelation {
+  return {
+    kind: 'DECLARES',
+    sourceKind: fileKindForPath(sourcePath),
+    sourcePath,
+    targetKind: 'package',
+    targetPath: sourcePath,
+    targetDisplayName,
+    adapterId: BUILD_SYSTEM_PACKAGE_ADAPTER_ID,
+    label
+  };
+}
+
+function packageManifestIdentityRelation(
+  sourcePath: string,
+  label: string
+): ExpectedRelation {
+  return {
+    kind: 'DEPENDS_ON',
+    sourceKind: 'package',
+    sourcePath,
+    targetKind: fileKindForPath(sourcePath),
+    targetPath: sourcePath,
+    adapterId: BUILD_SYSTEM_PACKAGE_ADAPTER_ID,
+    label
+  };
+}
+
+function packageDependencyRelation(
+  sourcePath: string,
+  targetDisplayName: string,
+  label: string
+): ExpectedRelation {
+  return {
+    kind: 'DEPENDS_ON',
+    sourceKind: 'package',
+    sourcePath,
+    targetKind: 'package',
+    targetDisplayName,
+    adapterId: BUILD_SYSTEM_PACKAGE_ADAPTER_ID,
+    label
+  };
+}
+
 function adapterIdForPath(relativePath: string): string {
+  if (isBuildSystemManifestPath(relativePath)) return BUILD_SYSTEM_PACKAGE_ADAPTER_ID;
   const language = languageIdForPath(relativePath);
   if (language === 'typescript' || language === 'javascript') return TS_JS_SEMANTIC_ADAPTER_ID;
   if (language === 'java' || language === 'kotlin') return JVM_SPRING_SEMANTIC_ADAPTER_ID;
@@ -632,6 +685,13 @@ async function writeFixture(repoRoot: string): Promise<void> {
   ];
   await Promise.all(dirs.map((dir) => mkdir(path.join(repoRoot, dir), { recursive: true })));
 
+  await writeFile(path.join(repoRoot, 'package.json'), JSON.stringify({
+    name: '@acme/impact-bench',
+    private: true,
+    dependencies: {
+      typescript: '^5.9.3'
+    }
+  }, null, 2));
   await writeFile(path.join(repoRoot, 'tsconfig.json'), JSON.stringify({
     compilerOptions: {
       baseUrl: '.',
@@ -1065,8 +1125,28 @@ function fileKindForPath(filePath: string): string {
   if (filePath.startsWith('.github/workflows/')) return 'workflow';
   if (filePath === 'Dockerfile') return 'resource';
   if (isPathObviousContract(filePath)) return 'contract';
-  if (filePath.endsWith('.yml') || filePath.endsWith('.yaml') || filePath.endsWith('.properties')) return 'config';
+  if (
+    filePath.endsWith('.json') ||
+    filePath.endsWith('.toml') ||
+    filePath.endsWith('.yml') ||
+    filePath.endsWith('.yaml') ||
+    filePath.endsWith('.properties') ||
+    isBuildSystemManifestPath(filePath)
+  ) return 'config';
   return 'file';
+}
+
+function isBuildSystemManifestPath(filePath: string): boolean {
+  const basename = path.posix.basename(filePath);
+  return new Set([
+    'package.json',
+    'pom.xml',
+    'build.gradle',
+    'build.gradle.kts',
+    'go.mod',
+    'Cargo.toml',
+    'pyproject.toml'
+  ]).has(basename);
 }
 
 function isPathObviousContract(filePath: string): boolean {
@@ -1082,6 +1162,7 @@ function isPathObviousContract(filePath: string): boolean {
 function languageIdForPath(filePath: string): string | undefined {
   const basename = path.posix.basename(filePath);
   if (basename === 'Dockerfile' || basename === 'Containerfile') return 'dockerfile';
+  if (basename === 'package.json') return 'json';
   const ext = path.posix.extname(filePath);
   if (ext === '.ts' || ext === '.tsx') return 'typescript';
   if (ext === '.js' || ext === '.jsx' || ext === '.mjs' || ext === '.cjs') return 'javascript';

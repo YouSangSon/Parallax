@@ -103,7 +103,7 @@ Entity ID는 deterministic해야 한다. 같은 repo와 같은 index input이면
 | Java/Kotlin | Maven/Gradle module, package, class, method, field, annotation | imports, references, calls, implements |
 | C#/.NET | solution, project, namespace, class, method, property | project dependency, references, calls |
 | C/C++ | translation unit, header, function, type, macro, build target | includes, references, calls, generates |
-| Build systems | npm, pip, cargo, Maven, Gradle, dotnet, CMake, Make, Bazel target | depends-on, verifies, generates |
+| Build systems | npm, Python, Cargo, Maven, Gradle, Go module, dotnet, CMake, Make, Bazel target | depends-on, configures, verifies, generates |
 
 ## Workspace와 프로젝트 간 연결
 
@@ -171,7 +171,7 @@ Repo files
 |---|---|
 | Language semantic | compiler API, LSP, CodeQL처럼 정확한 symbol/reference를 만든다. |
 | Syntax fallback | Tree-sitter처럼 여러 언어에서 기본 symbol/import를 만든다. |
-| Build/project system | Maven, Gradle, dotnet, CMake, Make, Bazel, package manager metadata를 읽는다. |
+| Build/project system | v0는 `package.json`, `pom.xml`, `build.gradle(.kts)`, `go.mod`, `Cargo.toml`, `pyproject.toml` manifest-only package graph를 읽는다. dotnet/CMake/Make/Bazel, lockfile/transitive/package-manager execution depth는 후속이다. |
 | Config/system | YAML, JSON, TOML, shell, Docker, Kubernetes, Terraform, CI를 읽는다. |
 | Workspace/contract | repo catalog, OpenAPI, protobuf, GraphQL, AsyncAPI, event schema를 읽는다. |
 | Policy/governance | CODEOWNERS, OPA/Rego, permission manifest를 읽는다. |

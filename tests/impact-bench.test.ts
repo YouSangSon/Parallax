@@ -29,7 +29,7 @@ test('ImpactBench runner writes deterministic report shape', async () => {
     assert.equal(report.fixtureId, 'phase6b-multilanguage-v0');
     assert.equal(report.outputPath, '.impact-trace/bench/impact-bench-report.json');
     assert.equal(report.summary.passed, true);
-    assert.equal(report.summary.expectedRelations, 46);
+    assert.equal(report.summary.expectedRelations, 49);
     assert.equal(report.summary.expectedRelations, report.summary.matchedRelations);
     assert.equal(report.summary.unexpectedRelations, 0);
     assert.equal(report.scores.affectedFileRecall, 1);

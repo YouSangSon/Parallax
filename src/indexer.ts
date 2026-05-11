@@ -3,6 +3,7 @@ import { closeSync, openSync, readFileSync, readdirSync, readSync, statSync } fr
 import path from 'node:path';
 
 import { AdapterRegistry } from './adapters/registry.js';
+import { BuildSystemPackageAdapter } from './adapters/build-system-package.js';
 import {
   GoSemanticAdapter,
   JvmSpringSemanticAdapter,
@@ -68,13 +69,25 @@ const languageByExtension = new Map<string, string>([
   ['.tf', 'terraform'],
   ['.proto', 'protobuf'],
   ['.graphql', 'graphql'],
-  ['.gql', 'graphql']
+  ['.gql', 'graphql'],
+  ['.gradle', 'gradle']
 ]);
 const languageByFileName = new Map<string, string>([
   ['Dockerfile', 'dockerfile'],
   ['Containerfile', 'dockerfile'],
   ['Makefile', 'makefile'],
-  ['CODEOWNERS', 'policy']
+  ['CODEOWNERS', 'policy'],
+  ['package.json', 'json'],
+  ['pnpm-workspace.yaml', 'yaml'],
+  ['pom.xml', 'xml'],
+  ['settings.gradle', 'gradle'],
+  ['settings.gradle.kts', 'gradle'],
+  ['build.gradle', 'gradle'],
+  ['build.gradle.kts', 'gradle'],
+  ['go.mod', 'go'],
+  ['go.work', 'go'],
+  ['Cargo.toml', 'toml'],
+  ['pyproject.toml', 'toml']
 ]);
 const defaultMaxFileBytes = 1_000_000;
 const skippedFileContentSampleBytes = 4_096;
@@ -899,6 +912,7 @@ async function indexProjectInternal(
 
 function createDefaultRegistry(): AdapterRegistry {
   const registry = new AdapterRegistry();
+  registry.register(new BuildSystemPackageAdapter());
   registry.register(new TypeScriptJavaScriptSemanticAdapter());
   registry.register(new JvmSpringSemanticAdapter());
   registry.register(new PythonSemanticAdapter());
@@ -1760,6 +1774,7 @@ function fileKind(relativePath: string, languageId: string): EntityKind {
   if (languageId === 'yaml' && relativePath.startsWith('.github/workflows/')) return 'workflow';
   if ((languageId === 'yaml' || languageId === 'json') && isPathObviousContract(relativePath)) return 'contract';
   if (languageId === 'dockerfile' || languageId === 'terraform') return 'resource';
+  if (isBuildManifestPath(relativePath)) return 'config';
   if (
     languageId === 'yaml' ||
     languageId === 'json' ||
@@ -1772,6 +1787,23 @@ function fileKind(relativePath: string, languageId: string): EntityKind {
   }
   if (languageId === 'protobuf' || languageId === 'graphql') return 'contract';
   return 'file';
+}
+
+function isBuildManifestPath(relativePath: string): boolean {
+  const basename = path.posix.basename(relativePath);
+  return (
+    basename === 'package.json' ||
+    basename === 'pnpm-workspace.yaml' ||
+    basename === 'pom.xml' ||
+    basename === 'settings.gradle' ||
+    basename === 'settings.gradle.kts' ||
+    basename === 'build.gradle' ||
+    basename === 'build.gradle.kts' ||
+    basename === 'go.mod' ||
+    basename === 'go.work' ||
+    basename === 'Cargo.toml' ||
+    basename === 'pyproject.toml'
+  );
 }
 
 function isPathObviousContract(relativePath: string): boolean {

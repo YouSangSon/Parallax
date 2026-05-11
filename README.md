@@ -43,6 +43,7 @@ MVP 구현이 들어가 있습니다.
 - TS/JS import edge 추출과 parser-backed import evidence span 저장
 - Spring Boot endpoint/declaration/config/test evidence span 저장
 - Python/Go/Rust declaration/test evidence span 저장
+- `package.json`, `pom.xml`, `build.gradle(.kts)`, `go.mod`, `Cargo.toml`, `pyproject.toml` manifest-only package graph 저장
 - OpenAPI/Swagger/AsyncAPI contract baseline과 구현 코드 reverse-link 저장
 - `.impact-trace/workspace.json` 기반 local workspace catalog와 `workspace init/add-repo/list/resolve-contracts` CLI
 - workspace에 등록된 indexed repo 사이의 OpenAPI provider endpoint ↔ HTTP consumer file link 저장
@@ -69,7 +70,7 @@ MVP 구현이 들어가 있습니다.
 TS/JS, JVM/Spring Boot, Python, Go, Rust를 별도 adapter run으로 라우팅하고,
 Markdown/config/system/contract와 아직 깊게 다루지 않는 언어는 regex fallback으로 둡니다.
 공개 report model은 언어별 문자열보다 `EntityRef`, `ImpactTarget`, `ImpactAction` 같은
-언어 중립 구조를 우선합니다. 이후 Tree-sitter, LSP, CodeQL, build-system adapter로 깊이를
+언어 중립 구조를 우선합니다. 이후 Tree-sitter, LSP, CodeQL, package-manager/build adapter depth로 깊이를
 더하는 방향입니다.
 
 이번 MVP에 없는 것:
@@ -77,6 +78,7 @@ Markdown/config/system/contract와 아직 깊게 다루지 않는 언어는 rege
 - Obsidian write sync
 - graph DB projection
 - GraphQL/protobuf/AsyncAPI full parser/LSP depth, generated-client usage graph, event topology inference
+- lockfile/transitive/semver/package-manager execution 기반 full package resolution
 - web graph explorer
 - CodeQL adapter
 - 모든 언어의 full semantic analysis
@@ -128,12 +130,12 @@ graph LR
 | 3 | reflective consolidation (entity별 LLM 자동 요약, multi-provider stub/ollama/anthropic/openai), speculative branch GC (soft-delete via `transactions.archived`), schema v7, redact-then-prompt 게이트 + secret 패턴 확장 | ✅ 완료 |
 | 4 | reflect scaling cap (streaming iterate + per-entity bound), Profile API (`profileEntity` 3-bucket view), `factLifecycle` helper, supermemory selective adoption (P1/P4 거부, P2/P3-Expose/P6 채택), Skill packaging (`npx skills add`), `reflect --repair` (orphan 보정), `branch --restore` (역방향 복구), `gc-branches --max-age` (시간 기반 자동 abandon), sqlite-vec ANN (per-model vec0 + brute-force fallback) + `reindex-vec` CLI | ✅ 완료 |
 | 5 | MemoryBench harness · topic clustering · multi-layer reflection · concurrent reflect lock · reembed cleanup | ⏳ 후보/deferred |
-| 6 | adapter interface/registry, `MultiLanguageRegexAdapter`, multi-adapter run attribution, adapter evidence/diagnostic observability, symbol hash sensitivity, relation-kind memory attribute mapping | ✅ `main` 반영 완료; 다음 slice는 multi-language + Spring Boot adapter pack v0/trusted evidence ([phase6-design.ko.md](docs/phase6-design.ko.md), [phase6b-ts-accuracy-plan.ko.md](docs/phase6b-ts-accuracy-plan.ko.md)) |
+| 6 | adapter interface/registry, `MultiLanguageRegexAdapter`, multi-adapter run attribution, adapter evidence/diagnostic observability, symbol hash sensitivity, relation-kind memory attribute mapping | ✅ `main` 반영 완료; 이후 multi-language + Spring Boot adapter pack v0/trusted evidence와 build-system/package resolver v0까지 확장 ([phase6-design.ko.md](docs/phase6-design.ko.md), [phase6b-ts-accuracy-plan.ko.md](docs/phase6b-ts-accuracy-plan.ko.md)) |
 
 **비전 한 페이지:** [docs/vision.ko.md](docs/vision.ko.md). **제품 계획:** [docs/impact-context-layer-plan.ko.md](docs/impact-context-layer-plan.ko.md) — MCP + UI + AI context 절감 + 코드/문서/정책/제안서 impact 기준 문서. **agentmemory 적용성 분석:** [docs/agentmemory-adoption-review.ko.md](docs/agentmemory-adoption-review.ko.md). **통합 로드맵:** [docs/roadmap.md](docs/roadmap.md). **두 축 어휘:** [docs/glossary.md](docs/glossary.md).
 자세한 사용 예시는 [docs/agent-memory-cookbook.ko.md](docs/agent-memory-cookbook.ko.md).
 현재 설계 근거: [Phase 6 설계/진행](docs/phase6-design.ko.md) · [Phase 6B multi-language + Spring Boot 계획](docs/phase6b-ts-accuracy-plan.ko.md).
-누적 결정 로그: [decisions.ko.md (D-001..D-037)](docs/decisions.ko.md).
+누적 결정 로그: [decisions.ko.md (D-001..D-038)](docs/decisions.ko.md).
 문서 navigation: [docs/README.md](docs/README.md).
 
 ## 요구 사항
@@ -587,7 +589,7 @@ npm audit --audit-level=high
 | `npm run build` | TypeScript를 `dist/`로 compile합니다. |
 | `npm run check` | emit 없이 typecheck합니다. |
 | `npm test` | Node test runner suite를 `tsx`로 실행합니다. |
-| `npm run bench` | Phase 6B multi-language/Spring Boot fixture를 인덱싱하고 deterministic JSON report를 `.impact-trace/bench/impact-bench-report.json`에 씁니다. |
+| `npm run bench` | Phase 6B multi-language/Spring Boot/contract/package-manifest fixture를 인덱싱하고 deterministic JSON report를 `.impact-trace/bench/impact-bench-report.json`에 씁니다. |
 | `npm run docs:lint` | git tracked Markdown 파일에서 local metadata와 secret-like content를 검사합니다. |
 | `npm run test:mcp` | MCP impact/context 응답, repo-local telemetry/memory write 경계, path validation을 검증합니다. |
 | `npm run test:security` | path containment와 redaction을 검증합니다. |
@@ -621,8 +623,8 @@ npm audit --audit-level=high
 - [Impact Context Layer 제품 계획](docs/impact-context-layer-plan.ko.md) — Claude/Codex MCP integration, local UI explorer, context budget, 정책/제안서 impact 계획
 - [agentmemory 적용성 분석](docs/agentmemory-adoption-review.ko.md) — `rohitg00/agentmemory`에서 가져올 retrieval/lifecycle 패턴과 거부할 platform surface 정리
 - [Phase 6 설계/진행 문서](docs/phase6-design.ko.md) — `main`에 반영된 adapter foundation 작업
-- [Phase 6B multi-language + Spring Boot 계획](docs/phase6b-ts-accuracy-plan.ko.md) — 현재 slice: adapter pack v0 routing, ImpactBench fixture, TS/JS parser-backed import span v0, JVM/Spring lightweight evidence span v0, Python/Go/Rust lightweight span v0, OpenAPI contract impact baseline, workspace catalog v0, cross-repo contract resolver v0, GraphQL/Protobuf/AsyncAPI consumer resolver v0, OpenAPI nested schema diff v0, Protobuf contract diff v0, GraphQL contract diff v0, AsyncAPI contract diff v0, MCP workspace/contract resources v0
-- [Architecture decisions log (D-001..D-037)](docs/decisions.ko.md) — 누적 ADR 로그
+- [Phase 6B multi-language + Spring Boot 계획](docs/phase6b-ts-accuracy-plan.ko.md) — 현재 slice: adapter pack v0 routing, ImpactBench fixture, TS/JS parser-backed import span v0, JVM/Spring lightweight evidence span v0, Python/Go/Rust lightweight span v0, OpenAPI contract impact baseline, workspace catalog v0, cross-repo contract resolver v0, GraphQL/Protobuf/AsyncAPI consumer resolver v0, OpenAPI nested schema diff v0, Protobuf contract diff v0, GraphQL contract diff v0, AsyncAPI contract diff v0, build-system/package resolver v0, MCP workspace/contract resources v0
+- [Architecture decisions log (D-001..D-038)](docs/decisions.ko.md) — 누적 ADR 로그
 - [Agent memory cookbook](docs/agent-memory-cookbook.ko.md)
 
 **Skill 패키징 (Phase 4):**
@@ -645,13 +647,14 @@ npm audit --audit-level=high
 3. `--base`, `--head` 기반 git diff 분석과 stale-index detection 추가
 4. Java/Kotlin/Spring Boot/Python/Go/Rust/TS/JS adapter v0 라우팅과 ImpactBench coverage 유지
 5. parser-backed/lightweight adapter depth pass와 source-span evidence 확대: TS/JS import spans, JVM/Spring lightweight spans, Python/Go/Rust lightweight spans, OpenAPI contract baseline, workspace catalog v0, cross-repo contract resolver v0, GraphQL/Protobuf/AsyncAPI consumer resolver v0, OpenAPI nested schema contract diff v0, Protobuf contract diff v0, GraphQL contract diff v0, AsyncAPI contract diff v0 landed
-6. C#/.NET, C/C++ adapter와 Maven/Gradle/dotnet/CMake/Bazel build-system resolver 추가
+6. C#/.NET, C/C++ adapter와 dotnet/CMake/Bazel/deeper package-manager build-system resolver 추가
 7. shell, YAML/JSON/TOML, CI, Docker, Kubernetes, Terraform, CODEOWNERS/policy adapter 추가
 8. generated Protobuf client usage graph와 AsyncAPI/event topology resolver 추가
 9. web graph explorer와 더 큰 graph filtering 추가
 10. source-span evidence와 parser-level provenance 추가
 11. GraphQL/protobuf/AsyncAPI full parser/LSP depth 추가
-12. graph DB, vector, CodeQL, Obsidian export는 optional projection으로 추가
+12. lockfile/transitive/package-manager execution 기반 package graph depth 추가
+13. graph DB, vector, CodeQL, Obsidian export는 optional projection으로 추가
 
 ## License
 

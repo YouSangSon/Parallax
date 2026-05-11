@@ -12,7 +12,15 @@ import type { EmbeddingResult } from './embeddings.js';
 import { reflectFacts, repairReflections } from './reflection.js';
 import { profileEntity } from './profile.js';
 import { normalizeRepoRoot, redactSecrets } from './security.js';
-import { assertCurrentSchema, getRepoId, latestCompletedIndexRun, openDatabase } from './store.js';
+import {
+  assertCurrentSchema,
+  getRepoId,
+  hasVecTable,
+  isVectorExtensionLoaded,
+  latestCompletedIndexRun,
+  openDatabase,
+  vecTableName
+} from './store.js';
 import type {
   Confidence,
   ContextBudget,
@@ -1162,7 +1170,7 @@ function recordContextToolRun(
         now,
         now
       );
-  }));
+  }, { skipProjectionRepair: true }));
 }
 
 function recordContextResourceAccess(context: McpContext, input: ResourceTelemetryInput): void {
@@ -1184,7 +1192,7 @@ function recordContextResourceAccess(context: McpContext, input: ResourceTelemet
         input.returnedBytes,
         new Date().toISOString()
       );
-  }));
+  }, { skipProjectionRepair: true }));
 }
 
 function contextTelemetry(context: McpContext, limit: number): unknown {
@@ -1730,6 +1738,8 @@ const searchContextSnippetChars = 240;
 const searchContextRrfK = 60;
 const searchContextStreamLimit = 500;
 const searchContextGraphSeedLimit = 25;
+const searchContextSemanticOverFetchFactor = 5;
+const searchContextSemanticOverFetchMin = 100;
 
 type SearchContextBudgetPreset = {
   returnedBytesLimit: number;
@@ -2151,22 +2161,10 @@ function searchFtsKeywordEntityRows(
   query: string,
   likeQuery: string
 ): SearchEntityRow[] {
+  if (!mcpHasTable(db, 'search_entities_fts')) return [];
   const ftsQuery = ftsMatchExpression(query);
   if (!ftsQuery) return [];
   try {
-    db.exec(`
-      DROP TABLE IF EXISTS temp.search_context_entities_fts;
-      CREATE VIRTUAL TABLE temp.search_context_entities_fts
-      USING fts5(entity_id UNINDEXED, id_text, display_name, path, symbol);
-    `);
-    db
-      .prepare(`
-        INSERT INTO temp.search_context_entities_fts (entity_id, id_text, display_name, path, symbol)
-        SELECT id, id, display_name, COALESCE(path, ''), COALESCE(symbol, '')
-        FROM entities
-        WHERE repo_id = ? AND updated_index_run_id = ?
-      `)
-      .run(repoId, indexRunId);
     return db
       .prepare(`
         SELECT
@@ -2184,16 +2182,25 @@ function searchFtsKeywordEntityRows(
           0 AS relation_match_count,
           0 AS evidence_match_count,
           0 AS fact_match_count
-        FROM temp.search_context_entities_fts fts
+        FROM search_entities_fts fts
         INNER JOIN entities
           ON entities.id = fts.entity_id
          AND entities.repo_id = ?
          AND entities.updated_index_run_id = ?
-        WHERE search_context_entities_fts MATCH ?
-        ORDER BY bm25(search_context_entities_fts), entities.display_name, entities.id
+        WHERE search_entities_fts MATCH ?
+        ORDER BY bm25(search_entities_fts), entities.display_name, entities.id
         LIMIT ?
       `)
-      .all(likeQuery, likeQuery, likeQuery, likeQuery, repoId, indexRunId, ftsQuery, searchContextStreamLimit) as SearchEntityRow[];
+      .all(
+        likeQuery,
+        likeQuery,
+        likeQuery,
+        likeQuery,
+        repoId,
+        indexRunId,
+        ftsQuery,
+        searchContextStreamLimit
+      ) as SearchEntityRow[];
   } catch {
     return [];
   }
@@ -2508,6 +2515,114 @@ function searchFactEntityRows(
 }
 
 function searchSemanticEntityRows(
+  db: ReturnType<typeof openDatabase>,
+  repoId: number,
+  indexRunId: number,
+  queryEmbedding: EmbeddingResult
+): SearchEntityRow[] {
+  const annRows = searchSemanticEntityRowsAnn(db, repoId, indexRunId, queryEmbedding);
+  if (annRows !== null && annRows.length > 0) return annRows;
+  return searchSemanticEntityRowsBruteForce(db, repoId, indexRunId, queryEmbedding);
+}
+
+function searchSemanticEntityRowsAnn(
+  db: ReturnType<typeof openDatabase>,
+  repoId: number,
+  indexRunId: number,
+  queryEmbedding: EmbeddingResult
+): SearchEntityRow[] | null {
+  if (!isVectorExtensionLoaded(db) || !hasVecTable(db, queryEmbedding.model)) return null;
+  const tableName = vecTableName(queryEmbedding.model);
+  const overFetch = Math.max(
+    searchContextStreamLimit * searchContextSemanticOverFetchFactor,
+    searchContextSemanticOverFetchMin
+  );
+  try {
+    const rows = db
+      .prepare(`
+        WITH ranked AS (
+          SELECT fact_id, distance
+          FROM ${tableName}
+          WHERE embedding MATCH vec_int8(?) AND k = ?
+        )
+        SELECT
+          entities.id AS entity_id,
+          entities.kind AS entity_kind,
+          entities.path AS entity_path,
+          entities.symbol AS entity_symbol,
+          entities.language_id AS entity_language_id,
+          entities.display_name AS entity_display_name,
+          NULL AS relation_kind_bucket,
+          min(ranked.distance) AS distance
+        FROM ranked
+        INNER JOIN facts
+          ON facts.id = ranked.fact_id
+        INNER JOIN transactions
+          ON transactions.id = facts.tx_id
+        INNER JOIN entities
+          ON entities.id = facts.entity_id
+         AND entities.repo_id = ?
+         AND entities.updated_index_run_id = ?
+        WHERE facts.op = 'assert'
+          AND facts.redacted = 0
+          AND (
+            (
+              transactions.archived = 0
+              AND transactions.branch_id = (SELECT id FROM branches WHERE name = 'main')
+            )
+            OR EXISTS (
+              SELECT 1
+              FROM fact_provenance visibility_fp
+              INNER JOIN transactions visibility_tx
+                ON visibility_tx.id = visibility_fp.tx_id
+              WHERE visibility_fp.fact_id = facts.id
+                AND visibility_fp.kind = 'supersedes'
+                AND visibility_tx.archived = 0
+                AND visibility_tx.branch_id = (SELECT id FROM branches WHERE name = 'main')
+            )
+          )
+          AND NOT EXISTS (
+            SELECT 1
+            FROM fact_provenance supersession_fp
+            INNER JOIN facts superseding_fact
+              ON superseding_fact.id = supersession_fp.fact_id
+            INNER JOIN transactions supersession_tx
+              ON supersession_tx.id = supersession_fp.tx_id
+            WHERE supersession_fp.source_fact_id = facts.id
+              AND supersession_fp.kind = 'supersedes'
+              AND superseding_fact.op = 'assert'
+              AND supersession_tx.archived = 0
+              AND supersession_tx.branch_id = (SELECT id FROM branches WHERE name = 'main')
+          )
+        GROUP BY entities.id
+        ORDER BY distance ASC, entities.display_name, entities.id
+        LIMIT ?
+      `)
+      .all(queryEmbedding.vector, overFetch, repoId, indexRunId, searchContextStreamLimit) as Array<
+        SearchEntityRow & { distance: number }
+      >;
+    return rows.map((row) => ({
+      entity_id: row.entity_id,
+      entity_kind: row.entity_kind,
+      entity_path: row.entity_path,
+      entity_symbol: row.entity_symbol,
+      entity_language_id: row.entity_language_id,
+      entity_display_name: row.entity_display_name,
+      relation_kind_bucket: null,
+      id_match: 0,
+      display_match: 0,
+      path_match: 0,
+      symbol_match: 0,
+      relation_match_count: 0,
+      evidence_match_count: 0,
+      fact_match_count: 0
+    }));
+  } catch {
+    return null;
+  }
+}
+
+function searchSemanticEntityRowsBruteForce(
   db: ReturnType<typeof openDatabase>,
   repoId: number,
   indexRunId: number,
@@ -2999,6 +3114,7 @@ function entityFromExplainRelationRow(row: ExplainRelationRow, prefix: 'source' 
 
 function readEvidence(context: McpContext, evidenceId: string): unknown {
   return withReadOnlyDb(context, (db, repoId) => {
+    const indexRunId = latestCompletedIndexRun(db, repoId);
     const spanColumns = evidenceSpanColumnSelect(db, 'evidence');
     const row = db
       .prepare(`
@@ -3027,12 +3143,21 @@ function readEvidence(context: McpContext, evidenceId: string): unknown {
           target.language_id AS target_language_id,
           target.display_name AS target_display_name
         FROM relation_evidence evidence
-        INNER JOIN relations ON relations.id = evidence.relation_id AND relations.repo_id = evidence.repo_id
-        LEFT JOIN entities source ON source.id = relations.source_entity_id AND source.repo_id = evidence.repo_id
-        LEFT JOIN entities target ON target.id = relations.target_entity_id AND target.repo_id = evidence.repo_id
-        WHERE evidence.repo_id = ? AND evidence.id = ?
+        INNER JOIN relations
+          ON relations.id = evidence.relation_id
+         AND relations.repo_id = evidence.repo_id
+         AND relations.index_run_id = evidence.index_run_id
+        INNER JOIN entities source
+          ON source.id = relations.source_entity_id
+         AND source.repo_id = evidence.repo_id
+         AND source.updated_index_run_id = evidence.index_run_id
+        INNER JOIN entities target
+          ON target.id = relations.target_entity_id
+         AND target.repo_id = evidence.repo_id
+         AND target.updated_index_run_id = evidence.index_run_id
+        WHERE evidence.repo_id = ? AND evidence.id = ? AND evidence.index_run_id = ?
       `)
-      .get(repoId, evidenceId) as EvidenceResourceRow | undefined;
+      .get(repoId, evidenceId, indexRunId) as EvidenceResourceRow | undefined;
     if (!row) throw typedMcpError(new Error(`impact evidence not found: ${evidenceId}`), 'resource_not_found');
     return {
       id: row.evidence_id,
@@ -3130,9 +3255,13 @@ function withReadOnlyDb<T>(context: McpContext, callback: (db: ReturnType<typeof
   }
 }
 
-function withWritableDb<T>(context: McpContext, callback: (db: ReturnType<typeof openDatabase>, repoId: number) => T): T {
+function withWritableDb<T>(
+  context: McpContext,
+  callback: (db: ReturnType<typeof openDatabase>, repoId: number) => T,
+  options: { skipProjectionRepair?: boolean } = {}
+): T {
   const repoRoot = normalizeRepoRoot(context.repoRoot);
-  const db = openDatabase(repoRoot, { readOnly: false });
+  const db = openDatabase(repoRoot, { readOnly: false, skipProjectionRepair: options.skipProjectionRepair === true });
   try {
     const repoId = getRepoId(db, repoRoot);
     return callback(db, repoId);

@@ -6,10 +6,13 @@ import path from 'node:path';
 import * as sqliteVec from 'sqlite-vec';
 
 export type Db = DatabaseSync;
-export const CURRENT_SCHEMA_VERSION = 13;
+export const CURRENT_SCHEMA_VERSION = 14;
 
 type OpenDatabaseOptions = {
   readOnly?: boolean;
+  // Telemetry writes can skip current-schema projection scans; upgrade and
+  // missing-table backfills still run because they do not rely on this flag.
+  skipProjectionRepair?: boolean;
 };
 
 export function impactDir(repoRoot: string): string {
@@ -47,7 +50,7 @@ export function openDatabase(repoRoot: string, options: OpenDatabaseOptions = {}
   db.exec('PRAGMA foreign_keys = ON;');
   if (!options.readOnly) {
     db.exec('PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;');
-    migrate(db);
+    migrate(db, { skipProjectionRepair: options.skipProjectionRepair === true });
   }
   // Phase 4 P5 / ADR D-018: try to load sqlite-vec for ANN-accelerated
   // semantic recall. On failure (extension missing / arch mismatch),
@@ -142,7 +145,11 @@ function assertPathInside(rootReal: string, resolvedPath: string, label: string)
   throw new Error(`${label} resolves outside repo root`);
 }
 
-function migrate(db: Db): void {
+type MigrateOptions = {
+  skipProjectionRepair: boolean;
+};
+
+function migrate(db: Db, options: MigrateOptions): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS schema_versions (
       version INTEGER PRIMARY KEY,
@@ -664,15 +671,30 @@ function migrate(db: Db): void {
     VALUES (10, datetime('now'));
   `);
 
-  // Schema v11: persistent FTS projections for context search. These
-  // projections make relation evidence and selected memory facts searchable
-  // from read-only MCP calls without rebuilding temp FTS tables per query.
+  // Schema v11/v14: persistent FTS projections for context search. These
+  // projections make entities, relation evidence, and selected memory facts
+  // searchable from read-only MCP calls without rebuilding temp FTS tables per
+  // query.
+  const searchFtsSchemaVersion = maxAppliedSchemaVersion(db);
   const searchFtsNeedsInitialBackfill =
-    maxAppliedSchemaVersion(db) < 11
+    searchFtsSchemaVersion < 11
     || !tableExists(db, 'search_relation_evidence_fts')
-    || !tableExists(db, 'search_facts_fts');
+    || !tableExists(db, 'search_facts_fts')
+    || searchFtsSchemaVersion < 14
+    || !tableExists(db, 'search_entities_fts');
 
   db.exec(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS search_entities_fts
+    USING fts5(
+      entity_id UNINDEXED,
+      repo_id UNINDEXED,
+      updated_index_run_id UNINDEXED,
+      id_text,
+      display_name,
+      path,
+      symbol
+    );
+
     CREATE VIRTUAL TABLE IF NOT EXISTS search_relation_evidence_fts
     USING fts5(
       evidence_id UNINDEXED,
@@ -692,6 +714,38 @@ function migrate(db: Db): void {
       attribute,
       value_blob
     );
+
+    CREATE TRIGGER IF NOT EXISTS trg_entities_fts_ai
+    AFTER INSERT ON entities
+    BEGIN
+      DELETE FROM search_entities_fts WHERE entity_id = new.id;
+      INSERT INTO search_entities_fts (
+        entity_id, repo_id, updated_index_run_id, id_text, display_name, path, symbol
+      )
+      VALUES (
+        new.id, new.repo_id, new.updated_index_run_id, new.id, new.display_name,
+        COALESCE(new.path, ''), COALESCE(new.symbol, '')
+      );
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_entities_fts_ad
+    AFTER DELETE ON entities
+    BEGIN
+      DELETE FROM search_entities_fts WHERE entity_id = old.id;
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_entities_fts_au
+    AFTER UPDATE ON entities
+    BEGIN
+      DELETE FROM search_entities_fts WHERE entity_id = old.id;
+      INSERT INTO search_entities_fts (
+        entity_id, repo_id, updated_index_run_id, id_text, display_name, path, symbol
+      )
+      VALUES (
+        new.id, new.repo_id, new.updated_index_run_id, new.id, new.display_name,
+        COALESCE(new.path, ''), COALESCE(new.symbol, '')
+      );
+    END;
 
     CREATE TRIGGER IF NOT EXISTS trg_relation_evidence_fts_ai
     AFTER INSERT ON relation_evidence
@@ -753,13 +807,23 @@ function migrate(db: Db): void {
     VALUES (12, datetime('now'));
     INSERT OR IGNORE INTO schema_versions (version, applied_at)
     VALUES (13, datetime('now'));
+    INSERT OR IGNORE INTO schema_versions (version, applied_at)
+    VALUES (14, datetime('now'));
   `);
 
   const searchFtsNeedsBackfill =
-    searchFtsNeedsInitialBackfill || searchFtsProjectionNeedsBackfill(db);
+    searchFtsNeedsInitialBackfill
+    || (!options.skipProjectionRepair && searchFtsProjectionNeedsBackfill(db));
 
   if (searchFtsNeedsBackfill) {
     db.exec(`
+      DELETE FROM search_entities_fts;
+      INSERT INTO search_entities_fts (
+        entity_id, repo_id, updated_index_run_id, id_text, display_name, path, symbol
+      )
+      SELECT id, repo_id, updated_index_run_id, id, display_name, COALESCE(path, ''), COALESCE(symbol, '')
+      FROM entities;
+
       DELETE FROM search_relation_evidence_fts;
       INSERT INTO search_relation_evidence_fts (
         evidence_id, relation_id, repo_id, index_run_id, file_path, kind, snippet
@@ -859,6 +923,39 @@ function countRows(db: Db, sql: string): number {
 }
 
 function searchFtsProjectionNeedsBackfill(db: Db): boolean {
+  const missingEntities = countRows(
+    db,
+    `SELECT count(*) AS count
+       FROM entities
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM search_entities_fts fts
+        WHERE fts.entity_id = entities.id
+      )`
+  );
+  const staleEntities = countRows(
+    db,
+    `SELECT count(*) AS count
+       FROM search_entities_fts fts
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM entities
+        WHERE entities.id = fts.entity_id
+      )`
+  );
+  const mismatchedEntities = countRows(
+    db,
+    `SELECT count(*) AS count
+       FROM search_entities_fts fts
+       INNER JOIN entities
+         ON entities.id = fts.entity_id
+      WHERE CAST(fts.repo_id AS INTEGER) <> entities.repo_id
+         OR CAST(fts.updated_index_run_id AS INTEGER) <> entities.updated_index_run_id
+         OR fts.id_text <> entities.id
+         OR fts.display_name <> entities.display_name
+         OR fts.path <> COALESCE(entities.path, '')
+         OR fts.symbol <> COALESCE(entities.symbol, '')`
+  );
   const missingEvidence = countRows(
     db,
     `SELECT count(*) AS count
@@ -903,7 +1000,15 @@ function searchFtsProjectionNeedsBackfill(db: Db): boolean {
           AND facts.redacted = 0
       )`
   );
-  return missingEvidence > 0 || staleEvidence > 0 || missingFacts > 0 || staleFacts > 0;
+  return (
+    missingEntities > 0
+    || staleEntities > 0
+    || mismatchedEntities > 0
+    || missingEvidence > 0
+    || staleEvidence > 0
+    || missingFacts > 0
+    || staleFacts > 0
+  );
 }
 
 function maxAppliedSchemaVersion(db: Db): number {
@@ -914,9 +1019,13 @@ function maxAppliedSchemaVersion(db: Db): number {
 export function assertCurrentSchema(db: Db, feature: string): void {
   const version = maxAppliedSchemaVersion(db);
   const hasProvenanceTx = columnExists(db, 'fact_provenance', 'tx_id');
-  if (version < CURRENT_SCHEMA_VERSION || !hasProvenanceTx) {
+  const hasCurrentSearchProjections =
+    tableExists(db, 'search_entities_fts')
+    && tableExists(db, 'search_relation_evidence_fts')
+    && tableExists(db, 'search_facts_fts');
+  if (version < CURRENT_SCHEMA_VERSION || !hasProvenanceTx || !hasCurrentSearchProjections) {
     throw new Error(
-      `${feature} requires Impact Trace schema v${CURRENT_SCHEMA_VERSION}; current database is v${version}. Run impact-trace init with the current build to apply additive migrations.`
+      `${feature} requires Impact Trace schema v${CURRENT_SCHEMA_VERSION} with current search projections; current database is v${version}. Run impact-trace init with the current build to apply additive migrations.`
     );
   }
 }

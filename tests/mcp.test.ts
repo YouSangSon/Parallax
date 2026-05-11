@@ -9,8 +9,16 @@ import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
 
 import { analyzeDiff, indexProject, initProject } from '../src/index.js';
-import { computeEmbeddingSync } from '../src/embeddings.js';
-import { databasePath } from '../src/store.js';
+import { computeEmbeddingSync, STUB_MODEL_NAME } from '../src/embeddings.js';
+import {
+  databasePath,
+  ensureVecTable,
+  hasVecTable,
+  isVectorExtensionLoaded,
+  openDatabase,
+  vecTableName
+} from '../src/store.js';
+import type { Db } from '../src/store.js';
 
 // Force the deterministic SHA-256 stub so spawned MCP subprocesses don't
 // download a real embedding model (~278 MB) during the test run.
@@ -147,6 +155,17 @@ async function makeRepo(): Promise<string> {
   await initProject({ repoRoot });
   await indexProject({ repoRoot });
   return repoRoot;
+}
+
+function insertFactEmbedding(db: Db, factId: string, value: string): void {
+  const embedding = computeEmbeddingSync(value);
+  db.prepare(
+    "INSERT OR REPLACE INTO fact_embeddings (fact_id, model, vector, dim, created_at) VALUES (?, ?, ?, ?, datetime('now'))"
+  ).run(factId, embedding.model, embedding.vector, embedding.dim);
+  if (!isVectorExtensionLoaded(db) || !ensureVecTable(db, embedding.model, embedding.dim)) return;
+  db.prepare(
+    `INSERT OR REPLACE INTO ${vecTableName(embedding.model)} (fact_id, embedding) VALUES (?, vec_int8(?))`
+  ).run(factId, embedding.vector);
 }
 
 function downgradeFactProvenanceWithoutTxId(repoRoot: string): void {
@@ -402,7 +421,7 @@ async function makeSearchRankingRepo(): Promise<string> {
 
 async function makeSearchDepthRepo(): Promise<string> {
   const repoRoot = await makeRepo();
-  const db = new DatabaseSync(databasePath(repoRoot));
+  const db = openDatabase(repoRoot);
   try {
     const repo = db.prepare('SELECT id FROM repos LIMIT 1').get() as { id: number };
     const run = db
@@ -540,10 +559,7 @@ async function makeSearchDepthRepo(): Promise<string> {
       'assert',
       branch.head_tx_id
     );
-    const embedding = computeEmbeddingSync('retry idempotent checkout signal');
-    db.prepare(
-      "INSERT OR REPLACE INTO fact_embeddings (fact_id, model, vector, dim, created_at) VALUES (?, ?, ?, ?, datetime('now'))"
-    ).run('depth-semantic-fact', embedding.model, embedding.vector, embedding.dim);
+    insertFactEmbedding(db, 'depth-semantic-fact', 'retry idempotent checkout signal');
   } finally {
     db.close();
   }
@@ -552,7 +568,7 @@ async function makeSearchDepthRepo(): Promise<string> {
 
 async function makeLargeSemanticRepo(): Promise<string> {
   const repoRoot = await makeRepo();
-  const db = new DatabaseSync(databasePath(repoRoot));
+  const db = openDatabase(repoRoot);
   try {
     const repo = db.prepare('SELECT id FROM repos LIMIT 1').get() as { id: number };
     const run = db
@@ -569,9 +585,6 @@ async function makeLargeSemanticRepo(): Promise<string> {
     const insertFact = db.prepare(
       'INSERT OR IGNORE INTO facts (id, entity_id, attribute, value_blob, op, tx_id, redacted) VALUES (?, ?, ?, ?, ?, ?, 0)'
     );
-    const insertEmbedding = db.prepare(
-      "INSERT OR REPLACE INTO fact_embeddings (fact_id, model, vector, dim, created_at) VALUES (?, ?, ?, ?, datetime('now'))"
-    );
     db.prepare("INSERT OR IGNORE INTO attribute_defs (name, value_type, is_code_relation, description) VALUES ('session_summary', 'json', 0, '')").run();
 
     for (let index = 0; index < 520; index += 1) {
@@ -581,12 +594,10 @@ async function makeLargeSemanticRepo(): Promise<string> {
       const value = `unrelated semantic filler ${suffix}`;
       insertEntity.run(entityId, repo.id, `semantic/filler-${suffix}.ts`, `Semantic filler ${suffix}`, run.id, run.id);
       insertFact.run(factId, entityId, 'session_summary', JSON.stringify(value), 'assert', branch.head_tx_id);
-      const embedding = computeEmbeddingSync(value);
-      insertEmbedding.run(factId, embedding.model, embedding.vector, embedding.dim);
+      insertFactEmbedding(db, factId, value);
     }
 
     const targetValue = 'late semantic target exact checkout vector';
-    const targetEmbedding = computeEmbeddingSync(targetValue);
     insertEntity.run(
       'file:semantic/late-target.ts',
       repo.id,
@@ -603,7 +614,7 @@ async function makeLargeSemanticRepo(): Promise<string> {
       'assert',
       branch.head_tx_id
     );
-    insertEmbedding.run('semantic-late-target', targetEmbedding.model, targetEmbedding.vector, targetEmbedding.dim);
+    insertFactEmbedding(db, 'semantic-late-target', targetValue);
   } finally {
     db.close();
   }
@@ -1034,7 +1045,7 @@ test('MCP doctor returns the local health report without telemetry writes', asyn
     assert.equal(report.version, 0);
     assert.equal(report.repoRoot, '[REPO_ROOT]');
     assert.equal(report.database.path, '.impact-trace/impact.db');
-    assert.equal(report.database.schemaVersion, 13);
+    assert.equal(report.database.schemaVersion, 14);
     assert.equal(report.index.latestCompletedRun?.status, 'completed');
     assert.equal(report.telemetry.toolRuns, 0);
   } finally {
@@ -1999,7 +2010,7 @@ test('MCP search_context searches persistent evidence and fact FTS projections',
 
 test('MCP search_context semantic lane sees replacements made visible by supersession edge txs', async () => {
   const repoRoot = await makeSearchDepthRepo();
-  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: false });
+  const db = openDatabase(repoRoot);
   try {
     const repo = db.prepare('SELECT id FROM repos LIMIT 1').get() as { id: number };
     const run = db
@@ -2033,15 +2044,13 @@ test('MCP search_context semantic lane sees replacements made visible by superse
       INSERT INTO facts (id, entity_id, attribute, value_blob, op, tx_id, redacted)
       VALUES ('fact:archived-semantic-old', 'file:depth/archived-semantic.ts', 'session_summary', '"archived semantic retries twice"', 'assert', 'tx:archived-semantic-old', 0)
     `).run();
+    insertFactEmbedding(db, 'fact:archived-semantic-old', 'archived semantic retries twice');
     const replacementValue = 'archived semantic replacement exact vector';
     db.prepare(`
       INSERT INTO facts (id, entity_id, attribute, value_blob, op, tx_id, redacted)
       VALUES ('fact:archived-semantic-replacement', 'file:depth/archived-semantic.ts', 'session_summary', ?, 'assert', 'tx:archived-semantic-replacement', 0)
     `).run(JSON.stringify(replacementValue));
-    const embedding = computeEmbeddingSync(replacementValue);
-    db.prepare(
-      "INSERT OR REPLACE INTO fact_embeddings (fact_id, model, vector, dim, created_at) VALUES (?, ?, ?, ?, datetime('now'))"
-    ).run('fact:archived-semantic-replacement', embedding.model, embedding.vector, embedding.dim);
+    insertFactEmbedding(db, 'fact:archived-semantic-replacement', replacementValue);
     db.prepare(`
       INSERT INTO fact_provenance (id, fact_id, source_fact_id, kind, tx_id)
       VALUES ('prov:archived-semantic-supersedes', 'fact:archived-semantic-replacement', 'fact:archived-semantic-old', 'supersedes', 'tx:archived-semantic-edge')
@@ -2075,16 +2084,91 @@ test('MCP search_context semantic lane sees replacements made visible by superse
     assert.ok(match, 'semantic lane should include archived-origin replacements visible through main supersession edges');
     assert.equal(match.rankSignals.semanticRank, 1);
     assert.ok(match.reasons.includes('semantic'));
+
   } finally {
     await client.close();
   }
 });
 
-test('MCP search_context returns schema_outdated for pre-v13 read-only databases', async () => {
+test('MCP search_context semantic lane hides facts superseded by visible main edges', async () => {
+  const repoRoot = await makeSearchDepthRepo();
+  const db = openDatabase(repoRoot);
+  try {
+    const repo = db.prepare('SELECT id FROM repos LIMIT 1').get() as { id: number };
+    const run = db
+      .prepare('SELECT id FROM index_runs WHERE repo_id = ? AND status = ? ORDER BY id DESC LIMIT 1')
+      .get(repo.id, 'completed') as { id: number };
+    db.prepare(`
+      INSERT INTO entities (
+        id, repo_id, kind, path, symbol, language_id, display_name,
+        created_index_run_id, updated_index_run_id
+      )
+      VALUES
+        ('file:depth/superseded-semantic-old.ts', ?, 'file', 'depth/superseded-semantic-old.ts', NULL, 'typescript', 'Superseded Semantic Old', ?, ?),
+        ('file:depth/superseded-semantic-new.ts', ?, 'file', 'depth/superseded-semantic-new.ts', NULL, 'typescript', 'Superseded Semantic New', ?, ?)
+    `).run(repo.id, run.id, run.id, repo.id, run.id, run.id);
+    db.prepare("INSERT OR IGNORE INTO attribute_defs (name, value_type, is_code_relation, description) VALUES ('session_summary', 'json', 0, '')").run();
+    db.prepare(`
+      INSERT INTO transactions (id, parent_tx_id, branch_id, ts, agent, index_run_id, archived)
+      VALUES ('tx:semantic-superseded-old', NULL, 'br_main', datetime('now'), 'test', ?, 0)
+    `).run(run.id);
+    db.prepare(`
+      INSERT INTO transactions (id, parent_tx_id, branch_id, ts, agent, index_run_id, archived)
+      VALUES ('tx:semantic-superseded-new', 'tx:semantic-superseded-old', 'br_main', datetime('now'), 'test', ?, 0)
+    `).run(run.id);
+    const oldValue = 'semantic old hidden exact vector';
+    db.prepare(`
+      INSERT INTO facts (id, entity_id, attribute, value_blob, op, tx_id, redacted)
+      VALUES ('fact:semantic-superseded-old', 'file:depth/superseded-semantic-old.ts', 'session_summary', ?, 'assert', 'tx:semantic-superseded-old', 0)
+    `).run(JSON.stringify(oldValue));
+    db.prepare(`
+      INSERT INTO facts (id, entity_id, attribute, value_blob, op, tx_id, redacted)
+      VALUES ('fact:semantic-superseded-new', 'file:depth/superseded-semantic-new.ts', 'session_summary', '"semantic replacement visible marker"', 'assert', 'tx:semantic-superseded-new', 0)
+    `).run();
+    insertFactEmbedding(db, 'fact:semantic-superseded-old', oldValue);
+    insertFactEmbedding(db, 'fact:semantic-superseded-new', 'semantic replacement visible marker');
+    db.prepare(`
+      INSERT INTO fact_provenance (id, fact_id, source_fact_id, kind, tx_id)
+      VALUES ('prov:semantic-supersedes-old', 'fact:semantic-superseded-new', 'fact:semantic-superseded-old', 'supersedes', 'tx:semantic-superseded-new')
+    `).run();
+  } finally {
+    db.close();
+  }
+
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+    const response = await client.request('tools/call', {
+      name: 'impact_trace_search_context',
+      arguments: {
+        query: 'semantic old hidden exact vector',
+        k: 5,
+        includeEvidence: false
+      }
+    });
+
+    assert.equal(response.error, undefined);
+    assert.equal(response.result.isError, undefined);
+    const search = JSON.parse(response.result.content[0].text) as {
+      results: Array<{ entity: { id: string }; rankSignals: { semanticRank: number | null } }>;
+    };
+    assert.equal(
+      search.results.some(
+        (item) => item.entity.id === 'file:depth/superseded-semantic-old.ts' && item.rankSignals.semanticRank !== null
+      ),
+      false,
+      'semantic lane should not surface old facts superseded by a visible main edge'
+    );
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP search_context returns schema_outdated for pre-v14 read-only databases', async () => {
   const repoRoot = await makeRepo();
   const db = new DatabaseSync(databasePath(repoRoot), { readOnly: false });
   try {
-    db.prepare('DELETE FROM schema_versions WHERE version >= 13').run();
+    db.prepare('DELETE FROM schema_versions WHERE version >= 14').run();
   } finally {
     db.close();
   }
@@ -2103,7 +2187,7 @@ test('MCP search_context returns schema_outdated for pre-v13 read-only databases
       error: { code: string; problem: string; fix: string };
     };
     assert.equal(envelope.error.code, 'schema_outdated');
-    assert.match(envelope.error.problem, /schema v13/);
+    assert.match(envelope.error.problem, /schema v14/);
     assert.match(envelope.error.fix, /impact-trace init/);
   } finally {
     await client.close();
@@ -2112,6 +2196,78 @@ test('MCP search_context returns schema_outdated for pre-v13 read-only databases
 
 test('MCP search_context semantic lane scores beyond the stream cap before ranking', async () => {
   const repoRoot = await makeLargeSemanticRepo();
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+
+    const response = await client.request('tools/call', {
+      name: 'impact_trace_search_context',
+      arguments: { query: 'late semantic target exact checkout vector', k: 1, includeEvidence: false }
+    });
+
+    assert.equal(response.error, undefined);
+    assert.equal(response.result.isError, undefined);
+    const search = JSON.parse(response.result.content[0].text) as {
+      results: Array<{
+        entity: { id: string };
+        rankSignals: { keywordRank: number | null; semanticRank: number | null };
+      }>;
+    };
+    assert.equal(search.results[0]!.entity.id, 'file:semantic/late-target.ts');
+    assert.equal(search.results[0]!.rankSignals.keywordRank, null);
+    assert.equal(search.results[0]!.rankSignals.semanticRank, 1);
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP search_context semantic lane falls back when the sqlite-vec table is absent', async () => {
+  const repoRoot = await makeLargeSemanticRepo();
+  const db = openDatabase(repoRoot);
+  try {
+    if (isVectorExtensionLoaded(db) && hasVecTable(db, STUB_MODEL_NAME)) {
+      db.exec(`DROP TABLE ${vecTableName(STUB_MODEL_NAME)}`);
+    }
+  } finally {
+    db.close();
+  }
+
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+
+    const response = await client.request('tools/call', {
+      name: 'impact_trace_search_context',
+      arguments: { query: 'late semantic target exact checkout vector', k: 1, includeEvidence: false }
+    });
+
+    assert.equal(response.error, undefined);
+    assert.equal(response.result.isError, undefined);
+    const search = JSON.parse(response.result.content[0].text) as {
+      results: Array<{
+        entity: { id: string };
+        rankSignals: { keywordRank: number | null; semanticRank: number | null };
+      }>;
+    };
+    assert.equal(search.results[0]!.entity.id, 'file:semantic/late-target.ts');
+    assert.equal(search.results[0]!.rankSignals.keywordRank, null);
+    assert.equal(search.results[0]!.rankSignals.semanticRank, 1);
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP search_context semantic lane falls back when the sqlite-vec table is empty', async () => {
+  const repoRoot = await makeLargeSemanticRepo();
+  const db = openDatabase(repoRoot);
+  try {
+    if (isVectorExtensionLoaded(db) && hasVecTable(db, STUB_MODEL_NAME)) {
+      db.exec(`DELETE FROM ${vecTableName(STUB_MODEL_NAME)}`);
+    }
+  } finally {
+    db.close();
+  }
+
   const client = new McpProcessClient(repoRoot);
   try {
     await client.initialize();
@@ -2560,6 +2716,51 @@ test('MCP exposes report, entity, evidence, graph, and coverage resources', asyn
   }
 });
 
+test('MCP evidence resource rejects evidence outside the latest completed index', async () => {
+  const repoRoot = await makeRepo();
+  const staleEvidenceId = 'stale:evidence:old-run';
+  const db = openDatabase(repoRoot);
+  try {
+    const repo = db.prepare('SELECT id FROM repos LIMIT 1').get() as { id: number };
+    const oldRun = db
+      .prepare('SELECT id FROM index_runs WHERE repo_id = ? AND status = ? ORDER BY id DESC LIMIT 1')
+      .get(repo.id, 'completed') as { id: number };
+    const relation = db
+      .prepare('SELECT id FROM relations WHERE repo_id = ? AND index_run_id = ? LIMIT 1')
+      .get(repo.id, oldRun.id) as { id: string } | undefined;
+    assert.ok(relation, 'fixture should have a relation in the original completed index');
+    db.prepare(`
+      INSERT INTO relation_evidence (
+        id, relation_id, repo_id, file_path, kind, snippet, confidence, index_run_id
+      )
+      VALUES (?, ?, ?, 'src/a.ts', 'DEPENDS_ON', 'stale evidence from an older index', 'medium', ?)
+    `).run(staleEvidenceId, relation.id, repo.id, oldRun.id);
+    db.prepare(`
+      INSERT INTO index_runs (repo_id, status, started_at, finished_at, extractor_version)
+      VALUES (?, 'completed', datetime('now'), datetime('now'), 'newer-empty-index')
+    `).run(repo.id);
+  } finally {
+    db.close();
+  }
+
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+    const response = await client.request('resources/read', {
+      uri: `impact-trace://evidence/${encodeURIComponent(staleEvidenceId)}`
+    });
+
+    assert.ok(response.error);
+    const envelope = JSON.parse(response.error.message) as {
+      error: { code: string; problem: string; fix: string };
+    };
+    assert.equal(envelope.error.code, 'resource_not_found');
+    assert.match(envelope.error.problem, /impact evidence not found/);
+  } finally {
+    await client.close();
+  }
+});
+
 test('MCP coverage resource returns a typed error before the first completed index', async () => {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-mcp-coverage-error-'));
   await initProject({ repoRoot });
@@ -2801,7 +3002,7 @@ test('MCP trace walks fact_provenance back through the causal chain', async () =
   }
 });
 
-test('MCP trace reports schema_outdated for pre-v13 fact_provenance tables', async () => {
+test('MCP trace reports schema_outdated for pre-v14 fact_provenance tables', async () => {
   const repoRoot = await makeRepo();
   let factId = '';
   const writer = new McpProcessClient(repoRoot);
@@ -2836,7 +3037,7 @@ test('MCP trace reports schema_outdated for pre-v13 fact_provenance tables', asy
       error: { code: string; problem: string; fix: string };
     };
     assert.equal(envelope.error.code, 'schema_outdated');
-    assert.match(envelope.error.problem, /schema v13/);
+    assert.match(envelope.error.problem, /schema v14/);
     assert.doesNotMatch(envelope.error.problem, /no such column/);
     assert.match(envelope.error.fix, /impact-trace init/);
   } finally {

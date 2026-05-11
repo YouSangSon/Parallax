@@ -272,6 +272,12 @@ erDiagram
 
 - `fact_provenance` uniqueness를 `(fact_id, source_fact_id)`에서 `(fact_id, source_fact_id, kind, tx_id)`로 확장한다. 같은 fact/source 쌍이 먼저 `evidence`였고 나중에 `supersedes`가 되어도, 또는 같은 supersession이 다른 branch transaction에서 다시 선언되어도 edge가 조용히 무시되지 않는다.
 
+### Schema v14 추가 (persistent entity search projection)
+
+- `search_entities_fts` — `entities`의 `id`, `display_name`, `path`, `symbol`을 FTS5/BM25로 검색하는 persistent projection. `AFTER INSERT/UPDATE/DELETE ON entities` trigger가 유지하고, writable `openDatabase()` migration은 missing/stale row를 재시작 시 backfill/repair한다.
+- `impact_trace_search_context`는 read-only MCP 호출에서 temp FTS table을 만들지 않는다. natural-language entity query는 `search_entities_fts`를 읽고, path/literal query(`.`, `/`, `%`, `_`, `\\`, `:` 포함)는 기존 LIKE fallback을 유지한다.
+- semantic search stream은 `fact_embeddings`를 canonical source로 유지하되, sqlite-vec `vec_facts_<model>` table이 있으면 ANN을 먼저 사용하고 extension/table 부재 또는 SQL 실패 시 brute-force int8 dot product로 fallback한다.
+
 ### 핵심 invariants
 
 - **Content-addressable fact id** = `SHA-256(entity_id, attribute, value_blob, op)`. 동일 (entity, attribute, value, op) 조합은 한 번만 저장.

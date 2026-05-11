@@ -21,14 +21,14 @@ function withTempDb<T>(callback: (db: Db) => T): T {
   }
 }
 
-test('migrate records schema_versions through v13', () => {
+test('migrate records schema_versions through v14', () => {
   withTempDb((db) => {
     const versions = db
       .prepare('SELECT version FROM schema_versions ORDER BY version')
       .all() as Array<{ version: number }>;
     assert.deepEqual(
       versions.map((row) => row.version),
-      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
     );
   });
 });
@@ -47,6 +47,7 @@ test('migrate creates the agent memory tables and later extension tables', () =>
       'reflections',
       'context_tool_runs',
       'context_resource_accesses',
+      'search_entities_fts',
       'search_relation_evidence_fts',
       'search_facts_fts'
     ];
@@ -59,9 +60,12 @@ test('migrate creates the agent memory tables and later extension tables', () =>
   });
 });
 
-test('migrate v11 adds persistent search FTS projection triggers', () => {
+test('migrate v11/v14 adds persistent search FTS projection triggers', () => {
   withTempDb((db) => {
     for (const name of [
+      'trg_entities_fts_ai',
+      'trg_entities_fts_ad',
+      'trg_entities_fts_au',
       'trg_relation_evidence_fts_ai',
       'trg_relation_evidence_fts_ad',
       'trg_relation_evidence_fts_au',
@@ -77,7 +81,7 @@ test('migrate v11 adds persistent search FTS projection triggers', () => {
   });
 });
 
-test('migrate v11 maintains persistent search FTS projections', () => {
+test('migrate v11/v14 maintains persistent search FTS projections', () => {
   withTempDb((db) => {
     db.prepare("INSERT INTO repos (id, root, config_hash) VALUES (1, '/repo', 'v1')").run();
     db.prepare(`
@@ -91,6 +95,54 @@ test('migrate v11 maintains persistent search FTS projections', () => {
       )
       VALUES ('file:source.ts', 1, 'file', 'source.ts', NULL, 'typescript', 'Source', 1, 1)
     `).run();
+    db.prepare(`
+      INSERT INTO entities (
+        id, repo_id, kind, path, symbol, language_id, display_name,
+        created_index_run_id, updated_index_run_id
+      )
+      VALUES ('file:entity-search.ts', 1, 'file', 'entity-search.ts', 'validate_token', 'typescript', 'Token Refresh Validator', 1, 1)
+    `).run();
+    assert.deepEqual(
+      db
+        .prepare("SELECT entity_id FROM search_entities_fts WHERE search_entities_fts MATCH 'token'")
+        .all()
+        .map((row) => (row as { entity_id: string }).entity_id),
+      ['file:entity-search.ts']
+    );
+    assert.deepEqual(
+      db
+        .prepare("SELECT entity_id FROM search_entities_fts WHERE search_entities_fts MATCH 'validate'")
+        .all()
+        .map((row) => (row as { entity_id: string }).entity_id),
+      ['file:entity-search.ts']
+    );
+    db.prepare(`
+      UPDATE entities
+      SET display_name = 'Session Gate', path = 'session-gate.ts', symbol = 'session_gate'
+      WHERE id = 'file:entity-search.ts'
+    `).run();
+    assert.deepEqual(
+      db
+        .prepare("SELECT entity_id FROM search_entities_fts WHERE search_entities_fts MATCH 'token'")
+        .all()
+        .map((row) => (row as { entity_id: string }).entity_id),
+      []
+    );
+    assert.deepEqual(
+      db
+        .prepare("SELECT entity_id FROM search_entities_fts WHERE search_entities_fts MATCH 'session'")
+        .all()
+        .map((row) => (row as { entity_id: string }).entity_id),
+      ['file:entity-search.ts']
+    );
+    db.prepare("DELETE FROM entities WHERE id = 'file:entity-search.ts'").run();
+    assert.deepEqual(
+      db
+        .prepare("SELECT entity_id FROM search_entities_fts WHERE search_entities_fts MATCH 'session'")
+        .all()
+        .map((row) => (row as { entity_id: string }).entity_id),
+      []
+    );
     db.prepare(`
       INSERT INTO relations (
         id, repo_id, source_entity_id, target_entity_id, kind, confidence,
@@ -253,7 +305,7 @@ test('migrate v11 maintains persistent search FTS projections', () => {
   });
 });
 
-test('migrate v11 repairs missing persistent search FTS projection rows on re-run', () => {
+test('migrate v11/v14 repairs persistent search FTS projection rows on re-run', () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'impact-trace-store-fts-repair-'));
   try {
     const first = openDatabase(dir);
@@ -292,8 +344,19 @@ test('migrate v11 repairs missing persistent search FTS projection rows on re-ru
         VALUES ('fact:repair', 'file:repair.ts', 'imports', '"crash resumable fact backfill"', 'assert', 'tx:repair', 0)
       `).run();
 
+      first.prepare('DELETE FROM search_entities_fts').run();
+      first.prepare(`
+        INSERT INTO search_entities_fts (
+          entity_id, repo_id, updated_index_run_id, id_text, display_name, path, symbol
+        )
+        VALUES ('file:stale.ts', 1, 1, 'file:stale.ts', 'Stale Entity', 'stale.ts', 'stale')
+      `).run();
       first.prepare('DELETE FROM search_relation_evidence_fts').run();
       first.prepare('DELETE FROM search_facts_fts').run();
+      assert.equal(
+        (first.prepare('SELECT count(*) AS count FROM search_entities_fts').get() as { count: number }).count,
+        1
+      );
       assert.equal(
         (first.prepare('SELECT count(*) AS count FROM search_relation_evidence_fts').get() as { count: number }).count,
         0
@@ -310,6 +373,20 @@ test('migrate v11 repairs missing persistent search FTS projection rows on re-ru
     try {
       assert.deepEqual(
         reopened
+          .prepare("SELECT entity_id FROM search_entities_fts WHERE search_entities_fts MATCH 'repair'")
+          .all()
+          .map((row) => (row as { entity_id: string }).entity_id),
+        ['file:repair.ts']
+      );
+      assert.deepEqual(
+        reopened
+          .prepare("SELECT entity_id FROM search_entities_fts WHERE search_entities_fts MATCH 'stale'")
+          .all()
+          .map((row) => (row as { entity_id: string }).entity_id),
+        []
+      );
+      assert.deepEqual(
+        reopened
           .prepare("SELECT evidence_id FROM search_relation_evidence_fts WHERE search_relation_evidence_fts MATCH 'evidence'")
           .all()
           .map((row) => (row as { evidence_id: string }).evidence_id),
@@ -324,6 +401,114 @@ test('migrate v11 repairs missing persistent search FTS projection rows on re-ru
       );
     } finally {
       reopened.close();
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('migrate v14 repairs stale entity FTS payload for existing entities on re-run', () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'impact-trace-store-entity-fts-stale-'));
+  try {
+    const first = openDatabase(dir);
+    try {
+      first.prepare("INSERT INTO repos (id, root, config_hash) VALUES (1, '/repo', 'v1')").run();
+      first.prepare(`
+        INSERT INTO index_runs (id, repo_id, status, started_at, finished_at, extractor_version)
+        VALUES (1, 1, 'completed', datetime('now'), datetime('now'), 'test')
+      `).run();
+      first.prepare(`
+        INSERT INTO entities (
+          id, repo_id, kind, path, symbol, language_id, display_name,
+          created_index_run_id, updated_index_run_id
+        )
+        VALUES ('file:current.ts', 1, 'file', 'current.ts', 'current_symbol', 'typescript', 'Current Entity', 1, 1)
+      `).run();
+      first.prepare('DELETE FROM search_entities_fts').run();
+      first.prepare(`
+        INSERT INTO search_entities_fts (
+          entity_id, repo_id, updated_index_run_id, id_text, display_name, path, symbol
+        )
+        VALUES ('file:current.ts', 99, 99, 'file:old.ts', 'Old Entity', 'old.ts', 'old_symbol')
+      `).run();
+      assert.deepEqual(
+        first
+          .prepare("SELECT entity_id FROM search_entities_fts WHERE search_entities_fts MATCH 'old'")
+          .all()
+          .map((row) => (row as { entity_id: string }).entity_id),
+        ['file:current.ts']
+      );
+    } finally {
+      first.close();
+    }
+
+    const reopened = openDatabase(dir);
+    try {
+      assert.deepEqual(
+        reopened
+          .prepare("SELECT entity_id FROM search_entities_fts WHERE search_entities_fts MATCH 'old'")
+          .all()
+          .map((row) => (row as { entity_id: string }).entity_id),
+        []
+      );
+      assert.deepEqual(
+        reopened
+          .prepare("SELECT entity_id FROM search_entities_fts WHERE search_entities_fts MATCH 'current'")
+          .all()
+          .map((row) => (row as { entity_id: string }).entity_id),
+        ['file:current.ts']
+      );
+    } finally {
+      reopened.close();
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('openDatabase can skip projection repair for lightweight telemetry writes', () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'impact-trace-store-skip-fts-repair-'));
+  try {
+    const first = openDatabase(dir);
+    try {
+      first.prepare("INSERT INTO repos (id, root, config_hash) VALUES (1, '/repo', 'v1')").run();
+      first.prepare(`
+        INSERT INTO index_runs (id, repo_id, status, started_at, finished_at, extractor_version)
+        VALUES (1, 1, 'completed', datetime('now'), datetime('now'), 'test')
+      `).run();
+      first.prepare(`
+        INSERT INTO entities (
+          id, repo_id, kind, path, symbol, language_id, display_name,
+          created_index_run_id, updated_index_run_id
+        )
+        VALUES ('file:telemetry.ts', 1, 'file', 'telemetry.ts', NULL, 'typescript', 'Telemetry Entity', 1, 1)
+      `).run();
+      first.prepare('DELETE FROM search_entities_fts').run();
+    } finally {
+      first.close();
+    }
+
+    const skipped = openDatabase(dir, { skipProjectionRepair: true });
+    try {
+      assert.equal(
+        (skipped.prepare('SELECT count(*) AS count FROM search_entities_fts').get() as { count: number }).count,
+        0
+      );
+    } finally {
+      skipped.close();
+    }
+
+    const repaired = openDatabase(dir);
+    try {
+      assert.deepEqual(
+        repaired
+          .prepare("SELECT entity_id FROM search_entities_fts WHERE search_entities_fts MATCH 'telemetry'")
+          .all()
+          .map((row) => (row as { entity_id: string }).entity_id),
+        ['file:telemetry.ts']
+      );
+    } finally {
+      repaired.close();
     }
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -435,7 +620,7 @@ test('migrate is idempotent across re-runs', () => {
         .all() as Array<{ version: number }>;
       assert.deepEqual(
         versions.map((row) => row.version),
-        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
       );
     } finally {
       second.close();
@@ -462,9 +647,11 @@ test('migrate upgrades a synthetic v6 schema by adding v7/v8/v9 columns and tabl
       seed.prepare('DELETE FROM schema_versions WHERE version = 11').run();
       seed.prepare('DELETE FROM schema_versions WHERE version = 12').run();
       seed.prepare('DELETE FROM schema_versions WHERE version = 13').run();
+      seed.prepare('DELETE FROM schema_versions WHERE version = 14').run();
       seed.prepare('DROP TABLE IF EXISTS reflections').run();
       seed.prepare('DROP TABLE IF EXISTS context_tool_runs').run();
       seed.prepare('DROP TABLE IF EXISTS context_resource_accesses').run();
+      seed.prepare('DROP TABLE IF EXISTS search_entities_fts').run();
       seed.prepare('DROP TABLE IF EXISTS search_relation_evidence_fts').run();
       seed.prepare('DROP TABLE IF EXISTS search_facts_fts').run();
       seed.prepare('CREATE TABLE branches_v6_only AS SELECT id, name, head_tx_id, parent_branch_id, created_at FROM branches').run();
@@ -578,11 +765,15 @@ test('migrate upgrades a synthetic v6 schema by adding v7/v8/v9 columns and tabl
       const versions = upgraded
         .prepare('SELECT max(version) AS v FROM schema_versions')
         .get() as { v: number };
-      assert.equal(versions.v, 13);
+      assert.equal(versions.v, 14);
       const telemetry = upgraded
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'context_tool_runs'")
         .get();
       assert.ok(telemetry, 'context_tool_runs table must exist after upgrade');
+      const entitySearchFts = upgraded
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'search_entities_fts'")
+        .get();
+      assert.ok(entitySearchFts, 'search_entities_fts table must exist after upgrade');
       const searchFts = upgraded
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'search_relation_evidence_fts'")
         .get();

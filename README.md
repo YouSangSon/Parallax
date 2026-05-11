@@ -384,10 +384,12 @@ MCP에서 노출하는 주요 tool은 아래와 같습니다.
 `impact_trace_search_context` v1은 `k=10`, `includeEvidence=true`, `evidencePerEntity=2`,
 `snippetChars=240`을 기본으로 하며, keyword/relation/evidence stream을 RRF로 fuse합니다.
 응답의 각 result는 `rankSignals.algorithm='rrf'`, `keywordRank`, `relationRank`, `evidenceRank`,
-`rrfScore`를 포함합니다. natural-language entity query는 FTS5/BM25를 우선 사용하고,
-relation evidence와 non-redacted asserted facts는 schema v11 persistent FTS projection으로 검색합니다.
-기존 `fact_embeddings`가 있으면 semantic lane도 RRF에 fuse되며, FTS table이 없는 legacy DB나
-path/literal query는 LIKE fallback을 유지합니다.
+`rrfScore`를 포함합니다. natural-language entity query는 schema v14 `search_entities_fts`
+FTS5/BM25 projection을 우선 사용하고, relation evidence와 non-redacted asserted facts는
+schema v11 persistent FTS projection으로 검색합니다. 기존 `fact_embeddings`가 있으면 semantic
+lane도 RRF에 fuse되며, sqlite-vec `vec_facts_<model>` table이 있으면 ANN을 먼저 쓰고 없거나
+실패하면 brute-force int8 dot product로 fallback합니다. path/literal query는 LIKE fallback을
+유지하고, pre-v14 read-only DB는 `schema_outdated`로 `impact-trace init`을 안내합니다.
 `impact_trace_explain_entity` v0는 `relationLimit=20`을 incoming/outgoing 각각에 적용하고,
 `evidenceLimit=10`, `snippetChars=300`으로 선택된 relation 전체의 evidence payload를 제한합니다.
 `impact_trace_context_telemetry` v0는 `context_tool_runs`, `context_resource_accesses`를 읽어

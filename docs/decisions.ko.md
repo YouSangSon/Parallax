@@ -28,6 +28,7 @@
 | [D-016](#d-016-branch---restore-restores-state-and-un-archives-transactions) | `branch --restore` restores state and un-archives transactions | P4 | 2026-04-30 |
 | [D-017](#d-017-time-based-auto-abandon-piggybacks-on-gc-branches---max-age) | time-based auto-abandon piggybacks on `gc-branches --max-age` | P4 | 2026-05-01 |
 | [D-018](#d-018-sqlite-vec-ann-with-per-model-vec0-tables-lazy-create-and-brute-force-fallback) | sqlite-vec ANN with per-model vec0 tables, lazy create, brute-force fallback | P4 | 2026-05-01 |
+| [D-019](#d-019-search-context-uses-persistent-projections-in-read-only-mode) | search_context uses persistent projections in read-only mode | P3 | 2026-05-11 |
 
 ---
 
@@ -333,6 +334,24 @@
 **결과/위험:** `vec0`는 `INSERT OR REPLACE`를 지원 *안 함* — `DELETE WHERE fact_id = ? + INSERT` 패턴으로 idempotent upsert 구현. raw 768-byte buffer가 vec0에 의해 자동으로 float32 (768/4=192) 인식되는 함정 — `vec_int8(?)` 명시 cast 필수. ANN과 archived/branch 필터 조합: vec0 MATCH는 *전체 인덱스에서 top-k*만 — post-filter로 archived row가 drop되면 결과 부족 가능 → `k * 5` over-fetch (min 20)로 보완. 충분한 k가 안 나오면 LIMIT k 미달이지만 false-positive는 0. 향후 sqlite-vec API 변경 또는 native binary 호환성 issue → silent fallback이 차단막.
 
 **관련 commit:** Phase 4 P5 `feat/phase4-p5-sqlite-vec-ann` branch.
+
+---
+
+## D-019: search_context uses persistent projections in read-only mode
+
+**결정:** `impact_trace_search_context`의 entity keyword lane은 read-only 호출 중 temp FTS table을 만들지 않고 schema v14 `search_entities_fts`를 읽는다. semantic lane은 D-018의 sqlite-vec `vec_facts_<model>` table이 있으면 ANN을 먼저 사용하고, extension/table 부재나 SQL 실패 시 기존 `fact_embeddings` brute-force int8 dot product로 fallback한다.
+
+**맥락:** `search_context`는 agent context를 줄이는 hot path다. 이전 depth v0는 relation evidence/facts만 persistent FTS였고 entity FTS는 read-only 호출마다 temp table을 rebuild했다. large repo에서는 query마다 O(entities) rebuild가 발생하고, semantic lane도 모든 `fact_embeddings`를 scan했다. MCP read-only 호출은 migration/write를 하면 안 되므로 projection 생성·repair는 writable `openDatabase()`에만 있어야 한다.
+
+**대안:**
+- temp FTS 유지 — 구현은 단순하지만 large repo에서 반복 query 비용이 계속 발생.
+- read-only MCP에서 missing projection을 자동 생성 — read-only 계약 위반.
+- ANN-only semantic — sqlite-vec extension이 없는 환경에서 검색 회귀.
+- branch argument 추가 — 제품 동작 범위가 넓어짐. 이번 slice는 default-main context search만 유지.
+
+**결과/위험:** schema v14는 `entities` trigger, backfill, restart repair를 추가한다. `search_context`는 항상 `entities.updated_index_run_id = latestCompletedIndexRun` join으로 currentness를 보장한다. sqlite-vec ANN은 post-join visibility filter를 그대로 적용하므로 branch-only/archived/superseded fact가 surface되지 않는다. ANN이 빈 결과 또는 SQL 오류를 내면 brute-force fallback을 사용해 recall을 우선한다. pre-v14 read-only DB는 `schema_outdated`로 `impact-trace init`을 안내한다. context telemetry write는 current-schema projection scan을 건너뛰는 lightweight open을 사용하지만, schema upgrade/missing-table backfill과 명시적인 normal writable open repair 계약은 유지한다.
+
+**관련 commit:** `feat(search): persist entity fts and ann context`
 
 ---
 

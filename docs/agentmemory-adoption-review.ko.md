@@ -30,8 +30,8 @@ Impact-trace가 만들려는 것은 더 좁고 선명하다. **코드/문서/정
 
 | 상태 | 항목 |
 |---|---|
-| landed | `impact_trace_search_context` keyword/relation/evidence RRF ranking v1, retrieval depth v0(read-only temp FTS5/BM25 entity lane, `semanticRank`, `graphProximityRank`), search budget/diversification v0(`brief`/`standard`/`deep`, returned bytes, estimated tokens, omitted counts, path/entity/relation interleave), persistent relation_evidence/facts FTS projection + retrieval bench v0, evidence resource v0, context telemetry v0, doctor v0, MCP surface guard, opt-in `import-session` v0, graph JSON pagination, typed error envelope v0, explicit supersession v0 |
-| next | entity persistent FTS replacement, sqlite-vec ANN search lane, persisted context pack id/reuse |
+| landed | `impact_trace_search_context` keyword/relation/evidence RRF ranking v1, retrieval depth v0(FTS5/BM25 entity lane, `semanticRank`, `graphProximityRank`), search budget/diversification v0(`brief`/`standard`/`deep`, returned bytes, estimated tokens, omitted counts, path/entity/relation interleave), persistent entity/relation_evidence/facts FTS projection + retrieval bench v0, sqlite-vec ANN semantic lane with brute-force fallback, evidence resource v0, context telemetry v0, doctor v0, MCP surface guard, opt-in `import-session` v0, graph JSON pagination, typed error envelope v0, explicit supersession v0 |
+| next | persisted context pack id/reuse, UI Explorer v0 |
 | later | UI Explorer session timeline, context rank feedback, workspace/contract impact |
 
 ---
@@ -124,7 +124,7 @@ flowchart TB
   Compact --> Expand["expandIds when needed"]
 ```
 
-Impact-trace의 `impact_trace_search_context`는 v0에서 SQLite `LIKE` 기반 deterministic search와 compact evidence/resource URI 계약을 먼저 닫았다. v1은 이 계약을 유지하면서 keyword/relation/evidence stream을 분리하고 RRF rank signal을 노출한다. 현재 depth v0는 read-only temp FTS5/BM25 entity lane, 기존 `fact_embeddings` 기반 `semanticRank`, matched seed의 1-hop `graphProximityRank`, persistent evidence/fact FTS projection까지 붙였다. 다음 개선은 **임시 entity FTS와 brute-force semantic path를 persistent entity FTS + sqlite-vec ANN으로 대체하는 것**이다.
+Impact-trace의 `impact_trace_search_context`는 v0에서 SQLite `LIKE` 기반 deterministic search와 compact evidence/resource URI 계약을 먼저 닫았다. v1은 이 계약을 유지하면서 keyword/relation/evidence stream을 분리하고 RRF rank signal을 노출한다. 현재 depth v0는 schema v14 persistent FTS5/BM25 entity lane, 기존 `fact_embeddings` 기반 `semanticRank`, matched seed의 1-hop `graphProximityRank`, persistent evidence/fact FTS projection까지 붙였다. semantic lane은 sqlite-vec ANN을 먼저 쓰고 실패 시 brute-force path로 fallback한다. 다음 개선은 **persisted context pack id/reuse로 반복 context 전송을 줄이는 것**이다.
 
 ---
 
@@ -276,18 +276,18 @@ flowchart LR
 2. RRF 결과를 `rankSignals`로 노출하고 기존 `reasons`/resource URI 계약은 유지.
 3. raw RRF score로 정렬하되 응답 `rrfScore`/`score`는 rounded value로 고정.
 4. stream top page 밖의 fused winner, display/entity tie-break, rounded-score collision regression test 추가.
-5. natural-language query는 read-only temp FTS5/BM25 entity lane으로 non-contiguous term을 찾고, path/literal query는 기존 LIKE fallback을 유지.
-6. 기존 `fact_embeddings`가 있는 경우 query embedding을 계산해 indexed entity로 매핑하고 `semanticRank` stream으로 RRF에 fuse.
+5. natural-language query는 schema v14 persistent FTS5/BM25 entity lane으로 non-contiguous term을 찾고, path/literal query는 기존 LIKE fallback을 유지.
+6. 기존 `fact_embeddings`가 있는 경우 query embedding을 계산해 indexed entity로 매핑하고 `semanticRank` stream으로 RRF에 fuse. sqlite-vec table이 있으면 ANN을 먼저 사용하고, 없거나 실패하면 brute-force int8 path로 fallback.
 7. matched seed entity의 1-hop relation neighbor를 `graphProximityRank` stream으로 추가.
 8. optional `brief`/`standard`/`deep` budget이 returned bytes / estimated tokens / omitted counts를 노출하고 budget 초과 결과를 줄인다.
 9. path prefix/entity kind/relation kind bucket interleave가 `k>=3`에서 한 디렉터리나 relation class 독점을 줄인다.
-10. schema v11 persistent FTS5 projection이 `relation_evidence`와 non-redacted asserted `facts`를 검색 stream에 추가한다.
+10. schema v11 persistent FTS5 projection이 `relation_evidence`와 non-redacted asserted `facts`를 검색 stream에 추가하고, schema v14 projection이 `entities` 검색을 read-only temp table 없이 처리한다.
 11. ImpactBench schema v2가 Recall@5/10, Precision@5, NDCG@10, MRR, returned bytes, stream ablation을 deterministic report로 측정한다.
 
 후속 depth pass:
 
-1. temp entity FTS를 schema v11 스타일의 persistent entity FTS projection으로 대체한다.
-2. semantic lane을 sqlite-vec ANN path와 직접 연결해 large memory set에서도 bounded query가 되게 한다.
+1. ✅ temp entity FTS를 schema v14 persistent entity FTS projection으로 대체했다.
+2. ✅ semantic lane을 sqlite-vec ANN path와 직접 연결해 large memory set에서도 bounded query가 되게 했다.
 3. fact/evidence/entity write path, rebuild/backfill path, restart 후 search path가 같은 corpus를 보도록 regression test를 추가한다.
 4. large index에서 common query가 전체 stream을 materialize하지 않도록 FTS/cap/guard 추가.
 
@@ -372,7 +372,7 @@ transaction을 기준으로 current/as-of visibility를 판단한다. 현재 vie
 |---|---|---|
 | 0 | resource pagination + typed error envelope | 완료. graph JSON resource가 `limit/cursor` page contract를 갖고 MCP failures가 `{ code, problem, cause, fix, evidence }` envelope로 정규화됐다. |
 | 1 | explicit memory supersession | 완료. `supersedesFactIds`, `fact_provenance.kind='supersedes'`, edge `tx_id`로 오래된 decision/summary/policy fact를 현재/as-of recall/profile/semantic recall에서 정확히 제외한다. |
-| 2 | entity persistent FTS + sqlite-vec ANN lane | large memory set에서도 bounded query가 되도록 entity temp FTS와 brute-force semantic path를 줄인다. v0.9.6 교훈에 따라 live-write/backfill/restart parity test가 필요하다. |
+| 2 | entity persistent FTS + sqlite-vec ANN lane | 완료. schema v14 entity FTS live-write/backfill/restart repair와 ANN-first/fallback parity test를 추가했다. |
 | 3 | persisted context pack id / repeated-query reuse | 같은 context를 반복 전송하지 않고 pack id로 재사용해야 token 절감이 커진다. |
 | 4 | UI Explorer v0 | resource contract가 안정된 뒤 사람이 같은 evidence와 session timeline을 검증한다. |
 | 5 | workspace/contract impact | single repo + repo-local docs가 안정된 뒤 OpenAPI/protobuf/GraphQL consumer risk로 넓힌다. |

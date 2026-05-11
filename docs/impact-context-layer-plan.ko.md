@@ -90,7 +90,7 @@ flowchart LR
 | [Semgrep](https://github.com/semgrep/semgrep) / [Opengrep](https://github.com/opengrep/opengrep) | 여러 언어의 source-like static rule ecosystem. | `PolicyRuleAdapter`: rule 결과를 `GOVERNS`, `REQUIRES_REVIEW`, `VERIFIES` evidence로 흡수한다. | engine clone. 라이선스와 업데이트 경계를 위해 subprocess/result import adapter가 안전하다. |
 | [SCIP](https://github.com/sourcegraph/scip), [LSIF](https://lsif.dev/), [Kythe](https://github.com/kythe/kythe) | language-server 수준의 definition/reference/implementation graph를 저장·교환하는 포맷/생태계. | optional import adapter. Java/Kotlin/TS/Go/Rust precision을 높이는 길. | core schema를 특정 포맷에 종속시키지 않는다. |
 
-이번 slice에서는 위 조사에서 공통으로 보이는 `search/read only/context budget/resource link` 패턴을 작게 가져와 `impact_trace_search_context` v0로 구현했고, 이어서 `agentmemory` 분석에서 확인한 RRF hybrid ranking을 initial v1로 반영했다. context access telemetry와 opt-in session import v0도 Impact-trace의 SQLite/provenance 경계 안에서 구현됐다. retrieval depth v0는 natural-language query용 read-only temp FTS5/BM25 entity lane, 기존 `fact_embeddings` 기반 `semanticRank`, matched seed의 1-hop `graphProximityRank`까지 추가했다. budget/diversification v0는 optional `brief`/`standard`/`deep` budget으로 returned bytes / estimated tokens / omitted counts를 노출하고 `k>=3` 결과를 path prefix/entity kind/relation kind bucket으로 interleave한다. persistent retrieval v0는 schema v11 `relation_evidence`/selected `facts` FTS projection과 ImpactBench schema v2 Recall@budget/ablation report를 추가했다. resource contract v0는 JSON graph pagination과 typed MCP error envelope를 추가했다. 다음 context slice는 explicit supersession과 entity persistent FTS/ANN이다.
+이번 slice에서는 위 조사에서 공통으로 보이는 `search/read only/context budget/resource link` 패턴을 작게 가져와 `impact_trace_search_context` v0로 구현했고, 이어서 `agentmemory` 분석에서 확인한 RRF hybrid ranking을 initial v1로 반영했다. context access telemetry와 opt-in session import v0도 Impact-trace의 SQLite/provenance 경계 안에서 구현됐다. retrieval depth v0는 natural-language query용 read-only temp FTS5/BM25 entity lane, 기존 `fact_embeddings` 기반 `semanticRank`, matched seed의 1-hop `graphProximityRank`까지 추가했다. budget/diversification v0는 optional `brief`/`standard`/`deep` budget으로 returned bytes / estimated tokens / omitted counts를 노출하고 `k>=3` 결과를 path prefix/entity kind/relation kind bucket으로 interleave한다. persistent retrieval v0는 schema v11 `relation_evidence`/selected `facts` FTS projection과 ImpactBench schema v2 Recall@budget/ablation report를 추가했다. resource contract v0는 JSON graph pagination과 typed MCP error envelope를 추가했다. explicit supersession v0는 `supersedesFactIds`, `fact_provenance.kind='supersedes'`, edge `tx_id`로 오래된 decision/summary/policy fact를 현재/as-of recall/profile에서 제외한다. 다음 context slice는 entity persistent FTS/ANN이다.
 
 ### 2.2 MCP 표준에서 가져올 것
 
@@ -720,9 +720,9 @@ flowchart LR
    - JSON page metadata: `cursor`, `nextCursor`, node/edge totals, returned counts
    - typed error envelope: `code`, `problem`, `cause`, `fix`, `evidence`
 
-6. `feat(memory): add explicit supersession lifecycle`
-   - `fact_provenance.kind='supersedes'` 또는 `fact_supersessions`
-   - recall/profile/trace가 superseded fact를 명시적으로 구분
+6. `feat(memory): add explicit supersession lifecycle` — landed v0
+   - `supersedesFactIds` → `fact_provenance.kind='supersedes'` + edge `tx_id`
+   - recall/profile/semantic recall current/as-of view에서 edge tx 기준 superseded fact 제외, trace는 edge kind 반환
    - fuzzy auto-supersede 금지
 
 7. `docs: document Claude/Codex agent recipes`
@@ -844,9 +844,10 @@ UI가 들어오면 완료 전에 반드시 확인한다.
 ## 18. 바로 다음 액션
 
 1. ✅ `impact-trace://reports/{id}/graph/json` pagination과 typed error envelope로 큰 graph payload를 resource-on-demand로 고정했다.
-2. explicit supersession을 추가해 오래된 decision/summary/policy fact를 fuzzy overwrite 없이 명시적으로 대체한다.
+2. ✅ explicit supersession을 추가해 오래된 decision/summary/policy fact를 fuzzy overwrite 없이 명시적으로 대체한다.
 3. entity persistent FTS projection과 sqlite-vec ANN lane으로 temp entity FTS / brute-force semantic path를 줄인다.
-4. 그 resource contract를 그대로 읽는 `impact-trace ui` workbench v0를 만든다.
-5. workspace/contract resolver는 단일 repo + 문서 impact가 작동한 뒤 확장한다.
+4. persisted context pack id / repeated-query reuse로 같은 context를 반복 전송하지 않는다.
+5. 그 resource contract를 그대로 읽는 `impact-trace ui` workbench v0를 만든다.
+6. workspace/contract resolver는 단일 repo + 문서 impact가 작동한 뒤 확장한다.
 
 이 순서가 가장 짧은 검증 경로다. "멋진 UI"보다 "agent와 사람이 같은 근거를 믿고 보는 report"가 먼저다.

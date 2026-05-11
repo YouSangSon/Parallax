@@ -104,6 +104,10 @@ async function main(): Promise<void> {
     const evidenceFactIds = evidenceRaw
       ? evidenceRaw.split(',').map((item) => item.trim()).filter(Boolean)
       : undefined;
+    const supersedesRaw = parseOptionalArg(args, '--supersedes-fact-ids');
+    const supersedesFactIds = supersedesRaw
+      ? supersedesRaw.split(',').map((item) => item.trim()).filter(Boolean)
+      : undefined;
     const result = await rememberOnRepo(repoRoot, {
       entity,
       attribute,
@@ -111,7 +115,8 @@ async function main(): Promise<void> {
       op,
       ...(branch !== undefined ? { branch } : {}),
       ...(agent !== undefined ? { agent } : {}),
-      ...(evidenceFactIds !== undefined ? { evidenceFactIds } : {})
+      ...(evidenceFactIds !== undefined ? { evidenceFactIds } : {}),
+      ...(supersedesFactIds !== undefined ? { supersedesFactIds } : {})
     });
     console.log(JSON.stringify(result, null, 2));
     return;
@@ -400,7 +405,7 @@ Commands:
 Agent memory:
   impact-trace remember --entity <id> --attribute <name> --value <json|string>
                         [--branch <name>] [--agent <id>] [--op assert|retract]
-                        [--evidence-fact-ids id1,id2]
+                        [--evidence-fact-ids id1,id2] [--supersedes-fact-ids id1,id2]
   impact-trace retract  --entity <id> --attribute <name> --value <json|string>
                         [--branch <name>] [--agent <id>]
   impact-trace recall   [--query <text>] [--semantic] [--entity <id>]

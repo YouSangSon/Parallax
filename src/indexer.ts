@@ -1072,7 +1072,7 @@ function prepareStatements(db: Db): PreparedStatements {
       'INSERT OR IGNORE INTO facts (id, entity_id, attribute, value_blob, op, tx_id, redacted) VALUES (?, ?, ?, ?, ?, ?, ?)'
     ),
     insertFactProvenance: db.prepare(
-      'INSERT OR IGNORE INTO fact_provenance (id, fact_id, source_fact_id) VALUES (?, ?, ?)'
+      "INSERT OR IGNORE INTO fact_provenance (id, fact_id, source_fact_id, kind, tx_id) VALUES (?, ?, ?, 'evidence', ?)"
     ),
     upsertFile: db.prepare(`
       INSERT INTO files (repo_id, path, language, content_hash, index_run_id)
@@ -1772,7 +1772,7 @@ function insertCanonicalRelation(input: {
       isSnippetRedacted ? 1 : 0
     );
     const provenanceId = contentHash(factId, evidenceFactId);
-    input.insertFactProvenance.run(provenanceId, factId, evidenceFactId);
+    input.insertFactProvenance.run(provenanceId, factId, evidenceFactId, input.memoryTxId);
   });
 }
 

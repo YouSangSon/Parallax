@@ -30,8 +30,8 @@ Impact-trace가 만들려는 것은 더 좁고 선명하다. **코드/문서/정
 
 | 상태 | 항목 |
 |---|---|
-| landed | `impact_trace_search_context` keyword/relation/evidence RRF ranking v1, retrieval depth v0(read-only temp FTS5/BM25 entity lane, `semanticRank`, `graphProximityRank`), search budget/diversification v0(`brief`/`standard`/`deep`, returned bytes, estimated tokens, omitted counts, path/entity/relation interleave), persistent relation_evidence/facts FTS projection + retrieval bench v0, evidence resource v0, context telemetry v0, doctor v0, MCP surface guard, opt-in `import-session` v0, graph JSON pagination, typed error envelope v0 |
-| next | explicit supersession, entity persistent FTS replacement, sqlite-vec ANN search lane, persisted context pack id/reuse |
+| landed | `impact_trace_search_context` keyword/relation/evidence RRF ranking v1, retrieval depth v0(read-only temp FTS5/BM25 entity lane, `semanticRank`, `graphProximityRank`), search budget/diversification v0(`brief`/`standard`/`deep`, returned bytes, estimated tokens, omitted counts, path/entity/relation interleave), persistent relation_evidence/facts FTS projection + retrieval bench v0, evidence resource v0, context telemetry v0, doctor v0, MCP surface guard, opt-in `import-session` v0, graph JSON pagination, typed error envelope v0, explicit supersession v0 |
+| next | entity persistent FTS replacement, sqlite-vec ANN search lane, persisted context pack id/reuse |
 | later | UI Explorer session timeline, context rank feedback, workspace/contract impact |
 
 ---
@@ -179,7 +179,7 @@ flowchart LR
 | **compact-first + expand-on-demand 계약 강화** | 사용자의 핵심 요구가 AI context 절감이다. tool 응답은 compact hit와 URI만 보내고, source/evidence는 resource fetch로 늦춘다. | `impact_trace_search_context`, `impact_trace_context_for_change`, resource templates |
 | **live index/backfill parity** | v0.9.6의 saved-memory recall 회귀는 write path, rebuild path, enrichment path가 같은 corpus를 보지 않으면 검색이 조용히 비는 문제를 보여준다. | entity/fact/evidence FTS trigger, ANN backfill, restart recall tests, doctor stale-index finding |
 | **access telemetry** | 어떤 context가 실제로 agent에 의해 확장됐는지 알아야 ranking과 budget을 개선할 수 있다. | v0: `context_tool_runs`, `context_resource_accesses`, `impact_trace_context_telemetry` |
-| **explicit memory supersession** | 지금은 retract/currentOnly가 있지만, "이 summary/decision이 저 fact를 대체한다"를 더 명시적으로 표현할 수 있다. | `fact_provenance.kind='supersedes'` 또는 `fact_supersessions` |
+| **explicit memory supersession** | "이 summary/decision이 저 fact를 대체한다"를 fuzzy overwrite 없이 표현해야 오래된 정책/제안서 context가 agent에게 다시 들어가지 않는다. | landed: `fact_provenance.kind='supersedes'`, recall/profile/semantic recall current view exclusion, trace edge kind |
 | **session import/replay UX** | Codex/Claude가 이미 수정한 흐름을 영향 그래프와 연결하면 "왜 이 변경이 일어났는가"를 UI에서 볼 수 있다. | landed: `impact-trace import-session --file <path> --format codex|claude` |
 | **diagnose/doctor command** | vector dimension, stale vec table, index coverage, resource truncation을 사용자가 확인할 수 있어야 한다. | landed: `impact-trace doctor`, `impact_trace_doctor` |
 
@@ -317,11 +317,13 @@ Metric:
 
 목표: `retract`보다 의미 있는 "이 결정/summary가 저 결정을 대체한다"를 표현한다.
 
-구현 후보:
-
-1. `fact_provenance.kind`에 `supersedes` 추가.
-2. `recall --current-only`가 `(entity, attribute)`의 latest assert뿐 아니라 superseded fact를 제외할 수 있게 option 추가.
-3. `trace`가 supersession chain을 별도 섹션으로 보여준다.
+상태: v0 landed. `remember`/`impact_trace_remember`가 `supersedesFactIds`를 받아
+`fact_provenance.kind='supersedes'` edge를 저장한다. edge는 `tx_id`도 보존하므로
+content-addressed replacement fact가 이미 존재해도 recall/profile/semantic recall은 edge 생성
+transaction을 기준으로 current/as-of visibility를 판단한다. 현재 view는 superseded fact를
+숨기고, `trace`는 `edges[{ factId, sourceFactId, kind }]`로 supersession chain을 노출한다.
+`--as-of-tx`를 supersession 이전 tx로 지정하면 old fact를 다시 볼 수 있어 시간여행 감사
+가능성은 유지된다.
 
 주의: `agentmemory`처럼 Jaccard similarity로 자동 supersede하지 않는다. Impact-trace에서는 명시적 evidence와 user/agent action이 있어야 한다.
 
@@ -369,7 +371,7 @@ Metric:
 | 순위 | 작업 | 왜 지금 |
 |---|---|---|
 | 0 | resource pagination + typed error envelope | 완료. graph JSON resource가 `limit/cursor` page contract를 갖고 MCP failures가 `{ code, problem, cause, fix, evidence }` envelope로 정규화됐다. |
-| 1 | explicit memory supersession | 오래된 decision/summary를 retract보다 의미 있게 대체해야 정책/제안서 impact가 stale해지지 않는다. |
+| 1 | explicit memory supersession | 완료. `supersedesFactIds`, `fact_provenance.kind='supersedes'`, edge `tx_id`로 오래된 decision/summary/policy fact를 현재/as-of recall/profile/semantic recall에서 정확히 제외한다. |
 | 2 | entity persistent FTS + sqlite-vec ANN lane | large memory set에서도 bounded query가 되도록 entity temp FTS와 brute-force semantic path를 줄인다. v0.9.6 교훈에 따라 live-write/backfill/restart parity test가 필요하다. |
 | 3 | persisted context pack id / repeated-query reuse | 같은 context를 반복 전송하지 않고 pack id로 재사용해야 token 절감이 커진다. |
 | 4 | UI Explorer v0 | resource contract가 안정된 뒤 사람이 같은 evidence와 session timeline을 검증한다. |

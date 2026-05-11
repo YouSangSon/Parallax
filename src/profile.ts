@@ -37,6 +37,36 @@ interface BranchRow {
   name: string;
 }
 
+function notSupersededSql(factAlias: string, supersessionTxScopeSql: string): string {
+  return `NOT EXISTS (
+    SELECT 1
+    FROM fact_provenance supersession_fp
+    INNER JOIN facts superseding_fact ON superseding_fact.id = supersession_fp.fact_id
+    INNER JOIN transactions supersession_tx ON supersession_fp.tx_id = supersession_tx.id
+    WHERE supersession_fp.source_fact_id = ${factAlias}.id
+      AND supersession_fp.kind = 'supersedes'
+      AND superseding_fact.op = 'assert'
+      AND supersession_tx.archived = 0
+      AND ${supersessionTxScopeSql}
+  )`;
+}
+
+function scopedFactVisibilitySql(
+  factAlias: string,
+  ownTxScopeSql: string,
+  supersessionEdgeTxScopeSql: string
+): string {
+  return `((${ownTxScopeSql}) OR EXISTS (
+    SELECT 1
+    FROM fact_provenance visibility_fp
+    INNER JOIN transactions visibility_tx ON visibility_fp.tx_id = visibility_tx.id
+    WHERE visibility_fp.fact_id = ${factAlias}.id
+      AND visibility_fp.kind = 'supersedes'
+      AND visibility_tx.archived = 0
+      AND ${supersessionEdgeTxScopeSql}
+  ))`;
+}
+
 /**
  * Aggregate the facts attached to one entity into a three-bucket profile
  * suitable for an agent's prompt context primer:
@@ -88,13 +118,28 @@ function collectProfile(
   asOfTx: string | undefined
 ): ProfileResult {
   const useAsOf = asOfTx !== undefined;
-  const conditions: string[] = ['t.archived = 0', 'f.entity_id = ?'];
+  const conditions: string[] = ['f.entity_id = ?'];
   const params: Array<string | number> = [entity];
 
   if (useAsOf) {
-    conditions.push('t.id IN (SELECT id FROM ancestor_txs)');
+    conditions.push(
+      scopedFactVisibilitySql(
+        'f',
+        't.archived = 0 AND t.id IN (SELECT id FROM ancestor_txs)',
+        'visibility_tx.id IN (SELECT id FROM ancestor_txs)'
+      )
+    );
+    conditions.push(notSupersededSql('f', 'supersession_tx.id IN (SELECT id FROM ancestor_txs)'));
   } else {
-    conditions.push('t.branch_id = ?');
+    conditions.push(
+      scopedFactVisibilitySql(
+        'f',
+        't.archived = 0 AND t.branch_id = ?',
+        'visibility_tx.branch_id = ?'
+      )
+    );
+    params.push(branch.id, branch.id);
+    conditions.push(notSupersededSql('f', 'supersession_tx.branch_id = ?'));
     params.push(branch.id);
   }
 

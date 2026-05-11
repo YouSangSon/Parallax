@@ -314,8 +314,8 @@ function persistSessionFacts(repoRoot: string, input: PersistSessionInput): Pers
           txId
         });
         db.prepare(
-          'INSERT OR IGNORE INTO fact_provenance (id, fact_id, source_fact_id, kind) VALUES (?, ?, ?, ?)'
-        ).run(contentHash(referenceFactId, summaryFactId, 'session_import'), referenceFactId, summaryFactId, 'evidence');
+          'INSERT OR IGNORE INTO fact_provenance (id, fact_id, source_fact_id, kind, tx_id) VALUES (?, ?, ?, ?, ?)'
+        ).run(contentHash(referenceFactId, summaryFactId, 'session_import'), referenceFactId, summaryFactId, 'evidence', txId);
       }
 
       db.prepare('UPDATE branches SET head_tx_id = ? WHERE id = ?').run(txId, branch.id);

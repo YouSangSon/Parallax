@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 
 import { normalizeRepoRoot } from './security.js';
 import {
+  CURRENT_SCHEMA_VERSION,
   databasePath,
   isVectorExtensionLoaded,
   openDatabase,
@@ -9,7 +10,7 @@ import {
 } from './store.js';
 import type { Db } from './store.js';
 
-export const REQUIRED_SCHEMA_VERSION = 10;
+export const REQUIRED_SCHEMA_VERSION = CURRENT_SCHEMA_VERSION;
 
 export type DoctorOptions = {
   repoRoot: string;

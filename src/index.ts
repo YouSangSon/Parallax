@@ -13,6 +13,7 @@ export type {
   RememberInput,
   RememberResult,
   RememberValue,
+  TraceEdge,
   TraceInput,
   TraceResult
 } from './agent_memory.js';

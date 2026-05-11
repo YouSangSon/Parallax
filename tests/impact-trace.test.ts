@@ -226,7 +226,7 @@ test('initProject creates config and SQLite database tables', async () => {
     assert.match(tables.names, /context_resource_accesses/);
     assert.match(tables.names, /search_relation_evidence_fts/);
     assert.match(tables.names, /search_facts_fts/);
-    assert.equal(schemaVersion.version, 11);
+    assert.equal(schemaVersion.version, 13);
   } finally {
     db.close();
   }
@@ -3157,6 +3157,345 @@ test('recall with currentOnly suppresses retracted facts and dedupes by latest o
   }
 });
 
+test('remember explicit supersession hides older facts from current recall and exposes trace edges', async () => {
+  const repoRoot = await makeFixtureRepo();
+  await initProject({ repoRoot });
+
+  const { remember, recall, trace, withAgentMemoryDb } = await import('../src/index.js');
+  const result = withAgentMemoryDb(repoRoot, false, (db) => {
+    const oldFact = remember(db, {
+      entity: 'policy:checkout',
+      attribute: 'decision',
+      value: 'retry twice before fallback'
+    });
+    const newFact = remember(db, {
+      entity: 'policy:checkout',
+      attribute: 'decision',
+      value: 'retry once before fallback',
+      supersedesFactIds: [oldFact.factId]
+    });
+
+    return {
+      oldFact,
+      newFact,
+      currentDefault: recall(db, { entity: 'policy:checkout', attribute: 'decision' }),
+      current: recall(db, { entity: 'policy:checkout', attribute: 'decision', currentOnly: true }),
+      beforeSupersession: recall(db, {
+        entity: 'policy:checkout',
+        attribute: 'decision',
+        asOfTx: oldFact.txId
+      }),
+      traced: trace(db, { factId: newFact.factId })
+    };
+  });
+
+  assert.deepEqual(result.currentDefault.facts.map((fact) => fact.id), [result.newFact.factId]);
+  assert.deepEqual(result.current.facts.map((fact) => fact.id), [result.newFact.factId]);
+  assert.deepEqual(result.beforeSupersession.facts.map((fact) => fact.id), [result.oldFact.factId]);
+  assert.deepEqual(result.current.facts.map((fact) => fact.value), ['retry once before fallback']);
+  assert.deepEqual(
+    result.traced.edges,
+    [{ factId: result.newFact.factId, sourceFactId: result.oldFact.factId, kind: 'supersedes' }]
+  );
+  assert.ok(result.traced.chain.some((fact) => fact.id === result.oldFact.factId));
+});
+
+test('supersession visibility uses the edge transaction for pre-existing replacement facts', async () => {
+  const repoRoot = await makeFixtureRepo();
+  await initProject({ repoRoot });
+
+  const { remember, recall, createBranch, withAgentMemoryDb } = await import('../src/index.js');
+  const result = withAgentMemoryDb(repoRoot, false, (db) => {
+    const oldFact = remember(db, {
+      entity: 'policy:checkout',
+      attribute: 'decision',
+      value: 'retry twice before fallback'
+    });
+    const replacementBeforeEdge = remember(db, {
+      entity: 'policy:checkout',
+      attribute: 'decision',
+      value: 'retry once before fallback'
+    });
+    const supersedingEdge = remember(db, {
+      entity: 'policy:checkout',
+      attribute: 'decision',
+      value: 'retry once before fallback',
+      supersedesFactIds: [oldFact.factId]
+    });
+    const branchReplacementBeforeEdge = remember(db, {
+      entity: 'policy:branch-checkout',
+      attribute: 'decision',
+      value: 'branch keeps one retry'
+    });
+
+    createBranch(db, { name: 'experiment-policy', from: 'main' });
+    const branchOldFact = remember(db, {
+      branch: 'experiment-policy',
+      entity: 'policy:branch-checkout',
+      attribute: 'decision',
+      value: 'branch keeps two retries'
+    });
+    const branchSupersedingEdge = remember(db, {
+      branch: 'experiment-policy',
+      entity: 'policy:branch-checkout',
+      attribute: 'decision',
+      value: 'branch keeps one retry',
+      supersedesFactIds: [branchOldFact.factId]
+    });
+    const branchSamePairSupersedingEdge = remember(db, {
+      branch: 'experiment-policy',
+      entity: 'policy:checkout',
+      attribute: 'decision',
+      value: 'retry once before fallback',
+      supersedesFactIds: [oldFact.factId]
+    });
+
+    return {
+      oldFact,
+      replacementBeforeEdge,
+      supersedingEdge,
+      branchReplacementBeforeEdge,
+      branchOldFact,
+      branchSupersedingEdge,
+      branchSamePairSupersedingEdge,
+      asOfBeforeEdge: recall(db, {
+        entity: 'policy:checkout',
+        attribute: 'decision',
+        asOfTx: replacementBeforeEdge.txId
+      }),
+      currentAfterEdge: recall(db, {
+        entity: 'policy:checkout',
+        attribute: 'decision'
+      }),
+      branchCurrent: recall(db, {
+        branch: 'experiment-policy',
+        entity: 'policy:branch-checkout',
+        attribute: 'decision'
+      }),
+      branchSamePairCurrent: recall(db, {
+        branch: 'experiment-policy',
+        entity: 'policy:checkout',
+        attribute: 'decision'
+      })
+    };
+  });
+
+  assert.equal(result.supersedingEdge.factId, result.replacementBeforeEdge.factId);
+  assert.equal(result.branchSupersedingEdge.factId, result.branchReplacementBeforeEdge.factId);
+  assert.ok(
+    result.asOfBeforeEdge.facts.some((fact) => fact.id === result.oldFact.factId),
+    'asOfTx before the supersession edge must still include the old fact'
+  );
+  assert.deepEqual(result.currentAfterEdge.facts.map((fact) => fact.id), [
+    result.replacementBeforeEdge.factId
+  ]);
+  assert.deepEqual(result.branchCurrent.facts.map((fact) => fact.id), [
+    result.branchReplacementBeforeEdge.factId
+  ]);
+  assert.equal(result.branchSamePairSupersedingEdge.factId, result.replacementBeforeEdge.factId);
+  assert.deepEqual(result.branchSamePairCurrent.facts.map((fact) => fact.id), [
+    result.replacementBeforeEdge.factId
+  ]);
+});
+
+test('supersedes edge can coexist with prior evidence edge for the same fact pair', async () => {
+  const repoRoot = await makeFixtureRepo();
+  await initProject({ repoRoot });
+
+  const { remember, recall, trace, withAgentMemoryDb } = await import('../src/index.js');
+  const result = withAgentMemoryDb(repoRoot, false, (db) => {
+    const oldFact = remember(db, {
+      entity: 'policy:checkout-evidence',
+      attribute: 'decision',
+      value: 'retry twice before fallback'
+    });
+    const newFact = remember(db, {
+      entity: 'policy:checkout-evidence',
+      attribute: 'decision',
+      value: 'retry once before fallback',
+      evidenceFactIds: [oldFact.factId]
+    });
+    const supersedingFact = remember(db, {
+      entity: 'policy:checkout-evidence',
+      attribute: 'decision',
+      value: 'retry once before fallback',
+      supersedesFactIds: [oldFact.factId]
+    });
+    return {
+      oldFact,
+      newFact,
+      supersedingFact,
+      current: recall(db, { entity: 'policy:checkout-evidence', attribute: 'decision' }),
+      traced: trace(db, { factId: newFact.factId })
+    };
+  });
+
+  assert.equal(result.supersedingFact.factId, result.newFact.factId);
+  assert.deepEqual(result.current.facts.map((fact) => fact.id), [result.newFact.factId]);
+  assert.deepEqual(
+    result.traced.edges
+      .filter((edge) => edge.sourceFactId === result.oldFact.factId)
+      .map((edge) => edge.kind)
+      .sort(),
+    ['evidence', 'supersedes']
+  );
+});
+
+test('supersession hides old facts even when replacement originated in an archived tx', async () => {
+  const repoRoot = await makeFixtureRepo();
+  await initProject({ repoRoot });
+
+  const { remember, recall, trace, createBranch, abandonBranch, gcBranches, withAgentMemoryDb } = await import('../src/index.js');
+  const result = withAgentMemoryDb(repoRoot, false, (db) => {
+    createBranch(db, { name: 'archived-replacement', from: 'main' });
+    const archivedReplacement = remember(db, {
+      branch: 'archived-replacement',
+      entity: 'policy:archived-checkout',
+      attribute: 'decision',
+      value: 'archived replacement retries once'
+    });
+    abandonBranch(db, { name: 'archived-replacement' });
+    gcBranches(db);
+
+    const oldFact = remember(db, {
+      entity: 'policy:archived-checkout',
+      attribute: 'decision',
+      value: 'archived replacement retries twice'
+    });
+    const supersedingEdge = remember(db, {
+      entity: 'policy:archived-checkout',
+      attribute: 'decision',
+      value: 'archived replacement retries once',
+      supersedesFactIds: [oldFact.factId]
+    });
+    return {
+      archivedReplacement,
+      oldFact,
+      supersedingEdge,
+      current: recall(db, { entity: 'policy:archived-checkout', attribute: 'decision' }),
+      traced: trace(db, { factId: supersedingEdge.factId })
+    };
+  });
+
+  assert.equal(result.supersedingEdge.factId, result.archivedReplacement.factId);
+  assert.deepEqual(result.current.facts.map((fact) => fact.id), [
+    result.archivedReplacement.factId
+  ]);
+  assert.deepEqual(result.current.facts.map((fact) => fact.value), [
+    'archived replacement retries once'
+  ]);
+  assert.deepEqual(
+    result.traced.edges
+      .filter((edge) => edge.sourceFactId === result.oldFact.factId)
+      .map((edge) => edge.kind),
+    ['supersedes']
+  );
+});
+
+test('currentOnly uses supersession edge tx for reused archived replacement facts', async () => {
+  const repoRoot = await makeFixtureRepo();
+  await initProject({ repoRoot });
+
+  const { remember, recall, createBranch, abandonBranch, gcBranches, withAgentMemoryDb } = await import('../src/index.js');
+  const result = withAgentMemoryDb(repoRoot, false, (db) => {
+    createBranch(db, { name: 'current-archived-replacement', from: 'main' });
+    const archivedReplacement = remember(db, {
+      branch: 'current-archived-replacement',
+      entity: 'policy:archived-current',
+      attribute: 'decision',
+      value: 'archived current retries once'
+    });
+    abandonBranch(db, { name: 'current-archived-replacement' });
+    gcBranches(db);
+
+    const oldFact = remember(db, {
+      entity: 'policy:archived-current',
+      attribute: 'decision',
+      value: 'archived current retries twice'
+    });
+    const retractBeforeEdge = remember(db, {
+      entity: 'policy:archived-current',
+      attribute: 'decision',
+      value: 'archived current retries once',
+      op: 'retract'
+    });
+    const supersedingEdge = remember(db, {
+      entity: 'policy:archived-current',
+      attribute: 'decision',
+      value: 'archived current retries once',
+      supersedesFactIds: [oldFact.factId]
+    });
+
+    return {
+      archivedReplacement,
+      retractBeforeEdge,
+      supersedingEdge,
+      currentOnly: recall(db, {
+        entity: 'policy:archived-current',
+        attribute: 'decision',
+        currentOnly: true
+      })
+    };
+  });
+
+  assert.equal(result.supersedingEdge.factId, result.archivedReplacement.factId);
+  assert.notEqual(result.retractBeforeEdge.factId, result.archivedReplacement.factId);
+  assert.deepEqual(result.currentOnly.facts.map((fact) => fact.id), [
+    result.archivedReplacement.factId
+  ]);
+  assert.deepEqual(result.currentOnly.facts.map((fact) => fact.value), [
+    'archived current retries once'
+  ]);
+});
+
+test('agent memory read APIs report schema v13 requirement for old read-only databases', async () => {
+  const repoRoot = await makeFixtureRepo();
+  await initProject({ repoRoot });
+
+  const { remember, recall, withAgentMemoryDb } = await import('../src/index.js');
+  withAgentMemoryDb(repoRoot, false, (db) =>
+    remember(db, {
+      entity: 'policy:schema-guard',
+      attribute: 'decision',
+      value: 'schema guard fact'
+    })
+  );
+
+  const db = new DatabaseSync(databasePath(repoRoot));
+  try {
+    db.exec(`
+      PRAGMA foreign_keys = OFF;
+      DELETE FROM schema_versions WHERE version >= 13;
+
+      ALTER TABLE fact_provenance RENAME TO fact_provenance_pre_v13;
+      CREATE TABLE fact_provenance (
+        id TEXT PRIMARY KEY NOT NULL,
+        fact_id TEXT NOT NULL,
+        source_fact_id TEXT NOT NULL,
+        kind TEXT NOT NULL DEFAULT 'evidence',
+        UNIQUE(fact_id, source_fact_id, kind),
+        FOREIGN KEY(fact_id) REFERENCES facts(id),
+        FOREIGN KEY(source_fact_id) REFERENCES facts(id)
+      );
+      INSERT OR IGNORE INTO fact_provenance (id, fact_id, source_fact_id, kind)
+      SELECT id, fact_id, source_fact_id, kind
+      FROM fact_provenance_pre_v13;
+      DROP TABLE fact_provenance_pre_v13;
+      PRAGMA foreign_keys = ON;
+    `);
+  } finally {
+    db.close();
+  }
+
+  assert.throws(
+    () =>
+      withAgentMemoryDb(repoRoot, true, (readDb) =>
+        recall(readDb, { entity: 'policy:schema-guard', attribute: 'decision' })
+      ),
+    /schema v13/
+  );
+});
+
 test('recall with asOfTx returns only facts in the ancestor DAG of that tx', async () => {
   const repoRoot = await makeFixtureRepo();
   await initProject({ repoRoot });
@@ -3263,6 +3602,204 @@ test('recallOnRepo semantic mode ranks candidate facts by stub embedding similar
   for (const fact of result.facts) {
     assert.ok(seededValues.has(fact.value as string), `unexpected fact value: ${fact.value}`);
   }
+});
+
+test('semantic recall hides superseded facts', async () => {
+  const repoRoot = await makeFixtureRepo();
+  await initProject({ repoRoot });
+
+  const { remember, recallOnRepo, withAgentMemoryDb } = await import('../src/index.js');
+  const newFact = withAgentMemoryDb(repoRoot, false, (db) => {
+    const oldFact = remember(db, {
+      entity: 'policy:checkout',
+      attribute: 'decision',
+      value: 'retry twice before fallback'
+    });
+    return remember(db, {
+      entity: 'policy:checkout',
+      attribute: 'decision',
+      value: 'retry once before fallback',
+      supersedesFactIds: [oldFact.factId]
+    });
+  });
+
+  const result = await recallOnRepo(repoRoot, {
+    query: 'retry fallback',
+    semantic: true,
+    entity: 'policy:checkout',
+    k: 10
+  });
+
+  assert.deepEqual(result.facts.map((fact) => fact.id), [newFact.factId]);
+  assert.deepEqual(result.facts.map((fact) => fact.value), ['retry once before fallback']);
+});
+
+test('semantic recall applies asOfTx before explicit supersession edges', async () => {
+  const repoRoot = await makeFixtureRepo();
+  await initProject({ repoRoot });
+
+  const { remember, recallOnRepo, withAgentMemoryDb } = await import('../src/index.js');
+  const facts = withAgentMemoryDb(repoRoot, false, (db) => {
+    const oldFact = remember(db, {
+      entity: 'policy:semantic-checkout',
+      attribute: 'decision',
+      value: 'semantic checkout retries twice'
+    });
+    const replacementBeforeEdge = remember(db, {
+      entity: 'policy:semantic-checkout',
+      attribute: 'decision',
+      value: 'semantic checkout retries once'
+    });
+    const supersedingEdge = remember(db, {
+      entity: 'policy:semantic-checkout',
+      attribute: 'decision',
+      value: 'semantic checkout retries once',
+      supersedesFactIds: [oldFact.factId]
+    });
+    return { oldFact, replacementBeforeEdge, supersedingEdge };
+  });
+
+  const asOfBeforeEdge = await recallOnRepo(repoRoot, {
+    query: 'semantic checkout retries',
+    semantic: true,
+    entity: 'policy:semantic-checkout',
+    asOfTx: facts.replacementBeforeEdge.txId,
+    k: 10
+  });
+  const current = await recallOnRepo(repoRoot, {
+    query: 'semantic checkout retries',
+    semantic: true,
+    entity: 'policy:semantic-checkout',
+    k: 10
+  });
+
+  assert.equal(facts.supersedingEdge.factId, facts.replacementBeforeEdge.factId);
+  assert.ok(
+    asOfBeforeEdge.facts.some((fact) => fact.id === facts.oldFact.factId),
+    'semantic asOfTx before the edge must still include the old fact'
+  );
+  assert.deepEqual(current.facts.map((fact) => fact.id), [facts.replacementBeforeEdge.factId]);
+});
+
+test('semantic recall defaults to main branch when branch is omitted', async () => {
+  const repoRoot = await makeFixtureRepo();
+  await initProject({ repoRoot });
+
+  const { remember, recallOnRepo, createBranch, withAgentMemoryDb } = await import('../src/index.js');
+  const facts = withAgentMemoryDb(repoRoot, false, (db) => {
+    const mainFact = remember(db, {
+      entity: 'policy:semantic-default',
+      attribute: 'decision',
+      value: 'semantic default keeps main retries'
+    });
+    createBranch(db, { name: 'semantic-default-exp', from: 'main' });
+    const branchReplacement = remember(db, {
+      branch: 'semantic-default-exp',
+      entity: 'policy:semantic-default',
+      attribute: 'decision',
+      value: 'semantic default uses experimental retries',
+      supersedesFactIds: [mainFact.factId]
+    });
+    return { mainFact, branchReplacement };
+  });
+
+  const defaultResult = await recallOnRepo(repoRoot, {
+    query: 'semantic default retries',
+    semantic: true,
+    entity: 'policy:semantic-default',
+    k: 10
+  });
+  const branchResult = await recallOnRepo(repoRoot, {
+    query: 'semantic default retries',
+    semantic: true,
+    branch: 'semantic-default-exp',
+    entity: 'policy:semantic-default',
+    k: 10
+  });
+
+  assert.deepEqual(defaultResult.facts.map((fact) => fact.id), [facts.mainFact.factId]);
+  assert.deepEqual(branchResult.facts.map((fact) => fact.id), [
+    facts.branchReplacement.factId
+  ]);
+});
+
+test('semantic recall branch view includes reused replacement facts from local supersession edges', async () => {
+  const repoRoot = await makeFixtureRepo();
+  await initProject({ repoRoot });
+
+  const { remember, recallOnRepo, createBranch, withAgentMemoryDb } = await import('../src/index.js');
+  const facts = withAgentMemoryDb(repoRoot, false, (db) => {
+    const replacementBeforeEdge = remember(db, {
+      entity: 'policy:semantic-branch',
+      attribute: 'decision',
+      value: 'semantic branch retries once'
+    });
+    createBranch(db, { name: 'semantic-exp', from: 'main' });
+    const branchOldFact = remember(db, {
+      branch: 'semantic-exp',
+      entity: 'policy:semantic-branch',
+      attribute: 'decision',
+      value: 'semantic branch retries twice'
+    });
+    const branchSupersedingEdge = remember(db, {
+      branch: 'semantic-exp',
+      entity: 'policy:semantic-branch',
+      attribute: 'decision',
+      value: 'semantic branch retries once',
+      supersedesFactIds: [branchOldFact.factId]
+    });
+    return { replacementBeforeEdge, branchSupersedingEdge };
+  });
+
+  const branchResult = await recallOnRepo(repoRoot, {
+    query: 'semantic branch retries',
+    semantic: true,
+    branch: 'semantic-exp',
+    entity: 'policy:semantic-branch',
+    k: 10
+  });
+
+  assert.equal(facts.branchSupersedingEdge.factId, facts.replacementBeforeEdge.factId);
+  assert.deepEqual(branchResult.facts.map((fact) => fact.id), [
+    facts.replacementBeforeEdge.factId
+  ]);
+});
+
+test('semantic recall currentOnly drops values with newer retract facts', async () => {
+  const repoRoot = await makeFixtureRepo();
+  await initProject({ repoRoot });
+
+  const { remember, recallOnRepo, withAgentMemoryDb } = await import('../src/index.js');
+  withAgentMemoryDb(repoRoot, false, (db) => {
+    remember(db, {
+      entity: 'policy:semantic-current',
+      attribute: 'decision',
+      value: 'temporary semantic decision'
+    });
+    remember(db, {
+      entity: 'policy:semantic-current',
+      attribute: 'decision',
+      value: 'temporary semantic decision',
+      op: 'retract'
+    });
+  });
+
+  const historical = await recallOnRepo(repoRoot, {
+    query: 'temporary semantic decision',
+    semantic: true,
+    entity: 'policy:semantic-current',
+    k: 10
+  });
+  const current = await recallOnRepo(repoRoot, {
+    query: 'temporary semantic decision',
+    semantic: true,
+    entity: 'policy:semantic-current',
+    currentOnly: true,
+    k: 10
+  });
+
+  assert.equal(historical.facts.length, 1);
+  assert.equal(current.facts.length, 0);
 });
 
 test('mergeBranches creates a multi-parent tx and target recall sees source facts', async () => {
@@ -3419,6 +3956,49 @@ test('CLI branch + trace + retract subcommands round-trip', async () => {
   assert.equal(recallRun.status, 0, `recall failed: ${recallRun.stderr}`);
   const recallPayload = JSON.parse(recallRun.stdout) as { facts: Array<{ value: string }> };
   assert.deepEqual(recallPayload.facts, [], 'current-only excludes the retracted value');
+});
+
+test('CLI remember can explicitly supersede an older fact', async () => {
+  const repoRoot = await makeFixtureRepo();
+  await initProject({ repoRoot });
+
+  const oldRun = runCli(repoRoot, [
+    'remember',
+    '--entity', 'policy:checkout',
+    '--attribute', 'decision',
+    '--value', '"retry twice before fallback"'
+  ]);
+  assert.equal(oldRun.status, 0, `old remember failed: ${oldRun.stderr}`);
+  const oldFact = JSON.parse(oldRun.stdout) as { factId: string };
+
+  const newRun = runCli(repoRoot, [
+    'remember',
+    '--entity', 'policy:checkout',
+    '--attribute', 'decision',
+    '--value', '"retry once before fallback"',
+    '--supersedes-fact-ids', oldFact.factId
+  ]);
+  assert.equal(newRun.status, 0, `new remember failed: ${newRun.stderr}`);
+  const newFact = JSON.parse(newRun.stdout) as { factId: string };
+
+  const recallRun = runCli(repoRoot, [
+    'recall',
+    '--entity', 'policy:checkout',
+    '--attribute', 'decision'
+  ]);
+  assert.equal(recallRun.status, 0, `recall failed: ${recallRun.stderr}`);
+  const recallPayload = JSON.parse(recallRun.stdout) as { facts: Array<{ id: string; value: string }> };
+  assert.deepEqual(recallPayload.facts.map((fact) => fact.id), [newFact.factId]);
+  assert.deepEqual(recallPayload.facts.map((fact) => fact.value), ['retry once before fallback']);
+
+  const traceRun = runCli(repoRoot, ['trace', '--fact-id', newFact.factId]);
+  assert.equal(traceRun.status, 0, `trace failed: ${traceRun.stderr}`);
+  const tracePayload = JSON.parse(traceRun.stdout) as {
+    edges: Array<{ factId: string; sourceFactId: string; kind: string }>;
+  };
+  assert.deepEqual(tracePayload.edges, [
+    { factId: newFact.factId, sourceFactId: oldFact.factId, kind: 'supersedes' }
+  ]);
 });
 
 test('CLI exposes remember/recall as round-trip subcommands', async () => {

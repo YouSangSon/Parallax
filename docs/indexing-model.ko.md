@@ -241,6 +241,7 @@ erDiagram
   FACTS ||--o{ FACT_EMBEDDINGS : "vectors (assert + non-redacted, multi-model)"
   FACTS ||--o{ FACT_PROVENANCE : "fact_id"
   FACTS ||--o{ FACT_PROVENANCE : "source_fact_id"
+  TRANSACTIONS ||--o{ FACT_PROVENANCE : "tx_id"
   TRANSACTIONS ||--o{ TRANSACTION_PARENTS : "tx_id"
   TRANSACTIONS ||--o{ TRANSACTION_PARENTS : "parent_tx_id"
   ATTRIBUTE_DEFS ||--o{ FACTS : "typed by"
@@ -251,7 +252,7 @@ erDiagram
   TRANSACTION_PARENTS { TEXT tx_id FK; TEXT parent_tx_id FK }
   FACTS { TEXT id PK; TEXT entity_id; TEXT attribute FK; TEXT value_blob; TEXT op; TEXT tx_id FK; INT redacted }
   FACT_EMBEDDINGS { TEXT fact_id FK; TEXT model PK; BLOB vector; INT dim; TEXT created_at }
-  FACT_PROVENANCE { TEXT id PK; TEXT fact_id FK; TEXT source_fact_id FK; TEXT kind }
+  FACT_PROVENANCE { TEXT id PK; TEXT fact_id FK; TEXT source_fact_id FK; TEXT tx_id FK; TEXT kind }
   ATTRIBUTE_DEFS { TEXT name PK; TEXT value_type; INT is_code_relation; TEXT description }
   REFLECTIONS { TEXT id PK; TEXT branch_id FK; TEXT model; TEXT summary_fact_id FK; INT source_fact_count; TEXT criteria_json; TEXT created_at }
 ```
@@ -260,8 +261,16 @@ erDiagram
 
 - `branches.state` — `'active'` (기본) / `'abandoned'` / `'merged'`. abandon 정책의 1급 시민.
 - `transactions.archived` — `0` (기본) / `1`. soft-delete 플래그. recall, recallSemantic, trace는 모두 `archived = 0`만 surface.
-- `fact_provenance.kind` — `'evidence'` (기본, 인덱서/agent가 만든 source 링크) / `'summary'` (Phase 3 reflective consolidation에서 LLM 요약 fact가 원본을 참조).
+- `fact_provenance.kind` — `'evidence'` (기본, 인덱서/agent가 만든 source 링크) / `'summary'` (Phase 3 reflective consolidation에서 LLM 요약 fact가 원본을 참조) / `'supersedes'` (새 decision/summary/policy fact가 오래된 fact를 명시적으로 대체).
 - `reflections` — reflective consolidation pass의 audit row. 어떤 모델이 어느 source 개수를 어떤 cutoff 기준으로 요약했는지 추적.
+
+### Schema v12 추가 (explicit supersession)
+
+- `fact_provenance.tx_id` — provenance edge가 생성된 transaction. content-addressed fact가 이미 존재해 `facts.tx_id`가 과거 tx를 가리키더라도, supersession visibility는 replacement fact의 원래 tx가 아니라 edge 생성 tx를 기준으로 판단한다.
+
+### Schema v13 추가 (provenance edge uniqueness)
+
+- `fact_provenance` uniqueness를 `(fact_id, source_fact_id)`에서 `(fact_id, source_fact_id, kind, tx_id)`로 확장한다. 같은 fact/source 쌍이 먼저 `evidence`였고 나중에 `supersedes`가 되어도, 또는 같은 supersession이 다른 branch transaction에서 다시 선언되어도 edge가 조용히 무시되지 않는다.
 
 ### 핵심 invariants
 
@@ -270,7 +279,7 @@ erDiagram
 - **Branch는 head pointer일 뿐.** 데이터 복사 없이 fork; `branches.head_tx_id`만 새 commit으로 advance. Phase 3에서 `branches.state`가 추가돼 active/abandoned/merged를 1급 시민으로 표현.
 - **Redact-then-embed.** secret 패턴이 매치되면 `value_blob='[REDACTED]'`, `redacted=1`, 그리고 `fact_embeddings`에 row가 *생성되지 않음*. Phase 3 LLM reflective consolidation도 같은 zero-row 정책을 input/output에 적용 (redact-then-prompt).
 - **Soft-delete only.** facts는 절대 삭제하지 않는다. abandoned branch GC는 `transactions.archived=1`만 표시하며 recall/recallSemantic/trace가 자동 필터링한다 (Phase 3).
-- **Indexer가 만든 fact는 evidence_snippet fact를 자동으로 만들어 `fact_provenance`로 연결**한다 — `trace`로 한 줄 코드까지 도달 가능. Phase 3 reflection은 같은 `fact_provenance` 테이블에 `kind='summary'` 엣지로 LLM 요약-원본 연결을 표현.
+- **Indexer가 만든 fact는 evidence_snippet fact를 자동으로 만들어 `fact_provenance`로 연결**한다 — `trace`로 한 줄 코드까지 도달 가능. Phase 3 reflection은 같은 `fact_provenance` 테이블에 `kind='summary'` 엣지로 LLM 요약-원본 연결을 표현. explicit supersession은 `kind='supersedes'`와 edge `tx_id`로 새 fact가 대체한 old fact를 보존하고, 현재 recall/profile/semantic recall에서는 visible supersession edge가 있는 fact를 숨긴다.
 
 ### 코드 관계의 1급 시민 attribute
 
@@ -291,6 +300,6 @@ erDiagram
 
 - MCP tools: `impact_trace_remember`, `impact_trace_recall`, `impact_trace_branch`, `impact_trace_trace` + 기존 `impact_trace_analyze_diff`.
 - CLI: `impact-trace remember | recall | branch | trace | retract` + 기존 명령들.
-- recall은 `--branch`, `--entity`, `--attribute`, `--k`, `--as-of-tx`, `--current-only` 필터 지원.
+- recall은 `--branch`, `--entity`, `--attribute`, `--k`, `--as-of-tx`, `--current-only` 필터 지원. 현재 view에서는 superseded fact가 제외되며, `--as-of-tx`로 supersession 이전 tx를 지정하면 이전 fact를 다시 볼 수 있다.
 
 자세한 사용 예와 흐름은 [agent-memory-cookbook.ko.md](agent-memory-cookbook.ko.md).

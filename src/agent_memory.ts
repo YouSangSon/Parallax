@@ -1,6 +1,7 @@
 import { computeEmbedding, computeEmbeddingSync } from './embeddings.js';
 import type { EmbeddingResult } from './embeddings.js';
 import {
+  assertCurrentSchema,
   contentHash,
   ensureVecTable,
   getRepoId,
@@ -20,6 +21,7 @@ export interface RememberInput {
   attribute: string;
   value: RememberValue;
   evidenceFactIds?: string[];
+  supersedesFactIds?: string[];
   branch?: string;
   agent?: string;
   op?: 'assert' | 'retract';
@@ -84,8 +86,15 @@ export interface TraceInput {
   depth?: number;
 }
 
+export interface TraceEdge {
+  factId: string;
+  sourceFactId: string;
+  kind: string;
+}
+
 export interface TraceResult {
   chain: RecalledFact[];
+  edges: TraceEdge[];
 }
 
 const MAX_TRACE_DEPTH = 20;
@@ -108,6 +117,12 @@ interface FactRow {
   ts: string;
 }
 
+interface TraceSourceRow extends FactRow {
+  edge_fact_id: string;
+  edge_source_fact_id: string;
+  edge_kind: string;
+}
+
 function loadBranch(db: Db, name: string): BranchRow {
   const row = db
     .prepare('SELECT id, name, head_tx_id FROM branches WHERE name = ?')
@@ -126,6 +141,90 @@ function ensureAttributeDef(db: Db, attribute: string): void {
   db.prepare(
     "INSERT INTO attribute_defs (name, value_type, is_code_relation, description) VALUES (?, 'json', 0, '')"
   ).run(attribute);
+}
+
+function uniqueFactIds(ids: string[] | undefined): string[] {
+  return [...new Set((ids ?? []).filter((id) => id.length > 0))];
+}
+
+function assertFactsExist(db: Db, ids: string[]): void {
+  const exists = db.prepare('SELECT id FROM facts WHERE id = ?');
+  for (const id of ids) {
+    if (!exists.get(id)) {
+      throw new Error(`fact not found: ${id}`);
+    }
+  }
+}
+
+function notSupersededSql(factAlias: string, supersessionTxScopeSql: string): string {
+  return `NOT EXISTS (
+    SELECT 1
+    FROM fact_provenance supersession_fp
+    INNER JOIN facts superseding_fact ON superseding_fact.id = supersession_fp.fact_id
+    INNER JOIN transactions supersession_tx ON supersession_fp.tx_id = supersession_tx.id
+    WHERE supersession_fp.source_fact_id = ${factAlias}.id
+      AND supersession_fp.kind = 'supersedes'
+      AND superseding_fact.op = 'assert'
+      AND supersession_tx.archived = 0
+      AND ${supersessionTxScopeSql}
+  )`;
+}
+
+function scopedFactVisibilitySql(
+  factAlias: string,
+  ownTxScopeSql: string,
+  supersessionEdgeTxScopeSql: string
+): string {
+  return `((${ownTxScopeSql}) OR EXISTS (
+    SELECT 1
+    FROM fact_provenance visibility_fp
+    INNER JOIN transactions visibility_tx ON visibility_fp.tx_id = visibility_tx.id
+    WHERE visibility_fp.fact_id = ${factAlias}.id
+      AND visibility_fp.kind = 'supersedes'
+      AND visibility_tx.archived = 0
+      AND ${supersessionEdgeTxScopeSql}
+  ))`;
+}
+
+function scopedFactVisibleTsSql(
+  factAlias: string,
+  factTxAlias: string,
+  ownTxScopeSql: string,
+  supersessionEdgeTxScopeSql: string
+): string {
+  return `COALESCE(
+    (
+      SELECT MAX(visibility_tx.ts)
+      FROM fact_provenance visibility_fp
+      INNER JOIN transactions visibility_tx ON visibility_fp.tx_id = visibility_tx.id
+      WHERE visibility_fp.fact_id = ${factAlias}.id
+        AND visibility_fp.kind = 'supersedes'
+        AND visibility_tx.archived = 0
+        AND ${supersessionEdgeTxScopeSql}
+    ),
+    CASE WHEN ${ownTxScopeSql} THEN ${factTxAlias}.ts END
+  )`;
+}
+
+function currentOnlyNotShadowedSql(
+  factAlias: string,
+  visibleTsSql: string,
+  newerTxScopeSql: string
+): string {
+  return `NOT EXISTS (
+    SELECT 1
+    FROM facts newer_fact
+    INNER JOIN transactions newer_tx ON newer_fact.tx_id = newer_tx.id
+    WHERE newer_fact.entity_id = ${factAlias}.entity_id
+      AND newer_fact.attribute = ${factAlias}.attribute
+      AND newer_fact.value_blob = ${factAlias}.value_blob
+      AND newer_tx.archived = 0
+      AND (
+        newer_tx.ts > (${visibleTsSql})
+        OR (newer_tx.ts = (${visibleTsSql}) AND newer_fact.id < ${factAlias}.id)
+      )
+      AND ${newerTxScopeSql}
+  )`;
 }
 
 function decodeValue(row: FactRow): RememberValue | '[REDACTED]' {
@@ -158,8 +257,17 @@ export function remember(
 ): RememberResult {
   const branchName = input.branch ?? 'main';
   const agent = input.agent ?? 'mcp:remember';
-  const evidenceFactIds = input.evidenceFactIds ?? [];
+  const evidenceFactIds = uniqueFactIds(input.evidenceFactIds);
+  const supersedesFactIds = uniqueFactIds(input.supersedesFactIds);
   const op = input.op ?? 'assert';
+
+  const overlap = evidenceFactIds.find((id) => supersedesFactIds.includes(id));
+  if (overlap) {
+    throw new Error(`fact cannot be both evidence and superseded source: ${overlap}`);
+  }
+  if (op === 'retract' && supersedesFactIds.length > 0) {
+    throw new Error('retract facts cannot supersede other facts');
+  }
 
   db.exec('BEGIN IMMEDIATE');
   try {
@@ -183,6 +291,11 @@ export function remember(
     }
 
     const factId = contentHash(input.entity, input.attribute, finalValue, op);
+    if (supersedesFactIds.includes(factId)) {
+      throw new Error(`fact cannot supersede itself: ${factId}`);
+    }
+    assertFactsExist(db, [...evidenceFactIds, ...supersedesFactIds]);
+
     db.prepare(
       'INSERT OR IGNORE INTO facts (id, entity_id, attribute, value_blob, op, tx_id, redacted) VALUES (?, ?, ?, ?, ?, ?, ?)'
     ).run(factId, input.entity, input.attribute, finalValue, op, txId, isRedacted ? 1 : 0);
@@ -226,8 +339,15 @@ export function remember(
     for (const sourceFactId of evidenceFactIds) {
       const provId = contentHash(factId, sourceFactId);
       db.prepare(
-        'INSERT OR IGNORE INTO fact_provenance (id, fact_id, source_fact_id) VALUES (?, ?, ?)'
-      ).run(provId, factId, sourceFactId);
+        "INSERT OR IGNORE INTO fact_provenance (id, fact_id, source_fact_id, kind, tx_id) VALUES (?, ?, ?, 'evidence', ?)"
+      ).run(provId, factId, sourceFactId, txId);
+    }
+
+    for (const sourceFactId of supersedesFactIds) {
+      const provId = contentHash(factId, sourceFactId, 'supersedes', txId);
+      db.prepare(
+        "INSERT OR IGNORE INTO fact_provenance (id, fact_id, source_fact_id, kind, tx_id) VALUES (?, ?, ?, 'supersedes', ?)"
+      ).run(provId, factId, sourceFactId, txId);
     }
 
     db.prepare('UPDATE branches SET head_tx_id = ? WHERE id = ?').run(txId, branch.id);
@@ -255,13 +375,43 @@ export function recall(db: Db, input: RecallInput): RecallResult {
   //     both parent branches.
   // Archived transactions (gc-branches sweep) are always excluded so
   // soft-deleted speculative branches stop surfacing facts via recall.
-  const conditions: string[] = ['t.archived = 0'];
+  const conditions: string[] = [];
   const whereParams: Array<string | number | null> = [];
+  const visibleTsParams: Array<string | number | null> = [];
+  let visibleTsSql: string;
   if (!useAsOf) {
-    conditions.push('t.branch_id = ?');
+    visibleTsSql = scopedFactVisibleTsSql(
+      'f',
+      't',
+      't.archived = 0 AND t.branch_id = ?',
+      'visibility_tx.branch_id = ?'
+    );
+    if (currentOnly) visibleTsParams.push(branch.id, branch.id);
+    conditions.push(
+      scopedFactVisibilitySql(
+        'f',
+        't.archived = 0 AND t.branch_id = ?',
+        'visibility_tx.branch_id = ?'
+      )
+    );
+    whereParams.push(branch.id, branch.id);
+    conditions.push(notSupersededSql('f', 'supersession_tx.branch_id = ?'));
     whereParams.push(branch.id);
   } else {
-    conditions.push('t.id IN (SELECT id FROM ancestor_txs)');
+    visibleTsSql = scopedFactVisibleTsSql(
+      'f',
+      't',
+      't.archived = 0 AND t.id IN (SELECT id FROM ancestor_txs)',
+      'visibility_tx.id IN (SELECT id FROM ancestor_txs)'
+    );
+    conditions.push(
+      scopedFactVisibilitySql(
+        'f',
+        't.archived = 0 AND t.id IN (SELECT id FROM ancestor_txs)',
+        'visibility_tx.id IN (SELECT id FROM ancestor_txs)'
+      )
+    );
+    conditions.push(notSupersededSql('f', 'supersession_tx.id IN (SELECT id FROM ancestor_txs)'));
   }
 
   if (input.entity !== undefined) {
@@ -291,22 +441,28 @@ export function recall(db: Db, input: RecallInput): RecallResult {
   `;
 
   const sql = currentOnly
-    ? `${cteHeader}${useAsOf ? ',' : 'WITH'} ranked AS (
+    ? `${cteHeader}${useAsOf ? ',' : 'WITH'} visible AS (
         SELECT f.id, f.entity_id, f.attribute, f.value_blob, f.op, f.tx_id, f.redacted, t.ts,
-          ROW_NUMBER() OVER (PARTITION BY f.entity_id, f.attribute, f.value_blob ORDER BY t.ts DESC, f.id ASC) AS rn
+          ${visibleTsSql} AS visible_ts
         FROM facts f
         INNER JOIN transactions t ON f.tx_id = t.id
         WHERE ${conditions.join(' AND ')}
+      ),
+      ranked AS (
+        SELECT id, entity_id, attribute, value_blob, op, tx_id, redacted, ts, visible_ts,
+          ROW_NUMBER() OVER (PARTITION BY entity_id, attribute, value_blob ORDER BY visible_ts DESC, id ASC) AS rn
+        FROM visible
       )
       SELECT id, entity_id, attribute, value_blob, op, tx_id, redacted, ts
       FROM ranked
       WHERE rn = 1 AND op = 'assert'
-      ORDER BY ts DESC, id ASC
+      ORDER BY visible_ts DESC, id ASC
       LIMIT ?`
     : `${cteHeader}${baseSelect} ORDER BY t.ts DESC, f.id ASC LIMIT ?`;
 
   const allParams: Array<string | number | null> = [];
   if (useAsOf) allParams.push(input.asOfTx as string);
+  if (currentOnly) allParams.push(...visibleTsParams);
   allParams.push(...whereParams, k);
 
   const rows = db.prepare(sql).all(...allParams) as unknown as FactRow[];
@@ -366,8 +522,7 @@ function int8DotScore(a: Int8Array, b: Int8Array): number {
  *
  * Filters apply BEFORE ranking: a candidate must (1) carry an embedding
  * for the SAME model as the query, and (2) match any entity/attribute/
- * branch filters supplied. asOfTx and currentOnly are not yet combined
- * with semantic mode.
+ * branch/asOf/currentOnly filters supplied.
  */
 export function recallSemantic(
   db: Db,
@@ -403,7 +558,8 @@ function recallSemanticAnn(
   const tableName = vecTableName(queryEmbedding.model);
   const overFetch = Math.max(k * ANN_OVER_FETCH_FACTOR, ANN_OVER_FETCH_MIN);
 
-  const conditions: string[] = ['t.archived = 0'];
+  const useAsOf = input.asOfTx !== undefined;
+  const conditions: string[] = ['f.op = \'assert\''];
   const filterParams: Array<string | number | null> = [];
   if (input.entity !== undefined) {
     conditions.push('f.entity_id = ?');
@@ -413,14 +569,66 @@ function recallSemanticAnn(
     conditions.push('f.attribute = ?');
     filterParams.push(input.attribute);
   }
-  if (input.branch !== undefined) {
-    const branch = loadBranch(db, input.branch);
-    conditions.push('t.branch_id = ?');
+
+  let currentOnlyScopeSql = '1 = 1';
+  let currentOnlyVisibleTsSql = '';
+  if (useAsOf) {
+    conditions.push(
+      scopedFactVisibilitySql(
+        'f',
+        't.archived = 0 AND t.id IN (SELECT id FROM ancestor_txs)',
+        'visibility_tx.id IN (SELECT id FROM ancestor_txs)'
+      )
+    );
+    conditions.push(notSupersededSql('f', 'supersession_tx.id IN (SELECT id FROM ancestor_txs)'));
+    currentOnlyScopeSql = 'newer_tx.id IN (SELECT id FROM ancestor_txs)';
+    currentOnlyVisibleTsSql = scopedFactVisibleTsSql(
+      'f',
+      't',
+      't.archived = 0 AND t.id IN (SELECT id FROM ancestor_txs)',
+      'visibility_tx.id IN (SELECT id FROM ancestor_txs)'
+    );
+  } else {
+    const branch = loadBranch(db, input.branch ?? 'main');
+    conditions.push(
+      scopedFactVisibilitySql(
+        'f',
+        't.archived = 0 AND t.branch_id = ?',
+        'visibility_tx.branch_id = ?'
+      )
+    );
+    filterParams.push(branch.id, branch.id);
+    conditions.push(notSupersededSql('f', 'supersession_tx.branch_id = ?'));
     filterParams.push(branch.id);
+    currentOnlyScopeSql = 'newer_tx.branch_id = ?';
+    currentOnlyVisibleTsSql = scopedFactVisibleTsSql(
+      'f',
+      't',
+      't.archived = 0 AND t.branch_id = ?',
+      'visibility_tx.branch_id = ?'
+    );
   }
 
+  if (input.currentOnly === true) {
+    conditions.push(currentOnlyNotShadowedSql('f', currentOnlyVisibleTsSql, currentOnlyScopeSql));
+    if (!useAsOf) {
+      const branch = loadBranch(db, input.branch ?? 'main');
+      filterParams.push(branch.id, branch.id, branch.id, branch.id, branch.id);
+    }
+  }
+
+  const cteHeader = useAsOf
+    ? `WITH RECURSIVE ancestor_txs(id) AS (
+        SELECT ?
+        UNION
+        SELECT tp.parent_tx_id
+        FROM transaction_parents tp, ancestor_txs a
+        WHERE tp.tx_id = a.id
+      ),`
+    : 'WITH';
+
   const sql = `
-    WITH ranked AS (
+    ${cteHeader} ranked AS (
       SELECT fact_id, distance
       FROM ${tableName}
       WHERE embedding MATCH vec_int8(?) AND k = ?
@@ -434,9 +642,12 @@ function recallSemanticAnn(
     LIMIT ?
   `;
   try {
+    const allParams: Array<string | number | null | Buffer> = [];
+    if (useAsOf) allParams.push(input.asOfTx as string);
+    allParams.push(queryEmbedding.vector, overFetch, ...filterParams, k);
     const rows = db
       .prepare(sql)
-      .all(queryEmbedding.vector, overFetch, ...filterParams, k) as unknown as FactRow[];
+      .all(...allParams) as unknown as FactRow[];
     return { facts: rows.map(rowToRecalledFact) };
   } catch {
     return null;
@@ -449,8 +660,11 @@ function recallSemanticBruteForce(
   input: RecallInput,
   k: number
 ): RecallResult {
-  const conditions: string[] = ['fe.model = ?', 't.archived = 0'];
-  const params: Array<string | number | null> = [queryEmbedding.model];
+  const useAsOf = input.asOfTx !== undefined;
+  const conditions: string[] = ['fe.model = ?', 'f.op = \'assert\''];
+  const params: Array<string | number | null> = [];
+  if (useAsOf) params.push(input.asOfTx as string);
+  params.push(queryEmbedding.model);
 
   if (input.entity !== undefined) {
     conditions.push('f.entity_id = ?');
@@ -460,13 +674,66 @@ function recallSemanticBruteForce(
     conditions.push('f.attribute = ?');
     params.push(input.attribute);
   }
-  if (input.branch !== undefined) {
-    const branch = loadBranch(db, input.branch);
-    conditions.push('t.branch_id = ?');
+
+  let currentOnlyScopeSql = '1 = 1';
+  let currentOnlyVisibleTsSql = '';
+  if (useAsOf) {
+    conditions.push(
+      scopedFactVisibilitySql(
+        'f',
+        't.archived = 0 AND t.id IN (SELECT id FROM ancestor_txs)',
+        'visibility_tx.id IN (SELECT id FROM ancestor_txs)'
+      )
+    );
+    conditions.push(notSupersededSql('f', 'supersession_tx.id IN (SELECT id FROM ancestor_txs)'));
+    currentOnlyScopeSql = 'newer_tx.id IN (SELECT id FROM ancestor_txs)';
+    currentOnlyVisibleTsSql = scopedFactVisibleTsSql(
+      'f',
+      't',
+      't.archived = 0 AND t.id IN (SELECT id FROM ancestor_txs)',
+      'visibility_tx.id IN (SELECT id FROM ancestor_txs)'
+    );
+  } else {
+    const branch = loadBranch(db, input.branch ?? 'main');
+    conditions.push(
+      scopedFactVisibilitySql(
+        'f',
+        't.archived = 0 AND t.branch_id = ?',
+        'visibility_tx.branch_id = ?'
+      )
+    );
+    params.push(branch.id, branch.id);
+    conditions.push(notSupersededSql('f', 'supersession_tx.branch_id = ?'));
     params.push(branch.id);
+    currentOnlyScopeSql = 'newer_tx.branch_id = ?';
+    currentOnlyVisibleTsSql = scopedFactVisibleTsSql(
+      'f',
+      't',
+      't.archived = 0 AND t.branch_id = ?',
+      'visibility_tx.branch_id = ?'
+    );
   }
 
+  if (input.currentOnly === true) {
+    conditions.push(currentOnlyNotShadowedSql('f', currentOnlyVisibleTsSql, currentOnlyScopeSql));
+    if (!useAsOf) {
+      const branch = loadBranch(db, input.branch ?? 'main');
+      params.push(branch.id, branch.id, branch.id, branch.id, branch.id);
+    }
+  }
+
+  const cteHeader = useAsOf
+    ? `WITH RECURSIVE ancestor_txs(id) AS (
+        SELECT ?
+        UNION
+        SELECT tp.parent_tx_id
+        FROM transaction_parents tp, ancestor_txs a
+        WHERE tp.tx_id = a.id
+      )`
+    : '';
+
   const sql = `
+    ${cteHeader}
     SELECT f.id, f.entity_id, f.attribute, f.value_blob, f.op, f.tx_id, f.redacted, t.ts,
            fe.vector, fe.dim
     FROM facts f
@@ -742,6 +1009,9 @@ export function withAgentMemoryDb<T>(
   const db = openDatabase(root, { readOnly });
   try {
     getRepoId(db, root);
+    if (readOnly) {
+      assertCurrentSchema(db, 'agent memory read APIs');
+    }
     return callback(db);
   } finally {
     db.close();
@@ -802,6 +1072,7 @@ export function mergeBranches(db: Db, input: MergeBranchInput): MergeBranchResul
 }
 
 export function trace(db: Db, input: TraceInput): TraceResult {
+  assertCurrentSchema(db, 'impact_trace_trace');
   const depth = Math.min(input.depth ?? 5, MAX_TRACE_DEPTH);
 
   // Archived transactions (gc-branches sweep) are excluded so trace mirrors
@@ -812,7 +1083,18 @@ export function trace(db: Db, input: TraceInput): TraceResult {
       `SELECT f.id, f.entity_id, f.attribute, f.value_blob, f.op, f.tx_id, f.redacted, t.ts
        FROM facts f
        INNER JOIN transactions t ON f.tx_id = t.id
-       WHERE f.id = ? AND t.archived = 0`
+       WHERE f.id = ?
+         AND (
+           t.archived = 0
+           OR EXISTS (
+             SELECT 1
+             FROM fact_provenance visibility_fp
+             INNER JOIN transactions visibility_tx ON visibility_fp.tx_id = visibility_tx.id
+             WHERE visibility_fp.fact_id = f.id
+               AND visibility_fp.kind = 'supersedes'
+               AND visibility_tx.archived = 0
+           )
+         )`
     )
     .get(input.factId) as FactRow | undefined;
   if (!startRow) {
@@ -820,23 +1102,38 @@ export function trace(db: Db, input: TraceInput): TraceResult {
   }
 
   const chain: RecalledFact[] = [rowToRecalledFact(startRow)];
+  const edges: TraceEdge[] = [];
   const visited = new Set<string>([startRow.id]);
+  const visitedEdges = new Set<string>();
   let frontier: string[] = [startRow.id];
 
   for (let level = 0; level < depth && frontier.length > 0; level += 1) {
     const placeholders = frontier.map(() => '?').join(',');
     const sourceRows = db
       .prepare(
-        `SELECT f.id, f.entity_id, f.attribute, f.value_blob, f.op, f.tx_id, f.redacted, t.ts
+        `SELECT f.id, f.entity_id, f.attribute, f.value_blob, f.op, f.tx_id, f.redacted, t.ts,
+                fp.fact_id AS edge_fact_id,
+                fp.source_fact_id AS edge_source_fact_id,
+                fp.kind AS edge_kind
          FROM fact_provenance fp
          INNER JOIN facts f ON fp.source_fact_id = f.id
          INNER JOIN transactions t ON f.tx_id = t.id
-         WHERE fp.fact_id IN (${placeholders}) AND t.archived = 0`
+         INNER JOIN transactions edge_tx ON edge_tx.id = fp.tx_id
+         WHERE fp.fact_id IN (${placeholders}) AND t.archived = 0 AND edge_tx.archived = 0`
       )
-      .all(...frontier) as unknown as FactRow[];
+      .all(...frontier) as unknown as TraceSourceRow[];
 
     const next: string[] = [];
     for (const source of sourceRows) {
+      const edgeKey = `${source.edge_fact_id}\0${source.edge_source_fact_id}\0${source.edge_kind}`;
+      if (!visitedEdges.has(edgeKey)) {
+        visitedEdges.add(edgeKey);
+        edges.push({
+          factId: source.edge_fact_id,
+          sourceFactId: source.edge_source_fact_id,
+          kind: source.edge_kind
+        });
+      }
       if (!visited.has(source.id)) {
         visited.add(source.id);
         chain.push(rowToRecalledFact(source));
@@ -846,7 +1143,7 @@ export function trace(db: Db, input: TraceInput): TraceResult {
     frontier = next;
   }
 
-  return { chain };
+  return { chain, edges };
 }
 
 /**

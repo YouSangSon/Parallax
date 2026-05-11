@@ -6,6 +6,7 @@ import path from 'node:path';
 import * as sqliteVec from 'sqlite-vec';
 
 export type Db = DatabaseSync;
+export const CURRENT_SCHEMA_VERSION = 13;
 
 type OpenDatabaseOptions = {
   readOnly?: boolean;
@@ -484,9 +485,12 @@ function migrate(db: Db): void {
       id TEXT PRIMARY KEY NOT NULL,
       fact_id TEXT NOT NULL,
       source_fact_id TEXT NOT NULL,
-      UNIQUE(fact_id, source_fact_id),
+      tx_id TEXT,
+      kind TEXT NOT NULL DEFAULT 'evidence',
+      UNIQUE(fact_id, source_fact_id, kind, tx_id),
       FOREIGN KEY(fact_id) REFERENCES facts(id),
-      FOREIGN KEY(source_fact_id) REFERENCES facts(id)
+      FOREIGN KEY(source_fact_id) REFERENCES facts(id),
+      FOREIGN KEY(tx_id) REFERENCES transactions(id)
     );
 
     -- Multi-parent transaction graph (schema v5). transactions.parent_tx_id is
@@ -567,6 +571,7 @@ function migrate(db: Db): void {
   tryAddColumn(db, 'branches', 'state', "TEXT NOT NULL DEFAULT 'active'");
   tryAddColumn(db, 'transactions', 'archived', 'INTEGER NOT NULL DEFAULT 0');
   tryAddColumn(db, 'fact_provenance', 'kind', "TEXT NOT NULL DEFAULT 'evidence'");
+  tryAddColumn(db, 'fact_provenance', 'tx_id', 'TEXT');
   tryAddColumn(db, 'relation_evidence', 'start_line', 'INTEGER');
   tryAddColumn(db, 'relation_evidence', 'end_line', 'INTEGER');
   tryAddColumn(db, 'relation_evidence', 'start_col', 'INTEGER');
@@ -574,6 +579,7 @@ function migrate(db: Db): void {
   tryAddColumn(db, 'index_runs', 'git_commit_sha', 'TEXT');
   tryAddColumn(db, 'index_runs', 'git_branch_name', 'TEXT');
   tryAddColumn(db, 'index_runs', 'git_is_dirty', 'INTEGER NOT NULL DEFAULT 0');
+  ensureFactProvenanceKindUniqueness(db);
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS reflections (
@@ -590,6 +596,17 @@ function migrate(db: Db): void {
 
     CREATE INDEX IF NOT EXISTS idx_reflections_branch ON reflections(branch_id);
     CREATE INDEX IF NOT EXISTS idx_transactions_archived ON transactions(archived);
+    CREATE INDEX IF NOT EXISTS idx_fact_provenance_fact ON fact_provenance(fact_id);
+    CREATE INDEX IF NOT EXISTS idx_fact_provenance_source_kind ON fact_provenance(source_fact_id, kind);
+    CREATE INDEX IF NOT EXISTS idx_fact_provenance_tx_kind ON fact_provenance(tx_id, kind);
+
+    UPDATE fact_provenance
+    SET tx_id = (
+      SELECT facts.tx_id
+      FROM facts
+      WHERE facts.id = fact_provenance.fact_id
+    )
+    WHERE tx_id IS NULL;
 
     INSERT OR IGNORE INTO attribute_defs (name, value_type, is_code_relation, description)
     VALUES ('reflection', 'text', 0, 'LLM-generated semantic summary of an entity history');
@@ -650,7 +667,7 @@ function migrate(db: Db): void {
   // Schema v11: persistent FTS projections for context search. These
   // projections make relation evidence and selected memory facts searchable
   // from read-only MCP calls without rebuilding temp FTS tables per query.
-  const searchFtsNeedsBackfill =
+  const searchFtsNeedsInitialBackfill =
     maxAppliedSchemaVersion(db) < 11
     || !tableExists(db, 'search_relation_evidence_fts')
     || !tableExists(db, 'search_facts_fts');
@@ -732,7 +749,14 @@ function migrate(db: Db): void {
 
     INSERT OR IGNORE INTO schema_versions (version, applied_at)
     VALUES (11, datetime('now'));
+    INSERT OR IGNORE INTO schema_versions (version, applied_at)
+    VALUES (12, datetime('now'));
+    INSERT OR IGNORE INTO schema_versions (version, applied_at)
+    VALUES (13, datetime('now'));
   `);
+
+  const searchFtsNeedsBackfill =
+    searchFtsNeedsInitialBackfill || searchFtsProjectionNeedsBackfill(db);
 
   if (searchFtsNeedsBackfill) {
     db.exec(`
@@ -762,6 +786,7 @@ const ALLOWED_COLUMNS = new Set([
   'state',
   'archived',
   'kind',
+  'tx_id',
   'start_line',
   'end_line',
   'start_col',
@@ -790,15 +815,116 @@ function tryAddColumn(db: Db, table: string, column: string, definition: string)
   }
 }
 
+function ensureFactProvenanceKindUniqueness(db: Db): void {
+  const row = db
+    .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'fact_provenance'")
+    .get() as { sql: string } | undefined;
+  const normalizedSql = row?.sql.toLowerCase().replace(/\s+/g, ' ') ?? '';
+  if (normalizedSql.includes('unique(fact_id, source_fact_id, kind, tx_id)')) {
+    return;
+  }
+
+  db.exec(`
+    ALTER TABLE fact_provenance RENAME TO fact_provenance_before_kind_unique;
+
+    CREATE TABLE fact_provenance (
+      id TEXT PRIMARY KEY NOT NULL,
+      fact_id TEXT NOT NULL,
+      source_fact_id TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'evidence',
+      tx_id TEXT,
+      UNIQUE(fact_id, source_fact_id, kind, tx_id),
+      FOREIGN KEY(fact_id) REFERENCES facts(id),
+      FOREIGN KEY(source_fact_id) REFERENCES facts(id),
+      FOREIGN KEY(tx_id) REFERENCES transactions(id)
+    );
+
+    INSERT OR IGNORE INTO fact_provenance (id, fact_id, source_fact_id, kind, tx_id)
+    SELECT id, fact_id, source_fact_id, COALESCE(kind, 'evidence'), tx_id
+    FROM fact_provenance_before_kind_unique;
+
+    DROP TABLE fact_provenance_before_kind_unique;
+  `);
+}
+
 function tableExists(db: Db, name: string): boolean {
   return db
     .prepare("SELECT 1 AS one FROM sqlite_master WHERE type = 'table' AND name = ?")
     .get(name) !== undefined;
 }
 
+function countRows(db: Db, sql: string): number {
+  const row = db.prepare(sql).get() as { count: number };
+  return row.count;
+}
+
+function searchFtsProjectionNeedsBackfill(db: Db): boolean {
+  const missingEvidence = countRows(
+    db,
+    `SELECT count(*) AS count
+       FROM relation_evidence
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM search_relation_evidence_fts fts
+        WHERE fts.evidence_id = relation_evidence.id
+      )`
+  );
+  const staleEvidence = countRows(
+    db,
+    `SELECT count(*) AS count
+       FROM search_relation_evidence_fts fts
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM relation_evidence
+        WHERE relation_evidence.id = fts.evidence_id
+      )`
+  );
+  const missingFacts = countRows(
+    db,
+    `SELECT count(*) AS count
+       FROM facts
+      WHERE op = 'assert'
+        AND redacted = 0
+        AND NOT EXISTS (
+          SELECT 1
+          FROM search_facts_fts fts
+          WHERE fts.fact_id = facts.id
+        )`
+  );
+  const staleFacts = countRows(
+    db,
+    `SELECT count(*) AS count
+       FROM search_facts_fts fts
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM facts
+        WHERE facts.id = fts.fact_id
+          AND facts.op = 'assert'
+          AND facts.redacted = 0
+      )`
+  );
+  return missingEvidence > 0 || staleEvidence > 0 || missingFacts > 0 || staleFacts > 0;
+}
+
 function maxAppliedSchemaVersion(db: Db): number {
   const row = db.prepare('SELECT max(version) AS version FROM schema_versions').get() as { version: number | null };
   return row.version ?? 0;
+}
+
+export function assertCurrentSchema(db: Db, feature: string): void {
+  const version = maxAppliedSchemaVersion(db);
+  const hasProvenanceTx = columnExists(db, 'fact_provenance', 'tx_id');
+  if (version < CURRENT_SCHEMA_VERSION || !hasProvenanceTx) {
+    throw new Error(
+      `${feature} requires Impact Trace schema v${CURRENT_SCHEMA_VERSION}; current database is v${version}. Run impact-trace init with the current build to apply additive migrations.`
+    );
+  }
+}
+
+function columnExists(db: Db, table: string, column: string): boolean {
+  return db
+    .prepare('SELECT 1 AS one FROM pragma_table_info(?) WHERE name = ?')
+    .get(table, column) !== undefined;
 }
 
 export function ensureRepo(db: Db, repoRoot: string): number {

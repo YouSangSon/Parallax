@@ -12,7 +12,7 @@ import type { EmbeddingResult } from './embeddings.js';
 import { reflectFacts, repairReflections } from './reflection.js';
 import { profileEntity } from './profile.js';
 import { normalizeRepoRoot, redactSecrets } from './security.js';
-import { getRepoId, latestCompletedIndexRun, openDatabase } from './store.js';
+import { assertCurrentSchema, getRepoId, latestCompletedIndexRun, openDatabase } from './store.js';
 import type {
   Confidence,
   ContextBudget,
@@ -180,6 +180,7 @@ export function createMcpServer(context: McpContext): McpServer {
         attribute: z.string().min(1),
         value: z.unknown(),
         evidenceFactIds: z.array(z.string()).optional(),
+        supersedesFactIds: z.array(z.string()).optional(),
         branch: z.string().optional(),
         agent: z.string().optional(),
         op: z.enum(['assert', 'retract']).optional()
@@ -192,12 +193,13 @@ export function createMcpServer(context: McpContext): McpServer {
         openWorldHint: false
       }
     },
-    async ({ entity, attribute, value, evidenceFactIds, branch, agent, op }) => {
+    async ({ entity, attribute, value, evidenceFactIds, supersedesFactIds, branch, agent, op }) => {
       const result = await rememberOnRepo(context.repoRoot, {
         entity,
         attribute,
         value: value as RememberValue,
         ...(evidenceFactIds !== undefined ? { evidenceFactIds } : {}),
+        ...(supersedesFactIds !== undefined ? { supersedesFactIds } : {}),
         ...(branch !== undefined ? { branch } : {}),
         ...(agent !== undefined ? { agent } : {}),
         ...(op !== undefined ? { op } : {})
@@ -1055,6 +1057,10 @@ function typedMcpErrorEnvelope(error: unknown, fallbackCode = 'impact_trace_erro
     code = 'index_not_ready';
     cause = 'The repository does not have a completed Impact Trace index yet.';
     fix = 'Run impact-trace init and impact-trace index, then retry the MCP request.';
+  } else if (normalized.includes('requires impact trace schema v') || normalized.includes('database schema is v')) {
+    code = 'schema_outdated';
+    cause = 'The local Impact Trace database is older than the current tool contract.';
+    fix = 'Run impact-trace init with the current build to apply additive migrations.';
   } else if (normalized.includes('must be') || normalized.includes('between')) {
     code = 'invalid_tool_input';
     cause = 'The MCP tool arguments do not match the Impact Trace input contract.';
@@ -1739,6 +1745,7 @@ const searchContextBudgetPresets: Record<ContextBudget, SearchContextBudgetPrese
 async function searchContextSemanticEmbedding(context: McpContext, query: string): Promise<EmbeddingResult | null> {
   const model = selectedEmbeddingModel();
   const hasEmbeddings = withReadOnlyDb(context, (db, repoId) => {
+    assertCurrentSchema(db, 'impact_trace_search_context');
     if (!mcpHasTable(db, 'fact_embeddings')) return false;
     const row = db
       .prepare(`
@@ -1748,7 +1755,22 @@ async function searchContextSemanticEmbedding(context: McpContext, query: string
         INNER JOIN transactions t ON t.id = f.tx_id
         INNER JOIN entities e ON e.id = f.entity_id
         WHERE fe.model = ?
-          AND t.archived = 0
+          AND (
+            (
+              t.archived = 0
+              AND t.branch_id = (SELECT id FROM branches WHERE name = 'main')
+            )
+            OR EXISTS (
+              SELECT 1
+              FROM fact_provenance visibility_fp
+              INNER JOIN transactions visibility_tx
+                ON visibility_tx.id = visibility_fp.tx_id
+              WHERE visibility_fp.fact_id = f.id
+                AND visibility_fp.kind = 'supersedes'
+                AND visibility_tx.archived = 0
+                AND visibility_tx.branch_id = (SELECT id FROM branches WHERE name = 'main')
+            )
+          )
           AND f.op = 'assert'
           AND f.redacted = 0
           AND e.repo_id = ?
@@ -1783,6 +1805,7 @@ function searchContext(context: McpContext, options: SearchContextOptions): unkn
   if (!query) throw new Error('search query must not be empty');
 
   return withReadOnlyDb(context, (db, repoId) => {
+    assertCurrentSchema(db, 'impact_trace_search_context');
     const indexRunId = latestCompletedIndexRun(db, repoId);
     const likeQuery = `%${escapeLike(query)}%`;
     const ranking = searchRankedEntities(
@@ -2445,7 +2468,35 @@ function searchFactEntityRows(
          AND entities.updated_index_run_id = ?
         WHERE facts.op = 'assert'
           AND facts.redacted = 0
-          AND transactions.archived = 0
+          AND (
+            (
+              transactions.archived = 0
+              AND transactions.branch_id = (SELECT id FROM branches WHERE name = 'main')
+            )
+            OR EXISTS (
+              SELECT 1
+              FROM fact_provenance visibility_fp
+              INNER JOIN transactions visibility_tx
+                ON visibility_tx.id = visibility_fp.tx_id
+              WHERE visibility_fp.fact_id = facts.id
+                AND visibility_fp.kind = 'supersedes'
+                AND visibility_tx.archived = 0
+                AND visibility_tx.branch_id = (SELECT id FROM branches WHERE name = 'main')
+            )
+          )
+          AND NOT EXISTS (
+            SELECT 1
+            FROM fact_provenance supersession_fp
+            INNER JOIN facts superseding_fact
+              ON superseding_fact.id = supersession_fp.fact_id
+            INNER JOIN transactions supersession_tx
+              ON supersession_tx.id = supersession_fp.tx_id
+            WHERE supersession_fp.source_fact_id = facts.id
+              AND supersession_fp.kind = 'supersedes'
+              AND superseding_fact.op = 'assert'
+              AND supersession_tx.archived = 0
+              AND supersession_tx.branch_id = (SELECT id FROM branches WHERE name = 'main')
+          )
         GROUP BY entities.id
         ORDER BY fact_match_count DESC, entities.display_name, entities.id
         LIMIT ?
@@ -2487,7 +2538,35 @@ function searchSemanticEntityRows(
         AND fact_embeddings.dim = ?
         AND facts.op = 'assert'
         AND facts.redacted = 0
-        AND transactions.archived = 0
+        AND (
+          (
+            transactions.archived = 0
+            AND transactions.branch_id = (SELECT id FROM branches WHERE name = 'main')
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM fact_provenance visibility_fp
+            INNER JOIN transactions visibility_tx
+              ON visibility_tx.id = visibility_fp.tx_id
+            WHERE visibility_fp.fact_id = facts.id
+              AND visibility_fp.kind = 'supersedes'
+              AND visibility_tx.archived = 0
+              AND visibility_tx.branch_id = (SELECT id FROM branches WHERE name = 'main')
+          )
+        )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM fact_provenance supersession_fp
+          INNER JOIN facts superseding_fact
+            ON superseding_fact.id = supersession_fp.fact_id
+          INNER JOIN transactions supersession_tx
+            ON supersession_tx.id = supersession_fp.tx_id
+          WHERE supersession_fp.source_fact_id = facts.id
+            AND supersession_fp.kind = 'supersedes'
+            AND superseding_fact.op = 'assert'
+            AND supersession_tx.archived = 0
+            AND supersession_tx.branch_id = (SELECT id FROM branches WHERE name = 'main')
+        )
     `)
     .all(repoId, indexRunId, queryEmbedding.model, queryEmbedding.dim) as Array<
       SearchEntityRow & { vector: Buffer }

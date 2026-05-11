@@ -149,6 +149,34 @@ async function makeRepo(): Promise<string> {
   return repoRoot;
 }
 
+function downgradeFactProvenanceWithoutTxId(repoRoot: string): void {
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: false });
+  try {
+    db.exec(`
+      PRAGMA foreign_keys = OFF;
+      DELETE FROM schema_versions WHERE version >= 13;
+
+      ALTER TABLE fact_provenance RENAME TO fact_provenance_pre_v13;
+      CREATE TABLE fact_provenance (
+        id TEXT PRIMARY KEY NOT NULL,
+        fact_id TEXT NOT NULL,
+        source_fact_id TEXT NOT NULL,
+        kind TEXT NOT NULL DEFAULT 'evidence',
+        UNIQUE(fact_id, source_fact_id, kind),
+        FOREIGN KEY(fact_id) REFERENCES facts(id),
+        FOREIGN KEY(source_fact_id) REFERENCES facts(id)
+      );
+      INSERT OR IGNORE INTO fact_provenance (id, fact_id, source_fact_id, kind)
+      SELECT id, fact_id, source_fact_id, kind
+      FROM fact_provenance_pre_v13;
+      DROP TABLE fact_provenance_pre_v13;
+      PRAGMA foreign_keys = ON;
+    `);
+  } finally {
+    db.close();
+  }
+}
+
 async function makeSecretPathRepo(): Promise<{ repoRoot: string; secretPath: string }> {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-mcp-secret-path-'));
   const secretPath = 'src/sk-12345678901234567890.ts';
@@ -897,6 +925,8 @@ test('MCP stdio server initializes and exposes the full agent memory tool surfac
     assert.equal(toolByName.get('impact_trace_analyze_diff')!.inputSchema?.properties?.changedFiles?.type, 'array');
     assert.equal(toolByName.get('impact_trace_analyze_diff')!.inputSchema?.properties?.changedFiles?.items?.type, 'string');
     assert.equal(toolByName.get('impact_trace_analyze_diff')!.inputSchema?.properties?.maxDepth?.maximum, 8);
+    assert.equal(toolByName.get('impact_trace_remember')!.inputSchema?.properties?.supersedesFactIds?.type, 'array');
+    assert.equal(toolByName.get('impact_trace_remember')!.inputSchema?.properties?.supersedesFactIds?.items?.type, 'string');
     assert.deepEqual(toolByName.get('impact_trace_context_for_change')!.inputSchema?.properties?.budget?.enum, [
       'brief',
       'standard',
@@ -1004,7 +1034,7 @@ test('MCP doctor returns the local health report without telemetry writes', asyn
     assert.equal(report.version, 0);
     assert.equal(report.repoRoot, '[REPO_ROOT]');
     assert.equal(report.database.path, '.impact-trace/impact.db');
-    assert.equal(report.database.schemaVersion, 11);
+    assert.equal(report.database.schemaVersion, 13);
     assert.equal(report.index.latestCompletedRun?.status, 'completed');
     assert.equal(report.telemetry.toolRuns, 0);
   } finally {
@@ -1873,6 +1903,208 @@ test('MCP search_context searches persistent evidence and fact FTS projections',
     assert.equal(factMatch.rankSignals.keywordRank, null);
     assert.equal(factMatch.rankSignals.evidenceRank, 1);
     assert.ok(factMatch.reasons.includes('facts:1'));
+
+    const branchResponse = await client.request('tools/call', {
+      name: 'impact_trace_branch',
+      arguments: { name: 'experimental-search' }
+    });
+    assert.equal(branchResponse.error, undefined);
+    assert.equal(branchResponse.result.isError, undefined);
+
+    const branchSupersedingResponse = await client.request('tools/call', {
+      name: 'impact_trace_remember',
+      arguments: {
+        branch: 'experimental-search',
+        entity: 'file:depth/fact.ts',
+        attribute: 'session_summary',
+        value: 'experimental replacement guard',
+        supersedesFactIds: ['depth-fact-fts']
+      }
+    });
+    assert.equal(branchSupersedingResponse.error, undefined);
+    assert.equal(branchSupersedingResponse.result.isError, undefined);
+
+    const branchOnlyFactResponse = await client.request('tools/call', {
+      name: 'impact_trace_remember',
+      arguments: {
+        branch: 'experimental-search',
+        entity: 'file:depth/root.ts',
+        attribute: 'session_summary',
+        value: 'branch-only hidden sentinel'
+      }
+    });
+    assert.equal(branchOnlyFactResponse.error, undefined);
+    assert.equal(branchOnlyFactResponse.result.isError, undefined);
+
+    const branchOnlySearchResponse = await client.request('tools/call', {
+      name: 'impact_trace_search_context',
+      arguments: { query: 'branch-only hidden sentinel', k: 3, includeEvidence: false }
+    });
+    const branchOnlySearch = JSON.parse(branchOnlySearchResponse.result.content[0].text) as {
+      results: Array<{ entity: { id: string }; reasons: string[] }>;
+    };
+    assert.equal(
+      branchOnlySearch.results.some((item) => item.entity.id === 'file:depth/root.ts'),
+      false,
+      'default search_context must not surface branch-only memory facts'
+    );
+
+    const mainScopedFactResponse = await client.request('tools/call', {
+      name: 'impact_trace_search_context',
+      arguments: { query: 'operator retention', k: 3, includeEvidence: false }
+    });
+    const mainScopedFactSearch = JSON.parse(mainScopedFactResponse.result.content[0].text) as {
+      results: Array<{ entity: { id: string }; reasons: string[] }>;
+    };
+    const mainScopedFactMatch = mainScopedFactSearch.results.find(
+      (item) => item.entity.id === 'file:depth/fact.ts'
+    );
+    assert.equal(
+      mainScopedFactMatch?.reasons.some((reason) => reason.startsWith('facts:')) ?? false,
+      true,
+      'experimental branch supersession must not hide main search_context facts'
+    );
+
+    const supersedingFactResponse = await client.request('tools/call', {
+      name: 'impact_trace_remember',
+      arguments: {
+        entity: 'file:depth/fact.ts',
+        attribute: 'session_summary',
+        value: 'operator memory keeps replacement guard',
+        supersedesFactIds: ['depth-fact-fts']
+      }
+    });
+    assert.equal(supersedingFactResponse.error, undefined);
+    assert.equal(supersedingFactResponse.result.isError, undefined);
+
+    const supersededFactResponse = await client.request('tools/call', {
+      name: 'impact_trace_search_context',
+      arguments: { query: 'retention', k: 3, includeEvidence: false }
+    });
+    const supersededFactSearch = JSON.parse(supersededFactResponse.result.content[0].text) as {
+      results: Array<{ entity: { id: string }; reasons: string[] }>;
+    };
+    const supersededFactMatch = supersededFactSearch.results.find(
+      (item) => item.entity.id === 'file:depth/fact.ts'
+    );
+    assert.equal(
+      supersededFactMatch?.reasons.some((reason) => reason.startsWith('facts:')) ?? false,
+      false,
+      'facts FTS should not surface facts superseded by a visible replacement'
+    );
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP search_context semantic lane sees replacements made visible by supersession edge txs', async () => {
+  const repoRoot = await makeSearchDepthRepo();
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: false });
+  try {
+    const repo = db.prepare('SELECT id FROM repos LIMIT 1').get() as { id: number };
+    const run = db
+      .prepare('SELECT id FROM index_runs WHERE repo_id = ? AND status = ? ORDER BY id DESC LIMIT 1')
+      .get(repo.id, 'completed') as { id: number };
+    db.prepare(`
+      INSERT INTO entities (
+        id, repo_id, kind, path, symbol, language_id, display_name,
+        created_index_run_id, updated_index_run_id
+      )
+      VALUES ('file:depth/archived-semantic.ts', ?, 'file', 'depth/archived-semantic.ts', NULL, 'typescript', 'Archived Semantic', ?, ?)
+    `).run(repo.id, run.id, run.id);
+    db.prepare("INSERT OR IGNORE INTO attribute_defs (name, value_type, is_code_relation, description) VALUES ('session_summary', 'json', 0, '')").run();
+    db.prepare(`
+      INSERT INTO branches (id, name, head_tx_id, parent_branch_id, created_at, state)
+      VALUES ('br_archived_semantic', 'archived-semantic', 'tx:archived-semantic-replacement', 'br_main', datetime('now'), 'abandoned')
+    `).run();
+    db.prepare(`
+      INSERT INTO transactions (id, parent_tx_id, branch_id, ts, agent, index_run_id, archived)
+      VALUES ('tx:archived-semantic-old', NULL, 'br_main', datetime('now'), 'test', ?, 0)
+    `).run(run.id);
+    db.prepare(`
+      INSERT INTO transactions (id, parent_tx_id, branch_id, ts, agent, index_run_id, archived)
+      VALUES ('tx:archived-semantic-replacement', NULL, 'br_archived_semantic', datetime('now'), 'test', ?, 1)
+    `).run(run.id);
+    db.prepare(`
+      INSERT INTO transactions (id, parent_tx_id, branch_id, ts, agent, index_run_id, archived)
+      VALUES ('tx:archived-semantic-edge', 'tx:archived-semantic-old', 'br_main', datetime('now'), 'test', ?, 0)
+    `).run(run.id);
+    db.prepare(`
+      INSERT INTO facts (id, entity_id, attribute, value_blob, op, tx_id, redacted)
+      VALUES ('fact:archived-semantic-old', 'file:depth/archived-semantic.ts', 'session_summary', '"archived semantic retries twice"', 'assert', 'tx:archived-semantic-old', 0)
+    `).run();
+    const replacementValue = 'archived semantic replacement exact vector';
+    db.prepare(`
+      INSERT INTO facts (id, entity_id, attribute, value_blob, op, tx_id, redacted)
+      VALUES ('fact:archived-semantic-replacement', 'file:depth/archived-semantic.ts', 'session_summary', ?, 'assert', 'tx:archived-semantic-replacement', 0)
+    `).run(JSON.stringify(replacementValue));
+    const embedding = computeEmbeddingSync(replacementValue);
+    db.prepare(
+      "INSERT OR REPLACE INTO fact_embeddings (fact_id, model, vector, dim, created_at) VALUES (?, ?, ?, ?, datetime('now'))"
+    ).run('fact:archived-semantic-replacement', embedding.model, embedding.vector, embedding.dim);
+    db.prepare(`
+      INSERT INTO fact_provenance (id, fact_id, source_fact_id, kind, tx_id)
+      VALUES ('prov:archived-semantic-supersedes', 'fact:archived-semantic-replacement', 'fact:archived-semantic-old', 'supersedes', 'tx:archived-semantic-edge')
+    `).run();
+  } finally {
+    db.close();
+  }
+
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+    const response = await client.request('tools/call', {
+      name: 'impact_trace_search_context',
+      arguments: {
+        query: 'archived semantic replacement exact vector',
+        k: 5,
+        includeEvidence: false
+      }
+    });
+
+    assert.equal(response.error, undefined);
+    assert.equal(response.result.isError, undefined);
+    const search = JSON.parse(response.result.content[0].text) as {
+      results: Array<{
+        entity: { id: string };
+        reasons: string[];
+        rankSignals: { semanticRank: number | null };
+      }>;
+    };
+    const match = search.results.find((item) => item.entity.id === 'file:depth/archived-semantic.ts');
+    assert.ok(match, 'semantic lane should include archived-origin replacements visible through main supersession edges');
+    assert.equal(match.rankSignals.semanticRank, 1);
+    assert.ok(match.reasons.includes('semantic'));
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP search_context returns schema_outdated for pre-v13 read-only databases', async () => {
+  const repoRoot = await makeRepo();
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: false });
+  try {
+    db.prepare('DELETE FROM schema_versions WHERE version >= 13').run();
+  } finally {
+    db.close();
+  }
+
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+    const response = await client.request('tools/call', {
+      name: 'impact_trace_search_context',
+      arguments: { query: 'anything', k: 3, includeEvidence: false }
+    });
+
+    assert.equal(response.error, undefined);
+    assert.equal(response.result.isError, true);
+    const envelope = JSON.parse(response.result.content[0].text) as {
+      error: { code: string; problem: string; fix: string };
+    };
+    assert.equal(envelope.error.code, 'schema_outdated');
+    assert.match(envelope.error.problem, /schema v13/);
+    assert.match(envelope.error.fix, /impact-trace init/);
   } finally {
     await client.close();
   }
@@ -2564,6 +2796,101 @@ test('MCP trace walks fact_provenance back through the causal chain', async () =
     });
     assert.equal(missing.result.isError, true);
     assert.match(missing.result.content[0].text, /fact not found/);
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP trace reports schema_outdated for pre-v13 fact_provenance tables', async () => {
+  const repoRoot = await makeRepo();
+  let factId = '';
+  const writer = new McpProcessClient(repoRoot);
+  try {
+    await writer.initialize();
+    const remembered = await writer.request('tools/call', {
+      name: 'impact_trace_remember',
+      arguments: {
+        entity: 'file:src/a.ts',
+        attribute: 'observed',
+        value: 'legacy trace guard'
+      }
+    });
+    factId = (JSON.parse(remembered.result.content[0].text) as { factId: string }).factId;
+  } finally {
+    await writer.close();
+  }
+
+  downgradeFactProvenanceWithoutTxId(repoRoot);
+
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+    const response = await client.request('tools/call', {
+      name: 'impact_trace_trace',
+      arguments: { factId }
+    });
+
+    assert.equal(response.error, undefined);
+    assert.equal(response.result.isError, true);
+    const envelope = JSON.parse(response.result.content[0].text) as {
+      error: { code: string; problem: string; fix: string };
+    };
+    assert.equal(envelope.error.code, 'schema_outdated');
+    assert.match(envelope.error.problem, /schema v13/);
+    assert.doesNotMatch(envelope.error.problem, /no such column/);
+    assert.match(envelope.error.fix, /impact-trace init/);
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP remember supports explicit supersession and trace exposes the edge kind', async () => {
+  const repoRoot = await makeRepo();
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+
+    const oldResp = await client.request('tools/call', {
+      name: 'impact_trace_remember',
+      arguments: {
+        entity: 'policy:checkout',
+        attribute: 'decision',
+        value: 'retry twice before fallback'
+      }
+    });
+    const oldFact = JSON.parse(oldResp.result.content[0].text) as { factId: string };
+
+    const newResp = await client.request('tools/call', {
+      name: 'impact_trace_remember',
+      arguments: {
+        entity: 'policy:checkout',
+        attribute: 'decision',
+        value: 'retry once before fallback',
+        supersedesFactIds: [oldFact.factId]
+      }
+    });
+    const newFact = JSON.parse(newResp.result.content[0].text) as { factId: string };
+
+    const recalled = await client.request('tools/call', {
+      name: 'impact_trace_recall',
+      arguments: { entity: 'policy:checkout', attribute: 'decision', currentOnly: true }
+    });
+    const recallPayload = JSON.parse(recalled.result.content[0].text) as {
+      facts: Array<{ id: string; value: unknown }>;
+    };
+    assert.deepEqual(recallPayload.facts.map((fact) => fact.id), [newFact.factId]);
+    assert.deepEqual(recallPayload.facts.map((fact) => fact.value), ['retry once before fallback']);
+
+    const traced = await client.request('tools/call', {
+      name: 'impact_trace_trace',
+      arguments: { factId: newFact.factId }
+    });
+    const tracePayload = JSON.parse(traced.result.content[0].text) as {
+      edges: Array<{ factId: string; sourceFactId: string; kind: string }>;
+    };
+    assert.deepEqual(tracePayload.edges, [
+      { factId: newFact.factId, sourceFactId: oldFact.factId, kind: 'supersedes' }
+    ]);
   } finally {
     await client.close();
   }

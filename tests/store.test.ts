@@ -21,14 +21,14 @@ function withTempDb<T>(callback: (db: Db) => T): T {
   }
 }
 
-test('migrate records schema_versions through v11', () => {
+test('migrate records schema_versions through v13', () => {
   withTempDb((db) => {
     const versions = db
       .prepare('SELECT version FROM schema_versions ORDER BY version')
       .all() as Array<{ version: number }>;
     assert.deepEqual(
       versions.map((row) => row.version),
-      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
     );
   });
 });
@@ -253,6 +253,83 @@ test('migrate v11 maintains persistent search FTS projections', () => {
   });
 });
 
+test('migrate v11 repairs missing persistent search FTS projection rows on re-run', () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'impact-trace-store-fts-repair-'));
+  try {
+    const first = openDatabase(dir);
+    try {
+      first.prepare("INSERT INTO repos (id, root, config_hash) VALUES (1, '/repo', 'v1')").run();
+      first.prepare(`
+        INSERT INTO index_runs (id, repo_id, status, started_at, finished_at, extractor_version)
+        VALUES (1, 1, 'completed', datetime('now'), datetime('now'), 'test')
+      `).run();
+      first.prepare(`
+        INSERT INTO entities (
+          id, repo_id, kind, path, symbol, language_id, display_name,
+          created_index_run_id, updated_index_run_id
+        )
+        VALUES ('file:repair.ts', 1, 'file', 'repair.ts', NULL, 'typescript', 'Repair', 1, 1)
+      `).run();
+      first.prepare(`
+        INSERT INTO relations (
+          id, repo_id, source_entity_id, target_entity_id, kind, confidence,
+          adapter_run_id, index_run_id, provenance
+        )
+        VALUES ('rel:repair', 1, 'file:repair.ts', 'file:repair.ts', 'DOCUMENTS', 'medium', NULL, 1, 'test')
+      `).run();
+      first.prepare(`
+        INSERT INTO relation_evidence (
+          id, relation_id, repo_id, file_path, kind, snippet, confidence, index_run_id
+        )
+        VALUES ('ev:repair', 'rel:repair', 1, 'repair.ts', 'DOCUMENTS', 'crash resumable evidence backfill', 'medium', 1)
+      `).run();
+      first.prepare(`
+        INSERT INTO transactions (id, parent_tx_id, branch_id, ts, agent, index_run_id)
+        VALUES ('tx:repair', NULL, 'br_main', datetime('now'), 'test', 1)
+      `).run();
+      first.prepare(`
+        INSERT INTO facts (id, entity_id, attribute, value_blob, op, tx_id, redacted)
+        VALUES ('fact:repair', 'file:repair.ts', 'imports', '"crash resumable fact backfill"', 'assert', 'tx:repair', 0)
+      `).run();
+
+      first.prepare('DELETE FROM search_relation_evidence_fts').run();
+      first.prepare('DELETE FROM search_facts_fts').run();
+      assert.equal(
+        (first.prepare('SELECT count(*) AS count FROM search_relation_evidence_fts').get() as { count: number }).count,
+        0
+      );
+      assert.equal(
+        (first.prepare('SELECT count(*) AS count FROM search_facts_fts').get() as { count: number }).count,
+        0
+      );
+    } finally {
+      first.close();
+    }
+
+    const reopened = openDatabase(dir);
+    try {
+      assert.deepEqual(
+        reopened
+          .prepare("SELECT evidence_id FROM search_relation_evidence_fts WHERE search_relation_evidence_fts MATCH 'evidence'")
+          .all()
+          .map((row) => (row as { evidence_id: string }).evidence_id),
+        ['ev:repair']
+      );
+      assert.deepEqual(
+        reopened
+          .prepare("SELECT fact_id FROM search_facts_fts WHERE search_facts_fts MATCH 'fact'")
+          .all()
+          .map((row) => (row as { fact_id: string }).fact_id),
+        ['fact:repair']
+      );
+    } finally {
+      reopened.close();
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('migrate v10 adds context access telemetry tables', () => {
   withTempDb((db) => {
     for (const [table, columns] of [
@@ -286,6 +363,11 @@ test('migrate v7/v8/v9 adds branch GC, relation evidence spans, and git snapshot
       .get();
     assert.ok(provKind, 'fact_provenance.kind column should exist');
 
+    const provTx = db
+      .prepare("SELECT name FROM pragma_table_info('fact_provenance') WHERE name = 'tx_id'")
+      .get();
+    assert.ok(provTx, 'fact_provenance.tx_id column should exist');
+
     for (const column of ['start_line', 'end_line', 'start_col', 'end_col']) {
       const spanColumn = db
         .prepare("SELECT name FROM pragma_table_info('relation_evidence') WHERE name = ?")
@@ -307,6 +389,40 @@ test('migrate v7/v8/v9 adds branch GC, relation evidence spans, and git snapshot
   });
 });
 
+test('migrate allows multiple provenance kinds for the same fact pair', () => {
+  withTempDb((db) => {
+    db.prepare(
+      "INSERT INTO transactions (id, parent_tx_id, branch_id, ts, agent, index_run_id) VALUES ('tx:prov-kind', NULL, 'br_main', datetime('now'), 'test', NULL)"
+    ).run();
+    db.prepare(
+      "INSERT INTO transactions (id, parent_tx_id, branch_id, ts, agent, index_run_id) VALUES ('tx:prov-kind-2', 'tx:prov-kind', 'br_main', datetime('now'), 'test', NULL)"
+    ).run();
+    db.prepare(
+      "INSERT INTO facts (id, entity_id, attribute, value_blob, op, tx_id, redacted) VALUES ('fact:source', 'file:source.ts', 'imports', '\"source\"', 'assert', 'tx:prov-kind', 0)"
+    ).run();
+    db.prepare(
+      "INSERT INTO facts (id, entity_id, attribute, value_blob, op, tx_id, redacted) VALUES ('fact:target', 'file:target.ts', 'imports', '\"target\"', 'assert', 'tx:prov-kind', 0)"
+    ).run();
+
+    db.prepare(
+      "INSERT INTO fact_provenance (id, fact_id, source_fact_id, kind, tx_id) VALUES ('prov:evidence', 'fact:target', 'fact:source', 'evidence', 'tx:prov-kind')"
+    ).run();
+    db.prepare(
+      "INSERT INTO fact_provenance (id, fact_id, source_fact_id, kind, tx_id) VALUES ('prov:supersedes', 'fact:target', 'fact:source', 'supersedes', 'tx:prov-kind')"
+    ).run();
+    db.prepare(
+      "INSERT INTO fact_provenance (id, fact_id, source_fact_id, kind, tx_id) VALUES ('prov:supersedes-2', 'fact:target', 'fact:source', 'supersedes', 'tx:prov-kind-2')"
+    ).run();
+
+    const rows = db
+      .prepare(
+        "SELECT kind FROM fact_provenance WHERE fact_id = 'fact:target' AND source_fact_id = 'fact:source' ORDER BY kind, tx_id"
+      )
+      .all() as Array<{ kind: string; tx_id: string }>;
+    assert.deepEqual(rows.map((row) => row.kind), ['evidence', 'supersedes', 'supersedes']);
+  });
+});
+
 test('migrate is idempotent across re-runs', () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'impact-trace-store-idem-'));
   try {
@@ -319,7 +435,7 @@ test('migrate is idempotent across re-runs', () => {
         .all() as Array<{ version: number }>;
       assert.deepEqual(
         versions.map((row) => row.version),
-        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
       );
     } finally {
       second.close();
@@ -344,6 +460,8 @@ test('migrate upgrades a synthetic v6 schema by adding v7/v8/v9 columns and tabl
       seed.prepare('DELETE FROM schema_versions WHERE version = 9').run();
       seed.prepare('DELETE FROM schema_versions WHERE version = 10').run();
       seed.prepare('DELETE FROM schema_versions WHERE version = 11').run();
+      seed.prepare('DELETE FROM schema_versions WHERE version = 12').run();
+      seed.prepare('DELETE FROM schema_versions WHERE version = 13').run();
       seed.prepare('DROP TABLE IF EXISTS reflections').run();
       seed.prepare('DROP TABLE IF EXISTS context_tool_runs').run();
       seed.prepare('DROP TABLE IF EXISTS context_resource_accesses').run();
@@ -460,7 +578,7 @@ test('migrate upgrades a synthetic v6 schema by adding v7/v8/v9 columns and tabl
       const versions = upgraded
         .prepare('SELECT max(version) AS v FROM schema_versions')
         .get() as { v: number };
-      assert.equal(versions.v, 11);
+      assert.equal(versions.v, 13);
       const telemetry = upgraded
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'context_tool_runs'")
         .get();

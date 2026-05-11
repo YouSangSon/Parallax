@@ -157,6 +157,103 @@ test('profile surfaces reflection summary facts in summaryFacts bucket', async (
   }
 });
 
+test('profile hides facts superseded by newer explicit decisions', async () => {
+  const repoRoot = await makeRepo();
+
+  withAgentMemoryDb(repoRoot, false, (db) => {
+    const oldFact = remember(db, {
+      entity: 'policy:checkout',
+      attribute: 'decision',
+      value: 'retry twice before fallback'
+    });
+    remember(db, {
+      entity: 'policy:checkout',
+      attribute: 'decision',
+      value: 'retry once before fallback',
+      supersedesFactIds: [oldFact.factId]
+    });
+  });
+
+  const result = await profileEntity(repoRoot, { entity: 'policy:checkout' });
+  assert.deepEqual(result.dynamicFacts.map((fact) => fact.value), ['retry once before fallback']);
+});
+
+test('profile asOfTx uses supersession edge transaction for reused replacement facts', async () => {
+  const repoRoot = await makeRepo();
+
+  const facts = withAgentMemoryDb(repoRoot, false, (db) => {
+    const oldFact = remember(db, {
+      entity: 'policy:profile-checkout',
+      attribute: 'decision',
+      value: 'profile retries twice'
+    });
+    const replacementBeforeEdge = remember(db, {
+      entity: 'policy:profile-checkout',
+      attribute: 'decision',
+      value: 'profile retries once'
+    });
+    const supersedingEdge = remember(db, {
+      entity: 'policy:profile-checkout',
+      attribute: 'decision',
+      value: 'profile retries once',
+      supersedesFactIds: [oldFact.factId]
+    });
+    return { oldFact, replacementBeforeEdge, supersedingEdge };
+  });
+
+  const asOfBeforeEdge = await profileEntity(repoRoot, {
+    entity: 'policy:profile-checkout',
+    asOfTx: facts.replacementBeforeEdge.txId
+  });
+  const current = await profileEntity(repoRoot, { entity: 'policy:profile-checkout' });
+
+  assert.equal(facts.supersedingEdge.factId, facts.replacementBeforeEdge.factId);
+  assert.ok(
+    asOfBeforeEdge.dynamicFacts.some((fact) => fact.id === facts.oldFact.factId),
+    'profile asOfTx before the edge must still include the old fact'
+  );
+  assert.deepEqual(current.dynamicFacts.map((fact) => fact.id), [
+    facts.replacementBeforeEdge.factId
+  ]);
+});
+
+test('profile branch view includes reused replacement facts from local supersession edges', async () => {
+  const repoRoot = await makeRepo();
+
+  const facts = withAgentMemoryDb(repoRoot, false, (db) => {
+    const replacementBeforeEdge = remember(db, {
+      entity: 'policy:profile-branch',
+      attribute: 'decision',
+      value: 'branch profile retries once'
+    });
+    createBranch(db, { name: 'profile-exp', from: 'main' });
+    const branchOldFact = remember(db, {
+      branch: 'profile-exp',
+      entity: 'policy:profile-branch',
+      attribute: 'decision',
+      value: 'branch profile retries twice'
+    });
+    const branchSupersedingEdge = remember(db, {
+      branch: 'profile-exp',
+      entity: 'policy:profile-branch',
+      attribute: 'decision',
+      value: 'branch profile retries once',
+      supersedesFactIds: [branchOldFact.factId]
+    });
+    return { replacementBeforeEdge, branchOldFact, branchSupersedingEdge };
+  });
+
+  const branchProfile = await profileEntity(repoRoot, {
+    entity: 'policy:profile-branch',
+    branch: 'profile-exp'
+  });
+
+  assert.equal(facts.branchSupersedingEdge.factId, facts.replacementBeforeEdge.factId);
+  assert.deepEqual(branchProfile.dynamicFacts.map((fact) => fact.id), [
+    facts.replacementBeforeEdge.factId
+  ]);
+});
+
 test('profile throws on missing entity', async () => {
   const repoRoot = await makeRepo();
   await assert.rejects(

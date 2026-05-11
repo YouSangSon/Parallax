@@ -118,7 +118,7 @@ impact-trace remember \
 
 # 3) trace로 연결 확인
 impact-trace trace --fact-id <derived-fact-id>
-# → {"chain":[{derived fact}, {A fact (source)}]}
+# → {"chain":[{derived fact}, {A fact (source)}], "edges":[{"kind":"evidence", ...}]}
 ```
 
 ### 2.3 plan 시뮬레이션
@@ -182,6 +182,35 @@ impact-trace remember --entity file:src/x.ts --attribute role \
 impact-trace recall --entity file:src/x.ts --as-of-tx "$TX1"
 # → {"facts":[{...,"value":"primary auth"}]} ← 첫 fact만
 # transactions DAG의 ancestor만 포함 (parent_tx_id 체인)
+```
+
+### 2.4.3 supersedes — 오래된 결정/정책을 명시적으로 대체
+
+`retract`는 "이 값은 더 이상 맞지 않음"을 남긴다. `supersedes`는 "새 결정이
+이전 결정을 대체함"을 `fact_provenance.kind='supersedes'` edge로 남긴다.
+edge의 `tx_id`는 supersession이 실제로 선언된 transaction을 가리킨다. 그래서 같은
+content-addressed replacement fact가 이미 있더라도 current recall/profile/semantic recall은
+edge 생성 시점을 기준으로 superseded fact를 숨기고, `trace`와 `--as-of-tx`는 대체 전후를
+감사할 수 있게 유지한다.
+
+```bash
+OLD_ID=$(impact-trace remember \
+  --entity policy:checkout \
+  --attribute decision \
+  --value '"retry twice before fallback"' | jq -r .factId)
+
+NEW_RESPONSE=$(impact-trace remember \
+  --entity policy:checkout \
+  --attribute decision \
+  --value '"retry once before fallback"' \
+  --supersedes-fact-ids "$OLD_ID")
+NEW_ID=$(echo "$NEW_RESPONSE" | jq -r .factId)
+
+impact-trace recall --entity policy:checkout --attribute decision
+# → 새 decision fact만 보임
+
+impact-trace trace --fact-id "$NEW_ID"
+# → edges에 {"kind":"supersedes","sourceFactId":"<OLD_ID>"} 포함
 ```
 
 ### 2.5 trace로 코드까지 따라가기 (인덱서 facts 활용)
@@ -439,8 +468,8 @@ sequenceDiagram
     API->>Emb: text → {model, vector, dim}
     API->>DB: INSERT OR REPLACE fact_embeddings
   end
-  loop evidenceFactIds
-    API->>DB: INSERT OR IGNORE fact_provenance
+  loop evidenceFactIds / supersedesFactIds
+    API->>DB: INSERT OR IGNORE fact_provenance(kind, tx_id)
   end
   API->>DB: UPDATE branches.head_tx_id
   API->>DB: COMMIT

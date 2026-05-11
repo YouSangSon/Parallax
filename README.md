@@ -185,7 +185,7 @@ impact-trace mcp serve
 # agent memory (Phase 1+2)
 impact-trace remember --entity <id> --attribute <name> --value <json|string>
                       [--branch <name>] [--agent <id>] [--op assert|retract]
-                      [--evidence-fact-ids id1,id2]
+                      [--evidence-fact-ids id1,id2] [--supersedes-fact-ids id1,id2]
 impact-trace retract  --entity <id> --attribute <name> --value <json|string>
                       [--branch <name>] [--agent <id>]
 impact-trace recall   [--query <text> --semantic] [--entity <id>] [--attribute <name>]
@@ -291,6 +291,13 @@ impact-trace branch --name experiment-1 --from main
 
 # 인과 사슬 — fact_provenance edge를 따라 evidence까지 도달
 impact-trace trace --fact-id <sha256-hex> --depth 5
+
+# 명시적 대체 — 오래된 결정/정책 fact를 current recall/profile에서 숨김
+OLD_ID=$(impact-trace remember --entity policy:checkout --attribute decision \
+  --value '"retry twice before fallback"' | jq -r .factId)
+impact-trace remember --entity policy:checkout --attribute decision \
+  --value '"retry once before fallback"' \
+  --supersedes-fact-ids "$OLD_ID"
 ```
 
 자세한 흐름·패턴: [docs/agent-memory-cookbook.ko.md](docs/agent-memory-cookbook.ko.md).
@@ -359,11 +366,11 @@ MCP에서 노출하는 주요 tool은 아래와 같습니다.
 | `impact_trace_explain_entity` | entity 하나의 direct relation과 compact evidence를 제한된 payload로 반환하고, full evidence resource link를 제공합니다. |
 | `impact_trace_context_telemetry` | compact context tool run과 resource fetch를 repo-local telemetry로 요약해 context 절감이 실제로 작동했는지 확인합니다. |
 | `impact_trace_doctor` | schema/index/coverage/adapter/vector/telemetry 상태를 read-only JSON report로 반환해 agent가 불필요한 탐색 없이 현재 repo 상태를 파악하게 합니다. |
-| `impact_trace_remember` | agent의 결정/관찰을 content-addressable fact로 저장합니다 (Phase 1). |
-| `impact_trace_recall` | branch/entity/attribute 또는 semantic query로 fact를 조회합니다 (Phase 2). |
+| `impact_trace_remember` | agent의 결정/관찰을 content-addressable fact로 저장합니다. `supersedesFactIds`로 오래된 fact를 명시적으로 대체할 수 있습니다. |
+| `impact_trace_recall` | branch/entity/attribute 또는 semantic query로 fact를 조회합니다. superseded fact는 현재 조회에서 제외되고, `--as-of-tx`로 대체 전 시점을 볼 수 있습니다. |
 | `impact_trace_branch` | 새 branch를 기존 branch에서 fork합니다. 데이터 복사 없음. |
 | `impact_trace_merge` | 두 branch의 head를 묶어 새 merge 트랜잭션을 만듭니다 (Phase 2 multi-parent DAG). |
-| `impact_trace_trace` | fact_provenance edge를 따라 결정의 인과 사슬을 반환합니다. |
+| `impact_trace_trace` | fact_provenance edge를 따라 결정의 인과 사슬과 edge kind(`evidence`/`summary`/`supersedes`)를 반환합니다. |
 | `impact_trace_reflect` | 오래된 facts를 entity별로 LLM이 요약해 summary fact로 승격합니다 (Phase 3). |
 | `impact_trace_abandon_branch` | branch state를 `abandoned`로 변경합니다 (Phase 3). main은 보호. |
 | `impact_trace_gc_branches` | abandoned branch의 transactions를 soft-delete archive 처리합니다 (Phase 3). `maxAgeDays`로 시간 기반 자동 abandon (Phase 4 P4). |

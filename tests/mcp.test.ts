@@ -865,7 +865,7 @@ test('MCP stdio server initializes and exposes the full agent memory tool surfac
     const toolByName = new Map<string, (typeof tools)[number]>(
       tools.map((tool) => [tool.name, tool])
     );
-    for (const expected of [
+    const expectedTools = [
       'impact_trace_analyze_diff',
       'impact_trace_context_for_change',
       'impact_trace_search_context',
@@ -883,7 +883,12 @@ test('MCP stdio server initializes and exposes the full agent memory tool surfac
       'impact_trace_restore_branch',
       'impact_trace_context_telemetry',
       'impact_trace_doctor'
-    ]) {
+    ];
+    assert.deepEqual(
+      tools.map((tool) => tool.name).sort(),
+      [...expectedTools].sort()
+    );
+    for (const expected of expectedTools) {
       assert.ok(toolByName.has(expected), `expected MCP tool ${expected} to be advertised`);
     }
     assert.equal(toolByName.get('impact_trace_analyze_diff')!.annotations?.readOnlyHint, false);
@@ -947,6 +952,30 @@ test('MCP stdio server initializes and exposes the full agent memory tool surfac
         false,
         `forbidden MCP surface leaked into tools/list: ${forbiddenSurface}`
       );
+    }
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP rejects forbidden agentmemory-style tool calls even when called directly', async () => {
+  const repoRoot = await makeRepo();
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+
+    for (const name of [
+      'memory_export',
+      'memory_obsidian_export',
+      'memory_mesh_sync',
+      'memory_write_file',
+      'impact_trace_export',
+      'impact_trace_import_session'
+    ]) {
+      const response = await client.request('tools/call', { name, arguments: {} });
+      assert.ok(response.error || response.result?.isError, `forbidden tool call must fail: ${name}`);
+      const text = response.error?.message ?? response.result?.content?.[0]?.text ?? '';
+      assert.match(text, /Unknown tool|not found|Invalid|forbidden|error/i);
     }
   } finally {
     await client.close();

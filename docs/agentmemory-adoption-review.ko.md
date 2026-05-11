@@ -1,8 +1,9 @@
 # agentmemory 적용성 분석
 
 > **작성:** 2026-05-10
-> **상태:** `$team-builder` 기반 GPT-5.5 5역할 리뷰 + 로컬 코드 확인 결과
-> **대상:** [rohitg00/agentmemory](https://github.com/rohitg00/agentmemory) `main` @ `0322da8004dc9f5132d243bca89b5944e51f1f5f`
+> **업데이트:** 2026-05-11
+> **상태:** `$team-builder` 기반 GPT-5.5 리뷰 + 로컬 코드 확인 결과
+> **대상:** [rohitg00/agentmemory](https://github.com/rohitg00/agentmemory) `main` @ `13924d2f1b3018095951fd3a0477393a7751f629` (`v0.9.6`)
 > **결론:** Impact-trace는 `agentmemory`를 가져오는 프로젝트가 아니라, 그중 **retrieval/lifecycle/UX 패턴만 SQLite + MCP impact context layer에 맞게 재구현**한다.
 
 ---
@@ -29,9 +30,9 @@ Impact-trace가 만들려는 것은 더 좁고 선명하다. **코드/문서/정
 
 | 상태 | 항목 |
 |---|---|
-| landed | `impact_trace_search_context` keyword/relation/evidence RRF ranking v1, retrieval depth v0(read-only temp FTS5/BM25 entity lane, `semanticRank`, `graphProximityRank`), search budget/diversification v0(`brief`/`standard`/`deep`, returned bytes, estimated tokens, omitted counts, path/entity/relation interleave), persistent relation_evidence/facts FTS projection + retrieval bench v0, evidence resource v0, context telemetry v0, doctor v0, MCP surface guard, opt-in `import-session` v0 |
-| next | entity persistent FTS replacement, sqlite-vec ANN search lane, resource pagination, typed errors, explicit supersession |
-| later | UI Explorer session timeline, context rank feedback, persisted context pack id/reuse, workspace/contract impact |
+| landed | `impact_trace_search_context` keyword/relation/evidence RRF ranking v1, retrieval depth v0(read-only temp FTS5/BM25 entity lane, `semanticRank`, `graphProximityRank`), search budget/diversification v0(`brief`/`standard`/`deep`, returned bytes, estimated tokens, omitted counts, path/entity/relation interleave), persistent relation_evidence/facts FTS projection + retrieval bench v0, evidence resource v0, context telemetry v0, doctor v0, MCP surface guard, opt-in `import-session` v0, graph JSON pagination, typed error envelope v0 |
+| next | explicit supersession, entity persistent FTS replacement, sqlite-vec ANN search lane, persisted context pack id/reuse |
+| later | UI Explorer session timeline, context rank feedback, workspace/contract impact |
 
 ---
 
@@ -40,21 +41,38 @@ Impact-trace가 만들려는 것은 더 좁고 선명하다. **코드/문서/정
 | 항목 | 확인 내용 |
 |---|---|
 | upstream repo | <https://github.com/rohitg00/agentmemory> |
-| inspected commit | `0322da8004dc9f5132d243bca89b5944e51f1f5f` |
-| package | `@agentmemory/agentmemory` v0.9.5, Node >=20, Apache-2.0 |
-| 주요 근거 | `README.md`, `package.json`, `src/types.ts`, `src/index.ts`, `src/state/hybrid-search.ts`, `src/functions/smart-search.ts`, `src/functions/remember.ts`, `src/functions/privacy.ts`, `src/triggers/api.ts`, `.github/security-advisories/*` |
-| 리뷰 방식 | GPT-5.5 Open Source Explorer, Integration Architect, Database/Memory Model Reviewer, Security/License/Ops Reviewer |
+| inspected commit | `13924d2f1b3018095951fd3a0477393a7751f629` |
+| package | `@agentmemory/agentmemory` v0.9.6, Node >=20, Apache-2.0 |
+| 주요 근거 | `CHANGELOG.md`, `README.md`, `package.json`, `src/types.ts`, `src/index.ts`, `src/state/hybrid-search.ts`, `src/state/memory-utils.ts`, `src/functions/smart-search.ts`, `src/functions/search.ts`, `src/functions/remember.ts`, `src/functions/access-tracker.ts`, `src/mcp/tools-registry.ts`, `packages/mcp/bin.mjs`, `plugin/hooks/hooks.json`, `.github/security-advisories/*` |
+| 리뷰 방식 | GPT-5.5 Open Source Explorer, Integration Architect, Database/Memory Model Reviewer, Retrieval/MCP Surface Reviewer, Security/License/Ops Reviewer + 2026-05-11 GPT-5.5 refresh |
 
 주요 upstream 소스:
 
-- [README: agents/MCP/REST 및 benchmark claim](https://github.com/rohitg00/agentmemory/blob/0322da8004dc9f5132d243bca89b5944e51f1f5f/README.md)
-- [package.json: license/dependencies/bin](https://github.com/rohitg00/agentmemory/blob/0322da8004dc9f5132d243bca89b5944e51f1f5f/package.json)
-- [types.ts: Session/RawObservation/CompressedObservation/Memory](https://github.com/rohitg00/agentmemory/blob/0322da8004dc9f5132d243bca89b5944e51f1f5f/src/types.ts)
-- [hybrid-search.ts: BM25 + vector + graph RRF](https://github.com/rohitg00/agentmemory/blob/0322da8004dc9f5132d243bca89b5944e51f1f5f/src/state/hybrid-search.ts)
-- [smart-search.ts: compact result와 expandIds](https://github.com/rohitg00/agentmemory/blob/0322da8004dc9f5132d243bca89b5944e51f1f5f/src/functions/smart-search.ts)
-- [remember.ts: type, supersedes, TTL, sourceObservationIds](https://github.com/rohitg00/agentmemory/blob/0322da8004dc9f5132d243bca89b5944e51f1f5f/src/functions/remember.ts)
-- [SECURITY.md](https://github.com/rohitg00/agentmemory/blob/0322da8004dc9f5132d243bca89b5944e51f1f5f/SECURITY.md)
-- [security advisories](https://github.com/rohitg00/agentmemory/tree/0322da8004dc9f5132d243bca89b5944e51f1f5f/.github/security-advisories)
+- [CHANGELOG: v0.9.6 search recall, MCP shim, hook latency fixes](https://github.com/rohitg00/agentmemory/blob/13924d2f1b3018095951fd3a0477393a7751f629/CHANGELOG.md)
+- [README: agents/MCP/REST 및 benchmark claim](https://github.com/rohitg00/agentmemory/blob/13924d2f1b3018095951fd3a0477393a7751f629/README.md)
+- [package.json: license/dependencies/bin](https://github.com/rohitg00/agentmemory/blob/13924d2f1b3018095951fd3a0477393a7751f629/package.json)
+- [types.ts: Session/RawObservation/CompressedObservation/Memory](https://github.com/rohitg00/agentmemory/blob/13924d2f1b3018095951fd3a0477393a7751f629/src/types.ts)
+- [hybrid-search.ts: BM25 + vector + graph RRF](https://github.com/rohitg00/agentmemory/blob/13924d2f1b3018095951fd3a0477393a7751f629/src/state/hybrid-search.ts)
+- [memory-utils.ts: Memory to observation fallback](https://github.com/rohitg00/agentmemory/blob/13924d2f1b3018095951fd3a0477393a7751f629/src/state/memory-utils.ts)
+- [smart-search.ts: compact result와 expandIds](https://github.com/rohitg00/agentmemory/blob/13924d2f1b3018095951fd3a0477393a7751f629/src/functions/smart-search.ts)
+- [search.ts: memory recall and token budget paths](https://github.com/rohitg00/agentmemory/blob/13924d2f1b3018095951fd3a0477393a7751f629/src/functions/search.ts)
+- [remember.ts: type, supersedes, TTL, sourceObservationIds](https://github.com/rohitg00/agentmemory/blob/13924d2f1b3018095951fd3a0477393a7751f629/src/functions/remember.ts)
+- [tools-registry.ts: MCP tool surface](https://github.com/rohitg00/agentmemory/blob/13924d2f1b3018095951fd3a0477393a7751f629/src/mcp/tools-registry.ts)
+- [standalone MCP package shim](https://github.com/rohitg00/agentmemory/blob/13924d2f1b3018095951fd3a0477393a7751f629/packages/mcp/bin.mjs)
+- [Claude Code hooks manifest](https://github.com/rohitg00/agentmemory/blob/13924d2f1b3018095951fd3a0477393a7751f629/plugin/hooks/hooks.json)
+- [SECURITY.md](https://github.com/rohitg00/agentmemory/blob/13924d2f1b3018095951fd3a0477393a7751f629/SECURITY.md)
+- [security advisories](https://github.com/rohitg00/agentmemory/tree/13924d2f1b3018095951fd3a0477393a7751f629/.github/security-advisories)
+
+### 1.1 2026-05-11 v0.9.6 delta
+
+v0.9.6은 새 feature보다 field regression fix가 중요하다. Impact-trace가 그대로 복사할 코드는 없지만, 세 가지 failure mode는 다음 slice의 guardrail로 가져와야 한다.
+
+| upstream 변화 | 확인 근거 | Impact-trace 적용 |
+|---|---|---|
+| `memory_save`로 저장한 memory가 `memory_smart_search`/`memory_recall`에 다시 보이도록 `KV.memories` fallback과 `memoryToObservation` helper를 추가 | `CHANGELOG.md`, `src/state/hybrid-search.ts`, `src/functions/search.ts`, `src/state/memory-utils.ts` | searchable projection은 first-class fact/memory와 observation/evidence를 모두 포함해야 한다. entity persistent FTS와 sqlite-vec ANN slice에는 live write, rebuild/backfill, restart 후 recall 회귀 테스트를 둔다. |
+| standalone `@agentmemory/mcp` shim이 hardcoded 7-tool subset 대신 running server의 full `tools/list`/call surface를 위임 | `CHANGELOG.md`, `packages/mcp/bin.mjs`, `src/mcp/tools-registry.ts` | Impact-trace는 split shim을 만들더라도 MCP surface를 두 곳에 하드코딩하지 않는다. 현재는 단일 MCP server + `tools/list` exact surface guard를 유지한다. |
+| Claude Code session/subagent hook이 slow REST server를 기다리며 startup latency를 키우던 문제를 fire-and-forget/capped timeout으로 수정 | `CHANGELOG.md`, `plugin/hooks/hooks.json` | Impact-trace core에는 automatic hook을 넣지 않는다. 향후 hook adapter를 만들면 기본 off, no context injection default, fire-and-forget telemetry, 1.5초 이하 timeout을 contract로 둔다. |
+| v0.9.5에서 vector dimension guard와 startup index rebuild/backfill을 추가 | `CHANGELOG.md`, embedding/index persistence path | sqlite-vec ANN lane은 model slug/dimension guard, stale index doctor finding, reindex path, mismatch fail-fast를 함께 구현한다. |
 
 ---
 
@@ -106,7 +124,7 @@ flowchart TB
   Compact --> Expand["expandIds when needed"]
 ```
 
-Impact-trace의 `impact_trace_search_context`는 v0에서 SQLite `LIKE` 기반 deterministic search와 compact evidence/resource URI 계약을 먼저 닫았다. v1은 이 계약을 유지하면서 keyword/relation/evidence stream을 분리하고 RRF rank signal을 노출한다. 다음 개선은 `agentmemory`처럼 **FTS/BM25, semantic, graph proximity signal까지 확장한 뒤 같은 RRF 계약으로 합치는 것**이다.
+Impact-trace의 `impact_trace_search_context`는 v0에서 SQLite `LIKE` 기반 deterministic search와 compact evidence/resource URI 계약을 먼저 닫았다. v1은 이 계약을 유지하면서 keyword/relation/evidence stream을 분리하고 RRF rank signal을 노출한다. 현재 depth v0는 read-only temp FTS5/BM25 entity lane, 기존 `fact_embeddings` 기반 `semanticRank`, matched seed의 1-hop `graphProximityRank`, persistent evidence/fact FTS projection까지 붙였다. 다음 개선은 **임시 entity FTS와 brute-force semantic path를 persistent entity FTS + sqlite-vec ANN으로 대체하는 것**이다.
 
 ---
 
@@ -159,6 +177,7 @@ flowchart LR
 |---|---|---|
 | **RRF hybrid ranking** | initial v1은 keyword/relation/evidence stream을 fuse한다. 다음 depth pass에서 "의미상 관련"과 "graph상 가까움"까지 충분히 합쳐야 한다. | 현재 `src/mcp.ts`; 후속으로 `src/search_context.ts` 분리 |
 | **compact-first + expand-on-demand 계약 강화** | 사용자의 핵심 요구가 AI context 절감이다. tool 응답은 compact hit와 URI만 보내고, source/evidence는 resource fetch로 늦춘다. | `impact_trace_search_context`, `impact_trace_context_for_change`, resource templates |
+| **live index/backfill parity** | v0.9.6의 saved-memory recall 회귀는 write path, rebuild path, enrichment path가 같은 corpus를 보지 않으면 검색이 조용히 비는 문제를 보여준다. | entity/fact/evidence FTS trigger, ANN backfill, restart recall tests, doctor stale-index finding |
 | **access telemetry** | 어떤 context가 실제로 agent에 의해 확장됐는지 알아야 ranking과 budget을 개선할 수 있다. | v0: `context_tool_runs`, `context_resource_accesses`, `impact_trace_context_telemetry` |
 | **explicit memory supersession** | 지금은 retract/currentOnly가 있지만, "이 summary/decision이 저 fact를 대체한다"를 더 명시적으로 표현할 수 있다. | `fact_provenance.kind='supersedes'` 또는 `fact_supersessions` |
 | **session import/replay UX** | Codex/Claude가 이미 수정한 흐름을 영향 그래프와 연결하면 "왜 이 변경이 일어났는가"를 UI에서 볼 수 있다. | landed: `impact-trace import-session --file <path> --format codex|claude` |
@@ -171,6 +190,7 @@ flowchart LR
 | **4-tier consolidation** | `agentmemory`는 raw observation부터 procedural memory까지 범용 memory server 구조다. | `working=context pack`, `episodic=session crystal`, `semantic=fact/reflection`, `procedural=adapter/skill/policy rule`로 정의 |
 | **privacy filter** | regex redaction은 항상 불완전하다. upstream advisories도 이 문제를 보여준다. | 기존 redact-then-embed / redact-then-LLM zero-row 정책 유지, fixture 기반 secret regression 추가 |
 | **viewer** | captured raw observation을 HTML로 보여주는 viewer는 XSS/secret leak surface가 크다. | read-only local UI, CSP nonce, no inline handler, no raw secret, resource pagination |
+| **standalone MCP shim** | hardcoded shim surface는 server의 실제 MCP surface와 drift난다. v0.9.6의 7-tool cap 회귀가 그 예다. | 지금은 단일 MCP server를 유지한다. 나중에 shim을 분리하면 `tools/list`/call을 server schema에서 위임하고 fallback subset을 명시한다. |
 | **file history** | 자동 hook/file watcher는 과캡처 위험이 크다. | 명시적 session import와 repo-contained file/entity linking만 허용 |
 | **auto-forget/retention** | hard delete는 Impact-trace의 content-addressed provenance와 충돌한다. | `archived`, `hidden_at`, `expires_at` 같은 soft visibility로만 구현 |
 
@@ -187,7 +207,7 @@ flowchart LR
 | arbitrary export/write/compress tools | Impact-trace MCP는 source/external write 없는 impact context가 기본이어야 한다. repo-local telemetry append만 예외로 둔다. |
 | hard auto-forget | provenance와 reproducibility를 해친다. |
 
-추가로 upstream v0.9.5에는 그대로 복사하면 안 되는 rough edge가 확인됐다. `iii-engine` sandbox-model drift, saved memory/hybrid graph hit enrichment 누락 가능성, graph edge merge 취약성, live index persistence gap, docs/runtime count drift가 있었다. 따라서 Impact-trace는 Apache-2.0 source를 복사하지 않고, 이미 가진 SQLite/provenance 모델 위에 필요한 retrieval/lifecycle 아이디어만 재구현한다.
+추가로 upstream v0.9.5/v0.9.6에는 그대로 복사하면 안 되는 rough edge가 확인됐다. `iii-engine` sandbox-model drift, saved memory enrichment 누락, MCP shim surface drift, hook startup latency, graph edge merge 취약성, live index persistence gap, docs/runtime count drift가 있었다. 따라서 Impact-trace는 Apache-2.0 source를 복사하지 않고, 이미 가진 SQLite/provenance 모델 위에 필요한 retrieval/lifecycle 아이디어만 재구현한다.
 
 ---
 
@@ -268,7 +288,8 @@ flowchart LR
 
 1. temp entity FTS를 schema v11 스타일의 persistent entity FTS projection으로 대체한다.
 2. semantic lane을 sqlite-vec ANN path와 직접 연결해 large memory set에서도 bounded query가 되게 한다.
-3. large index에서 common query가 전체 stream을 materialize하지 않도록 FTS/cap/guard 추가.
+3. fact/evidence/entity write path, rebuild/backfill path, restart 후 search path가 같은 corpus를 보도록 regression test를 추가한다.
+4. large index에서 common query가 전체 stream을 materialize하지 않도록 FTS/cap/guard 추가.
 
 ### Slice B: context access telemetry
 
@@ -347,12 +368,12 @@ Metric:
 
 | 순위 | 작업 | 왜 지금 |
 |---|---|---|
-| 1 | resource pagination + typed error envelope | depth/budget/persistent retrieval bench v0는 landed. UI와 MCP가 같은 contract를 쓰려면 큰 report/graph/evidence를 안전하게 나눠 읽어야 한다. |
-| 2 | explicit memory supersession | 오래된 decision/summary를 retract보다 의미 있게 대체해야 정책/제안서 impact가 stale해지지 않는다. |
-| 3 | entity persistent FTS + sqlite-vec ANN lane | large memory set에서도 bounded query가 되도록 entity temp FTS와 brute-force semantic path를 줄인다. |
-| 4 | persisted context pack id / repeated-query reuse | 같은 context를 반복 전송하지 않고 pack id로 재사용해야 token 절감이 커진다. |
-| 5 | UI Explorer v0 | resource contract가 안정된 뒤 사람이 같은 evidence와 session timeline을 검증한다. |
-| 6 | workspace/contract impact | single repo + repo-local docs가 안정된 뒤 OpenAPI/protobuf/GraphQL consumer risk로 넓힌다. |
+| 0 | resource pagination + typed error envelope | 완료. graph JSON resource가 `limit/cursor` page contract를 갖고 MCP failures가 `{ code, problem, cause, fix, evidence }` envelope로 정규화됐다. |
+| 1 | explicit memory supersession | 오래된 decision/summary를 retract보다 의미 있게 대체해야 정책/제안서 impact가 stale해지지 않는다. |
+| 2 | entity persistent FTS + sqlite-vec ANN lane | large memory set에서도 bounded query가 되도록 entity temp FTS와 brute-force semantic path를 줄인다. v0.9.6 교훈에 따라 live-write/backfill/restart parity test가 필요하다. |
+| 3 | persisted context pack id / repeated-query reuse | 같은 context를 반복 전송하지 않고 pack id로 재사용해야 token 절감이 커진다. |
+| 4 | UI Explorer v0 | resource contract가 안정된 뒤 사람이 같은 evidence와 session timeline을 검증한다. |
+| 5 | workspace/contract impact | single repo + repo-local docs가 안정된 뒤 OpenAPI/protobuf/GraphQL consumer risk로 넓힌다. |
 
 이미 완료된 guardrail은 유지한다: adoption boundary doc, search RRF initial v1, telemetry v0, MCP allowlist/security tests, doctor v0, opt-in session import v0.
 

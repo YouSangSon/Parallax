@@ -191,4 +191,7 @@ Pre-Phase 1 baseline.
 
 ## Versioning policy
 
-This project doesn't ship semantic versions yet — everything is *Unreleased* on `main`. Each Phase is a logical milestone. When the public API stabilises and a v0.1 ships, this changelog will switch to date-based versions.
+`package.json` currently declares `0.1.0` for npm/dev identity, but this changelog
+is still grouped by phase while the public API is stabilizing. Each Phase is a
+logical milestone on `main`; when release packaging is formalized, new entries
+will be grouped under dated semantic versions instead of only phase headings.

@@ -38,3 +38,23 @@ Security-sensitive 예시:
 - 모든 file input은 realpath containment check를 거쳐야 합니다.
 - evidence는 저장 또는 출력 전에 redaction되어야 합니다.
 - docs lint는 local machine path와 secret-like content를 차단해야 합니다.
+
+## 외부 memory platform에서 배운 guardrail
+
+`rohitg00/agentmemory` 적용성 검토 중 viewer XSS, shell installer RCE,
+default HTTP bind, unauthenticated mesh, export traversal, redaction gap 같은
+upstream advisory를 확인했습니다. Impact Trace는 해당 platform을 가져오지
+않지만, 다음 원칙은 core guardrail로 유지합니다.
+
+- 기본 실행 경로는 CLI와 MCP stdio입니다. HTTP server, stream server,
+  WebSocket, proxy, background daemon은 core에 암묵적으로 추가하지 않습니다.
+- `curl | sh` 형태 installer는 문서나 자동화의 기본 경로로 쓰지 않습니다.
+- local UI가 추가되면 opt-in이어야 하며, CSP nonce, no inline handler,
+  escaped text rendering, raw secret 미표시를 기본으로 둡니다.
+- 외부 export/write 기능이 추가되면 lexical path check만으로는 부족합니다.
+  realpath/lstat 기반 containment와 symlink escape 테스트가 필수입니다.
+- MCP `tools/list`는 exact surface test로 고정하고, list에 없는 agentmemory식
+  export/write/mesh/team 도구가 `tools/call`로 직접 호출되어도 실패해야 합니다.
+- automatic hook capture와 context injection은 기본 기능이 아닙니다. 향후 hook
+  adapter를 만들더라도 opt-in, bounded payload, fire-and-forget telemetry,
+  short timeout을 요구합니다.

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, symlink, unlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readdir, readFile, symlink, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -48,18 +48,26 @@ test('analyzeDiff does not read post-index symlink evidence outside repo root', 
 
 test('redactSecrets removes common token and private key shapes', () => {
   const openAiKey = ['sk-', 'live-', 'abcdefghijklmnopqrstuvwxyz123456'].join('');
+  const openAiProjectKey = ['sk-proj-', 'abcdefghijklmnopqrstuvwxyz1234567890'].join('');
   const githubToken = ['gh', 'p_', 'abcdefghijklmnopqrstuvwxyz1234567890'].join('');
+  const githubServerToken = ['gh', 's_', 'abcdefghijklmnopqrstuvwxyz1234567890'].join('');
+  const githubUserToken = ['gh', 'u_', 'abcdefghijklmnopqrstuvwxyz1234567890'].join('');
   const slackToken = ['xox', 'b-', '123456789012-123456789012-abcdefghijklmnopqrstuvwxyz'].join('');
   const awsAccessKey = ['AKIA', '1234567890ABCDEF'].join('');
   const awsSecretKey = ['abcdefghijklmnopqrstuvwxyz', '1234567890ABCD'].join('');
   const bearerToken = ['Bearer ', 'abcdefghijklmnopqrstuvwxyz1234567890'].join('');
+  const dbUrl = 'postgres://impact_user:impact_password@localhost:5432/impact';
   const input = [
     `OPENAI_API_KEY=${openAiKey}`,
+    `OPENAI_PROJECT_KEY=${openAiProjectKey}`,
     `GITHUB_TOKEN=${githubToken}`,
+    `GITHUB_SERVER_TOKEN=${githubServerToken}`,
+    `GITHUB_USER_TOKEN=${githubUserToken}`,
     `SLACK_BOT_TOKEN=${slackToken}`,
     `AWS_ACCESS_KEY_ID=${awsAccessKey}`,
     `AWS_SECRET_ACCESS_KEY=${awsSecretKey}`,
     `Authorization: ${bearerToken}`,
+    `DATABASE_URL=${dbUrl}`,
     '-----BEGIN PRIVATE KEY-----',
     'abc',
     '-----END PRIVATE KEY-----'
@@ -68,11 +76,15 @@ test('redactSecrets removes common token and private key shapes', () => {
   const redacted = redactSecrets(input);
 
   assert.doesNotMatch(redacted, /sk-live/);
+  assert.doesNotMatch(redacted, /sk-proj/);
   assert.doesNotMatch(redacted, /ghp_/);
+  assert.doesNotMatch(redacted, /ghs_/);
+  assert.doesNotMatch(redacted, /ghu_/);
   assert.doesNotMatch(redacted, /xoxb-/);
   assert.equal(redacted.includes(awsAccessKey), false);
   assert.equal(redacted.includes(awsSecretKey), false);
   assert.equal(redacted.includes(bearerToken), false);
+  assert.equal(redacted.includes(dbUrl), false);
   assert.doesNotMatch(redacted, /BEGIN PRIVATE KEY/);
   assert.match(redacted, /\[REDACTED/);
 });
@@ -83,4 +95,36 @@ test('redactSecrets redacts before truncation', () => {
 
   assert.doesNotMatch(redacted, /BEGIN PRIVATE KEY|secret/);
   assert.match(redacted, /\[REDACTED_PRIVATE_KEY\]/);
+});
+
+async function listSourceFiles(root: string): Promise<string[]> {
+  const entries = await readdir(root, { withFileTypes: true });
+  const files: string[] = [];
+  for (const entry of entries) {
+    const fullPath = path.join(root, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...await listSourceFiles(fullPath));
+    } else if (entry.isFile() && /\.(ts|tsx|js|mjs|cjs)$/.test(entry.name)) {
+      files.push(fullPath);
+    }
+  }
+  return files;
+}
+
+test('core src does not introduce an implicit HTTP daemon or websocket listener', async () => {
+  const srcRoot = path.resolve('src');
+  const forbiddenPatterns: Array<[RegExp, string]> = [
+    [/\bnode:http\b/, 'node:http'],
+    [/\bnode:https\b/, 'node:https'],
+    [/\bcreateServer\s*\(/, 'createServer('],
+    [/\blisten\s*\(/, 'listen('],
+    [/\bWebSocket\b/, 'WebSocket']
+  ];
+
+  for (const file of await listSourceFiles(srcRoot)) {
+    const text = await readFile(file, 'utf8');
+    for (const [pattern, label] of forbiddenPatterns) {
+      assert.doesNotMatch(text, pattern, `${path.relative(process.cwd(), file)} must not use ${label}`);
+    }
+  }
 });

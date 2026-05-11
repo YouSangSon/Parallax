@@ -38,6 +38,7 @@
 | [D-026](#d-026-workspace-catalog-is-an-explicit-local-allowlist) | workspace catalog is an explicit local allowlist | P0/P1 | 2026-05-11 |
 | [D-027](#d-027-cross-repo-contract-resolution-reads-indexed-local-repos-only) | cross-repo contract resolution reads indexed local repos only | P0/P1 | 2026-05-11 |
 | [D-028](#d-028-contract-diff-v0-compares-indexed-openapi-endpoints-to-current-files) | contract diff v0 compares indexed OpenAPI endpoints to current files | P0/P1 | 2026-05-11 |
+| [D-029](#d-029-mcp-workspace-contract-resources-expand-contract-impact-on-demand) | MCP workspace contract resources expand contract impact on demand | P3/P0 | 2026-05-11 |
 
 ---
 
@@ -484,7 +485,7 @@
 - MCP tool에서 workspace path를 임의 입력으로 매번 받음 — 빠르지만 반복 호출마다 trust boundary를 다시 검증해야 하고 UI/list UX가 없다.
 - workspace catalog 없이 contract resolver부터 구현 — consumer/provider graph가 어떤 repo 범위에서 유효한지 설명할 수 없다.
 
-**결과/위험:** workspace catalog는 config file 기준 상대경로를 사용하고 DB에는 canonical realpath를 저장한다. `add-repo` 재실행은 같은 path row를 업데이트하므로 idempotent하다. v0는 repo 등록/조회만 제공한다. indexed local repo를 읽는 첫 cross-repo resolver는 D-027에서 추가됐고, OpenAPI endpoint-surface contract diff는 D-028에서 추가됐다. MCP workspace resource는 후속 slice다.
+**결과/위험:** workspace catalog는 config file 기준 상대경로를 사용하고 DB에는 canonical realpath를 저장한다. `add-repo` 재실행은 같은 path row를 업데이트하므로 idempotent하다. v0는 repo 등록/조회만 제공한다. indexed local repo를 읽는 첫 cross-repo resolver는 D-027에서 추가됐고, OpenAPI endpoint-surface contract diff는 D-028에서 추가됐다. MCP workspace/contract resource는 D-029에서 추가됐다.
 
 **관련 commit:** `feat(workspace): add local catalog CLI`
 
@@ -523,6 +524,24 @@
 **결과/위험:** v0는 OpenAPI YAML/JSON endpoint surface에 한정된다. endpoint removal은 known HTTP literal consumer가 있을 때만 persisted breaking link가 되며, consumer가 없더라도 result summary에는 breaking change로 남는다. unreadable/unparsed current contract는 unknown으로 반환하고 기존 breaking links를 지우지 않는다. path는 provider repo root fence를 통과해야 하며 post-index symlink escape를 읽지 않는다. response schema, required field, status code, auth scope, protobuf/GraphQL/AsyncAPI diff는 후속 slice다.
 
 **관련 commit:** `feat(contracts): OpenAPI contract diff 추가`
+
+---
+
+## D-029: MCP workspace contract resources expand contract impact on demand
+
+**결정:** endpoint-surface contract diff를 MCP tool `impact_trace_contract_diff`로 노출하고, 결과에는 `impact-trace://workspaces/{workspaceName}`, `impact-trace://workspaces/{workspaceName}/contracts`, `impact-trace://workspaces/{workspaceName}/cross-repo-links` resource URI를 포함한다. workspace resource는 local catalog membership을, contracts resource는 workspace repo들의 latest indexed contract baseline과 endpoint count를, cross-repo links resource는 `CONSUMES_HTTP_ENDPOINT`와 `BREAKS_COMPATIBILITY_WITH` provenance를 compact JSON으로 반환한다.
+
+**맥락:** 사용자는 Claude/Codex가 코드를 수정할 때 관련 코드/정책/문서/contract impact를 알되 AI context 사용량은 줄이고 싶다고 했다. CLI `workspace contract-diff`만 있으면 agent가 결과를 받더라도 이후 workspace membership, contract baseline, provider/consumer link를 다시 파일 탐색으로 찾기 쉽다. MCP에서는 큰 payload를 tool response에 모두 넣는 대신 작은 diff summary + resource URI를 주고, 필요한 경우에만 resource를 읽게 해야 한다.
+
+**대안:**
+- contract diff 결과에 모든 workspace contract와 link를 inline — 한 번에 편하지만 context 절감 목표와 충돌한다.
+- `resources/list` 없이 tool-only JSON 유지 — 자동화는 가능하지만 UI/list UX와 agent의 expand-on-demand 흐름이 약하다.
+- MCP resource가 live provider contract file을 읽음 — current diff 확인에는 필요하지만 baseline resource는 latest completed index 기준이어야 stale/dirty 경계를 설명할 수 있다.
+- schema/body diff까지 기다렸다가 MCP에 노출 — endpoint removal은 이미 useful하고 작은 slice로 검증 가능하다.
+
+**결과/위험:** v0는 OpenAPI endpoint-surface diff 결과를 MCP로 연결하는 surface다. `impact_trace_contract_diff`는 기본적으로 root workspace DB에 breaking link를 갱신하므로 MCP annotation은 write-capable이다. resource read는 read-only payload지만 context telemetry row는 append될 수 있다. contracts resource는 latest completed index baseline과 endpoint count만 보여주며 current working tree body/schema details는 후속 schema/body-level diff에서 확장한다.
+
+**관련 commit:** `feat(mcp): contract impact resources 추가`
 
 ---
 

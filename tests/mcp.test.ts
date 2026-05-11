@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -8,7 +8,14 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
 
-import { analyzeDiff, indexProject, initProject } from '../src/index.js';
+import {
+  addWorkspaceRepo,
+  analyzeDiff,
+  indexProject,
+  initProject,
+  initWorkspace,
+  resolveCrossRepoContracts
+} from '../src/index.js';
 import { computeEmbeddingSync, STUB_MODEL_NAME } from '../src/embeddings.js';
 import {
   databasePath,
@@ -155,6 +162,61 @@ async function makeRepo(): Promise<string> {
   await initProject({ repoRoot });
   await indexProject({ repoRoot });
   return repoRoot;
+}
+
+async function makeContractWorkspaceRepo(): Promise<{ consumerRoot: string; providerRoot: string }> {
+  const consumerRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-mcp-contract-consumer-'));
+  const providerRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-mcp-contract-provider-'));
+  await mkdir(path.join(consumerRoot, 'src'), { recursive: true });
+  await writeFile(
+    path.join(consumerRoot, 'src/client.ts'),
+    [
+      'export async function loadUsers() {',
+      '  return fetch("https://users.example.test/api/users");',
+      '}',
+      ''
+    ].join('\n')
+  );
+  await writeMcpOpenApiContract(providerRoot, ['/api/users', '/api/status']);
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'users-api'
+  });
+  const resolved = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+  assert.equal(resolved.links.length, 1);
+  return { consumerRoot, providerRoot };
+}
+
+async function writeMcpOpenApiContract(repoRoot: string, routes: string[]): Promise<void> {
+  await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
+  const routeLines = routes.flatMap((route) => [
+    `  ${route}:`,
+    '    get:',
+    `      operationId: ${route.replace(/[^a-z0-9]/gi, '') || 'root'}`,
+    '      responses:',
+    "        '200':",
+    '          description: ok'
+  ]);
+  await writeFile(
+    path.join(repoRoot, 'contracts/openapi.yaml'),
+    [
+      'openapi: 3.0.0',
+      'info:',
+      '  title: Users API',
+      '  version: 1.0.0',
+      'paths:',
+      ...routeLines,
+      ''
+    ].join('\n')
+  );
 }
 
 function insertFactEmbedding(db: Db, factId: string, value: string): void {
@@ -930,6 +992,7 @@ test('MCP stdio server initializes and exposes the full agent memory tool surfac
       'impact_trace_gc_branches',
       'impact_trace_profile',
       'impact_trace_explain_entity',
+      'impact_trace_contract_diff',
       'impact_trace_repair_reflections',
       'impact_trace_restore_branch',
       'impact_trace_context_telemetry',
@@ -963,6 +1026,9 @@ test('MCP stdio server initializes and exposes the full agent memory tool surfac
     assert.equal(toolByName.get('impact_trace_search_context')!.inputSchema?.properties?.query?.type, 'string');
     assert.equal(toolByName.get('impact_trace_search_context')!.inputSchema?.properties?.k?.maximum, 50);
     assert.equal(toolByName.get('impact_trace_explain_entity')!.inputSchema?.properties?.relationLimit?.maximum, 100);
+    assert.equal(toolByName.get('impact_trace_contract_diff')!.inputSchema?.properties?.contractPath?.type, 'string');
+    assert.equal(toolByName.get('impact_trace_contract_diff')!.inputSchema?.properties?.providerServiceName?.type, 'string');
+    assert.equal(toolByName.get('impact_trace_contract_diff')!.inputSchema?.properties?.persist?.type, 'boolean');
     assert.equal(toolByName.get('impact_trace_analyze_diff')!.annotations?.idempotentHint, false);
     assert.equal(toolByName.get('impact_trace_context_for_change')!.annotations?.idempotentHint, false);
     assert.equal(toolByName.get('impact_trace_search_context')!.annotations?.idempotentHint, false);
@@ -971,6 +1037,8 @@ test('MCP stdio server initializes and exposes the full agent memory tool surfac
     assert.equal(toolByName.get('impact_trace_profile')!.annotations?.readOnlyHint, true);
     assert.equal(toolByName.get('impact_trace_explain_entity')!.annotations?.readOnlyHint, false);
     assert.equal(toolByName.get('impact_trace_explain_entity')!.annotations?.idempotentHint, false);
+    assert.equal(toolByName.get('impact_trace_contract_diff')!.annotations?.readOnlyHint, false);
+    assert.equal(toolByName.get('impact_trace_contract_diff')!.annotations?.idempotentHint, false);
     assert.equal(toolByName.get('impact_trace_context_telemetry')!.annotations?.readOnlyHint, true);
     assert.equal(toolByName.get('impact_trace_context_telemetry')!.annotations?.idempotentHint, true);
     assert.equal(toolByName.get('impact_trace_doctor')!.annotations?.readOnlyHint, true);
@@ -1125,6 +1193,154 @@ test('MCP analyze_diff does not persist reports', async () => {
       names.filter((name) => !/\.db-(wal|shm)$/.test(name));
     assert.deepEqual(filterWalAux(dbArtifacts(repoRoot)), filterWalAux(artifactsBefore));
     assert.equal(existsSync(path.join(repoRoot, '.impact-trace/reports')), false);
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP contract_diff returns compact workspace resources and persists breaking contract links', async () => {
+  const { consumerRoot, providerRoot } = await makeContractWorkspaceRepo();
+  const consumerReal = realpathSync(consumerRoot);
+  const providerReal = realpathSync(providerRoot);
+  await writeMcpOpenApiContract(providerRoot, ['/api/status', '/api/admin']);
+  const client = new McpProcessClient(consumerRoot);
+  try {
+    await client.initialize();
+
+    const diffResponse = await client.request('tools/call', {
+      name: 'impact_trace_contract_diff',
+      arguments: {
+        workspaceName: 'platform',
+        providerServiceName: 'users-api',
+        contractPath: 'contracts/openapi.yaml'
+      }
+    });
+
+    assert.equal(diffResponse.error, undefined);
+    const diff = JSON.parse(diffResponse.result.content[0].text) as {
+      workspace: { name: string };
+      provider: { serviceName: string; repoPath: string };
+      summary: { classification: string; breakingChangeCount: number; impactedConsumerCount: number };
+      changes: Array<{ kind: string; classification: string; httpMethod?: string; routePath?: string }>;
+      impactedConsumers: Array<{ consumerPath: string; routePath: string }>;
+      resources: { workspace: string; contracts: string; crossRepoLinks: string };
+    };
+    assert.equal(diff.workspace.name, 'platform');
+    assert.equal(diff.provider.serviceName, 'users-api');
+    assert.equal(diff.provider.repoPath, providerReal);
+    assert.equal(diff.summary.classification, 'breaking');
+    assert.equal(diff.summary.breakingChangeCount, 1);
+    assert.equal(diff.summary.impactedConsumerCount, 1);
+    assert.ok(diff.changes.some((change) =>
+      change.kind === 'removed_endpoint' &&
+      change.classification === 'breaking' &&
+      change.httpMethod === 'GET' &&
+      change.routePath === '/api/users'
+    ));
+    assert.deepEqual(diff.impactedConsumers.map((consumer) => ({
+      consumerPath: consumer.consumerPath,
+      routePath: consumer.routePath
+    })), [
+      {
+        consumerPath: 'src/client.ts',
+        routePath: '/api/users'
+      }
+    ]);
+    assert.equal(diff.resources.workspace, 'impact-trace://workspaces/platform');
+    assert.equal(diff.resources.contracts, 'impact-trace://workspaces/platform/contracts');
+    assert.equal(diff.resources.crossRepoLinks, 'impact-trace://workspaces/platform/cross-repo-links');
+
+    const workspaceResource = await client.request('resources/read', { uri: diff.resources.workspace });
+    assert.equal(workspaceResource.error, undefined);
+    const workspaceJson = JSON.parse(workspaceResource.result.contents[0].text) as {
+      workspace: { name: string; repos: Array<{ serviceName: string; localPath: string }> };
+      resources: { contracts: string; crossRepoLinks: string };
+    };
+    assert.equal(workspaceJson.workspace.name, 'platform');
+    assert.deepEqual(
+      workspaceJson.workspace.repos.map((repo) => [repo.serviceName, repo.localPath]).sort(),
+      [
+        ['users-api', providerReal],
+        ['web', consumerReal]
+      ].sort()
+    );
+    assert.equal(workspaceJson.resources.contracts, diff.resources.contracts);
+    assert.equal(workspaceJson.resources.crossRepoLinks, diff.resources.crossRepoLinks);
+
+    const contractsResource = await client.request('resources/read', { uri: diff.resources.contracts });
+    assert.equal(contractsResource.error, undefined);
+    const contractsJson = JSON.parse(contractsResource.result.contents[0].text) as {
+      workspace: string;
+      contracts: Array<{
+        serviceName: string;
+        repoPath: string;
+        path: string;
+        kind: string;
+        schemaVersion?: string;
+        endpointCount: number;
+        contractDiffHint: { tool: string; contractPath: string; providerServiceName: string };
+      }>;
+      warnings: string[];
+    };
+    assert.equal(contractsJson.workspace, 'platform');
+    const usersContract = contractsJson.contracts.find((contract) =>
+      contract.serviceName === 'users-api' && contract.path === 'contracts/openapi.yaml'
+    );
+    assert.ok(usersContract);
+    assert.equal(usersContract.repoPath, providerReal);
+    assert.equal(usersContract.kind, 'openapi');
+    assert.equal(usersContract.schemaVersion, '3.0.0');
+    assert.equal(usersContract.endpointCount, 2);
+    assert.deepEqual(usersContract.contractDiffHint, {
+      tool: 'impact_trace_contract_diff',
+      workspaceName: 'platform',
+      contractPath: 'contracts/openapi.yaml',
+      providerServiceName: 'users-api'
+    });
+    assert.deepEqual(contractsJson.warnings, []);
+
+    const linksResource = await client.request('resources/read', { uri: diff.resources.crossRepoLinks });
+    assert.equal(linksResource.error, undefined);
+    const linksJson = JSON.parse(linksResource.result.contents[0].text) as {
+      workspace: string;
+      links: Array<{
+        kind: string;
+        sourceService: string;
+        targetService: string;
+        sourceRepoPath: string;
+        targetRepoPath: string;
+        provenance: any;
+      }>;
+    };
+    assert.equal(linksJson.workspace, 'platform');
+    assert.ok(linksJson.links.some((link) =>
+      link.kind === 'CONSUMES_HTTP_ENDPOINT' &&
+      link.sourceService === 'web' &&
+      link.targetService === 'users-api' &&
+      link.sourceRepoPath === consumerReal &&
+      link.targetRepoPath === providerReal &&
+      link.provenance.http.path === '/api/users'
+    ));
+    assert.ok(linksJson.links.some((link) =>
+      link.kind === 'BREAKS_COMPATIBILITY_WITH' &&
+      link.sourceService === 'web' &&
+      link.targetService === 'users-api' &&
+      link.provenance.change.path === '/api/users'
+    ));
+
+    const templates = await client.request('resources/templates/list', {});
+    assert.equal(templates.error, undefined);
+    const templateUris = templates.result.resourceTemplates.map((item: { uriTemplate: string }) => item.uriTemplate);
+    assert.ok(templateUris.includes('impact-trace://workspaces/{workspaceName}'));
+    assert.ok(templateUris.includes('impact-trace://workspaces/{workspaceName}/contracts'));
+    assert.ok(templateUris.includes('impact-trace://workspaces/{workspaceName}/cross-repo-links'));
+
+    const resources = await client.request('resources/list', {});
+    assert.equal(resources.error, undefined);
+    const resourceUris = resources.result.resources.map((item: { uri: string }) => item.uri);
+    assert.ok(resourceUris.includes('impact-trace://workspaces/platform'));
+    assert.ok(resourceUris.includes('impact-trace://workspaces/platform/contracts'));
+    assert.ok(resourceUris.includes('impact-trace://workspaces/platform/cross-repo-links'));
   } finally {
     await client.close();
   }

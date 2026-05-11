@@ -47,17 +47,18 @@ MVP 구현이 들어가 있습니다.
 - `.impact-trace/workspace.json` 기반 local workspace catalog와 `workspace init/add-repo/list/resolve-contracts` CLI
 - workspace에 등록된 indexed repo 사이의 OpenAPI provider endpoint ↔ HTTP consumer file link 저장
 - OpenAPI endpoint surface diff를 `breaking`/`non-breaking`/`unknown`으로 분류하고 known consumer impact를 `BREAKS_COMPATIBILITY_WITH` link로 저장
+- MCP `impact_trace_contract_diff`와 `impact-trace://workspaces/{name}` resource로 workspace contract/link 상태를 compact payload로 제공
 - import 기반 관련 테스트 추론
 - Markdown mention 기반 관련 문서 추론
 - Markdown policy/proposal/PRD/decision 파일을 first-class work artifact로 분류하고 `GOVERNS`/`PROPOSES`/`REQUIRES` impact relation 추론
 - system/config 파일의 path mention 기반 관계 추론
 - 변경 파일 분석 후 JSON 또는 Markdown report 생성
 - 공식 MCP SDK 기반 stdio server 제공
-- MCP impact tools 제공: `impact_trace_analyze_diff`, `impact_trace_context_for_change`, `impact_trace_search_context`, `impact_trace_explain_entity`
+- MCP impact tools 제공: `impact_trace_analyze_diff`, `impact_trace_context_for_change`, `impact_trace_search_context`, `impact_trace_explain_entity`, `impact_trace_contract_diff`
 - health/diagnostic surface 제공: `impact-trace doctor`, `impact_trace_doctor`
 - opt-in session import 제공: `impact-trace import-session --file <path> --format codex|claude`
 - agent memory MCP tools 제공: `remember`, `recall`, `branch`, `trace`, `reflect` 등은 `.impact-trace/impact.db` 안에서만 동작
-- read-only MCP resources 제공: report, entity, evidence, graph, latest coverage
+- read-only MCP resources 제공: report, entity, evidence, graph, latest coverage, workspace contract/link resources
 - evidence output 전 secret-like 값 redaction
 - repo root 밖으로 나가는 path 거절
 - workspace, contract, cross-repo link, work artifact 확장용 SQLite schema
@@ -130,7 +131,7 @@ graph LR
 **비전 한 페이지:** [docs/vision.ko.md](docs/vision.ko.md). **제품 계획:** [docs/impact-context-layer-plan.ko.md](docs/impact-context-layer-plan.ko.md) — MCP + UI + AI context 절감 + 코드/문서/정책/제안서 impact 기준 문서. **agentmemory 적용성 분석:** [docs/agentmemory-adoption-review.ko.md](docs/agentmemory-adoption-review.ko.md). **통합 로드맵:** [docs/roadmap.md](docs/roadmap.md). **두 축 어휘:** [docs/glossary.md](docs/glossary.md).
 자세한 사용 예시는 [docs/agent-memory-cookbook.ko.md](docs/agent-memory-cookbook.ko.md).
 현재 설계 근거: [Phase 6 설계/진행](docs/phase6-design.ko.md) · [Phase 6B multi-language + Spring Boot 계획](docs/phase6b-ts-accuracy-plan.ko.md).
-누적 결정 로그: [decisions.ko.md (D-001..D-028)](docs/decisions.ko.md).
+누적 결정 로그: [decisions.ko.md (D-001..D-029)](docs/decisions.ko.md).
 문서 navigation: [docs/README.md](docs/README.md).
 
 ## 요구 사항
@@ -393,6 +394,7 @@ MCP에서 노출하는 주요 tool은 아래와 같습니다.
 | `impact_trace_context_for_change` | 변경 파일을 기준으로 `brief`/`standard`/`deep` budget에 맞춘 compact context pack을 반환합니다. agent가 전체 report를 받지 않고 top impact paths, evidence refs, entity/coverage resource link만 받도록 합니다. |
 | `impact_trace_search_context` | keyword/path/symbol/relation/evidence/fact text를 최신 index에서 검색하고 RRF-ranked entity context, stream별 rank signal, match reason, compact evidence, resource link를 반환합니다. |
 | `impact_trace_explain_entity` | entity 하나의 direct relation과 compact evidence를 제한된 payload로 반환하고, full evidence resource link를 제공합니다. |
+| `impact_trace_contract_diff` | workspace의 latest indexed OpenAPI endpoint baseline과 current contract file을 비교하고, removed endpoint의 known consumer impact와 workspace/contract/link resource URI를 반환합니다. |
 | `impact_trace_context_telemetry` | compact context tool run과 resource fetch를 repo-local telemetry로 요약해 context 절감이 실제로 작동했는지 확인합니다. |
 | `impact_trace_doctor` | schema/index/coverage/adapter/vector/telemetry 상태를 read-only JSON report로 반환해 agent가 불필요한 탐색 없이 현재 repo 상태를 파악하게 합니다. |
 | `impact_trace_remember` | agent의 결정/관찰을 content-addressable fact로 저장합니다. `supersedesFactIds`로 오래된 fact를 명시적으로 대체할 수 있습니다. |
@@ -432,6 +434,10 @@ secret redaction을 거치며, telemetry write는 외부 시스템이 아니라 
 안에서만 append-only로 발생합니다.
 `impact_trace_doctor` v0는 telemetry row를 추가하지 않는 순수 read-only health surface입니다.
 database가 없을 때도 `.impact-trace` 디렉터리를 만들지 않고 `database_missing` finding을 반환합니다.
+`impact_trace_contract_diff` v0는 CLI `workspace contract-diff`와 같은 endpoint-surface classifier를 MCP로 노출합니다.
+기본적으로 `BREAKS_COMPATIBILITY_WITH` link를 repo-local workspace DB에 갱신하며, 결과에는
+`impact-trace://workspaces/{workspaceName}`, `/contracts`, `/cross-repo-links` resource URI가 포함됩니다.
+agent는 diff payload를 받은 뒤 전체 workspace를 읽지 않고 필요한 contract baseline이나 cross-repo link 목록만 resource로 확장할 수 있습니다.
 
 agent memory 툴(`remember`/`branch`)은 DB에 쓰지만 모두 *현재 저장소의*
 `.impact-trace/impact.db` 안에서만 동작합니다. Obsidian export 같은 외부 시스템
@@ -448,6 +454,9 @@ MVP에서 노출하는 resource는 read-only입니다.
 | `impact-trace://evidence/{evidenceId}` | relation evidence의 redacted snippet, source span, source/target entity를 읽습니다. |
 | `impact-trace://reports/{reportId}/graph/{format}` | Mermaid, JSON, DOT graph projection을 읽습니다. |
 | `impact-trace://coverage/latest` | 최신 index coverage를 읽습니다. |
+| `impact-trace://workspaces/{workspaceName}` | workspace catalog membership과 contract/link resource URI를 읽습니다. |
+| `impact-trace://workspaces/{workspaceName}/contracts` | workspace repo들의 최신 indexed contract baseline, endpoint count, contract diff hint를 읽습니다. |
+| `impact-trace://workspaces/{workspaceName}/cross-repo-links` | `CONSUMES_HTTP_ENDPOINT`와 `BREAKS_COMPATIBILITY_WITH` 같은 workspace-scoped provider/consumer link를 읽습니다. |
 
 JSON graph resource는 query string을 지원합니다. 예: `impact-trace://reports/<id>/graph/json?limit=50`.
 응답에는 `page.cursor`, `page.nextCursor`, `page.totalNodes`, `page.totalEdges`, `page.returnedNodes`, `page.returnedEdges`가 들어갑니다.
@@ -606,8 +615,8 @@ npm audit --audit-level=high
 - [Impact Context Layer 제품 계획](docs/impact-context-layer-plan.ko.md) — Claude/Codex MCP integration, local UI explorer, context budget, 정책/제안서 impact 계획
 - [agentmemory 적용성 분석](docs/agentmemory-adoption-review.ko.md) — `rohitg00/agentmemory`에서 가져올 retrieval/lifecycle 패턴과 거부할 platform surface 정리
 - [Phase 6 설계/진행 문서](docs/phase6-design.ko.md) — `main`에 반영된 adapter foundation 작업
-- [Phase 6B multi-language + Spring Boot 계획](docs/phase6b-ts-accuracy-plan.ko.md) — 현재 slice: adapter pack v0 routing, ImpactBench fixture, TS/JS parser-backed import span v0, JVM/Spring lightweight evidence span v0, Python/Go/Rust lightweight span v0, OpenAPI contract impact baseline, workspace catalog v0, cross-repo contract resolver v0, OpenAPI contract diff v0
-- [Architecture decisions log (D-001..D-028)](docs/decisions.ko.md) — 누적 ADR 로그
+- [Phase 6B multi-language + Spring Boot 계획](docs/phase6b-ts-accuracy-plan.ko.md) — 현재 slice: adapter pack v0 routing, ImpactBench fixture, TS/JS parser-backed import span v0, JVM/Spring lightweight evidence span v0, Python/Go/Rust lightweight span v0, OpenAPI contract impact baseline, workspace catalog v0, cross-repo contract resolver v0, OpenAPI contract diff v0, MCP workspace/contract resources v0
+- [Architecture decisions log (D-001..D-029)](docs/decisions.ko.md) — 누적 ADR 로그
 - [Agent memory cookbook](docs/agent-memory-cookbook.ko.md)
 
 **Skill 패키징 (Phase 4):**
@@ -635,7 +644,7 @@ npm audit --audit-level=high
 8. protobuf/GraphQL/AsyncAPI와 schema/body-level breaking-change impact 분석 추가
 9. web graph explorer와 더 큰 graph filtering 추가
 10. source-span evidence와 parser-level provenance 추가
-11. MCP workspace/contract resources 추가
+11. schema/body-level contract diff와 protobuf/GraphQL/AsyncAPI breaking-change impact 분석 추가
 12. graph DB, vector, CodeQL, Obsidian export는 optional projection으로 추가
 
 ## License

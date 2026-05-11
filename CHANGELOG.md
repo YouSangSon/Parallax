@@ -18,6 +18,7 @@ For day-by-day developer log see [docs/progress.ko.md](docs/progress.ko.md). For
 - **Workspace catalog v0** — `impact-trace workspace init/add-repo/list` manages an explicit local repo allowlist in `.impact-trace/workspace.json` and syncs it into `workspaces`/`workspace_repos` without cloning or network access.
 - **Cross-repo contract resolver v0** — `impact-trace workspace resolve-contracts` reads indexed local workspace repos, matches consumer HTTP literals to provider OpenAPI endpoints, and persists deterministic `cross_repo_links` without cloning or network access.
 - **OpenAPI contract diff v0** — `impact-trace workspace contract-diff` compares the latest indexed OpenAPI endpoint surface with the current contract file, classifies removed endpoints as breaking and added endpoints as non-breaking, and persists impacted consumers as `BREAKS_COMPATIBILITY_WITH` links.
+- **MCP workspace/contract resources v0** — `impact_trace_contract_diff` exposes the endpoint-surface classifier to coding agents and returns `impact-trace://workspaces/{name}` resource links for workspace membership, latest contract baselines, and provider/consumer impact links.
 - **MCP context pack v0** — `impact_trace_context_for_change` returns budgeted `brief`/`standard`/`deep` context packs with top impact paths, compact evidence, actions, omitted counts, and entity/coverage resource links without persisting a full report.
 - **Docs root cleanup** — root `docs/` keeps the current high-signal docs for planning, onboarding, and implementation.
 
@@ -44,7 +45,7 @@ Originally developed on `feature/phase6-adapter-foundations`; landed on `main` a
 
 ### Follow-up scope
 
-- Schema/body-level contract diff, full parser/LSP depth, and MCP workspace/contract resources.
+- Schema/body-level contract diff and full parser/LSP depth.
 
 ---
 

@@ -1,6 +1,6 @@
 # Impact-Trace 문서 인덱스
 
-> *Updated 2026-05-11, UI Explorer v0, TS/JS/JVM/Spring/Python/Go/Rust spans, OpenAPI contract impact baseline, workspace catalog v0, cross-repo contract resolver v0, and OpenAPI contract diff v0 documented*
+> *Updated 2026-05-11, UI Explorer v0, TS/JS/JVM/Spring/Python/Go/Rust spans, OpenAPI contract impact baseline, workspace catalog v0, cross-repo contract resolver v0, OpenAPI contract diff v0, and MCP workspace/contract resources v0 documented*
 
 이 폴더에는 15개 문서가 있습니다. 현재 작업과 온보딩에 필요한 문서만 남깁니다.
 
@@ -28,7 +28,7 @@
 
 설계와 결정의 *왜*가 궁금할 때:
 
-- [`decisions.ko.md`](decisions.ko.md) — **누적 ADR 로그 (D-001..D-028)**. 모든 굳어진 결정과 거부된 대안 + 관련 commit. 가장 먼저 읽으면 좋은 *single source of truth*.
+- [`decisions.ko.md`](decisions.ko.md) — **누적 ADR 로그 (D-001..D-029)**. 모든 굳어진 결정과 거부된 대안 + 관련 commit. 가장 먼저 읽으면 좋은 *single source of truth*.
 - [`impact-context-layer-plan.ko.md`](impact-context-layer-plan.ko.md) — Claude/Codex MCP context layer, local UI explorer, AI context budget 절감, 정책/제안서 impact까지 포함한 제품 계획.
 - [`indexing-model.ko.md`](indexing-model.ko.md) — 코드 인덱서 모델 (entities/relations/evidence) + 회사 업무 artifact 확장.
 - [`/skills/impact-trace/references/architecture.md`](../skills/impact-trace/references/architecture.md) — **깊은 architecture reference**. schema versions, recall paths, reflection pipeline, branch GC, redaction gates, LLM provider abstraction, sqlite-vec ANN. 코드 확장 시 *어디부터 볼지* 가이드 포함.
@@ -40,7 +40,7 @@
 최근/활성 설계 문서:
 
 - 📐 [`phase6-design.ko.md`](phase6-design.ko.md) — `main`에 들어온 adapter interface/registry, regex adapter extraction, multi-adapter run attribution, adapter evidence/diagnostics observability, content-sensitive symbol hashes, relation-kind attribute mapping 기록.
-- 📐 [`phase6b-ts-accuracy-plan.ko.md`](phase6b-ts-accuracy-plan.ko.md) — **현재 next work 진입점**. Java/Kotlin/Spring Boot/Python/Go/Rust/TS/JS adapter pack v0 routing, ImpactBench fixture, TS/JS parser-backed import span v0, JVM/Spring lightweight evidence span v0, Python/Go/Rust lightweight evidence span v0, OpenAPI contract impact baseline, workspace catalog v0, cross-repo contract resolver v0, OpenAPI contract diff v0와 남은 schema/body diff 계획.
+- 📐 [`phase6b-ts-accuracy-plan.ko.md`](phase6b-ts-accuracy-plan.ko.md) — **현재 next work 진입점**. Java/Kotlin/Spring Boot/Python/Go/Rust/TS/JS adapter pack v0 routing, ImpactBench fixture, TS/JS parser-backed import span v0, JVM/Spring lightweight evidence span v0, Python/Go/Rust lightweight evidence span v0, OpenAPI contract impact baseline, workspace catalog v0, cross-repo contract resolver v0, OpenAPI contract diff v0, MCP workspace/contract resources v0와 남은 schema/body diff 계획.
 
 ---
 

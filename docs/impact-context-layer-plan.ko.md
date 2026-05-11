@@ -682,6 +682,7 @@ flowchart LR
 | workspace catalog | v0 landed: `.impact-trace/workspace.json`에 여러 repo/service local path를 명시 등록하고 DB에 동기화 |
 | cross-repo resolver | v0 landed: indexed workspace repo에서 OpenAPI provider endpoint와 HTTP consumer file literal을 `cross_repo_links`로 연결 |
 | OpenAPI endpoint contract diff | v0 landed: removed endpoint를 breaking, added endpoint를 non-breaking으로 분류하고 known consumer impact를 저장 |
+| MCP workspace/contract resources | v0 landed: `impact_trace_contract_diff`와 `impact-trace://workspaces/{name}/contracts`, `/cross-repo-links`로 contract impact를 resource-on-demand로 확장 |
 | OpenAPI/protobuf/GraphQL adapter | producer/consumer relation 추출 |
 | breaking-change classifier | schema/body-level contract diff가 downstream risk를 생성 |
 | UI owner/repo filter | cross-repo impact를 사람이 추적 |

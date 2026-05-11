@@ -461,7 +461,7 @@ Impact Trace는 로컬 repo를 읽지만 repo content를 신뢰하지 않는다.
 | 작업 | 완료 기준 |
 |---|---|
 | MCP report/evidence/entity resources | 큰 payload를 pagination으로 읽을 수 있다. |
-| MCP workspace/contract resources | repo catalog와 contract impact를 resource로 읽을 수 있다. |
+| MCP workspace/contract resources | v0 landed: repo catalog와 contract impact를 `impact-trace://workspaces/{name}` resource로 읽을 수 있다. |
 | MCP graph resource | 큰 관계 그래프를 pagination과 filter metadata로 읽을 수 있다. |
 | workspace diff tool | 여러 repo의 changed entity와 downstream consumer risk를 요약한다. |
 | compact tool response | tool은 summary와 resource URI를 반환한다. |

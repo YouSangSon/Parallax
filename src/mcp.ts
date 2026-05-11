@@ -38,6 +38,7 @@ import type {
   ImpactAction,
   ImpactReport
 } from './types.js';
+import { listWorkspaces } from './workspace.js';
 
 export type McpContext = {
   repoRoot: string;
@@ -185,6 +186,53 @@ export function createMcpServer(context: McpContext): McpServer {
           query,
           budget: normalizedBudget,
           resourceCount: telemetry.resourceCount
+        });
+      } catch (error) {
+        return typedToolErrorResponse(error);
+      }
+    }
+  );
+
+  server.registerTool(
+    'impact_trace_contract_diff',
+    {
+      title: 'Analyze workspace contract diff',
+      description:
+        'Compare a current OpenAPI contract file against the latest indexed workspace baseline and return compact breaking-change impact with workspace resource links.',
+      inputSchema: {
+        contractPath: z.string().trim().min(1),
+        workspaceName: z.string().trim().min(1).optional(),
+        providerServiceName: z.string().trim().min(1).optional(),
+        providerRepoPath: z.string().trim().min(1).optional(),
+        persist: z.boolean().optional()
+      },
+      annotations: {
+        title: 'Analyze workspace contract diff',
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false
+      }
+    },
+    async ({ contractPath, workspaceName, providerServiceName, providerRepoPath, persist }) => {
+      try {
+        const { analyzeContractDiff } = await import('./contract_diff.js');
+        const diff = analyzeContractDiff({
+          repoRoot: context.repoRoot,
+          contractPath,
+          ...(workspaceName !== undefined ? { workspaceName } : {}),
+          ...(providerServiceName !== undefined ? { providerServiceName } : {}),
+          ...(providerRepoPath !== undefined ? { providerRepoPath } : {}),
+          ...(persist !== undefined ? { persist } : {})
+        });
+        const response = {
+          ...diff,
+          resources: workspaceResources(diff.workspace.name)
+        };
+        return toolJsonResponse(context, 'impact_trace_contract_diff', response, {
+          indexRunId: diff.contract.indexRunId,
+          query: contractPath,
+          resourceCount: resourceCountOf(response)
         });
       } catch (error) {
         return typedToolErrorResponse(error);
@@ -671,6 +719,72 @@ export function createMcpServer(context: McpContext): McpServer {
         'context_pack',
         contextPackId,
         readContextPack(context, contextPackId)
+      );
+    }
+  );
+
+  server.registerResource(
+    'impact_trace_workspaces',
+    new ResourceTemplate('impact-trace://workspaces/{workspaceName}', {
+      list: () => ({ resources: listWorkspaceResources(context) })
+    }),
+    {
+      title: 'Impact Trace Workspaces',
+      description: 'Workspace catalog membership and compact links to contract and cross-repo impact resources.',
+      mimeType: 'application/json'
+    },
+    async (uri, variables) => {
+      const workspaceName = decodeURIComponent(String(variables.workspaceName));
+      return telemetryJsonResource(
+        context,
+        uri.toString(),
+        'workspace',
+        workspaceName,
+        readWorkspaceResource(context, workspaceName)
+      );
+    }
+  );
+
+  server.registerResource(
+    'impact_trace_workspace_contracts',
+    new ResourceTemplate('impact-trace://workspaces/{workspaceName}/contracts', {
+      list: () => ({ resources: listWorkspaceContractResources(context) })
+    }),
+    {
+      title: 'Impact Trace Workspace Contracts',
+      description: 'Latest indexed contract baselines across the local workspace catalog.',
+      mimeType: 'application/json'
+    },
+    async (uri, variables) => {
+      const workspaceName = decodeURIComponent(String(variables.workspaceName));
+      return telemetryJsonResource(
+        context,
+        uri.toString(),
+        'workspace_contracts',
+        workspaceName,
+        readWorkspaceContractsResource(context, workspaceName)
+      );
+    }
+  );
+
+  server.registerResource(
+    'impact_trace_workspace_cross_repo_links',
+    new ResourceTemplate('impact-trace://workspaces/{workspaceName}/cross-repo-links', {
+      list: () => ({ resources: listWorkspaceCrossRepoLinkResources(context) })
+    }),
+    {
+      title: 'Impact Trace Workspace Cross-Repo Links',
+      description: 'Workspace-scoped provider/consumer and breaking contract impact links.',
+      mimeType: 'application/json'
+    },
+    async (uri, variables) => {
+      const workspaceName = decodeURIComponent(String(variables.workspaceName));
+      return telemetryJsonResource(
+        context,
+        uri.toString(),
+        'workspace_cross_repo_links',
+        workspaceName,
+        readWorkspaceCrossRepoLinksResource(context, workspaceName)
       );
     }
   );
@@ -1595,6 +1709,225 @@ function parseJsonObject(value: string): Record<string, unknown> {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+type McpResourceListItem = { uri: string; name: string; mimeType: string };
+
+type WorkspaceContractRow = {
+  id: string;
+  kind: string;
+  service_name: string | null;
+  path: string;
+  schema_version: string | null;
+  content_hash: string;
+  endpoint_count: number;
+};
+
+type WorkspaceCrossRepoLinkRow = {
+  id: string;
+  kind: string;
+  confidence: string;
+  provenance: string;
+  index_run_id: number | null;
+  source_repo_path: string;
+  source_service: string;
+  target_repo_path: string;
+  target_service: string;
+};
+
+function workspaceResourceUri(workspaceName: string): string {
+  return `impact-trace://workspaces/${encodeURIComponent(workspaceName)}`;
+}
+
+function workspaceContractsResourceUri(workspaceName: string): string {
+  return `${workspaceResourceUri(workspaceName)}/contracts`;
+}
+
+function workspaceCrossRepoLinksResourceUri(workspaceName: string): string {
+  return `${workspaceResourceUri(workspaceName)}/cross-repo-links`;
+}
+
+function workspaceResources(workspaceName: string): { workspace: string; contracts: string; crossRepoLinks: string } {
+  return {
+    workspace: workspaceResourceUri(workspaceName),
+    contracts: workspaceContractsResourceUri(workspaceName),
+    crossRepoLinks: workspaceCrossRepoLinksResourceUri(workspaceName)
+  };
+}
+
+function selectMcpWorkspace(context: McpContext, workspaceName: string): ReturnType<typeof listWorkspaces>['workspaces'][number] {
+  const workspace = listWorkspaces({ repoRoot: context.repoRoot, name: workspaceName }).workspaces[0];
+  if (!workspace) throw typedMcpError(new Error(`impact workspace not found: ${workspaceName}`), 'resource_not_found');
+  return workspace;
+}
+
+function listMcpWorkspaces(context: McpContext): ReturnType<typeof listWorkspaces>['workspaces'] {
+  return listWorkspaces({ repoRoot: context.repoRoot }).workspaces;
+}
+
+function listWorkspaceResources(context: McpContext): McpResourceListItem[] {
+  return listMcpWorkspaces(context).map((workspace) => ({
+    uri: workspaceResourceUri(workspace.name),
+    name: `Workspace ${workspace.name}`,
+    mimeType: 'application/json'
+  }));
+}
+
+function listWorkspaceContractResources(context: McpContext): McpResourceListItem[] {
+  return listMcpWorkspaces(context).map((workspace) => ({
+    uri: workspaceContractsResourceUri(workspace.name),
+    name: `Workspace ${workspace.name} contracts`,
+    mimeType: 'application/json'
+  }));
+}
+
+function listWorkspaceCrossRepoLinkResources(context: McpContext): McpResourceListItem[] {
+  return listMcpWorkspaces(context).map((workspace) => ({
+    uri: workspaceCrossRepoLinksResourceUri(workspace.name),
+    name: `Workspace ${workspace.name} cross-repo links`,
+    mimeType: 'application/json'
+  }));
+}
+
+function readWorkspaceResource(context: McpContext, workspaceName: string): unknown {
+  const workspace = selectMcpWorkspace(context, workspaceName);
+  return {
+    version: 0,
+    workspace,
+    resources: workspaceResources(workspace.name)
+  };
+}
+
+function readWorkspaceContractsResource(context: McpContext, workspaceName: string): unknown {
+  const workspace = selectMcpWorkspace(context, workspaceName);
+  const warnings: string[] = [];
+  const contracts = workspace.repos.flatMap((repo) => {
+    let db: ReturnType<typeof openDatabase> | undefined;
+    try {
+      db = openDatabase(repo.localPath, { readOnly: true });
+      const repoId = getRepoId(db, repo.localPath);
+      const indexRunId = latestCompletedIndexRun(db, repoId);
+      const rows = db
+        .prepare(`
+          SELECT
+            c.id,
+            c.kind,
+            c.service_name,
+            c.path,
+            v.schema_version,
+            v.content_hash,
+            (
+              SELECT count(*)
+              FROM relations r
+              INNER JOIN entities target
+                 ON target.id = r.target_entity_id
+                AND target.repo_id = r.repo_id
+              WHERE r.repo_id = c.repo_id
+                AND r.index_run_id = ?
+                AND r.source_entity_id = c.id
+                AND r.kind = 'DECLARES'
+                AND target.kind = 'endpoint'
+            ) AS endpoint_count
+          FROM contracts c
+          INNER JOIN contract_versions v
+             ON v.contract_id = c.id
+            AND v.index_run_id = ?
+          WHERE c.repo_id = ?
+          ORDER BY COALESCE(c.service_name, ''), c.path, c.id
+        `)
+        .all(indexRunId, indexRunId, repoId) as WorkspaceContractRow[];
+      return rows.map((row) => ({
+        id: row.id,
+        serviceName: row.service_name ?? repo.serviceName,
+        repoPath: repo.localPath,
+        path: row.path,
+        kind: row.kind,
+        ...(row.schema_version !== null ? { schemaVersion: row.schema_version } : {}),
+        contentHash: row.content_hash,
+        indexRunId,
+        endpointCount: row.endpoint_count,
+        contractDiffHint: {
+          tool: 'impact_trace_contract_diff',
+          workspaceName: workspace.name,
+          contractPath: row.path,
+          providerServiceName: row.service_name ?? repo.serviceName
+        }
+      }));
+    } catch (error) {
+      warnings.push(`workspace contract repo skipped: ${repo.localPath}: ${errorMessage(error)}`);
+      return [];
+    } finally {
+      db?.close();
+    }
+  });
+
+  return {
+    version: 0,
+    workspace: workspace.name,
+    contracts,
+    warnings,
+    resources: workspaceResources(workspace.name)
+  };
+}
+
+function readWorkspaceCrossRepoLinksResource(context: McpContext, workspaceName: string): unknown {
+  const workspace = selectMcpWorkspace(context, workspaceName);
+  return withReadOnlyDb(context, (db) => {
+    const workspaceRow = db
+      .prepare('SELECT id FROM workspaces WHERE name = ?')
+      .get(workspace.name) as { id: number } | undefined;
+    if (!workspaceRow) throw typedMcpError(new Error(`impact workspace not found: ${workspace.name}`), 'resource_not_found');
+    const limit = 500;
+    const rows = db
+      .prepare(`
+        SELECT
+          link.id,
+          link.kind,
+          link.confidence,
+          link.provenance,
+          link.index_run_id,
+          source_member.local_path AS source_repo_path,
+          source_member.service_name AS source_service,
+          target_member.local_path AS target_repo_path,
+          target_member.service_name AS target_service
+        FROM cross_repo_links link
+        INNER JOIN workspace_repos source_member
+           ON source_member.workspace_id = link.workspace_id
+          AND source_member.repo_id = link.source_repo_id
+        INNER JOIN workspace_repos target_member
+           ON target_member.workspace_id = link.workspace_id
+          AND target_member.repo_id = link.target_repo_id
+        WHERE link.workspace_id = ?
+        ORDER BY link.kind, source_member.service_name, target_member.service_name, link.id
+        LIMIT ?
+      `)
+      .all(workspaceRow.id, limit + 1) as WorkspaceCrossRepoLinkRow[];
+    return {
+      version: 0,
+      workspace: workspace.name,
+      links: rows.slice(0, limit).map((row) => ({
+        id: row.id,
+        kind: row.kind,
+        confidence: row.confidence,
+        sourceRepoPath: row.source_repo_path,
+        sourceService: row.source_service,
+        targetRepoPath: row.target_repo_path,
+        targetService: row.target_service,
+        indexRunId: row.index_run_id,
+        provenance: parsedProvenance(row.provenance)
+      })),
+      limits: {
+        links: limit,
+        truncated: rows.length > limit
+      },
+      resources: workspaceResources(workspace.name)
+    };
+  });
+}
+
+function parsedProvenance(value: string): unknown {
+  const parsed = parseJsonObject(value);
+  return Object.keys(parsed).length > 0 ? parsed : value;
 }
 
 function listReportResources(context: McpContext): Array<{ uri: string; name: string; mimeType: string }> {

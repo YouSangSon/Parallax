@@ -43,6 +43,7 @@
 | [D-031](#d-031-yaml-openapi-schema-diff-reuses-the-compatibility-signature-model) | YAML OpenAPI schema diff reuses the compatibility signature model | P0/P1 | 2026-05-11 |
 | [D-032](#d-032-openapi-nested-schema-diff-extends-compatibility-signatures) | OpenAPI nested schema diff extends compatibility signatures | P0/P1 | 2026-05-11 |
 | [D-033](#d-033-protobuf-contract-diff-uses-compact-servicerpc-signatures) | Protobuf contract diff uses compact service/RPC signatures | P0/P1 | 2026-05-12 |
+| [D-034](#d-034-graphql-contract-diff-uses-compact-schema-signatures) | GraphQL contract diff uses compact schema signatures | P0/P1 | 2026-05-12 |
 
 ---
 
@@ -525,7 +526,7 @@
 - OpenAPI schema parser 라이브러리 도입 — request/response body rule에는 필요하지만 v0 endpoint surface classification보다 dependency/blast radius가 크다.
 - breaking relation을 provider repo의 `relations`에 저장 — existing relation schema는 single-repo `repo_id` invariant가 강하고 consumer repo path를 자연스럽게 담기 어렵다.
 
-**결과/위험:** v0는 OpenAPI YAML/JSON endpoint surface에 한정된다. endpoint removal은 known HTTP literal consumer가 있을 때만 persisted breaking link가 되며, consumer가 없더라도 result summary에는 breaking change로 남는다. unreadable/unparsed current contract는 unknown으로 반환하고 기존 breaking links를 지우지 않는다. path는 provider repo root fence를 통과해야 하며 post-index symlink escape를 읽지 않는다. schema/status/body diff는 D-030..D-032에서, Protobuf diff는 D-033에서 확장했다. auth scope와 GraphQL/AsyncAPI diff는 후속 slice다.
+**결과/위험:** v0는 OpenAPI YAML/JSON endpoint surface에 한정된다. endpoint removal은 known HTTP literal consumer가 있을 때만 persisted breaking link가 되며, consumer가 없더라도 result summary에는 breaking change로 남는다. unreadable/unparsed current contract는 unknown으로 반환하고 기존 breaking links를 지우지 않는다. path는 provider repo root fence를 통과해야 하며 post-index symlink escape를 읽지 않는다. schema/status/body diff는 D-030..D-032에서, Protobuf diff는 D-033에서, GraphQL diff는 D-034에서 확장했다. auth scope와 AsyncAPI diff는 후속 slice다.
 
 **관련 commit:** `feat(contracts): OpenAPI contract diff 추가`
 
@@ -561,7 +562,7 @@
 - contract raw content를 DB에 저장 — diff fidelity는 좋아지지만 DB 크기와 private payload 보존 정책이 커진다.
 - body-only change를 계속 `unknown` 유지 — context 절감 목표에는 안전하지만 사용자에게 실제 breaking risk를 충분히 알려주지 못한다.
 
-**결과/위험:** v0는 JSON OpenAPI의 flat object body signature와 local `#/...` `$ref`만 지원한다. YAML body diff는 D-031에서, nested property path/arrays/items/allOf/oneOf/anyOf는 D-032에서, Protobuf diff는 D-033에서 확장했다. enum cardinality, format/nullability, auth scope, GraphQL/AsyncAPI diff는 후속 slice다. signature는 contract metadata JSON에는 넣지 않고 `contract_versions.compatibility_json`에만 저장해 baseline metadata payload가 커지지 않게 한다. unreadable/unparsed current contract는 기존처럼 unknown이며 기존 breaking links를 보존한다.
+**결과/위험:** v0는 JSON OpenAPI의 flat object body signature와 local `#/...` `$ref`만 지원한다. YAML body diff는 D-031에서, nested property path/arrays/items/allOf/oneOf/anyOf는 D-032에서, Protobuf diff는 D-033에서, GraphQL diff는 D-034에서 확장했다. enum cardinality, format/nullability, auth scope, AsyncAPI diff는 후속 slice다. signature는 contract metadata JSON에는 넣지 않고 `contract_versions.compatibility_json`에만 저장해 baseline metadata payload가 커지지 않게 한다. unreadable/unparsed current contract는 기존처럼 unknown이며 기존 breaking links를 보존한다.
 
 **관련 commit:** `feat(contracts): OpenAPI JSON schema diff 추가`
 
@@ -579,7 +580,7 @@
 - YAML은 endpoint surface만 유지 — Spring/OpenAPI 실사용에서 body-level breaking change를 계속 놓친다.
 - YAML parser 결과만 믿고 endpoint scanner를 우회 — 기존 malformed/unparsed YAML 보존 규칙과 nested callback/path guard가 약해질 수 있다.
 
-**결과/위험:** v0는 YAML parser를 추가 의존성으로 사용하지만, current diff에서는 기존 endpoint scanner가 성공한 경우에만 compatibility signature를 붙인다. 따라서 tab indentation, malformed path/method, non-object operation 같은 기존 unknown/preserve behavior는 유지된다. 지원 범위는 JSON media type의 flat object body, local `#/...` `$ref`, response status/required/type, request required/type까지다. nested properties, arrays/items details, allOf/oneOf/anyOf는 D-032에서, Protobuf diff는 D-033에서 확장했다. enum/format/nullability, auth scope, GraphQL/AsyncAPI는 후속 slice다.
+**결과/위험:** v0는 YAML parser를 추가 의존성으로 사용하지만, current diff에서는 기존 endpoint scanner가 성공한 경우에만 compatibility signature를 붙인다. 따라서 tab indentation, malformed path/method, non-object operation 같은 기존 unknown/preserve behavior는 유지된다. 지원 범위는 JSON media type의 flat object body, local `#/...` `$ref`, response status/required/type, request required/type까지다. nested properties, arrays/items details, allOf/oneOf/anyOf는 D-032에서, Protobuf diff는 D-033에서, GraphQL diff는 D-034에서 확장했다. enum/format/nullability, auth scope, AsyncAPI는 후속 slice다.
 
 **관련 commit:** `feat(contracts): OpenAPI YAML schema diff 추가`
 
@@ -597,7 +598,7 @@
 - nested schema를 raw JSON으로 저장 — 정확도는 올라가지만 DB payload와 private contract body 보존 범위가 커진다.
 - oneOf/anyOf를 full branch-aware로 해석 — request/response variance rule과 branch matching 비용이 커져 이번 deterministic slice 범위를 넘는다.
 
-**결과/위험:** nested object required/type, root/nested array item required/type, local `#/...` ref chain(object와 array pointer segment 포함), `allOf` object merge, `oneOf`/`anyOf` property/root body fingerprint 변화가 known consumer endpoint에 `BREAKS_COMPATIBILITY_WITH` link로 저장된다. 기존 schemaVersion 1 flat baseline은 nested-capable으로 취급하지 않고 warning과 `unknown` fallback을 반환하므로 provider repo를 새로 index해야 nested impact가 잡힌다. oneOf/anyOf는 "대안 집합 fingerprint가 바뀌었다"는 보수적 breaking signal이며, branch matching/discriminator semantics, nullable/format/enum cardinality, auth scope, GraphQL/AsyncAPI는 후속 slice다. Protobuf diff는 D-033에서 별도 compact signature로 다룬다.
+**결과/위험:** nested object required/type, root/nested array item required/type, local `#/...` ref chain(object와 array pointer segment 포함), `allOf` object merge, `oneOf`/`anyOf` property/root body fingerprint 변화가 known consumer endpoint에 `BREAKS_COMPATIBILITY_WITH` link로 저장된다. 기존 schemaVersion 1 flat baseline은 nested-capable으로 취급하지 않고 warning과 `unknown` fallback을 반환하므로 provider repo를 새로 index해야 nested impact가 잡힌다. oneOf/anyOf는 "대안 집합 fingerprint가 바뀌었다"는 보수적 breaking signal이며, branch matching/discriminator semantics, nullable/format/enum cardinality, auth scope, AsyncAPI는 후속 slice다. Protobuf diff는 D-033에서, GraphQL diff는 D-034에서 별도 compact signature로 다룬다.
 
 **관련 commit:** `feat(contracts): OpenAPI nested schema diff 추가`
 
@@ -615,9 +616,27 @@
 - Protobuf endpoint-only diff만 유지 — removed RPC는 잡지만 response field removal/type change를 놓친다.
 - GraphQL/AsyncAPI까지 generic compatibility layer를 먼저 만든 뒤 Protobuf를 넣기 — 설계는 깔끔하지만 이번 slice의 사용자 가치가 늦어진다.
 
-**결과/위험:** v0 parser는 deterministic regex 기반이며 top-level service/message, unary/stream RPC, simple field/map/oneof-member field signature만 다룬다. imports, nested message diff, enum/reserved/options, oneof group semantics, proto2 default semantics, package-qualified cross-file type resolution, generated-client source compatibility는 후속이다. consumer impact persistence는 기존 `cross_repo_links`가 있을 때만 가능하므로 현재 Protobuf removed RPC/field break는 known consumer 없이도 summary에는 breaking으로 남지만, Protobuf consumer resolver가 들어오기 전까지 `BREAKS_COMPATIBILITY_WITH` link는 제한적이다. GraphQL/AsyncAPI diff가 다음 contract slice다.
+**결과/위험:** v0 parser는 deterministic regex 기반이며 top-level service/message, unary/stream RPC, simple field/map/oneof-member field signature만 다룬다. imports, nested message diff, enum/reserved/options, oneof group semantics, proto2 default semantics, package-qualified cross-file type resolution, generated-client source compatibility는 후속이다. consumer impact persistence는 기존 `cross_repo_links`가 있을 때만 가능하므로 현재 Protobuf removed RPC/field break는 known consumer 없이도 summary에는 breaking으로 남지만, Protobuf consumer resolver가 들어오기 전까지 `BREAKS_COMPATIBILITY_WITH` link는 제한적이다. GraphQL diff는 D-034에서 확장했고, AsyncAPI diff가 다음 contract slice다.
 
 **관련 commit:** `feat(contracts): Protobuf contract diff 추가`
+
+---
+
+## D-034: GraphQL contract diff uses compact schema signatures
+
+**결정:** `.graphql`/`.gql` contract는 index 시점에 `graphql-compat-v0` schemaVersion 1 compatibility signature를 `contract_versions.compatibility_json`에 저장한다. signature는 `Query`/`Mutation`/`Subscription` root field, field return type, argument type/required flag, object type field, input type field type/required flag만 담는다. `workspace contract-diff`는 contract kind가 `graphql`이거나 current path가 `.graphql`/`.gql`이면 latest indexed signature와 현재 SDL을 비교하고, removed root field, root return type change, root response에서 도달 가능한 object field removal/type change, required argument addition/type/required-flag change, operation input에서 도달 가능한 required input field addition/type/required-flag change를 `breaking`으로 분류한다.
+
+**맥락:** OpenAPI와 Protobuf diff 이후 남은 주요 contract risk는 GraphQL schema였다. 사용자는 Claude/Codex가 provider schema를 수정했을 때 전체 SDL이나 workspace를 다시 context에 넣는 대신, 어떤 root field/object/input field가 깨졌는지만 작은 payload로 받고 싶다고 했다. GraphQL Inspector의 breaking taxonomy는 좋은 reference지만, Hive/cloud registry, GitHub app, raw SDL snapshot, CLI dependency를 core runtime으로 요구하면 local-first, compact metadata, no raw body baseline 원칙과 충돌한다.
+
+**대안:**
+- GraphQL Inspector/Hive를 필수화 — rule fidelity는 높지만 설치/네트워크/registry 경계가 커져 core runtime에서는 거부한다.
+- `graphql` parser dependency와 full AST diff를 바로 도입 — 장기적으로 좋지만 schema root remap, directive, interface/union, enum, deprecation semantics까지 검증해야 해서 이번 compact slice보다 blast radius가 크다.
+- raw SDL을 SQLite에 저장 — diff fidelity는 좋아지지만 private contract body 보존 범위와 DB payload가 커진다.
+- root field endpoint-only diff만 유지 — removed root field는 잡지만 response object field removal/type change와 required input 추가를 놓친다.
+
+**결과/위험:** v0 parser는 deterministic regex 기반이며 `type`/`extend type`/`input` block의 한 줄 field 선언, comma-delimited argument list, 기본 `Query`/`Mutation`/`Subscription` root names만 다룬다. response object와 input object는 같은 named type을 따라 cycle guard로 순회하지만, `schema { query: RootQuery }`, interfaces/unions/enums/scalars/directives/deprecation, fragments/operation documents, multi-line argument lists, full GraphQL consumer resolver는 후속이다. defaulted non-null input은 required로 보지 않는다. consumer impact persistence는 기존 `cross_repo_links`가 있을 때만 가능하므로 현재 GraphQL breaking change는 known consumer 없이도 summary에는 breaking으로 남지만, GraphQL consumer resolver가 들어오기 전까지 `BREAKS_COMPATIBILITY_WITH` link는 제한적이다. AsyncAPI diff가 다음 contract slice다.
+
+**관련 commit:** `feat(contracts): GraphQL contract diff 추가`
 
 ---
 

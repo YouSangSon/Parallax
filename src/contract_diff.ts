@@ -3,6 +3,18 @@ import { readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 
 import {
+  extractGraphqlCompatibility,
+  GRAPHQL_COMPAT_ANALYZER_ID,
+  GRAPHQL_COMPAT_SCHEMA_VERSION,
+  type GraphqlArgumentSignature,
+  type GraphqlCompatibilitySignature,
+  type GraphqlFieldSignature,
+  type GraphqlInputFieldSignature,
+  type GraphqlInputTypeSignature,
+  type GraphqlObjectTypeSignature,
+  type GraphqlOperationSignature
+} from './graphql_compat.js';
+import {
   extractOpenApiJsonCompatibility,
   extractOpenApiYamlCompatibility,
   OPENAPI_COMPAT_ANALYZER_ID,
@@ -154,6 +166,7 @@ type CurrentContractParse = {
   endpoints: ContractEndpoint[];
   compatibility?: OpenApiCompatibilitySignature;
   protobufCompatibility?: ProtobufCompatibilitySignature;
+  graphqlCompatibility?: GraphqlCompatibilitySignature;
   warning?: string;
 };
 
@@ -323,9 +336,7 @@ function loadPreviousEndpoints(provider: IndexedProvider): ContractEndpoint[] {
     )
     .all(provider.repoId, provider.indexRunId, provider.contract.path) as EndpointRow[];
   return rows.flatMap((row) => {
-    const parsed = provider.contract.kind === 'protobuf'
-      ? parseProtobufEndpointDisplay(row.endpoint_display_name)
-      : parseHttpEndpointDisplay(row.endpoint_display_name);
+    const parsed = endpointDisplayForContractKind(provider.contract.kind, row.endpoint_display_name);
     if (!parsed) return [];
     return [{
       endpointId: row.endpoint_id,
@@ -365,9 +376,7 @@ function readCurrentContract(
     };
   }
 
-  const parsed = contractKind === 'protobuf' || contractPath.toLowerCase().endsWith('.proto')
-    ? parseCurrentProtobufContract(content)
-    : parseCurrentOpenApiContract(content, contractPath);
+  const parsed = parseCurrentContractByKind(content, contractPath, contractKind);
   if (!parsed.ok && parsed.warning) {
     warnings.push(parsed.warning);
   }
@@ -431,6 +440,11 @@ function classifyChanges(
     const previousCompatibility = parseProtobufCompatibility(provider.contract.compatibility_json, warnings);
     if (previousCompatibility !== undefined && current.protobufCompatibility !== undefined) {
       changes.push(...classifyProtobufCompatibilityChanges(previousCompatibility, current.protobufCompatibility));
+    }
+  } else if (provider.contract.kind === 'graphql') {
+    const previousCompatibility = parseGraphqlCompatibility(provider.contract.compatibility_json, warnings);
+    if (previousCompatibility !== undefined && current.graphqlCompatibility !== undefined) {
+      changes.push(...classifyGraphqlCompatibilityChanges(previousCompatibility, current.graphqlCompatibility));
     }
   } else {
     const previousCompatibility = parseOpenApiCompatibility(provider.contract.compatibility_json, warnings);
@@ -582,6 +596,286 @@ function classifyProtobufMessageChanges(options: {
     });
   }
   return changes;
+}
+
+function classifyGraphqlCompatibilityChanges(
+  previous: GraphqlCompatibilitySignature,
+  current: GraphqlCompatibilitySignature
+): ContractDiffChange[] {
+  const previousOperations = graphqlOperationsByKey(previous.operations);
+  const currentOperations = graphqlOperationsByKey(current.operations);
+  const previousObjectTypes = graphqlObjectTypesByName(previous.objectTypes);
+  const currentObjectTypes = graphqlObjectTypesByName(current.objectTypes);
+  const previousInputTypes = graphqlInputTypesByName(previous.inputTypes);
+  const currentInputTypes = graphqlInputTypesByName(current.inputTypes);
+  const changes: ContractDiffChange[] = [];
+
+  for (const [key, previousOperation] of previousOperations) {
+    const currentOperation = currentOperations.get(key);
+    if (!currentOperation) continue;
+    changes.push(...classifyGraphqlOperationChanges(previousOperation, currentOperation));
+    changes.push(...classifyGraphqlArgumentChanges(previousOperation, currentOperation));
+    const previousResponseTypeName = graphqlNamedType(previousOperation.returnType);
+    const currentResponseTypeName = graphqlNamedType(currentOperation.returnType);
+    if (previousResponseTypeName === currentResponseTypeName) {
+      changes.push(...classifyGraphqlResponseTypeChanges({
+        operation: currentOperation,
+        rootTypeName: previousResponseTypeName,
+        previousObjectTypes,
+        currentObjectTypes
+      }));
+    }
+    changes.push(...classifyGraphqlInputTypeChanges({
+      operation: currentOperation,
+      previousArgs: previousOperation.args,
+      currentArgs: currentOperation.args,
+      previousInputTypes,
+      currentInputTypes
+    }));
+  }
+
+  return changes;
+}
+
+function classifyGraphqlOperationChanges(
+  previousOperation: GraphqlOperationSignature,
+  currentOperation: GraphqlOperationSignature
+): ContractDiffChange[] {
+  if (previousOperation.returnType === currentOperation.returnType) return [];
+  return [{
+    kind: 'changed_response_property_type',
+    classification: 'breaking',
+    reason: 'graphql root field return type changed in current schema',
+    httpMethod: 'GRAPHQL',
+    routePath: currentOperation.path,
+    propertyName: '$',
+    schemaPath: `response.${currentOperation.path}`,
+    previousSchemaType: previousOperation.returnType,
+    currentSchemaType: currentOperation.returnType
+  }];
+}
+
+function classifyGraphqlArgumentChanges(
+  previousOperation: GraphqlOperationSignature,
+  currentOperation: GraphqlOperationSignature
+): ContractDiffChange[] {
+  const previousArgs = graphqlArgsByName(previousOperation.args);
+  const changes: ContractDiffChange[] = [];
+  for (const currentArg of currentOperation.args) {
+    const previousArg = previousArgs.get(currentArg.name);
+    if (!previousArg) {
+      if (currentArg.required) {
+        changes.push({
+          kind: 'added_request_required_property',
+          classification: 'breaking',
+          reason: 'graphql required argument added to current schema',
+          httpMethod: 'GRAPHQL',
+          routePath: currentOperation.path,
+          propertyName: currentArg.name,
+          schemaPath: `request.${currentOperation.path}.args.${currentArg.name}`,
+          currentSchemaType: currentArg.type
+        });
+      }
+      continue;
+    }
+    if (!previousArg.required && currentArg.required) {
+      changes.push({
+        kind: 'added_request_required_property',
+        classification: 'breaking',
+        reason: 'graphql argument became required in current schema',
+        httpMethod: 'GRAPHQL',
+        routePath: currentOperation.path,
+        propertyName: currentArg.name,
+        schemaPath: `request.${currentOperation.path}.args.${currentArg.name}`,
+        previousSchemaType: previousArg.type,
+        currentSchemaType: currentArg.type
+      });
+    }
+    if (previousArg.type !== currentArg.type) {
+      changes.push({
+        kind: 'changed_request_property_type',
+        classification: 'breaking',
+        reason: 'graphql argument type changed in current schema',
+        httpMethod: 'GRAPHQL',
+        routePath: currentOperation.path,
+        propertyName: currentArg.name,
+        schemaPath: `request.${currentOperation.path}.args.${currentArg.name}`,
+        previousSchemaType: previousArg.type,
+        currentSchemaType: currentArg.type
+      });
+    }
+  }
+  return changes;
+}
+
+function classifyGraphqlResponseTypeChanges(options: {
+  operation: GraphqlOperationSignature;
+  rootTypeName: string;
+  previousObjectTypes: Map<string, GraphqlObjectTypeSignature>;
+  currentObjectTypes: Map<string, GraphqlObjectTypeSignature>;
+}): ContractDiffChange[] {
+  const changes: ContractDiffChange[] = [];
+  const visitedTypeNames = new Set<string>();
+  collectGraphqlResponseTypeChanges(options.rootTypeName);
+  return changes;
+
+  function collectGraphqlResponseTypeChanges(typeName: string): void {
+    if (visitedTypeNames.has(typeName)) return;
+    visitedTypeNames.add(typeName);
+    const previousType = options.previousObjectTypes.get(typeName);
+    const currentType = options.currentObjectTypes.get(typeName);
+    if (previousType === undefined || currentType === undefined) return;
+    const currentFields = graphqlFieldsByName(currentType.fields);
+    for (const previousField of previousType.fields) {
+      const currentField = currentFields.get(previousField.name);
+      const propertyName = `${previousType.name}.${previousField.name}`;
+      const schemaPath = `response.${previousType.name}.fields.${previousField.name}`;
+      if (!currentField) {
+        changes.push({
+          kind: 'removed_response_required_property',
+          classification: 'breaking',
+          reason: 'graphql response field removed from current schema',
+          httpMethod: 'GRAPHQL',
+          routePath: options.operation.path,
+          propertyName,
+          schemaPath
+        });
+        continue;
+      }
+      if (previousField.type !== currentField.type) {
+        changes.push({
+          kind: 'changed_response_property_type',
+          classification: 'breaking',
+          reason: 'graphql response field type changed in current schema',
+          httpMethod: 'GRAPHQL',
+          routePath: options.operation.path,
+          propertyName,
+          schemaPath,
+          previousSchemaType: previousField.type,
+          currentSchemaType: currentField.type
+        });
+      }
+      const previousFieldTypeName = graphqlNamedType(previousField.type);
+      const currentFieldTypeName = graphqlNamedType(currentField.type);
+      if (previousFieldTypeName === currentFieldTypeName) {
+        collectGraphqlResponseTypeChanges(previousFieldTypeName);
+      }
+    }
+  }
+}
+
+function classifyGraphqlInputTypeChanges(options: {
+  operation: GraphqlOperationSignature;
+  previousArgs: readonly GraphqlArgumentSignature[];
+  currentArgs: readonly GraphqlArgumentSignature[];
+  previousInputTypes: Map<string, GraphqlInputTypeSignature>;
+  currentInputTypes: Map<string, GraphqlInputTypeSignature>;
+}): ContractDiffChange[] {
+  const currentArgs = graphqlArgsByName(options.currentArgs);
+  const changes: ContractDiffChange[] = [];
+  for (const previousArg of options.previousArgs) {
+    const currentArg = currentArgs.get(previousArg.name);
+    if (!currentArg) continue;
+    const previousInputTypeName = graphqlNamedType(previousArg.type);
+    const currentInputTypeName = graphqlNamedType(currentArg.type);
+    if (previousInputTypeName !== currentInputTypeName) continue;
+    collectGraphqlInputTypeChanges(previousInputTypeName, currentArg, previousInputTypeName, new Set<string>());
+  }
+  return changes;
+
+  function collectGraphqlInputTypeChanges(
+    typeName: string,
+    arg: GraphqlArgumentSignature,
+    rootInputTypeName: string,
+    visitedTypeNames: Set<string>
+  ): void {
+    if (visitedTypeNames.has(typeName)) return;
+    visitedTypeNames.add(typeName);
+    const previousInput = options.previousInputTypes.get(typeName);
+    const currentInput = options.currentInputTypes.get(typeName);
+    if (!previousInput || !currentInput) return;
+    changes.push(...classifyGraphqlInputFields(options.operation, arg, rootInputTypeName, previousInput, currentInput));
+    const currentFields = graphqlInputFieldsByName(currentInput.fields);
+    for (const previousField of previousInput.fields) {
+      const currentField = currentFields.get(previousField.name);
+      if (!currentField) continue;
+      const previousFieldTypeName = graphqlNamedType(previousField.type);
+      const currentFieldTypeName = graphqlNamedType(currentField.type);
+      if (previousFieldTypeName === currentFieldTypeName) {
+        collectGraphqlInputTypeChanges(previousFieldTypeName, arg, rootInputTypeName, visitedTypeNames);
+      }
+    }
+  }
+}
+
+function classifyGraphqlInputFields(
+  operation: GraphqlOperationSignature,
+  arg: GraphqlArgumentSignature,
+  rootInputTypeName: string,
+  previousInput: GraphqlInputTypeSignature,
+  currentInput: GraphqlInputTypeSignature
+): ContractDiffChange[] {
+  const previousFields = graphqlInputFieldsByName(previousInput.fields);
+  const changes: ContractDiffChange[] = [];
+  for (const currentField of currentInput.fields) {
+    const previousField = previousFields.get(currentField.name);
+    const propertyName = `${currentInput.name}.${currentField.name}`;
+    const schemaPath = graphqlInputFieldSchemaPath(operation, arg, rootInputTypeName, currentInput.name, currentField.name);
+    if (!previousField) {
+      if (currentField.required) {
+        changes.push({
+          kind: 'added_request_required_property',
+          classification: 'breaking',
+          reason: 'graphql required input field added to current schema',
+          httpMethod: 'GRAPHQL',
+          routePath: operation.path,
+          propertyName,
+          schemaPath,
+          currentSchemaType: currentField.type
+        });
+      }
+      continue;
+    }
+    if (!previousField.required && currentField.required) {
+      changes.push({
+        kind: 'added_request_required_property',
+        classification: 'breaking',
+        reason: 'graphql input field became required in current schema',
+        httpMethod: 'GRAPHQL',
+        routePath: operation.path,
+        propertyName,
+        schemaPath,
+        previousSchemaType: previousField.type,
+        currentSchemaType: currentField.type
+      });
+    }
+    if (previousField.type !== currentField.type) {
+      changes.push({
+        kind: 'changed_request_property_type',
+        classification: 'breaking',
+        reason: 'graphql input field type changed in current schema',
+        httpMethod: 'GRAPHQL',
+        routePath: operation.path,
+        propertyName,
+        schemaPath,
+        previousSchemaType: previousField.type,
+        currentSchemaType: currentField.type
+      });
+    }
+  }
+  return changes;
+}
+
+function graphqlInputFieldSchemaPath(
+  operation: GraphqlOperationSignature,
+  arg: GraphqlArgumentSignature,
+  rootInputTypeName: string,
+  inputTypeName: string,
+  fieldName: string
+): string {
+  const base = `request.${operation.path}.args.${arg.name}.${rootInputTypeName}.fields`;
+  if (inputTypeName === rootInputTypeName) return `${base}.${fieldName}`;
+  return `${base}.${inputTypeName}.${fieldName}`;
 }
 
 function classifyRequestBodyChanges(
@@ -925,6 +1219,34 @@ function parseProtobufCompatibility(
   return parsed as ProtobufCompatibilitySignature;
 }
 
+function parseGraphqlCompatibility(
+  compatibilityJson: string,
+  warnings: string[]
+): GraphqlCompatibilitySignature | undefined {
+  const parsed = parseJsonObject(compatibilityJson);
+  if (
+    parsed?.analyzer === GRAPHQL_COMPAT_ANALYZER_ID &&
+    parsed.schemaVersion !== undefined &&
+    parsed.schemaVersion !== GRAPHQL_COMPAT_SCHEMA_VERSION
+  ) {
+    warnings.push(
+      `indexed GraphQL compatibility baseline uses schemaVersion ${String(parsed.schemaVersion)}; reindex provider contract for schemaVersion ${GRAPHQL_COMPAT_SCHEMA_VERSION}`
+    );
+    return undefined;
+  }
+  if (
+    parsed?.schemaVersion !== GRAPHQL_COMPAT_SCHEMA_VERSION ||
+    parsed.analyzer !== GRAPHQL_COMPAT_ANALYZER_ID ||
+    parsed.contractKind !== 'graphql' ||
+    !Array.isArray(parsed.operations) ||
+    !Array.isArray(parsed.objectTypes) ||
+    !Array.isArray(parsed.inputTypes)
+  ) {
+    return undefined;
+  }
+  return parsed as GraphqlCompatibilitySignature;
+}
+
 function compatibilityOperationsByKey(
   operations: readonly OpenApiCompatibilityOperation[]
 ): Map<string, OpenApiCompatibilityOperation> {
@@ -985,6 +1307,70 @@ function shortProtobufTypeName(typeName: string): string {
   return typeName.split('.').at(-1) ?? typeName;
 }
 
+function graphqlOperationsByKey(
+  operations: readonly GraphqlOperationSignature[]
+): Map<string, GraphqlOperationSignature> {
+  const byKey = new Map<string, GraphqlOperationSignature>();
+  for (const operation of operations) {
+    byKey.set(graphqlOperationKey(operation), operation);
+  }
+  return byKey;
+}
+
+function graphqlOperationKey(operation: GraphqlOperationSignature): string {
+  return `${operation.rootType}.${operation.field}`;
+}
+
+function graphqlObjectTypesByName(
+  objectTypes: readonly GraphqlObjectTypeSignature[]
+): Map<string, GraphqlObjectTypeSignature> {
+  const byName = new Map<string, GraphqlObjectTypeSignature>();
+  for (const type of objectTypes) {
+    byName.set(type.name, type);
+  }
+  return byName;
+}
+
+function graphqlInputTypesByName(
+  inputTypes: readonly GraphqlInputTypeSignature[]
+): Map<string, GraphqlInputTypeSignature> {
+  const byName = new Map<string, GraphqlInputTypeSignature>();
+  for (const type of inputTypes) {
+    byName.set(type.name, type);
+  }
+  return byName;
+}
+
+function graphqlArgsByName(args: readonly GraphqlArgumentSignature[]): Map<string, GraphqlArgumentSignature> {
+  const byName = new Map<string, GraphqlArgumentSignature>();
+  for (const arg of args) {
+    byName.set(arg.name, arg);
+  }
+  return byName;
+}
+
+function graphqlFieldsByName(fields: readonly GraphqlFieldSignature[]): Map<string, GraphqlFieldSignature> {
+  const byName = new Map<string, GraphqlFieldSignature>();
+  for (const field of fields) {
+    byName.set(field.name, field);
+  }
+  return byName;
+}
+
+function graphqlInputFieldsByName(
+  fields: readonly GraphqlInputFieldSignature[]
+): Map<string, GraphqlInputFieldSignature> {
+  const byName = new Map<string, GraphqlInputFieldSignature>();
+  for (const field of fields) {
+    byName.set(field.name, field);
+  }
+  return byName;
+}
+
+function graphqlNamedType(typeName: string): string {
+  return typeName.replace(/[!\[\]]/g, '');
+}
+
 function responsesByStatus(
   responses: readonly OpenApiResponseSignature[]
 ): Map<string, OpenApiResponseSignature> {
@@ -993,6 +1379,15 @@ function responsesByStatus(
     byStatus.set(response.status, response);
   }
   return byStatus;
+}
+
+function parseCurrentContractByKind(content: string, contractPath: string, contractKind: string): CurrentContractParse {
+  const lowerPath = contractPath.toLowerCase();
+  if (contractKind === 'protobuf' || lowerPath.endsWith('.proto')) return parseCurrentProtobufContract(content);
+  if (contractKind === 'graphql' || lowerPath.endsWith('.graphql') || lowerPath.endsWith('.gql')) {
+    return parseCurrentGraphqlContract(content);
+  }
+  return parseCurrentOpenApiContract(content, contractPath);
 }
 
 function parseCurrentOpenApiContract(content: string, contractPath: string): CurrentContractParse {
@@ -1032,6 +1427,26 @@ function parseCurrentProtobufContract(content: string): CurrentContractParse {
       routePath: operation.path
     })),
     protobufCompatibility: compatibility
+  };
+}
+
+function parseCurrentGraphqlContract(content: string): CurrentContractParse {
+  const compatibility = extractGraphqlCompatibility(content);
+  if (compatibility === undefined) {
+    return {
+      ok: false,
+      endpoints: [],
+      warning: 'current GraphQL contract could not be parsed: no root operations or types found'
+    };
+  }
+  return {
+    ok: true,
+    endpoints: compatibility.operations.map((operation) => ({
+      endpointId: `endpoint:graphql:${operation.path}`,
+      httpMethod: 'GRAPHQL',
+      routePath: operation.path
+    })),
+    graphqlCompatibility: compatibility
   };
 }
 
@@ -1282,13 +1697,24 @@ function currentEndpointId(contractPath: string, endpoint: ContractEndpoint): st
   const lowerPath = contractPath.toLowerCase();
   const languageId = lowerPath.endsWith('.proto')
     ? 'protobuf'
-    : lowerPath.endsWith('.json')
-      ? 'json'
-      : 'yaml';
+    : lowerPath.endsWith('.graphql') || lowerPath.endsWith('.gql')
+      ? 'graphql'
+      : lowerPath.endsWith('.json')
+        ? 'json'
+        : 'yaml';
   if (languageId === 'protobuf' && endpoint.httpMethod === 'RPC') {
     return `endpoint:protobuf:${endpoint.routePath.replace('/', '.')}`;
   }
+  if (languageId === 'graphql' && endpoint.httpMethod === 'GRAPHQL') {
+    return `endpoint:graphql:${endpoint.routePath}`;
+  }
   return `endpoint:${languageId}:${endpointKey(endpoint.httpMethod, endpoint.routePath)}`;
+}
+
+function endpointDisplayForContractKind(kind: string, displayName: string): { method: string; path: string } | undefined {
+  if (kind === 'protobuf') return parseProtobufEndpointDisplay(displayName);
+  if (kind === 'graphql') return parseGraphqlEndpointDisplay(displayName);
+  return parseHttpEndpointDisplay(displayName);
 }
 
 function parseHttpEndpointDisplay(displayName: string): { method: string; path: string } | undefined {
@@ -1301,6 +1727,12 @@ function parseProtobufEndpointDisplay(displayName: string): { method: string; pa
   const match = /^([A-Za-z_]\w*)\.([A-Za-z_]\w*)$/.exec(displayName.trim());
   if (!match) return undefined;
   return { method: 'RPC', path: `${match[1]!}/${match[2]!}` };
+}
+
+function parseGraphqlEndpointDisplay(displayName: string): { method: string; path: string } | undefined {
+  const match = /^(Query|Mutation|Subscription)\.([A-Za-z_]\w*)$/.exec(displayName.trim());
+  if (!match) return undefined;
+  return { method: 'GRAPHQL', path: `${match[1]!}.${match[2]!}` };
 }
 
 function compareChanges(left: ContractDiffChange, right: ContractDiffChange): number {

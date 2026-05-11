@@ -120,6 +120,72 @@ async function writeProtobufContract(
   );
 }
 
+async function writeGraphqlContract(
+  repoRoot: string,
+  options: {
+    includeUsersField?: boolean;
+    includeMutation?: boolean;
+    includeUserNameField?: boolean;
+    userNameFieldType?: 'String!' | 'Int!';
+    userQueryReturnType?: 'User' | 'User!';
+    defaultUserIdArg?: boolean;
+    includeUserProfileField?: boolean;
+    includeProfileBioField?: boolean;
+    profileBioFieldType?: 'String!' | 'Int!';
+    includeRequiredInputEmail?: boolean;
+    includeDefaultedInputEmail?: boolean;
+  } = {}
+): Promise<void> {
+  await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
+  const includeUsersField = options.includeUsersField ?? true;
+  const includeMutation = options.includeMutation ?? false;
+  const includeUserNameField = options.includeUserNameField ?? true;
+  const includeUserProfileField = options.includeUserProfileField ?? false;
+  const includeProfileBioField = options.includeProfileBioField ?? true;
+  const userIdArg = options.defaultUserIdArg ? 'id: ID! = "default-user"' : 'id: ID!';
+  await writeFile(
+    path.join(repoRoot, 'contracts/schema.graphql'),
+    [
+      'type Query {',
+      `  user(${userIdArg}): ${options.userQueryReturnType ?? 'User'}`,
+      ...(includeUsersField ? ['  users: [User!]!'] : []),
+      '}',
+      '',
+      ...(includeMutation
+        ? [
+          'type Mutation {',
+          '  createUser(input: CreateUserInput!): User',
+          '}',
+          ''
+        ]
+        : []),
+      'type User {',
+      '  id: ID!',
+      ...(includeUserNameField ? [`  name: ${options.userNameFieldType ?? 'String!'}`] : []),
+      ...(includeUserProfileField ? ['  profile: Profile'] : []),
+      '}',
+      ...(includeUserProfileField
+        ? [
+          '',
+          'type Profile {',
+          ...(includeProfileBioField ? [`  bio: ${options.profileBioFieldType ?? 'String!'}`] : []),
+          '}'
+        ]
+        : []),
+      '',
+      'input CreateUserInput {',
+      '  name: String!',
+      ...(options.includeRequiredInputEmail
+        ? ['  email: String!']
+        : options.includeDefaultedInputEmail
+          ? ['  email: String! = ""']
+          : []),
+      '}',
+      ''
+    ].join('\n')
+  );
+}
+
 async function writeOpenApiContract(repoRoot: string, routes: string[]): Promise<void> {
   await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
   const routeLines = routes.flatMap((route) => [
@@ -1437,6 +1503,33 @@ async function setupWorkspaceWithProtobufContract(): Promise<{
   const providerRoot = await makeRepo('impact-trace-diff-protobuf-provider-');
   await writeConsumerClient(consumerRoot, '/api/users');
   await writeProtobufContract(providerRoot);
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'users-api'
+  });
+
+  return {
+    consumerRoot,
+    providerRoot
+  };
+}
+
+async function setupWorkspaceWithGraphqlContract(options: Parameters<typeof writeGraphqlContract>[1] = {}): Promise<{
+  consumerRoot: string;
+  providerRoot: string;
+}> {
+  const consumerRoot = await makeRepo('impact-trace-diff-graphql-consumer-');
+  const providerRoot = await makeRepo('impact-trace-diff-graphql-provider-');
+  await writeConsumerClient(consumerRoot, '/graphql');
+  await writeGraphqlContract(providerRoot, options);
 
   await initProject({ repoRoot: consumerRoot });
   await initProject({ repoRoot: providerRoot });
@@ -3345,6 +3438,283 @@ test('analyzeContractDiff classifies Protobuf oneof response field type changes 
       schemaPath: 'response.User.fields.4',
       previousSchemaType: 'string',
       currentSchemaType: 'int64'
+    }
+  ]);
+});
+
+test('analyzeContractDiff classifies removed GraphQL root fields as breaking', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithGraphqlContract({ includeUsersField: true });
+  await writeGraphqlContract(providerRoot, { includeUsersField: false });
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/schema.graphql'
+  });
+
+  assert.equal(result.contract.kind, 'graphql');
+  assert.equal(result.summary.classification, 'breaking');
+  assert.equal(result.summary.impactedConsumerCount, 0);
+  const db = new DatabaseSync(databasePath(providerRoot), { readOnly: true });
+  try {
+    const row = db
+      .prepare(
+        `SELECT compatibility_json
+         FROM contracts c
+         INNER JOIN contract_versions v ON v.contract_id = c.id
+         INNER JOIN index_runs r ON r.id = v.index_run_id
+         WHERE c.path = ?
+           AND r.status = 'completed'
+         ORDER BY v.index_run_id DESC
+         LIMIT 1`
+      )
+      .get('contracts/schema.graphql') as { compatibility_json: string };
+    const compatibility = JSON.parse(row.compatibility_json) as {
+      analyzer: string;
+      contractKind: string;
+      operations: Array<{ rootType: string; field: string; path: string }>;
+      objectTypes: Array<{ name: string; fields: Array<{ name: string; type: string }> }>;
+      inputTypes: Array<{ name: string; fields: Array<{ name: string; type: string; required: boolean }> }>;
+    };
+    assert.equal(compatibility.analyzer, 'graphql-compat-v0');
+    assert.equal(compatibility.contractKind, 'graphql');
+    assert.deepEqual(
+      compatibility.operations.map((operation) => `${operation.rootType}/${operation.field}`),
+      ['Query/user', 'Query/users']
+    );
+    assert.deepEqual(
+      compatibility.objectTypes.find((type) => type.name === 'User')?.fields,
+      [
+        { name: 'id', type: 'ID!' },
+        { name: 'name', type: 'String!' }
+      ]
+    );
+    assert.deepEqual(
+      compatibility.inputTypes.find((type) => type.name === 'CreateUserInput')?.fields,
+      [{ name: 'name', type: 'String!', required: true }]
+    );
+  } finally {
+    db.close();
+  }
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'removed_endpoint',
+      classification: 'breaking',
+      reason: 'endpoint removed from current contract',
+      httpMethod: 'GRAPHQL',
+      routePath: 'Query.users',
+      previousEndpointId: 'endpoint:graphql:Query.users'
+    }
+  ]);
+});
+
+test('analyzeContractDiff classifies removed GraphQL response fields as breaking', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithGraphqlContract({ includeUsersField: false });
+  await writeGraphqlContract(providerRoot, { includeUsersField: false, includeUserNameField: false });
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/schema.graphql'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'removed_response_required_property',
+      classification: 'breaking',
+      reason: 'graphql response field removed from current schema',
+      httpMethod: 'GRAPHQL',
+      routePath: 'Query.user',
+      propertyName: 'User.name',
+      schemaPath: 'response.User.fields.name'
+    }
+  ]);
+});
+
+test('analyzeContractDiff classifies GraphQL response field type changes as breaking', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithGraphqlContract({ includeUsersField: false });
+  await writeGraphqlContract(providerRoot, { includeUsersField: false, userNameFieldType: 'Int!' });
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/schema.graphql'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'changed_response_property_type',
+      classification: 'breaking',
+      reason: 'graphql response field type changed in current schema',
+      httpMethod: 'GRAPHQL',
+      routePath: 'Query.user',
+      propertyName: 'User.name',
+      schemaPath: 'response.User.fields.name',
+      previousSchemaType: 'String!',
+      currentSchemaType: 'Int!'
+    }
+  ]);
+});
+
+test('analyzeContractDiff classifies added GraphQL required input fields as breaking', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithGraphqlContract({
+    includeUsersField: false,
+    includeMutation: true
+  });
+  await writeGraphqlContract(providerRoot, {
+    includeUsersField: false,
+    includeMutation: true,
+    includeRequiredInputEmail: true
+  });
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/schema.graphql'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'added_request_required_property',
+      classification: 'breaking',
+      reason: 'graphql required input field added to current schema',
+      httpMethod: 'GRAPHQL',
+      routePath: 'Mutation.createUser',
+      propertyName: 'CreateUserInput.email',
+      schemaPath: 'request.Mutation.createUser.args.input.CreateUserInput.fields.email',
+      currentSchemaType: 'String!'
+    }
+  ]);
+});
+
+test('analyzeContractDiff classifies existing GraphQL arguments becoming required as breaking', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithGraphqlContract({
+    includeUsersField: false,
+    defaultUserIdArg: true
+  });
+  await writeGraphqlContract(providerRoot, { includeUsersField: false });
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/schema.graphql'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'added_request_required_property',
+      classification: 'breaking',
+      reason: 'graphql argument became required in current schema',
+      httpMethod: 'GRAPHQL',
+      routePath: 'Query.user',
+      propertyName: 'id',
+      schemaPath: 'request.Query.user.args.id',
+      previousSchemaType: 'ID!',
+      currentSchemaType: 'ID!'
+    }
+  ]);
+});
+
+test('analyzeContractDiff classifies existing GraphQL input fields becoming required as breaking', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithGraphqlContract({
+    includeUsersField: false,
+    includeMutation: true,
+    includeDefaultedInputEmail: true
+  });
+  await writeGraphqlContract(providerRoot, {
+    includeUsersField: false,
+    includeMutation: true,
+    includeRequiredInputEmail: true
+  });
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/schema.graphql'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'added_request_required_property',
+      classification: 'breaking',
+      reason: 'graphql input field became required in current schema',
+      httpMethod: 'GRAPHQL',
+      routePath: 'Mutation.createUser',
+      propertyName: 'CreateUserInput.email',
+      schemaPath: 'request.Mutation.createUser.args.input.CreateUserInput.fields.email',
+      previousSchemaType: 'String!',
+      currentSchemaType: 'String!'
+    }
+  ]);
+});
+
+test('analyzeContractDiff does not classify defaulted GraphQL non-null input fields as required', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithGraphqlContract({
+    includeUsersField: false,
+    includeMutation: true
+  });
+  await writeGraphqlContract(providerRoot, {
+    includeUsersField: false,
+    includeMutation: true,
+    includeDefaultedInputEmail: true
+  });
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/schema.graphql'
+  });
+
+  assert.equal(result.summary.classification, 'unknown');
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'changed_contract_without_endpoint_delta',
+      classification: 'unknown',
+      reason: 'contract content changed but endpoint surface is unchanged in the v0 analyzer'
+    }
+  ]);
+});
+
+test('analyzeContractDiff classifies nested GraphQL response field removals as breaking', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithGraphqlContract({
+    includeUsersField: false,
+    includeUserProfileField: true
+  });
+  await writeGraphqlContract(providerRoot, {
+    includeUsersField: false,
+    includeUserProfileField: true,
+    includeProfileBioField: false
+  });
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/schema.graphql'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'removed_response_required_property',
+      classification: 'breaking',
+      reason: 'graphql response field removed from current schema',
+      httpMethod: 'GRAPHQL',
+      routePath: 'Query.user',
+      propertyName: 'Profile.bio',
+      schemaPath: 'response.Profile.fields.bio'
     }
   ]);
 });

@@ -83,7 +83,7 @@ flowchart LR
 | [zilliztech/memsearch](https://github.com/zilliztech/memsearch) | Markdown을 source of truth로 두고 Milvus를 rebuildable shadow index로 쓰며, search → expand → transcript 3-layer recall, dense + BM25 + RRF, SHA-256 unchanged skip, live watcher를 제공한다. | persisted context pack id/reuse, source-of-truth artifact와 rebuildable search projection 분리, expand-on-demand retrieval ladder. | Milvus 필수화와 automatic conversation capture. Impact-trace는 repo-local SQLite와 explicit CLI/MCP action 경계를 유지한다. |
 | [Sourcegraph MCP](https://sourcegraph.com/mcp) / [docs](https://sourcegraph.com/docs/api/mcp) | Codex/Claude Code/Cursor 등 MCP-aware agent와 호환되고 keyword/semantic search, history/diff search, file read를 제공한다. docs는 result limits와 pagination을 강조한다. | result limit, pagination, file range resource, repo permissions와 MCP access control 분리. | Sourcegraph product coupling. 장기적으로는 SCIP/LSIF import adapter가 더 이식성 좋다. |
 | [bufbuild/buf](https://github.com/bufbuild/buf) / [buf breaking](https://buf.build/docs/reference/cli/buf/breaking/) | Protobuf breaking-change detection의 사실상 표준이다. 삭제, field number/type/cardinality sameness, RPC request/response/streaming sameness 같은 rule taxonomy가 명확하다. | `protobuf-compat-v0` compact signature의 rule taxonomy. 장기적으로 optional oracle/interoperability boundary로 `buf breaking --error-format=json` 결과를 import할 수 있다. | Buf CLI/BSR을 core runtime dependency로 요구하지 않는다. Impact-trace baseline은 SQLite compact metadata이고, full proto image/raw snapshot 저장은 거부한다. |
-| [GraphQL Inspector](https://github.com/graphql-hive/graphql-inspector) / [diff docs](https://the-guild.dev/graphql/inspector/docs/commands/diff) | GraphQL schema diff에서 breaking/dangerous/non-breaking 분류와 change code taxonomy를 제공한다. | GraphQL v0에서 removed type/field/arg, required arg/input 추가, output/input type 변경, enum value 변경 rule을 가져온다. | Hive/cloud registry, GitHub app, hosted checks를 core로 가져오지 않는다. |
+| [GraphQL Inspector](https://github.com/graphql-hive/graphql-inspector) / [diff docs](https://the-guild.dev/graphql/inspector/docs/commands/diff) | GraphQL schema diff에서 breaking/dangerous/non-breaking 분류와 change code taxonomy를 제공한다. | GraphQL v0는 removed root field, required arg/input 추가, output/input type 변경 rule을 compact signature로 가져왔다. enum/interface/union/directive/deprecation rule은 후속 full parser pass에서 다룬다. | Hive/cloud registry, GitHub app, hosted checks를 core로 가져오지 않는다. |
 | [asyncapi/diff](https://github.com/asyncapi/diff) / [AsyncAPI parser](https://github.com/asyncapi/parser-js) | AsyncAPI document diff가 JSON Pointer 기반 breaking/non-breaking/unclassified output을 제공한다. | AsyncAPI v0에서 channels/operations/messages/payload schema pointer signature와 override rule model을 참고한다. | valid dereferenced full document를 baseline으로 저장하거나 parser/diff를 필수 runtime으로 묶지 않는다. |
 | [aider](https://github.com/Aider-AI/aider) / [repo map docs](https://aider.chat/docs/repomap.html) | repo map으로 중요한 class/function/signature만 LLM에 넣어 큰 repo context를 줄인다. | compact repo map 원리, graph ranking, token-budgeted selection. | pair programmer/auto-commit workflow. Impact-trace는 agent가 수정하기 전후 볼 impact context를 제공한다. |
 | [agentmemory](https://github.com/rohitg00/agentmemory) | persistent memory for coding agents. hooks/REST/MCP/viewer/iii-engine 위에 raw observation, compressed observation, BM25+vector+graph search, compact smart search, session replay를 제공한다. 상세 평가는 [agentmemory 적용성 분석](agentmemory-adoption-review.ko.md)에 고정했다. | compact-first search, expand-on-demand IDs/resources, BM25+vector+graph RRF, access telemetry, explicit memory supersession, opt-in session replay/import UX. | iii-engine/iii-sdk, global `~/.agentmemory`, REST/streams daemon, 51-tool MCP breadth, automatic hook capture, mesh/team sync, arbitrary export/write tools. |
@@ -629,7 +629,7 @@ flowchart LR
 | git snapshot metadata | stale index warning이 commit/branch/dirty state 기준 |
 | thin ImpactBench | `npm run bench` deterministic JSON 생성 |
 
-비범위: UI 본구현, full call graph, GraphQL/AsyncAPI contract diff.
+비범위: UI 본구현, full call graph, AsyncAPI contract diff, GraphQL full parser/consumer resolver.
 
 ### Phase B: MCP Context Pack
 
@@ -686,9 +686,10 @@ flowchart LR
 | cross-repo resolver | v0 landed: indexed workspace repo에서 OpenAPI provider endpoint와 HTTP consumer file literal을 `cross_repo_links`로 연결 |
 | OpenAPI endpoint/schema contract diff | v0 landed: removed endpoint를 breaking, added endpoint를 non-breaking으로 분류하고, JSON/YAML nested request/response schema breaking change의 known consumer impact를 저장 |
 | Protobuf RPC/message contract diff | v0 landed: `.proto` compact signature로 removed RPC와 response message field breaking change를 분류 |
+| GraphQL schema contract diff | v0 landed: `.graphql`/`.gql` compact signature로 removed root field, response field removal/type change, required argument/input field addition을 breaking으로 분류 |
 | MCP workspace/contract resources | v0 landed: `impact_trace_contract_diff`와 `impact-trace://workspaces/{name}/contracts`, `/cross-repo-links`로 contract impact를 resource-on-demand로 확장 |
-| GraphQL/AsyncAPI adapter | producer/consumer relation 추출 |
-| breaking-change classifier | GraphQL/AsyncAPI contract diff가 downstream risk를 생성 |
+| GraphQL/protobuf/AsyncAPI consumer resolver | producer/consumer relation 추출 |
+| AsyncAPI breaking-change classifier | event contract diff가 downstream risk를 생성 |
 | UI owner/repo filter | cross-repo impact를 사람이 추적 |
 
 ### Phase F: Enrichment Adapters

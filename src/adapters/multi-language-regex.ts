@@ -2,6 +2,7 @@ import path from 'node:path';
 import ts from 'typescript';
 
 import { markdownEntityKindForPath } from '../artifacts.js';
+import { extractGraphqlCompatibility, stripGraphqlComments } from '../graphql_compat.js';
 import { extractOpenApiJsonCompatibility, extractOpenApiYamlCompatibility } from '../openapi_compat.js';
 import { extractProtobufCompatibility, stripProtobufComments } from '../protobuf_compat.js';
 import type { Confidence, RelationKind, ScannedFile } from '../types.js';
@@ -439,7 +440,13 @@ function contractMetadataForFile(file: ScannedFile): Readonly<Record<string, unk
       ...(compatibility !== undefined ? { compatibility } : {})
     };
   }
-  if (file.language === 'graphql') return { contractKind: 'graphql' };
+  if (file.language === 'graphql') {
+    const compatibility = extractGraphqlCompatibility(file.content);
+    return {
+      contractKind: 'graphql',
+      ...(compatibility !== undefined ? { compatibility } : {})
+    };
+  }
   if (file.language === 'json') return openApiJsonMetadata(file.content, contractKindForPath(file.relativePath));
   return openApiYamlMetadata(file.content, contractKindForPath(file.relativePath));
 }
@@ -782,37 +789,23 @@ function protobufRpcOffset(content: string, rpcName: string): number {
 }
 
 function extractGraphqlEndpoints(file: ScannedFile): ContractEndpoint[] {
-  if (file.content.length > 64_000) return [];
-  const endpoints: ContractEndpoint[] = [];
-  const lines = file.content.split(/\r?\n/);
-  let currentType: 'Query' | 'Mutation' | undefined;
-  let depth = 0;
-  let offset = 0;
+  const compatibility = extractGraphqlCompatibility(file.content);
+  if (compatibility === undefined) return [];
+  return compatibility.operations.map((operation) => ({
+    displayName: operation.path,
+    metadata: { type: operation.rootType, field: operation.field },
+    evidence: evidenceLineAt(file.content, graphqlFieldOffset(file.content, operation.rootType, operation.field))
+  }));
+}
 
-  for (const line of lines) {
-    const typeMatch = /^\s*(?:type|extend\s+type)\s+(Query|Mutation)\s*\{/.exec(line);
-    if (typeMatch) {
-      currentType = typeMatch[1] as 'Query' | 'Mutation';
-      depth = 1;
-      offset += line.length + 1;
-      continue;
-    }
-    if (currentType && depth > 0) {
-      const fieldMatch = /^\s*([A-Za-z_]\w*)\s*(?:\([^)]*\))?\s*:/.exec(line);
-      if (fieldMatch) {
-        endpoints.push({
-          displayName: `${currentType}.${fieldMatch[1]!}`,
-          metadata: { type: currentType, field: fieldMatch[1]! },
-          evidence: evidenceLineAt(file.content, offset)
-        });
-      }
-      depth += (line.match(/\{/g) ?? []).length;
-      depth -= (line.match(/\}/g) ?? []).length;
-      if (depth <= 0) currentType = undefined;
-    }
-    offset += line.length + 1;
-  }
-  return endpoints;
+function graphqlFieldOffset(content: string, rootType: string, fieldName: string): number {
+  const stripped = stripGraphqlComments(content);
+  const escapedRootType = rootType.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const escapedFieldName = fieldName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const typeMatch = new RegExp(`\\b(?:extend\\s+)?type\\s+${escapedRootType}\\b[^{}]*\\{`, 'g').exec(stripped);
+  if (!typeMatch) return 0;
+  const fieldMatch = new RegExp(`\\b${escapedFieldName}\\s*(?:\\([^)]*\\))?\\s*:`).exec(stripped.slice(typeMatch.index));
+  return fieldMatch === null ? typeMatch.index : typeMatch.index + fieldMatch.index;
 }
 
 function makeRelation(input: {

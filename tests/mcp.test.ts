@@ -851,6 +851,10 @@ test('MCP stdio server initializes and exposes the full agent memory tool surfac
     assert.equal(response.error, undefined);
     const tools = response.result.tools as Array<{
       name: string;
+      inputSchema?: {
+        properties?: Record<string, any>;
+        required?: string[];
+      };
       annotations?: {
         readOnlyHint?: boolean;
         destructiveHint?: boolean;
@@ -885,6 +889,17 @@ test('MCP stdio server initializes and exposes the full agent memory tool surfac
     assert.equal(toolByName.get('impact_trace_analyze_diff')!.annotations?.readOnlyHint, false);
     assert.equal(toolByName.get('impact_trace_context_for_change')!.annotations?.readOnlyHint, false);
     assert.equal(toolByName.get('impact_trace_search_context')!.annotations?.readOnlyHint, false);
+    assert.equal(toolByName.get('impact_trace_analyze_diff')!.inputSchema?.properties?.changedFiles?.type, 'array');
+    assert.equal(toolByName.get('impact_trace_analyze_diff')!.inputSchema?.properties?.changedFiles?.items?.type, 'string');
+    assert.equal(toolByName.get('impact_trace_analyze_diff')!.inputSchema?.properties?.maxDepth?.maximum, 8);
+    assert.deepEqual(toolByName.get('impact_trace_context_for_change')!.inputSchema?.properties?.budget?.enum, [
+      'brief',
+      'standard',
+      'deep'
+    ]);
+    assert.equal(toolByName.get('impact_trace_search_context')!.inputSchema?.properties?.query?.type, 'string');
+    assert.equal(toolByName.get('impact_trace_search_context')!.inputSchema?.properties?.k?.maximum, 50);
+    assert.equal(toolByName.get('impact_trace_explain_entity')!.inputSchema?.properties?.relationLimit?.maximum, 100);
     assert.equal(toolByName.get('impact_trace_analyze_diff')!.annotations?.idempotentHint, false);
     assert.equal(toolByName.get('impact_trace_context_for_change')!.annotations?.idempotentHint, false);
     assert.equal(toolByName.get('impact_trace_search_context')!.annotations?.idempotentHint, false);
@@ -992,6 +1007,14 @@ test('MCP analyze_diff validates paths and returns affected files', async () => 
     assert.equal(bad.error, undefined);
     assert.equal(bad.result.isError, true);
     assert.match(bad.result.content[0].text, /outside repo root/);
+    const errorBody = JSON.parse(bad.result.content[0].text) as {
+      error: { code: string; problem: string; cause: string; fix: string; evidence: unknown[] };
+    };
+    assert.equal(errorBody.error.code, 'path_outside_repo');
+    assert.match(errorBody.error.problem, /outside repo root/);
+    assert.ok(errorBody.error.cause.length > 0);
+    assert.ok(errorBody.error.fix.length > 0);
+    assert.deepEqual(errorBody.error.evidence, []);
   } finally {
     await client.close();
   }
@@ -1524,6 +1547,12 @@ test('MCP search_context returns ranked entities with optional evidence links', 
     assert.equal(blank.error, undefined);
     assert.equal(blank.result.isError, true);
     assert.match(blank.result.content[0].text, /Too small|must not be empty/i);
+    const blankEnvelope = JSON.parse(blank.result.content[0].text) as {
+      error: { code: string; problem: string; cause: string; fix: string; evidence: unknown[] };
+    };
+    assert.equal(blankEnvelope.error.code, 'empty_search_query');
+    assert.ok(blankEnvelope.error.cause.length > 0);
+    assert.ok(blankEnvelope.error.fix.length > 0);
 
     assert.equal(countReports(repoRoot), 0);
     const filterWalAux = (names: string[]): string[] =>
@@ -2201,12 +2230,62 @@ test('MCP exposes report, entity, evidence, graph, and coverage resources', asyn
     });
     assert.ok(missingEvidence.error);
     assert.match(missingEvidence.error.message, /impact evidence not found/);
+    const missingEvidenceEnvelope = JSON.parse(missingEvidence.error.message) as {
+      error: { code: string; problem: string; cause: string; fix: string; evidence: unknown[] };
+    };
+    assert.equal(missingEvidenceEnvelope.error.code, 'resource_not_found');
+    assert.match(missingEvidenceEnvelope.error.problem, /impact evidence not found/);
+    assert.ok(missingEvidenceEnvelope.error.fix.length > 0);
 
     const graphResource = await client.request('resources/read', {
       uri: `impact-trace://reports/${report.id}/graph/dot`
     });
     assert.equal(graphResource.error, undefined);
     assert.match(graphResource.result.contents[0].text, /^digraph impact_trace/);
+
+    const firstGraphPage = await client.request('resources/read', {
+      uri: `impact-trace://reports/${report.id}/graph/json?limit=1`
+    });
+    assert.equal(firstGraphPage.error, undefined);
+    const firstGraphJson = JSON.parse(firstGraphPage.result.contents[0].text) as {
+      nodes: unknown[];
+      edges: unknown[];
+      page: {
+        limit: number;
+        totalNodes: number;
+        totalEdges: number;
+        returnedNodes: number;
+        returnedEdges: number;
+        nextCursor: string | null;
+      };
+    };
+    assert.equal(firstGraphJson.page.limit, 1);
+    assert.equal(firstGraphJson.nodes.length, 1);
+    assert.ok(firstGraphJson.page.totalNodes > firstGraphJson.page.returnedNodes);
+    assert.ok(firstGraphJson.page.nextCursor);
+
+    const secondGraphPage = await client.request('resources/read', {
+      uri: `impact-trace://reports/${report.id}/graph/json?limit=1&cursor=${encodeURIComponent(firstGraphJson.page.nextCursor!)}`
+    });
+    assert.equal(secondGraphPage.error, undefined);
+    const secondGraphJson = JSON.parse(secondGraphPage.result.contents[0].text) as {
+      nodes: Array<{ id: string }>;
+      page: { cursor: string | null; limit: number };
+    };
+    assert.equal(secondGraphJson.page.cursor, firstGraphJson.page.nextCursor);
+    assert.equal(secondGraphJson.page.limit, 1);
+    assert.notEqual(secondGraphJson.nodes[0]?.id, (firstGraphJson.nodes[0] as { id: string }).id);
+
+    const invalidCursor = await client.request('resources/read', {
+      uri: `impact-trace://reports/${report.id}/graph/json?limit=1&cursor=${'9'.repeat(400)}:${'9'.repeat(400)}`
+    });
+    assert.ok(invalidCursor.error);
+    const invalidCursorEnvelope = JSON.parse(invalidCursor.error.message) as {
+      error: { code: string; problem: string; cause: string; fix: string; evidence: unknown[] };
+    };
+    assert.equal(invalidCursorEnvelope.error.code, 'invalid_pagination');
+    assert.match(invalidCursorEnvelope.error.problem, /graph page cursor/);
+    assert.ok(invalidCursorEnvelope.error.fix.length > 0);
 
     const coverageResource = await client.request('resources/read', {
       uri: 'impact-trace://coverage/latest'
@@ -2215,6 +2294,29 @@ test('MCP exposes report, entity, evidence, graph, and coverage resources', asyn
     const coverageJson = JSON.parse(coverageResource.result.contents[0].text) as { coverage: unknown[]; truncated: boolean };
     assert.ok(coverageJson.coverage.length > 0);
     assert.equal(coverageJson.truncated, false);
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP coverage resource returns a typed error before the first completed index', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-mcp-coverage-error-'));
+  await initProject({ repoRoot });
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+
+    const response = await client.request('resources/read', {
+      uri: 'impact-trace://coverage/latest'
+    });
+    assert.ok(response.error);
+    const envelope = JSON.parse(response.error.message) as {
+      error: { code: string; problem: string; cause: string; fix: string; evidence: unknown[] };
+    };
+    assert.equal(envelope.error.code, 'index_not_ready');
+    assert.match(envelope.error.problem, /no completed index found/);
+    assert.ok(envelope.error.cause.length > 0);
+    assert.ok(envelope.error.fix.length > 0);
   } finally {
     await client.close();
   }

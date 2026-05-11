@@ -90,7 +90,7 @@ flowchart LR
 | [Semgrep](https://github.com/semgrep/semgrep) / [Opengrep](https://github.com/opengrep/opengrep) | 여러 언어의 source-like static rule ecosystem. | `PolicyRuleAdapter`: rule 결과를 `GOVERNS`, `REQUIRES_REVIEW`, `VERIFIES` evidence로 흡수한다. | engine clone. 라이선스와 업데이트 경계를 위해 subprocess/result import adapter가 안전하다. |
 | [SCIP](https://github.com/sourcegraph/scip), [LSIF](https://lsif.dev/), [Kythe](https://github.com/kythe/kythe) | language-server 수준의 definition/reference/implementation graph를 저장·교환하는 포맷/생태계. | optional import adapter. Java/Kotlin/TS/Go/Rust precision을 높이는 길. | core schema를 특정 포맷에 종속시키지 않는다. |
 
-이번 slice에서는 위 조사에서 공통으로 보이는 `search/read only/context budget/resource link` 패턴을 작게 가져와 `impact_trace_search_context` v0로 구현했고, 이어서 `agentmemory` 분석에서 확인한 RRF hybrid ranking을 initial v1로 반영했다. context access telemetry와 opt-in session import v0도 Impact-trace의 SQLite/provenance 경계 안에서 구현됐다. retrieval depth v0는 natural-language query용 read-only temp FTS5/BM25 entity lane, 기존 `fact_embeddings` 기반 `semanticRank`, matched seed의 1-hop `graphProximityRank`까지 추가했다. budget/diversification v0는 optional `brief`/`standard`/`deep` budget으로 returned bytes / estimated tokens / omitted counts를 노출하고 `k>=3` 결과를 path prefix/entity kind/relation kind bucket으로 interleave한다. persistent retrieval v0는 schema v11 `relation_evidence`/selected `facts` FTS projection과 ImpactBench schema v2 Recall@budget/ablation report를 추가했다. 다음 context slice는 resource pagination, typed errors, explicit supersession이다.
+이번 slice에서는 위 조사에서 공통으로 보이는 `search/read only/context budget/resource link` 패턴을 작게 가져와 `impact_trace_search_context` v0로 구현했고, 이어서 `agentmemory` 분석에서 확인한 RRF hybrid ranking을 initial v1로 반영했다. context access telemetry와 opt-in session import v0도 Impact-trace의 SQLite/provenance 경계 안에서 구현됐다. retrieval depth v0는 natural-language query용 read-only temp FTS5/BM25 entity lane, 기존 `fact_embeddings` 기반 `semanticRank`, matched seed의 1-hop `graphProximityRank`까지 추가했다. budget/diversification v0는 optional `brief`/`standard`/`deep` budget으로 returned bytes / estimated tokens / omitted counts를 노출하고 `k>=3` 결과를 path prefix/entity kind/relation kind bucket으로 interleave한다. persistent retrieval v0는 schema v11 `relation_evidence`/selected `facts` FTS projection과 ImpactBench schema v2 Recall@budget/ablation report를 추가했다. resource contract v0는 JSON graph pagination과 typed MCP error envelope를 추가했다. 다음 context slice는 explicit supersession과 entity persistent FTS/ANN이다.
 
 ### 2.2 MCP 표준에서 가져올 것
 
@@ -435,7 +435,7 @@ flowchart TB
 | `impact_trace_search_context` | keyword/path/symbol/relation/evidence 기반 graph search. v1 landed: deterministic SQLite keyword/relation/evidence streams + RRF `rankSignals`, `k=10`, `includeEvidence=true`, `snippetChars=240` | ranked entities, stream rank signals, match reasons, compact evidence, entity/evidence resource links |
 | `impact_trace_context_telemetry` | context tool run과 resource read 사용량을 조회 | v0 landed: `context_tool_runs`, `context_resource_accesses` 기반 summary, recent tool/resource rows, redacted query |
 | `impact_trace_doctor` | agent가 작업 전 repo-local index/schema/vector/telemetry 상태를 확인 | v0 landed: read-only health JSON, missing DB에도 workspace 파일 생성 없음 |
-| `impact_trace_get_graph` | report/entity 주변 graph metadata 요청 | paginated graph resource URI |
+| `impact_trace_get_graph` | report/entity 주변 graph metadata 요청 | JSON graph pagination resource URI |
 | `impact_trace_action_plan` | report 기준 검증 action 생성 | tests/docs/review/security actions, 실행은 하지 않음 |
 
 MVP의 기존 `impact_trace_analyze_diff`는 유지하고, 새 tool은 호환 layer를 두고 점진 추가한다.
@@ -447,7 +447,8 @@ MVP의 기존 `impact_trace_analyze_diff`는 유지하고, 새 tool은 호환 la
 | `impact-trace://reports/{report_id}` | versioned report JSON |
 | `impact-trace://entities/{entity_id}` | entity profile, versions, static/dynamic facts |
 | `impact-trace://evidence/{evidence_id}` | redacted evidence detail |
-| `impact-trace://reports/{report_id}/graph/{format}` | paginated graph nodes/edges |
+| `impact-trace://reports/{report_id}/graph/json?limit=<1..500>&cursor=...` | paginated graph nodes/edges |
+| `impact-trace://reports/{report_id}/graph/mermaid`, `impact-trace://reports/{report_id}/graph/dot` | unpaginated human-readable graph projections |
 | `impact-trace://policy/{entity_id}` | policy/rule impact detail |
 | `impact-trace://workspace/{workspace_id}` | workspace repos/contracts/services |
 | `impact-trace://coverage/latest` | last index coverage and adapter gaps |
@@ -642,7 +643,7 @@ flowchart LR
 | `impact_trace_doctor` | schema/index/coverage/adapter/vector/telemetry 상태를 read-only JSON으로 조회. v0 landed: CLI `impact-trace doctor`와 MCP tool 동시 제공 |
 | `impact-trace import-session` | Claude/Codex transcript 단일 파일을 explicit CLI action으로 import. v0 landed: raw transcript 전체 저장 없이 `session_summary`, `references_file` facts와 provenance 생성. MCP tool로는 노출하지 않음 |
 | `impact-trace://evidence/{id}` | source span과 redacted snippet fetch 가능. v0 landed: context pack evidence id에서 resource-on-demand로 읽는다. |
-| `impact-trace://reports/{id}/graph/{format}` pagination | 큰 graph를 tool payload에 넣지 않음 |
+| `impact-trace://reports/{id}/graph/json` pagination | 큰 JSON graph를 tool payload에 넣지 않음. Mermaid/DOT은 호환성을 위해 unpaginated projection 유지 |
 | typed error envelope | problem/cause/fix/evidence id 구조화 |
 
 이 단계가 UI보다 먼저 오면 UI가 같은 resource contract를 재사용할 수 있다.
@@ -714,10 +715,10 @@ flowchart LR
    - relation_evidence/facts persistent FTS projection
    - Recall@5/10, Precision@5, NDCG@10, MRR, returned bytes, stream ablation benchmark
 
-5. `feat(resources): paginate context resources and typed errors`
-   - `impact-trace://reports/{report_id}/graph/{format}?cursor=...`
-   - entity/evidence/report pagination guard
-   - typed error envelope: problem / cause / fix / evidence id
+5. `feat(resources): paginate context resources and typed errors` — landed v0
+   - `impact-trace://reports/{report_id}/graph/json?limit=<1..500>&cursor=...`
+   - JSON page metadata: `cursor`, `nextCursor`, node/edge totals, returned counts
+   - typed error envelope: `code`, `problem`, `cause`, `fix`, `evidence`
 
 6. `feat(memory): add explicit supersession lifecycle`
    - `fact_provenance.kind='supersedes'` 또는 `fact_supersessions`
@@ -842,7 +843,7 @@ UI가 들어오면 완료 전에 반드시 확인한다.
 
 ## 18. 바로 다음 액션
 
-1. `impact-trace://reports/{id}/graph/{format}` pagination과 typed error envelope로 큰 graph payload를 resource-on-demand로 고정한다.
+1. ✅ `impact-trace://reports/{id}/graph/json` pagination과 typed error envelope로 큰 graph payload를 resource-on-demand로 고정했다.
 2. explicit supersession을 추가해 오래된 decision/summary/policy fact를 fuzzy overwrite 없이 명시적으로 대체한다.
 3. entity persistent FTS projection과 sqlite-vec ANN lane으로 temp entity FTS / brute-force semantic path를 줄인다.
 4. 그 resource contract를 그대로 읽는 `impact-trace ui` workbench v0를 만든다.

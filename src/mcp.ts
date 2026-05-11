@@ -21,6 +21,7 @@ import type {
   ContextPackItem,
   EntityRef,
   Evidence,
+  GraphExport,
   GraphExportFormat,
   ImpactAction,
   ImpactReport
@@ -35,6 +36,7 @@ export function createMcpServer(context: McpContext): McpServer {
     name: 'impact-trace',
     version: '0.1.0'
   });
+  patchToolErrorFactory(server);
 
   server.registerTool(
     'impact_trace_analyze_diff',
@@ -55,19 +57,23 @@ export function createMcpServer(context: McpContext): McpServer {
       }
     },
     async ({ changedFiles, maxDepth, maxFanout }) => {
-      const { analyzeDiff } = await import('./analyzer.js');
-      const report = await analyzeDiff({
-        repoRoot: context.repoRoot,
-        changedFiles,
-        persistReport: false,
-        readOnly: true,
-        ...(maxDepth === undefined ? {} : { maxDepth }),
-        ...(maxFanout === undefined ? {} : { maxFanout })
-      });
-      return toolJsonResponse(context, 'impact_trace_analyze_diff', report, {
-        indexRunId: report.indexRunId,
-        changedFiles: report.changedFiles
-      });
+      try {
+        const { analyzeDiff } = await import('./analyzer.js');
+        const report = await analyzeDiff({
+          repoRoot: context.repoRoot,
+          changedFiles,
+          persistReport: false,
+          readOnly: true,
+          ...(maxDepth === undefined ? {} : { maxDepth }),
+          ...(maxFanout === undefined ? {} : { maxFanout })
+        });
+        return toolJsonResponse(context, 'impact_trace_analyze_diff', report, {
+          indexRunId: report.indexRunId,
+          changedFiles: report.changedFiles
+        });
+      } catch (error) {
+        return typedToolErrorResponse(error);
+      }
     }
   );
 
@@ -92,25 +98,29 @@ export function createMcpServer(context: McpContext): McpServer {
       }
     },
     async ({ changedFiles, budget, maxDepth, maxFanout }) => {
-      const normalizedBudget = normalizeContextBudget(budget);
-      const preset = contextBudgetPreset(normalizedBudget);
-      const { analyzeDiff } = await import('./analyzer.js');
-      const report = await analyzeDiff({
-        repoRoot: context.repoRoot,
-        changedFiles,
-        persistReport: false,
-        readOnly: true,
-        maxDepth: maxDepth ?? preset.maxDepth,
-        maxFanout: maxFanout ?? preset.maxFanout
-      });
-      const pack = buildContextPack(report, normalizedBudget);
-      return toolJsonResponse(context, 'impact_trace_context_for_change', pack, {
-        indexRunId: pack.indexRunId,
-        budget: pack.budget,
-        changedFiles: report.changedFiles,
-        resourceCount: pack.resources.entities.length + pack.resources.evidence.length + 1,
-        omitted: pack.omittedCounts
-      });
+      try {
+        const normalizedBudget = normalizeContextBudget(budget);
+        const preset = contextBudgetPreset(normalizedBudget);
+        const { analyzeDiff } = await import('./analyzer.js');
+        const report = await analyzeDiff({
+          repoRoot: context.repoRoot,
+          changedFiles,
+          persistReport: false,
+          readOnly: true,
+          maxDepth: maxDepth ?? preset.maxDepth,
+          maxFanout: maxFanout ?? preset.maxFanout
+        });
+        const pack = buildContextPack(report, normalizedBudget);
+        return toolJsonResponse(context, 'impact_trace_context_for_change', pack, {
+          indexRunId: pack.indexRunId,
+          budget: pack.budget,
+          changedFiles: report.changedFiles,
+          resourceCount: pack.resources.entities.length + pack.resources.evidence.length + 1,
+          omitted: pack.omittedCounts
+        });
+      } catch (error) {
+        return typedToolErrorResponse(error);
+      }
     }
   );
 
@@ -135,23 +145,27 @@ export function createMcpServer(context: McpContext): McpServer {
       }
     },
     async ({ query, k, includeEvidence, budget }) => {
-      const normalizedBudget = budget === undefined ? null : normalizeContextBudget(budget);
-      const semanticEmbedding = await searchContextSemanticEmbedding(context, query);
-      const result = searchContext(context, {
-        query,
-        k: k ?? 10,
-        includeEvidence: includeEvidence ?? true,
-        budget: normalizedBudget,
-        disabledStreams: new Set(),
-        semanticEmbedding
-      });
-      const telemetry = searchContextTelemetry(result);
-      return toolJsonResponse(context, 'impact_trace_search_context', result, {
-        indexRunId: telemetry.indexRunId,
-        query,
-        budget: normalizedBudget,
-        resourceCount: telemetry.resourceCount
-      });
+      try {
+        const normalizedBudget = budget === undefined ? null : normalizeContextBudget(budget);
+        const semanticEmbedding = await searchContextSemanticEmbedding(context, query);
+        const result = searchContext(context, {
+          query,
+          k: k ?? 10,
+          includeEvidence: includeEvidence ?? true,
+          budget: normalizedBudget,
+          disabledStreams: new Set(),
+          semanticEmbedding
+        });
+        const telemetry = searchContextTelemetry(result);
+        return toolJsonResponse(context, 'impact_trace_search_context', result, {
+          indexRunId: telemetry.indexRunId,
+          query,
+          budget: normalizedBudget,
+          resourceCount: telemetry.resourceCount
+        });
+      } catch (error) {
+        return typedToolErrorResponse(error);
+      }
     }
   );
 
@@ -426,17 +440,21 @@ export function createMcpServer(context: McpContext): McpServer {
       }
     },
     async ({ entity, relationLimit, evidenceLimit }) => {
-      const result = explainEntity(context, {
-        entityId: entity,
-        relationLimit: relationLimit ?? 20,
-        evidenceLimit: evidenceLimit ?? 10
-      });
-      const telemetry = explainEntityTelemetry(result);
-      return toolJsonResponse(context, 'impact_trace_explain_entity', result, {
-        indexRunId: telemetry.indexRunId,
-        query: entity,
-        resourceCount: telemetry.resourceCount
-      });
+      try {
+        const result = explainEntity(context, {
+          entityId: entity,
+          relationLimit: relationLimit ?? 20,
+          evidenceLimit: evidenceLimit ?? 10
+        });
+        const telemetry = explainEntityTelemetry(result);
+        return toolJsonResponse(context, 'impact_trace_explain_entity', result, {
+          indexRunId: telemetry.indexRunId,
+          query: entity,
+          resourceCount: telemetry.resourceCount
+        });
+      } catch (error) {
+        return typedToolErrorResponse(error);
+      }
     }
   );
 
@@ -622,30 +640,34 @@ export function createMcpServer(context: McpContext): McpServer {
     },
     async (uri, variables) => {
       const reportId = String(variables.reportId);
-      const format = parseGraphFormat(String(variables.format));
-      const { exportImpactGraph } = await import('./graph.js');
-      const graph = await exportImpactGraph({
-        repoRoot: context.repoRoot,
-        reportId,
-        format
-      });
-      const text = graph.rendered;
-      recordContextResourceAccess(context, {
-        uri: uri.toString(),
-        resourceKind: 'graph',
-        resourceId: `${reportId}:${format}`,
-        indexRunId: graph.indexRunId,
-        returnedBytes: byteLength(text)
-      });
-      return {
-        contents: [
-          {
-            uri: uri.toString(),
-            mimeType: format === 'json' ? 'application/json' : 'text/plain',
-            text
-          }
-        ]
-      };
+      try {
+        const format = parseGraphFormat(graphFormatVariable(String(variables.format)));
+        const { exportImpactGraph } = await import('./graph.js');
+        const graph = await exportImpactGraph({
+          repoRoot: context.repoRoot,
+          reportId,
+          format
+        });
+        const text = graphResourceText(uri, graph, format);
+        recordContextResourceAccess(context, {
+          uri: uri.toString(),
+          resourceKind: 'graph',
+          resourceId: `${reportId}:${format}`,
+          indexRunId: graph.indexRunId,
+          returnedBytes: byteLength(text)
+        });
+        return {
+          contents: [
+            {
+              uri: uri.toString(),
+              mimeType: format === 'json' ? 'application/json' : 'text/plain',
+              text
+            }
+          ]
+        };
+      } catch (error) {
+        throw typedMcpError(error);
+      }
     }
   );
 
@@ -657,7 +679,13 @@ export function createMcpServer(context: McpContext): McpServer {
       description: 'Index coverage rows for the latest completed index run.',
       mimeType: 'application/json'
     },
-    async (uri) => telemetryJsonResource(context, uri.toString(), 'coverage', 'latest', readLatestCoverage(context))
+    async (uri) => {
+      try {
+        return telemetryJsonResource(context, uri.toString(), 'coverage', 'latest', readLatestCoverage(context));
+      } catch (error) {
+        throw typedMcpError(error);
+      }
+    }
   );
 
   return server;
@@ -910,6 +938,17 @@ function numericCompare(left: number, right: number): number {
 
 type ToolResponse = {
   content: Array<{ type: 'text'; text: string }>;
+  isError?: boolean;
+};
+
+type TypedMcpErrorEnvelope = {
+  error: {
+    code: string;
+    problem: string;
+    cause: string;
+    fix: string;
+    evidence: Array<{ kind: string; id?: string; uri?: string }>;
+  };
 };
 
 type ToolTelemetryInput = {
@@ -928,6 +967,13 @@ type ResourceTelemetryInput = {
   indexRunId?: number | null;
   returnedBytes: number;
 };
+
+function patchToolErrorFactory(server: McpServer): void {
+  const errorFactory = server as unknown as {
+    createToolError?: (errorMessage: string) => ToolResponse;
+  };
+  errorFactory.createToolError = (errorMessage: string) => typedToolErrorResponse(new Error(errorMessage));
+}
 
 function toolJsonResponse(
   context: McpContext,
@@ -954,6 +1000,101 @@ function toolJsonResponse(
       }
     ]
   };
+}
+
+function typedToolErrorResponse(error: unknown): ToolResponse {
+  return {
+    isError: true,
+    content: [
+      {
+        type: 'text',
+        text: JSON.stringify(typedMcpErrorEnvelope(error))
+      }
+    ]
+  };
+}
+
+function typedMcpError(error: unknown, fallbackCode = 'impact_trace_error'): Error {
+  return new Error(JSON.stringify(typedMcpErrorEnvelope(error, fallbackCode)));
+}
+
+function typedMcpErrorEnvelope(error: unknown, fallbackCode = 'impact_trace_error'): TypedMcpErrorEnvelope {
+  const message = errorMessage(error);
+  const existing = parseTypedMcpError(message);
+  if (existing) return existing;
+
+  const normalized = message.toLowerCase();
+  let code = fallbackCode;
+  let cause = 'Impact Trace could not complete the requested MCP operation.';
+  let fix = 'Check the request arguments, refresh the local index if needed, then retry the MCP call.';
+
+  if (normalized.includes('outside repo root') || normalized.includes('resolves outside')) {
+    code = 'path_outside_repo';
+    cause = 'A requested path resolves outside the current repository root.';
+    fix = 'Use a repo-relative path inside the current repository and rerun the request.';
+  } else if (normalized.includes('not found')) {
+    code = 'resource_not_found';
+    cause = 'The requested Impact Trace resource was not found in the local index or report store.';
+    fix = 'Refresh resources/list, rerun index/analyze if needed, and use a current resource URI.';
+  } else if (normalized.includes('graph resource format')) {
+    code = 'invalid_resource_format';
+    cause = 'The graph resource format is not one of the formats Impact Trace can render.';
+    fix = 'Use one of: mermaid, json, dot.';
+  } else if (normalized.includes('graph page limit') || normalized.includes('graph page cursor')) {
+    code = 'invalid_pagination';
+    cause = 'The graph JSON resource pagination query is malformed.';
+    fix = 'Use a positive integer limit up to 500 and pass cursor values returned by the previous page.';
+  } else if (
+    normalized.includes('search query must not be empty') ||
+    (normalized.includes('impact_trace_search_context') && normalized.includes('query') && normalized.includes('too small'))
+  ) {
+    code = 'empty_search_query';
+    cause = 'The search context tool received an empty query after trimming whitespace.';
+    fix = 'Provide a non-empty keyword, path, symbol, relation kind, or evidence snippet.';
+  } else if (normalized.includes('no completed index found') || normalized.includes('repo is not indexed')) {
+    code = 'index_not_ready';
+    cause = 'The repository does not have a completed Impact Trace index yet.';
+    fix = 'Run impact-trace init and impact-trace index, then retry the MCP request.';
+  } else if (normalized.includes('must be') || normalized.includes('between')) {
+    code = 'invalid_tool_input';
+    cause = 'The MCP tool arguments do not match the Impact Trace input contract.';
+    fix = 'Correct the argument type or allowed range, then retry the tool call.';
+  }
+
+  return {
+    error: {
+      code,
+      problem: message,
+      cause,
+      fix,
+      evidence: []
+    }
+  };
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  return 'unknown Impact Trace MCP error';
+}
+
+function parseTypedMcpError(message: string): TypedMcpErrorEnvelope | null {
+  try {
+    const parsed = JSON.parse(message) as Partial<TypedMcpErrorEnvelope>;
+    if (
+      parsed.error &&
+      typeof parsed.error.code === 'string' &&
+      typeof parsed.error.problem === 'string' &&
+      typeof parsed.error.cause === 'string' &&
+      typeof parsed.error.fix === 'string' &&
+      Array.isArray(parsed.error.evidence)
+    ) {
+      return parsed as TypedMcpErrorEnvelope;
+    }
+  } catch {
+    return null;
+  }
+  return null;
 }
 
 function telemetryJsonResource(
@@ -1296,10 +1437,93 @@ function listGraphResources(context: McpContext): Array<{ uri: string; name: str
   });
 }
 
+function graphFormatVariable(value: string): string {
+  return value.split(/[?#]/, 1)[0] ?? value;
+}
+
+type GraphPageCursor = {
+  nodeOffset: number;
+  edgeOffset: number;
+};
+
+function graphResourceText(uri: URL, graph: GraphExport, format: GraphExportFormat): string {
+  if (format !== 'json') return graph.rendered;
+  if (!uri.searchParams.has('limit') && !uri.searchParams.has('cursor')) return graph.rendered;
+
+  const limit = parseGraphPageLimit(uri.searchParams.get('limit'));
+  const cursorRaw = uri.searchParams.get('cursor');
+  const cursor = parseGraphPageCursor(cursorRaw);
+  validateGraphPageCursor(cursor, graph);
+  const nodes = graph.nodes.slice(cursor.nodeOffset, cursor.nodeOffset + limit);
+  const edges = graph.edges.slice(cursor.edgeOffset, cursor.edgeOffset + limit);
+  const nextNodeOffset = cursor.nodeOffset + nodes.length;
+  const nextEdgeOffset = cursor.edgeOffset + edges.length;
+  const nextCursor =
+    nextNodeOffset < graph.nodes.length || nextEdgeOffset < graph.edges.length
+      ? `${nextNodeOffset}:${nextEdgeOffset}`
+      : null;
+
+  return JSON.stringify(
+    {
+      reportId: graph.reportId,
+      indexRunId: graph.indexRunId,
+      format: graph.format,
+      nodes,
+      edges,
+      page: {
+        cursor: cursorRaw,
+        nextCursor,
+        limit,
+        totalNodes: graph.nodes.length,
+        totalEdges: graph.edges.length,
+        returnedNodes: nodes.length,
+        returnedEdges: edges.length
+      }
+    },
+    null,
+    2
+  );
+}
+
+function parseGraphPageLimit(value: string | null): number {
+  if (value === null) return 100;
+  const limit = Number(value);
+  if (!Number.isInteger(limit) || limit < 1 || limit > 500) {
+    throw typedMcpError(new Error('graph page limit must be an integer between 1 and 500'), 'invalid_pagination');
+  }
+  return limit;
+}
+
+function parseGraphPageCursor(value: string | null): GraphPageCursor {
+  if (value === null) return { nodeOffset: 0, edgeOffset: 0 };
+  const match = /^(\d+):(\d+)$/.exec(value);
+  if (!match) {
+    throw typedMcpError(new Error('graph page cursor must be returned by a previous graph JSON page'), 'invalid_pagination');
+  }
+  return {
+    nodeOffset: parseGraphCursorOffset(match[1]!, 'node'),
+    edgeOffset: parseGraphCursorOffset(match[2]!, 'edge')
+  };
+}
+
+function parseGraphCursorOffset(value: string, label: 'node' | 'edge'): number {
+  const offset = Number(value);
+  if (!Number.isSafeInteger(offset) || offset < 0) {
+    throw typedMcpError(new Error(`graph page cursor ${label} offset must be a safe non-negative integer`), 'invalid_pagination');
+  }
+  return offset;
+}
+
+function validateGraphPageCursor(cursor: GraphPageCursor, graph: GraphExport): void {
+  if (cursor.nodeOffset > graph.nodes.length || cursor.edgeOffset > graph.edges.length) {
+    throw typedMcpError(new Error('graph page cursor is outside the current graph bounds'), 'invalid_pagination');
+  }
+}
+
 function readReport(context: McpContext, reportId: string): unknown {
   return withReadOnlyDb(context, (db, repoId) => {
     const row = db.prepare('SELECT json FROM reports WHERE repo_id = ? AND id = ?').get(repoId, reportId) as { json: string } | undefined;
-    if (!row) throw new Error(`impact report not found: ${reportId}`);
+    if (!row) throw typedMcpError(new Error(`impact report not found: ${reportId}`), 'resource_not_found');
     return JSON.parse(row.json) as unknown;
   });
 }
@@ -1311,7 +1535,7 @@ function readEntity(context: McpContext, entityId: string): unknown {
     const entity = db
       .prepare('SELECT * FROM entities WHERE repo_id = ? AND id = ? AND updated_index_run_id = ?')
       .get(repoId, entityId, indexRunId) as Record<string, unknown> | undefined;
-    if (!entity) throw new Error(`impact entity not found: ${entityId}`);
+    if (!entity) throw typedMcpError(new Error(`impact entity not found: ${entityId}`), 'resource_not_found');
     const outgoing = db
       .prepare('SELECT id, target_entity_id, kind, confidence, provenance FROM relations WHERE repo_id = ? AND source_entity_id = ? AND index_run_id = ? ORDER BY kind, target_entity_id LIMIT ?')
       .all(repoId, entityId, indexRunId, relationLimit + 1);
@@ -2487,7 +2711,7 @@ function explainEntity(context: McpContext, options: EntityExplainOptions): unkn
         WHERE repo_id = ? AND id = ? AND updated_index_run_id = ?
       `)
       .get(repoId, options.entityId, indexRunId) as ExplainEntityRow | undefined;
-    if (!entity) throw new Error(`impact entity not found: ${options.entityId}`);
+    if (!entity) throw typedMcpError(new Error(`impact entity not found: ${options.entityId}`), 'resource_not_found');
 
     const incomingCount = relationCount(db, repoId, indexRunId, 'target_entity_id', options.entityId);
     const outgoingCount = relationCount(db, repoId, indexRunId, 'source_entity_id', options.entityId);
@@ -2730,7 +2954,7 @@ function readEvidence(context: McpContext, evidenceId: string): unknown {
         WHERE evidence.repo_id = ? AND evidence.id = ?
       `)
       .get(repoId, evidenceId) as EvidenceResourceRow | undefined;
-    if (!row) throw new Error(`impact evidence not found: ${evidenceId}`);
+    if (!row) throw typedMcpError(new Error(`impact evidence not found: ${evidenceId}`), 'resource_not_found');
     return {
       id: row.evidence_id,
       file: row.evidence_file_path,
@@ -2840,7 +3064,7 @@ function withWritableDb<T>(context: McpContext, callback: (db: ReturnType<typeof
 
 function parseGraphFormat(value: string): GraphExportFormat {
   if (value === 'json' || value === 'mermaid' || value === 'dot') return value;
-  throw new Error('graph resource format must be mermaid, json, or dot');
+  throw typedMcpError(new Error('graph resource format must be mermaid, json, or dot'), 'invalid_resource_format');
 }
 
 function asConfidence(value: string): Confidence {

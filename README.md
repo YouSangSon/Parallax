@@ -373,7 +373,7 @@ MCP에서 노출하는 주요 tool은 아래와 같습니다.
 
 `impact_trace_context_for_change`는 report를 persist하지 않습니다. v0는 `impact-trace://entities/{entityId}`,
 `impact-trace://evidence/{evidenceId}`, `impact-trace://coverage/latest` resource link를 반환하고,
-큰 report/graph pagination은 다음 context-pack slice에서 붙입니다.
+큰 graph는 JSON resource에서 `?limit=<1..500>&cursor=<nextCursor>`로 page 단위 확장이 가능합니다.
 `impact_trace_search_context` v1은 `k=10`, `includeEvidence=true`, `evidencePerEntity=2`,
 `snippetChars=240`을 기본으로 하며, keyword/relation/evidence stream을 RRF로 fuse합니다.
 응답의 각 result는 `rankSignals.algorithm='rrf'`, `keywordRank`, `relationRank`, `evidenceRank`,
@@ -405,6 +405,11 @@ MVP에서 노출하는 resource는 read-only입니다.
 | `impact-trace://evidence/{evidenceId}` | relation evidence의 redacted snippet, source span, source/target entity를 읽습니다. |
 | `impact-trace://reports/{reportId}/graph/{format}` | Mermaid, JSON, DOT graph projection을 읽습니다. |
 | `impact-trace://coverage/latest` | 최신 index coverage를 읽습니다. |
+
+JSON graph resource는 query string을 지원합니다. 예: `impact-trace://reports/<id>/graph/json?limit=50`.
+응답에는 `page.cursor`, `page.nextCursor`, `page.totalNodes`, `page.totalEdges`, `page.returnedNodes`, `page.returnedEdges`가 들어갑니다.
+MCP context tool/resource failure는 agent가 복구 경로를 파싱할 수 있도록 `{ error: { code, problem, cause, fix, evidence } }`
+JSON envelope를 반환합니다.
 
 외부 시스템 write capability는 의도적으로 `tools/list`에 나오지 않습니다. Obsidian export 같은
 repo 밖 write는 별도 권한 모델과 리뷰를 거친 뒤 추가합니다.

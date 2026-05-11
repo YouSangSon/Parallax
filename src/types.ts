@@ -226,6 +226,33 @@ export type ContextPackEvidence = {
   relationKind?: string;
 };
 
+export type ContextPackWorkArtifactMetadata = {
+  title?: string;
+  owner?: string;
+  status?: string;
+  updatedAt?: string;
+  source?: 'frontmatter' | 'heading';
+};
+
+export type ContextPackWorkArtifactFreshness = {
+  state: 'current' | 'stale' | 'unknown';
+  label: string;
+  thresholdDays: number;
+  ageDays?: number;
+};
+
+export type ContextPackWorkArtifact = {
+  kind: string;
+  path: string;
+  displayName: string;
+  reason: string;
+  confidence: Confidence;
+  relations: string[];
+  resourceUri: string;
+  metadata?: ContextPackWorkArtifactMetadata;
+  freshness: ContextPackWorkArtifactFreshness;
+};
+
 export type ContextPack = {
   version: 0;
   contextPackId?: string;
@@ -237,6 +264,7 @@ export type ContextPack = {
   summary: string[];
   changed: ContextPackChangedEntity[];
   context: ContextPackItem[];
+  workArtifacts: ContextPackWorkArtifact[];
   actions: ImpactAction[];
   evidence: ContextPackEvidence[];
   resources: {
@@ -247,11 +275,13 @@ export type ContextPack = {
   };
   omittedCounts: {
     affected: number;
+    workArtifacts: number;
     evidence: number;
     actions: number;
   };
   limits: {
     affectedLimit: number;
+    workArtifactLimit: number;
     evidenceLimit: number;
     snippetChars: number;
     affectedTruncated: boolean;

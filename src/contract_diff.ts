@@ -4,8 +4,10 @@ import path from 'node:path';
 
 import {
   extractOpenApiJsonCompatibility,
+  extractOpenApiYamlCompatibility,
   OPENAPI_COMPAT_ANALYZER_ID,
   OPENAPI_COMPAT_SCHEMA_VERSION,
+  parseOpenApiYamlCompatibility,
   type OpenApiCompatibilityOperation,
   type OpenApiCompatibilitySignature,
   type OpenApiObjectSchemaSignature,
@@ -766,7 +768,20 @@ function parseCurrentOpenApiContract(content: string, contractPath: string): Cur
   if (contractPath.toLowerCase().endsWith('.json')) {
     return parseOpenApiJsonEndpoints(content);
   }
-  return parseOpenApiYamlEndpoints(content);
+  const parsed = parseOpenApiYamlEndpoints(content);
+  if (!parsed.ok) return parsed;
+  const compatibility = parseOpenApiYamlCompatibility(content);
+  if (!compatibility.ok) {
+    return {
+      ok: false,
+      endpoints: [],
+      warning: compatibility.warning
+    };
+  }
+  return {
+    ...parsed,
+    ...(compatibility.compatibility !== undefined ? { compatibility: compatibility.compatibility } : {})
+  };
 }
 
 function parseOpenApiJsonEndpoints(content: string): CurrentContractParse {

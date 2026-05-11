@@ -40,6 +40,7 @@
 | [D-028](#d-028-contract-diff-v0-compares-indexed-openapi-endpoints-to-current-files) | contract diff v0 compares indexed OpenAPI endpoints to current files | P0/P1 | 2026-05-11 |
 | [D-029](#d-029-mcp-workspace-contract-resources-expand-contract-impact-on-demand) | MCP workspace contract resources expand contract impact on demand | P3/P0 | 2026-05-11 |
 | [D-030](#d-030-json-openapi-schema-diff-uses-indexed-compatibility-signatures) | JSON OpenAPI schema diff uses indexed compatibility signatures | P0/P1 | 2026-05-11 |
+| [D-031](#d-031-yaml-openapi-schema-diff-reuses-the-compatibility-signature-model) | YAML OpenAPI schema diff reuses the compatibility signature model | P0/P1 | 2026-05-11 |
 
 ---
 
@@ -561,6 +562,24 @@
 **결과/위험:** v0는 JSON OpenAPI의 flat object body signature와 local `#/...` `$ref`만 지원한다. YAML body diff, nested property path, arrays/items path, allOf/oneOf/anyOf, enum cardinality, format/nullability, auth scope, protobuf/GraphQL/AsyncAPI diff는 후속 slice다. signature는 contract metadata JSON에는 넣지 않고 `contract_versions.compatibility_json`에만 저장해 baseline metadata payload가 커지지 않게 한다. unreadable/unparsed current contract는 기존처럼 unknown이며 기존 breaking links를 보존한다.
 
 **관련 commit:** `feat(contracts): OpenAPI JSON schema diff 추가`
+
+---
+
+## D-031: YAML OpenAPI schema diff reuses the compatibility signature model
+
+**결정:** YAML OpenAPI contract도 D-030의 `openapi-compat-v0` signature model을 재사용한다. index 시점에는 `yaml` parser로 YAML을 object model로 정규화한 뒤 `contract_versions.compatibility_json`에 operation method/path, JSON media request/response flat object required/properties type, response status를 저장한다. current YAML contract diff도 기존 lightweight endpoint scanner가 `ok`로 인정한 파일에 한해서 같은 signature를 계산하고, JSON과 같은 breaking rule을 적용한다.
+
+**맥락:** Spring Boot와 enterprise API spec은 OpenAPI YAML이 JSON보다 흔하다. JSON-only body diff는 기능적으로 맞지만 실제 사용자 stack에서는 같은 `/api/users` 변경이 YAML spec에 있으면 여전히 `unknown`이 된다. 기존 hand-rolled YAML endpoint scanner는 surface safety에는 충분하지만 nested maps, `$ref`, media content, required arrays를 직접 확장하면 parser bug가 늘어난다.
+
+**대안:**
+- hand-rolled YAML body parser 확장 — dependency는 줄지만 indentation, quotes, inline object, `$ref`, arrays 처리가 취약해 false impact 위험이 크다.
+- OpenAPI 전용 diff library 도입 — 장기적으로 좋지만 allOf/oneOf/auth/nullable/format 등 해석 범위가 커져 이번 flat signature slice보다 blast radius가 크다.
+- YAML은 endpoint surface만 유지 — Spring/OpenAPI 실사용에서 body-level breaking change를 계속 놓친다.
+- YAML parser 결과만 믿고 endpoint scanner를 우회 — 기존 malformed/unparsed YAML 보존 규칙과 nested callback/path guard가 약해질 수 있다.
+
+**결과/위험:** v0는 YAML parser를 추가 의존성으로 사용하지만, current diff에서는 기존 endpoint scanner가 성공한 경우에만 compatibility signature를 붙인다. 따라서 tab indentation, malformed path/method, non-object operation 같은 기존 unknown/preserve behavior는 유지된다. 지원 범위는 JSON media type의 flat object body, local `#/...` `$ref`, response status/required/type, request required/type까지다. nested properties, arrays/items details, allOf/oneOf/anyOf, enum/format/nullability, auth scope, protobuf/GraphQL/AsyncAPI는 후속 slice다.
+
+**관련 commit:** `feat(contracts): OpenAPI YAML schema diff 추가`
 
 ---
 

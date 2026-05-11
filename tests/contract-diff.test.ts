@@ -73,6 +73,68 @@ async function writeOpenApiContract(repoRoot: string, routes: string[]): Promise
   );
 }
 
+async function writeOpenApiYamlUserSchemaContract(
+  repoRoot: string,
+  options: {
+    responseRequired?: string[];
+    requestRequired?: string[];
+  } = {}
+): Promise<void> {
+  await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
+  const responseRequired = options.responseRequired ?? ['id', 'name'];
+  const requestRequired = options.requestRequired ?? ['name'];
+  await writeFile(
+    path.join(repoRoot, 'contracts/openapi.yaml'),
+    [
+      'openapi: 3.0.0',
+      'info:',
+      '  title: Users API',
+      '  version: 1.0.0',
+      'paths:',
+      '  /api/users:',
+      '    get:',
+      '      operationId: listUsers',
+      '      responses:',
+      "        '200':",
+      '          description: ok',
+      '          content:',
+      '            application/json:',
+      '              schema:',
+      "                $ref: '#/components/schemas/User'",
+      '    post:',
+      '      operationId: createUser',
+      '      requestBody:',
+      '        required: true',
+      '        content:',
+      '          application/json:',
+      '            schema:',
+      '              type: object',
+      '              required:',
+      ...requestRequired.map((propertyName) => `                - ${propertyName}`),
+      '              properties:',
+      '                name:',
+      '                  type: string',
+      '                email:',
+      '                  type: string',
+      '      responses:',
+      "        '201':",
+      '          description: created',
+      'components:',
+      '  schemas:',
+      '    User:',
+      '      type: object',
+      '      required:',
+      ...responseRequired.map((propertyName) => `        - ${propertyName}`),
+      '      properties:',
+      '        id:',
+      '          type: string',
+      '        name:',
+      '          type: string',
+      ''
+    ].join('\n')
+  );
+}
+
 async function writeOpenApiJsonContract(repoRoot: string, routes: string[]): Promise<void> {
   await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
   await writeFile(
@@ -330,7 +392,7 @@ async function writeInlineObjectOpenApiContract(repoRoot: string): Promise<void>
       'openapi: 3.0.0',
       'paths:',
       '  /api/users:',
-      '    get: {}',
+      '    get: { responses: { "200": { description: ok } } }',
       ''
     ].join('\n')
   );
@@ -344,7 +406,7 @@ async function writeInlineHashObjectOpenApiContract(repoRoot: string): Promise<v
       'openapi: 3.0.0',
       'paths:',
       '  /api/users:',
-      '    get: { summary: "#status", operationId: listUsers }',
+      '    get: { summary: "#status", operationId: listUsers, responses: { "200": { description: ok } } }',
       ''
     ].join('\n')
   );
@@ -358,7 +420,7 @@ async function writeCommentedOpenApiContract(repoRoot: string): Promise<void> {
       'openapi: 3.0.0',
       'paths: # endpoint map',
       '  /api/users: # user collection',
-      '    get: { operationId: listUsers }',
+      '    get: { operationId: listUsers, responses: { "200": { description: ok } } }',
       "  '/v1/{name}:cancel': # action-style path",
       '    post:',
       '      operationId: cancelUser',
@@ -398,6 +460,9 @@ async function writeCallbackOpenApiContract(repoRoot: string): Promise<void> {
       '  /api/status:',
       '    get:',
       '      operationId: status',
+      '      responses:',
+      "        '200':",
+      '          description: ok',
       ''
     ].join('\n')
   );
@@ -432,6 +497,34 @@ async function writeNestedPathsOnlyOpenApiContract(repoRoot: string): Promise<vo
       '          /nested-only:',
       '            get:',
       '              operationId: nestedOnly',
+      ''
+    ].join('\n')
+  );
+}
+
+async function writeParserMalformedSameSurfaceOpenApiContract(repoRoot: string): Promise<void> {
+  await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
+  await writeFile(
+    path.join(repoRoot, 'contracts/openapi.yaml'),
+    [
+      'openapi: 3.0.0',
+      'paths:',
+      '  /api/users:',
+      '    get:',
+      '      operationId: listUsers',
+      '      responses:',
+      "        '200':",
+      '          description: ok',
+      '  /api/status:',
+      '    get:',
+      '      operationId: status',
+      '      responses:',
+      "        '200':",
+      '          description: ok',
+      'components:',
+      '  schemas:',
+      '    Broken:',
+      '      type: "object',
       ''
     ].join('\n')
   );
@@ -476,6 +569,39 @@ async function setupWorkspaceWithResolvedContract(): Promise<{
   const providerRoot = await makeRepo('impact-trace-diff-provider-');
   await writeConsumerClient(consumerRoot, '/api/users');
   await writeOpenApiContract(providerRoot, ['/api/users', '/api/status']);
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'users-api'
+  });
+  const resolved = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+  assert.equal(resolved.links.length, 1);
+
+  return {
+    consumerRoot,
+    providerRoot,
+    consumerReal: realpathSync(consumerRoot),
+    providerReal: realpathSync(providerRoot)
+  };
+}
+
+async function setupWorkspaceWithResolvedYamlSchemaContract(): Promise<{
+  consumerRoot: string;
+  providerRoot: string;
+  consumerReal: string;
+  providerReal: string;
+}> {
+  const consumerRoot = await makeRepo('impact-trace-diff-yaml-schema-consumer-');
+  const providerRoot = await makeRepo('impact-trace-diff-yaml-schema-provider-');
+  await writeConsumerClient(consumerRoot, '/api/users');
+  await writeOpenApiYamlUserSchemaContract(providerRoot);
 
   await initProject({ repoRoot: consumerRoot });
   await initProject({ repoRoot: providerRoot });
@@ -761,6 +887,46 @@ test('analyzeContractDiff treats malformed OpenAPI YAML as unknown and preserves
       .prepare('SELECT count(*) AS count FROM cross_repo_links WHERE kind = ?')
       .get('BREAKS_COMPATIBILITY_WITH') as { count: number };
     assert.equal(count.count, 1, 'unparsed current contracts must not delete existing breaking links');
+  } finally {
+    db.close();
+  }
+});
+
+test('analyzeContractDiff treats YAML parser errors after endpoint scan success as unknown and preserves links', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithResolvedContract();
+  await writeOpenApiContract(providerRoot, ['/api/status']);
+  const breakingResult = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/openapi.yaml'
+  });
+  assert.equal(breakingResult.summary.classification, 'breaking');
+
+  await writeParserMalformedSameSurfaceOpenApiContract(providerRoot);
+  const unknownResult = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/openapi.yaml'
+  });
+
+  assert.equal(unknownResult.summary.classification, 'unknown');
+  assert.equal(unknownResult.summary.impactedConsumerCount, 0);
+  assert.equal(unknownResult.changes.length, 1);
+  assert.equal(unknownResult.changes[0]?.kind, 'unparsed_current_contract');
+  assert.match(unknownResult.changes[0]?.reason ?? '', /current OpenAPI YAML could not be parsed/);
+  assert.ok(
+    unknownResult.warnings.some((warning) => warning.includes('current OpenAPI YAML could not be parsed')),
+    `expected YAML parse warning, got ${JSON.stringify(unknownResult.warnings)}`
+  );
+
+  const db = new DatabaseSync(databasePath(consumerRoot), { readOnly: true });
+  try {
+    const count = db
+      .prepare('SELECT count(*) AS count FROM cross_repo_links WHERE kind = ?')
+      .get('BREAKS_COMPATIBILITY_WITH') as { count: number };
+    assert.equal(count.count, 1, 'YAML parser errors must not delete existing breaking links');
   } finally {
     db.close();
   }
@@ -1210,6 +1376,49 @@ test('analyzeContractDiff classifies removed OpenAPI JSON response required prop
   }
 });
 
+test('analyzeContractDiff classifies removed OpenAPI YAML response required properties as breaking', async () => {
+  const { consumerRoot, providerRoot, consumerReal, providerReal } =
+    await setupWorkspaceWithResolvedYamlSchemaContract();
+  await writeOpenApiYamlUserSchemaContract(providerRoot, { responseRequired: ['id'] });
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/openapi.yaml'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.equal(result.summary.breakingChangeCount, 1);
+  assert.equal(result.summary.unknownChangeCount, 0);
+  assert.equal(result.summary.impactedConsumerCount, 1);
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'removed_response_required_property',
+      classification: 'breaking',
+      reason: 'response required property removed from current contract',
+      httpMethod: 'GET',
+      routePath: '/api/users',
+      statusCode: '200',
+      propertyName: 'name',
+      schemaPath: 'responses.200.body.required.name'
+    }
+  ]);
+  assert.deepEqual(result.impactedConsumers, [
+    {
+      consumerService: 'web',
+      consumerRepoPath: consumerReal,
+      consumerPath: 'src/client.ts',
+      providerService: 'users-api',
+      providerRepoPath: providerReal,
+      providerContractPath: 'contracts/openapi.yaml',
+      httpMethod: 'GET',
+      routePath: '/api/users',
+      evidenceSnippet: 'return fetch("https://users.example.test/api/users");'
+    }
+  ]);
+});
+
 test('analyzeContractDiff classifies added OpenAPI JSON request required properties as breaking', async () => {
   const { consumerRoot, providerRoot } = await setupWorkspaceWithResolvedJsonSchemaContract();
   await writeOpenApiJsonUserSchemaContract(providerRoot, { requestRequired: ['name', 'email'] });
@@ -1219,6 +1428,34 @@ test('analyzeContractDiff classifies added OpenAPI JSON request required propert
     workspaceName: 'platform',
     providerServiceName: 'users-api',
     contractPath: 'contracts/openapi.json'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.deepEqual(
+    result.changes.filter((change) => change.kind === 'added_request_required_property'),
+    [
+      {
+        kind: 'added_request_required_property',
+        classification: 'breaking',
+        reason: 'request required property added to current contract',
+        httpMethod: 'POST',
+        routePath: '/api/users',
+        propertyName: 'email',
+        schemaPath: 'requestBody.required.email'
+      }
+    ]
+  );
+});
+
+test('analyzeContractDiff classifies added OpenAPI YAML request required properties as breaking', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithResolvedYamlSchemaContract();
+  await writeOpenApiYamlUserSchemaContract(providerRoot, { requestRequired: ['name', 'email'] });
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/openapi.yaml'
   });
 
   assert.equal(result.summary.classification, 'breaking');

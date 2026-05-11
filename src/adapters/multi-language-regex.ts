@@ -2,7 +2,7 @@ import path from 'node:path';
 import ts from 'typescript';
 
 import { markdownEntityKindForPath } from '../artifacts.js';
-import { extractOpenApiJsonCompatibility } from '../openapi_compat.js';
+import { extractOpenApiJsonCompatibility, extractOpenApiYamlCompatibility } from '../openapi_compat.js';
 import type { Confidence, RelationKind, ScannedFile } from '../types.js';
 import type {
   AdapterCapability,
@@ -479,6 +479,8 @@ function openApiYamlMetadata(
   if (schemaMatch?.[1]) metadata.schemaVersion = schemaMatch[1];
   const serviceMatch = /^\s*x-service-name\s*:\s*['"]?([^'"\n#]+)/im.exec(content);
   if (serviceMatch?.[1]) metadata.serviceName = serviceMatch[1].trim();
+  const compatibility = extractOpenApiYamlCompatibility(content);
+  if (compatibility !== undefined) metadata.compatibility = compatibility;
   return metadata;
 }
 

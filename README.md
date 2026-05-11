@@ -435,7 +435,7 @@ secret redaction을 거치며, telemetry write는 외부 시스템이 아니라 
 `impact_trace_doctor` v0는 telemetry row를 추가하지 않는 순수 read-only health surface입니다.
 database가 없을 때도 `.impact-trace` 디렉터리를 만들지 않고 `database_missing` finding을 반환합니다.
 `impact_trace_contract_diff` v0는 CLI `workspace contract-diff`와 같은 OpenAPI contract classifier를 MCP로 노출합니다.
-YAML/JSON endpoint surface diff에 더해 JSON OpenAPI는 latest index에 저장된 request/response body compatibility signature를 current file과 비교합니다.
+YAML/JSON endpoint surface diff에 더해 JSON/YAML OpenAPI는 latest index에 저장된 request/response body compatibility signature를 current file과 비교합니다.
 v0 breaking rule은 removed endpoint, removed response status, removed response required property, changed response property type,
 added request required property, changed request property type입니다.
 기본적으로 `BREAKS_COMPATIBILITY_WITH` link를 repo-local workspace DB에 갱신하며, 결과에는
@@ -644,10 +644,10 @@ npm audit --audit-level=high
 5. parser-backed/lightweight adapter depth pass와 source-span evidence 확대: TS/JS import spans, JVM/Spring lightweight spans, Python/Go/Rust lightweight spans, OpenAPI contract baseline, workspace catalog v0, cross-repo contract resolver v0, OpenAPI contract diff v0 landed
 6. C#/.NET, C/C++ adapter와 Maven/Gradle/dotnet/CMake/Bazel build-system resolver 추가
 7. shell, YAML/JSON/TOML, CI, Docker, Kubernetes, Terraform, OpenAPI/protobuf/GraphQL/AsyncAPI, CODEOWNERS/policy adapter 추가
-8. protobuf/GraphQL/AsyncAPI와 schema/body-level breaking-change impact 분석 추가
+8. OpenAPI nested/allOf/oneOf schema와 protobuf/GraphQL/AsyncAPI breaking-change impact 분석 추가
 9. web graph explorer와 더 큰 graph filtering 추가
 10. source-span evidence와 parser-level provenance 추가
-11. schema/body-level contract diff와 protobuf/GraphQL/AsyncAPI breaking-change impact 분석 추가
+11. nested schema contract diff와 protobuf/GraphQL/AsyncAPI breaking-change impact 분석 추가
 12. graph DB, vector, CodeQL, Obsidian export는 optional projection으로 추가
 
 ## License

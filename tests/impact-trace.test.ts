@@ -339,6 +339,22 @@ test('indexProject persists OpenAPI contracts and analyzeDiff reaches implementi
       '      responses:',
       '        "200":',
       '          description: ok',
+      '          content:',
+      '            application/json:',
+      '              schema:',
+      '                $ref: "#/components/schemas/User"',
+      'components:',
+      '  schemas:',
+      '    User:',
+      '      type: object',
+      '      required:',
+      '        - id',
+      '        - name',
+      '      properties:',
+      '        id:',
+      '          type: string',
+      '        name:',
+      '          type: string',
       ''
     ].join('\n')
   );
@@ -486,7 +502,42 @@ test('indexProject persists OpenAPI contracts and analyzeDiff reaches implementi
     assert.equal(contractVersion.contract_id, 'file:contracts/openapi.yaml');
     assert.equal(contractVersion.index_run_id, index.indexRunId);
     assert.equal(contractVersion.schema_version, '3.0.3');
-    assert.equal(contractVersion.compatibility_json, '{}');
+    const yamlCompatibility = JSON.parse(contractVersion.compatibility_json) as {
+      schemaVersion?: number;
+      analyzer?: string;
+      operations?: Array<{
+        method: string;
+        path: string;
+        responses?: Array<{
+          status: string;
+          body?: {
+            required?: string[];
+            properties?: Record<string, { type?: string }>;
+          };
+        }>;
+      }>;
+    };
+    assert.equal(yamlCompatibility.schemaVersion, 1);
+    assert.equal(yamlCompatibility.analyzer, 'openapi-compat-v0');
+    assert.deepEqual(
+      yamlCompatibility.operations?.find((operation) => operation.method === 'GET' && operation.path === '/api/users'),
+      {
+        method: 'GET',
+        path: '/api/users',
+        responses: [
+          {
+            status: '200',
+            body: {
+              required: ['id', 'name'],
+              properties: {
+                id: { type: 'string' },
+                name: { type: 'string' }
+              }
+            }
+          }
+        ]
+      }
+    );
     assert.equal(contractVersion.breaking_change_summary, null);
     assert.ok(contractVersion.content_hash.length > 0);
     const contractFile = db

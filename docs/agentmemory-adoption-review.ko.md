@@ -30,8 +30,8 @@ Impact-trace가 만들려는 것은 더 좁고 선명하다. **코드/문서/정
 
 | 상태 | 항목 |
 |---|---|
-| landed | `impact_trace_search_context` keyword/relation/evidence RRF ranking v1, retrieval depth v0(FTS5/BM25 entity lane, `semanticRank`, `graphProximityRank`), search budget/diversification v0(`brief`/`standard`/`deep`, returned bytes, estimated tokens, omitted counts, path/entity/relation interleave), persistent entity/relation_evidence/facts FTS projection + retrieval bench v0, sqlite-vec ANN semantic lane with brute-force fallback, evidence resource v0, context telemetry v0, doctor v0, MCP surface guard, opt-in `import-session` v0, graph JSON pagination, typed error envelope v0, explicit supersession v0, persisted context pack reuse v0, UI Explorer v0, TS/JS parser-backed import span v0, JVM/Spring lightweight evidence span v0, Python/Go/Rust lightweight evidence span v0, OpenAPI contract baseline, workspace catalog v0, cross-repo contract resolver v0, OpenAPI contract diff v0, MCP workspace/contract resources v0 |
-| next | schema/body-level contract diff |
+| landed | `impact_trace_search_context` keyword/relation/evidence RRF ranking v1, retrieval depth v0(FTS5/BM25 entity lane, `semanticRank`, `graphProximityRank`), search budget/diversification v0(`brief`/`standard`/`deep`, returned bytes, estimated tokens, omitted counts, path/entity/relation interleave), persistent entity/relation_evidence/facts FTS projection + retrieval bench v0, sqlite-vec ANN semantic lane with brute-force fallback, evidence resource v0, context telemetry v0, doctor v0, MCP surface guard, opt-in `import-session` v0, graph JSON pagination, typed error envelope v0, explicit supersession v0, persisted context pack reuse v0, UI Explorer v0, TS/JS parser-backed import span v0, JVM/Spring lightweight evidence span v0, Python/Go/Rust lightweight evidence span v0, OpenAPI contract baseline, workspace catalog v0, cross-repo contract resolver v0, OpenAPI endpoint/schema contract diff v0, MCP workspace/contract resources v0 |
+| next | nested schema/protobuf/GraphQL/AsyncAPI contract diff |
 | later | UI Explorer session timeline, context rank feedback |
 
 ---

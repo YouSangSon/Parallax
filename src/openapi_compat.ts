@@ -1,3 +1,5 @@
+import { parse as parseYaml } from 'yaml';
+
 export const OPENAPI_COMPAT_ANALYZER_ID = 'openapi-compat-v0';
 export const OPENAPI_COMPAT_SCHEMA_VERSION = 1;
 
@@ -28,6 +30,16 @@ export type OpenApiPropertySignature = {
   readonly type: string;
 };
 
+export type OpenApiYamlCompatibilityParse =
+  | {
+      readonly ok: true;
+      readonly compatibility?: OpenApiCompatibilitySignature;
+    }
+  | {
+      readonly ok: false;
+      readonly warning: string;
+    };
+
 const OPENAPI_METHODS = new Set(['get', 'post', 'put', 'patch', 'delete', 'head', 'options', 'trace']);
 
 export function extractOpenApiJsonCompatibility(content: string): OpenApiCompatibilitySignature | undefined {
@@ -37,6 +49,32 @@ export function extractOpenApiJsonCompatibility(content: string): OpenApiCompati
   } catch {
     return undefined;
   }
+  return extractOpenApiCompatibility(parsed);
+}
+
+export function extractOpenApiYamlCompatibility(content: string): OpenApiCompatibilitySignature | undefined {
+  const result = parseOpenApiYamlCompatibility(content);
+  return result.ok ? result.compatibility : undefined;
+}
+
+export function parseOpenApiYamlCompatibility(content: string): OpenApiYamlCompatibilityParse {
+  let parsed: unknown;
+  try {
+    parsed = parseYaml(content);
+  } catch (error) {
+    return {
+      ok: false,
+      warning: `current OpenAPI YAML could not be parsed: ${errorMessage(error)}`
+    };
+  }
+  const compatibility = extractOpenApiCompatibility(parsed);
+  return {
+    ok: true,
+    ...(compatibility !== undefined ? { compatibility } : {})
+  };
+}
+
+function extractOpenApiCompatibility(parsed: unknown): OpenApiCompatibilitySignature | undefined {
   if (!isRecord(parsed)) return undefined;
   const marker = parsed.openapi ?? parsed.swagger;
   if (typeof marker !== 'string' || marker.length === 0) return undefined;
@@ -197,4 +235,8 @@ function compareOperations(left: OpenApiCompatibilityOperation, right: OpenApiCo
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

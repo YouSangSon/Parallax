@@ -185,7 +185,7 @@ Repo files
 |---|---|
 | `entities`와 `relations`가 canonical이어야 한다. | graph DB 없이도 범용 영향도 분석을 할 수 있다. |
 | `workspaces`와 `workspace_repos`는 repo-local DB 위에 얇게 추가한다. | 단일 repo 사용성을 유지하면서 cross-repo 분석을 가능하게 한다. |
-| `contracts`, `contract_versions`, `cross_repo_links`가 있어야 한다. | API/gRPC/event 변경의 producer/consumer 영향을 저장한다. JSON OpenAPI는 `contract_versions.compatibility_json`에 request/response flat schema signature를 저장해 re-index 전 current diff와 비교한다. |
+| `contracts`, `contract_versions`, `cross_repo_links`가 있어야 한다. | API/gRPC/event 변경의 producer/consumer 영향을 저장한다. JSON/YAML OpenAPI는 `contract_versions.compatibility_json`에 request/response flat schema signature를 저장해 re-index 전 current diff와 비교한다. |
 | `work_artifacts`, `artifact_links`가 있어야 한다. | 코드와 사업/제품/운영 문서 사이의 요구사항과 의사결정을 저장한다. |
 | `adapter_runs`를 저장해야 한다. | 어떤 adapter가 어떤 버전으로 무엇을 읽었는지 알아야 한다. |
 | `relation_evidence`가 source span을 가져야 한다. | report가 line-level 근거를 보여줄 수 있다. |

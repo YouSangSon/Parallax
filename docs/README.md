@@ -40,7 +40,7 @@
 최근/활성 설계 문서:
 
 - 📐 [`phase6-design.ko.md`](phase6-design.ko.md) — `main`에 들어온 adapter interface/registry, regex adapter extraction, multi-adapter run attribution, adapter evidence/diagnostics observability, content-sensitive symbol hashes, relation-kind attribute mapping 기록.
-- 📐 [`phase6b-ts-accuracy-plan.ko.md`](phase6b-ts-accuracy-plan.ko.md) — **현재 next work 진입점**. Java/Kotlin/Spring Boot/Python/Go/Rust/TS/JS adapter pack v0 routing, ImpactBench fixture, TS/JS parser-backed import span v0, JVM/Spring lightweight evidence span v0, Python/Go/Rust lightweight evidence span v0, OpenAPI contract impact baseline, workspace catalog v0, cross-repo contract resolver v0, OpenAPI contract diff v0, MCP workspace/contract resources v0와 남은 schema/body diff 계획.
+- 📐 [`phase6b-ts-accuracy-plan.ko.md`](phase6b-ts-accuracy-plan.ko.md) — **현재 next work 진입점**. Java/Kotlin/Spring Boot/Python/Go/Rust/TS/JS adapter pack v0 routing, ImpactBench fixture, TS/JS parser-backed import span v0, JVM/Spring lightweight evidence span v0, Python/Go/Rust lightweight evidence span v0, OpenAPI contract impact baseline, workspace catalog v0, cross-repo contract resolver v0, OpenAPI endpoint/schema diff v0, MCP workspace/contract resources v0와 남은 nested/protobuf/GraphQL/AsyncAPI diff 계획.
 
 ---
 

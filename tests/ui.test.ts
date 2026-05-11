@@ -54,7 +54,7 @@ async function makeUiWorkArtifactRepo(): Promise<{ repoRoot: string; reportId: s
       'title: Security Auth Policy',
       'owner: security-platform',
       'status: approved',
-      'updated: 2026-05-01',
+      'updated: 2000-01-01',
       '---',
       '# Security auth policy',
       '',
@@ -87,7 +87,16 @@ async function makeUiWorkArtifactRepo(): Promise<{ repoRoot: string; reportId: s
   );
   await writeFile(
     path.join(repoRoot, 'docs/decisions/auth-session.md'),
-    '# Auth session decision\n\nThis decision governs src/auth/session.ts.\n'
+    [
+      '---',
+      'title: Auth session decision',
+      'updated: 2026-02-30',
+      '---',
+      '# Auth session decision',
+      '',
+      'This decision governs src/auth/session.ts.',
+      ''
+    ].join('\n')
   );
   await initProject({ repoRoot });
   await indexProject({ repoRoot });
@@ -231,15 +240,25 @@ test('UI snapshot and HTML expose work artifact impact', async () => {
       title: 'Security Auth Policy',
       owner: 'security-platform',
       status: 'approved',
-      updatedAt: '2026-05-01',
+      updatedAt: '2000-01-01',
       source: 'frontmatter'
     });
+    assert.equal(policy?.freshness.state, 'stale');
+    assert.equal(policy?.freshness.thresholdDays, 90);
+    assert.ok((policy?.freshness.ageDays ?? 0) > 90);
+    assert.match(policy?.freshness.label ?? '', /^stale \d+d$/);
+    const decision = snapshot.workArtifacts.find((item) => item.path === 'docs/decisions/auth-session.md');
+    assert.equal(decision?.metadata?.updatedAt, '2026-02-30');
+    assert.equal(decision?.freshness.state, 'unknown');
+    assert.equal(decision?.freshness.label, 'review date unknown');
     assert.ok(snapshot.workArtifacts.some((item) =>
       item.path === 'docs/requirements/session-hardening.md' && item.reason === 'requires src/auth/session.ts'
     ));
     const requirement = snapshot.workArtifacts.find((item) => item.path === 'docs/requirements/session-hardening.md');
     assert.equal(requirement?.displayName, 'Session hardening requirement');
     assert.equal(requirement?.metadata?.source, 'heading');
+    assert.equal(requirement?.freshness.state, 'unknown');
+    assert.equal(requirement?.freshness.label, 'review date unknown');
     const proposal = snapshot.workArtifacts.find((item) => item.path === 'docs/proposals/payment-retry.md');
     assert.equal(proposal?.displayName, 'docs/proposals/payment-retry.md');
     assert.equal(proposal?.metadata, undefined);
@@ -252,9 +271,11 @@ test('UI snapshot and HTML expose work artifact impact', async () => {
     const html = renderUiHtml(snapshot);
     assert.match(html, /Work Artifacts/);
     assert.match(html, /Security Auth Policy/);
+    assert.match(html, /stale \d+d/);
+    assert.match(html, /review date unknown/);
     assert.match(html, /owner security-platform/);
     assert.match(html, /status approved/);
-    assert.match(html, /updated 2026-05-01/);
+    assert.match(html, /updated 2000-01-01/);
     assert.match(html, /policies\/security-auth\.md/);
     assert.match(html, /docs\/requirements\/session-hardening\.md/);
     assert.match(html, /docs\/proposals\/payment-retry\.md/);

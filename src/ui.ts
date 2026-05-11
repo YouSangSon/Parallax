@@ -106,6 +106,14 @@ export type UiWorkArtifactImpact = {
   resourceUri: string;
   depth?: number;
   metadata?: MarkdownArtifactMetadata;
+  freshness: UiWorkArtifactFreshness;
+};
+
+export type UiWorkArtifactFreshness = {
+  state: 'current' | 'stale' | 'unknown';
+  label: string;
+  thresholdDays: number;
+  ageDays?: number;
 };
 
 export type UiWorkspaceSnapshot = {
@@ -366,10 +374,11 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
   `).join('');
   const workArtifactRows = snapshot.workArtifacts.slice(0, 30).map((item) => {
     const metadataText = workArtifactMetadataText(item.metadata);
+    const freshnessText = `${item.freshness.state} ${item.freshness.label}`;
     return `
-    <li class="work-artifact-row" data-filter-text="${escapeHtml(`${item.kind} ${item.path} ${item.reason} ${item.relations.join(' ')} ${metadataText}`)}">
+    <li class="work-artifact-row" data-filter-text="${escapeHtml(`${item.kind} ${item.path} ${item.reason} ${item.relations.join(' ')} ${metadataText} ${freshnessText}`)}">
       <div>
-        <strong>${escapeHtml(item.displayName)}</strong>
+        <strong>${escapeHtml(item.displayName)} <span class="badge freshness-${escapeHtml(item.freshness.state)}">${escapeHtml(item.freshness.label)}</span></strong>
         <span>${escapeHtml(item.kind)} · ${escapeHtml(item.reason)} · ${escapeHtml(item.confidence)}</span>
         ${metadataText ? `<small>${escapeHtml(metadataText)}</small>` : ''}
         <small>${escapeHtml(item.resourceUri)}</small>
@@ -512,6 +521,9 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
     .confidence-inferred { color: var(--teal); border-color: #8bb8bc; }
     .confidence-heuristic { color: var(--amber); border-color: #d6b47a; }
     .confidence-low { color: var(--red); border-color: #d9a0a0; }
+    .freshness-current { color: var(--green); border-color: #8ab9a4; }
+    .freshness-stale { color: var(--red); border-color: #d9a0a0; }
+    .freshness-unknown { color: var(--amber); border-color: #d6b47a; }
     pre {
       margin: 8px 0 0;
       white-space: pre-wrap;
@@ -851,7 +863,8 @@ function workArtifactsFromReportRow(row: ReportRow): UiWorkArtifactImpact[] {
       relations: item.relations,
       resourceUri: entityResourceUri(item.target),
       ...(affectedFile?.depth !== undefined ? { depth: affectedFile.depth } : {}),
-      ...(metadata && hasArtifactMetadata(metadata) ? { metadata } : {})
+      ...(metadata && hasArtifactMetadata(metadata) ? { metadata } : {}),
+      freshness: workArtifactFreshness(item.target.kind, metadata, row.created_at)
     });
   }
   return [...byKey.values()].sort(compareWorkArtifacts);
@@ -918,10 +931,75 @@ function workArtifactMetadataText(metadata: MarkdownArtifactMetadata | undefined
   ].filter((item): item is string => Boolean(item)).join(' · ');
 }
 
+function workArtifactFreshness(
+  kind: string,
+  metadata: MarkdownArtifactMetadata | undefined,
+  asOfIso: string
+): UiWorkArtifactFreshness {
+  const thresholdDays = workArtifactFreshnessThresholdDays(kind);
+  const updatedAt = parseDateOnly(metadata?.updatedAt);
+  const asOf = parseDateOnly(asOfIso);
+  if (!updatedAt || !asOf) {
+    return {
+      state: 'unknown',
+      label: 'review date unknown',
+      thresholdDays
+    };
+  }
+  const ageDays = Math.max(0, Math.floor((asOf.getTime() - updatedAt.getTime()) / 86_400_000));
+  if (ageDays > thresholdDays) {
+    return {
+      state: 'stale',
+      label: `stale ${ageDays}d`,
+      thresholdDays,
+      ageDays
+    };
+  }
+  return {
+    state: 'current',
+    label: `current ${ageDays}d`,
+    thresholdDays,
+    ageDays
+  };
+}
+
+function workArtifactFreshnessThresholdDays(kind: string): number {
+  if (kind === 'proposal') return 60;
+  if (kind === 'prd' || kind === 'requirement') return 120;
+  if (kind === 'decision') return 180;
+  return 90;
+}
+
+function parseDateOnly(value: string | undefined): Date | undefined {
+  if (!value) return undefined;
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  if (!match) return undefined;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return undefined;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return undefined;
+  }
+  return date;
+}
+
 function compareWorkArtifacts(left: UiWorkArtifactImpact, right: UiWorkArtifactImpact): number {
-  return workArtifactKindRank(left.kind) - workArtifactKindRank(right.kind)
+  return workArtifactFreshnessRank(left.freshness.state) - workArtifactFreshnessRank(right.freshness.state)
+    || workArtifactKindRank(left.kind) - workArtifactKindRank(right.kind)
     || (left.depth ?? 99) - (right.depth ?? 99)
     || left.path.localeCompare(right.path);
+}
+
+function workArtifactFreshnessRank(state: UiWorkArtifactFreshness['state']): number {
+  if (state === 'stale') return 0;
+  if (state === 'unknown') return 1;
+  return 2;
 }
 
 function workArtifactKindRank(kind: string): number {

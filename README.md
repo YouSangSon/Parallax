@@ -46,6 +46,7 @@ MVP 구현이 들어가 있습니다.
 - OpenAPI/Swagger/AsyncAPI contract baseline과 구현 코드 reverse-link 저장
 - `.impact-trace/workspace.json` 기반 local workspace catalog와 `workspace init/add-repo/list/resolve-contracts` CLI
 - workspace에 등록된 indexed repo 사이의 OpenAPI provider endpoint ↔ HTTP consumer file link 저장
+- workspace에 등록된 indexed repo 사이의 GraphQL provider root field ↔ consumer operation document link 저장
 - OpenAPI endpoint surface, JSON/YAML request/response nested schema diff, Protobuf service/RPC/message field diff, GraphQL root field/object/input schema diff, AsyncAPI operation/message payload diff를 `breaking`/`non-breaking`/`unknown`으로 분류하고 known consumer impact를 `BREAKS_COMPATIBILITY_WITH` link로 저장
 - MCP `impact_trace_contract_diff`와 `impact-trace://workspaces/{name}` resource로 workspace contract/link 상태를 compact payload로 제공
 - import 기반 관련 테스트 추론
@@ -74,7 +75,7 @@ Markdown/config/system/contract와 아직 깊게 다루지 않는 언어는 rege
 
 - Obsidian write sync
 - graph DB projection
-- GraphQL/protobuf/AsyncAPI consumer resolver와 full parser/LSP depth
+- protobuf/AsyncAPI consumer resolver와 GraphQL/protobuf/AsyncAPI full parser/LSP depth
 - web graph explorer
 - CodeQL adapter
 - 모든 언어의 full semantic analysis
@@ -131,7 +132,7 @@ graph LR
 **비전 한 페이지:** [docs/vision.ko.md](docs/vision.ko.md). **제품 계획:** [docs/impact-context-layer-plan.ko.md](docs/impact-context-layer-plan.ko.md) — MCP + UI + AI context 절감 + 코드/문서/정책/제안서 impact 기준 문서. **agentmemory 적용성 분석:** [docs/agentmemory-adoption-review.ko.md](docs/agentmemory-adoption-review.ko.md). **통합 로드맵:** [docs/roadmap.md](docs/roadmap.md). **두 축 어휘:** [docs/glossary.md](docs/glossary.md).
 자세한 사용 예시는 [docs/agent-memory-cookbook.ko.md](docs/agent-memory-cookbook.ko.md).
 현재 설계 근거: [Phase 6 설계/진행](docs/phase6-design.ko.md) · [Phase 6B multi-language + Spring Boot 계획](docs/phase6b-ts-accuracy-plan.ko.md).
-누적 결정 로그: [decisions.ko.md (D-001..D-035)](docs/decisions.ko.md).
+누적 결정 로그: [decisions.ko.md (D-001..D-036)](docs/decisions.ko.md).
 문서 navigation: [docs/README.md](docs/README.md).
 
 ## 요구 사항
@@ -441,6 +442,7 @@ added request/message required property, changed request property type입니다.
 기본적으로 `BREAKS_COMPATIBILITY_WITH` link를 repo-local workspace DB에 갱신하며, 결과에는
 `impact-trace://workspaces/{workspaceName}`, `/contracts`, `/cross-repo-links` resource URI가 포함됩니다.
 agent는 diff payload를 받은 뒤 전체 workspace를 읽지 않고 필요한 contract baseline이나 cross-repo link 목록만 resource로 확장할 수 있습니다.
+`workspace resolve-contracts`는 OpenAPI HTTP literal consumer에 더해 GraphQL `query`/`mutation`/`subscription` operation document의 top-level root field를 provider `Query.*`/`Mutation.*`/`Subscription.*` endpoint와 연결합니다.
 
 agent memory 툴(`remember`/`branch`)은 DB에 쓰지만 모두 *현재 저장소의*
 `.impact-trace/impact.db` 안에서만 동작합니다. Obsidian export 같은 외부 시스템
@@ -618,8 +620,8 @@ npm audit --audit-level=high
 - [Impact Context Layer 제품 계획](docs/impact-context-layer-plan.ko.md) — Claude/Codex MCP integration, local UI explorer, context budget, 정책/제안서 impact 계획
 - [agentmemory 적용성 분석](docs/agentmemory-adoption-review.ko.md) — `rohitg00/agentmemory`에서 가져올 retrieval/lifecycle 패턴과 거부할 platform surface 정리
 - [Phase 6 설계/진행 문서](docs/phase6-design.ko.md) — `main`에 반영된 adapter foundation 작업
-- [Phase 6B multi-language + Spring Boot 계획](docs/phase6b-ts-accuracy-plan.ko.md) — 현재 slice: adapter pack v0 routing, ImpactBench fixture, TS/JS parser-backed import span v0, JVM/Spring lightweight evidence span v0, Python/Go/Rust lightweight span v0, OpenAPI contract impact baseline, workspace catalog v0, cross-repo contract resolver v0, OpenAPI nested schema diff v0, Protobuf contract diff v0, GraphQL contract diff v0, AsyncAPI contract diff v0, MCP workspace/contract resources v0
-- [Architecture decisions log (D-001..D-035)](docs/decisions.ko.md) — 누적 ADR 로그
+- [Phase 6B multi-language + Spring Boot 계획](docs/phase6b-ts-accuracy-plan.ko.md) — 현재 slice: adapter pack v0 routing, ImpactBench fixture, TS/JS parser-backed import span v0, JVM/Spring lightweight evidence span v0, Python/Go/Rust lightweight span v0, OpenAPI contract impact baseline, workspace catalog v0, cross-repo contract resolver v0, GraphQL consumer resolver v0, OpenAPI nested schema diff v0, Protobuf contract diff v0, GraphQL contract diff v0, AsyncAPI contract diff v0, MCP workspace/contract resources v0
+- [Architecture decisions log (D-001..D-036)](docs/decisions.ko.md) — 누적 ADR 로그
 - [Agent memory cookbook](docs/agent-memory-cookbook.ko.md)
 
 **Skill 패키징 (Phase 4):**
@@ -641,13 +643,13 @@ npm audit --audit-level=high
 2. running index와 completed index를 분리해 snapshot-safe analysis 보장
 3. `--base`, `--head` 기반 git diff 분석과 stale-index detection 추가
 4. Java/Kotlin/Spring Boot/Python/Go/Rust/TS/JS adapter v0 라우팅과 ImpactBench coverage 유지
-5. parser-backed/lightweight adapter depth pass와 source-span evidence 확대: TS/JS import spans, JVM/Spring lightweight spans, Python/Go/Rust lightweight spans, OpenAPI contract baseline, workspace catalog v0, cross-repo contract resolver v0, OpenAPI nested schema contract diff v0, Protobuf contract diff v0, GraphQL contract diff v0, AsyncAPI contract diff v0 landed
+5. parser-backed/lightweight adapter depth pass와 source-span evidence 확대: TS/JS import spans, JVM/Spring lightweight spans, Python/Go/Rust lightweight spans, OpenAPI contract baseline, workspace catalog v0, cross-repo contract resolver v0, GraphQL consumer resolver v0, OpenAPI nested schema contract diff v0, Protobuf contract diff v0, GraphQL contract diff v0, AsyncAPI contract diff v0 landed
 6. C#/.NET, C/C++ adapter와 Maven/Gradle/dotnet/CMake/Bazel build-system resolver 추가
-7. shell, YAML/JSON/TOML, CI, Docker, Kubernetes, Terraform, GraphQL/protobuf/AsyncAPI consumer resolver, CODEOWNERS/policy adapter 추가
+7. shell, YAML/JSON/TOML, CI, Docker, Kubernetes, Terraform, protobuf/AsyncAPI consumer resolver, CODEOWNERS/policy adapter 추가
 8. AsyncAPI/event consumer impact resolver 추가
 9. web graph explorer와 더 큰 graph filtering 추가
 10. source-span evidence와 parser-level provenance 추가
-11. GraphQL/protobuf/AsyncAPI consumer resolver 추가
+11. protobuf/AsyncAPI consumer resolver와 GraphQL full operation parser 추가
 12. graph DB, vector, CodeQL, Obsidian export는 optional projection으로 추가
 
 ## License

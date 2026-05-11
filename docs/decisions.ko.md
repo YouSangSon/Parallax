@@ -45,6 +45,7 @@
 | [D-033](#d-033-protobuf-contract-diff-uses-compact-servicerpc-signatures) | Protobuf contract diff uses compact service/RPC signatures | P0/P1 | 2026-05-12 |
 | [D-034](#d-034-graphql-contract-diff-uses-compact-schema-signatures) | GraphQL contract diff uses compact schema signatures | P0/P1 | 2026-05-12 |
 | [D-035](#d-035-asyncapi-contract-diff-uses-compact-operationmessage-signatures) | AsyncAPI contract diff uses compact operation/message signatures | P0/P1 | 2026-05-12 |
+| [D-036](#d-036-graphql-consumer-resolver-links-operation-documents-to-root-fields) | GraphQL consumer resolver links operation documents to root fields | P0/P1 | 2026-05-12 |
 
 ---
 
@@ -509,7 +510,7 @@
 - package manager/service discovery를 먼저 구현 — 정확도는 좋아지지만 Java/Kotlin/Spring/Python/Go/Rust/TS/JS 전체 build model이 필요해 blast radius가 크다.
 - `relations`에 cross-repo edge를 직접 삽입 — 기존 canonical relation은 single-repo `repo_id` invariant가 강해서 schema/ID 충돌 위험이 크다.
 
-**결과/위험:** v0는 provider contract와 consumer file 모두 repo-root fence를 통과한 뒤 읽고, indexed file hash와 live file hash가 다르면 link 생성을 skip하고 warning을 반환한다. 링크는 `CONSUMES_HTTP_ENDPOINT` kind와 provenance JSON에 consumer/provider service, repo path, contract path, endpoint id, HTTP method/path, evidence snippet을 담는다. 현재 매칭은 deterministic literal/path heuristic이다. 이 링크를 사용한 OpenAPI endpoint-surface breaking-change classification은 D-028에서 추가됐고, generated client, service discovery, auth/config binding은 후속 slice다.
+**결과/위험:** v0는 provider contract와 consumer file 모두 repo-root fence를 통과한 뒤 읽고, indexed file hash와 live file hash가 다르면 link 생성을 skip하고 warning을 반환한다. 링크는 `CONSUMES_HTTP_ENDPOINT` kind와 provenance JSON에 consumer/provider service, repo path, contract path, endpoint id, HTTP method/path, evidence snippet을 담는다. 현재 매칭은 deterministic literal/path heuristic이다. 이 링크를 사용한 OpenAPI endpoint-surface breaking-change classification은 D-028에서 추가됐고, GraphQL operation document consumer matching은 D-036에서 같은 link envelope로 확장했다. generated client, service discovery, auth/config binding은 후속 slice다.
 
 **관련 commit:** `feat(workspace): cross-repo contract resolver 추가`
 
@@ -635,7 +636,7 @@
 - raw SDL을 SQLite에 저장 — diff fidelity는 좋아지지만 private contract body 보존 범위와 DB payload가 커진다.
 - root field endpoint-only diff만 유지 — removed root field는 잡지만 response object field removal/type change와 required input 추가를 놓친다.
 
-**결과/위험:** v0 parser는 deterministic regex 기반이며 `type`/`extend type`/`input` block의 한 줄 field 선언, comma-delimited argument list, 기본 `Query`/`Mutation`/`Subscription` root names만 다룬다. response object와 input object는 같은 named type을 따라 cycle guard로 순회하지만, `schema { query: RootQuery }`, interfaces/unions/enums/scalars/directives/deprecation, fragments/operation documents, multi-line argument lists, full GraphQL consumer resolver는 후속이다. defaulted non-null input은 required로 보지 않는다. consumer impact persistence는 기존 `cross_repo_links`가 있을 때만 가능하므로 현재 GraphQL breaking change는 known consumer 없이도 summary에는 breaking으로 남지만, GraphQL consumer resolver가 들어오기 전까지 `BREAKS_COMPATIBILITY_WITH` link는 제한적이다. AsyncAPI diff는 D-035에서 확장했다.
+**결과/위험:** v0 parser는 deterministic regex 기반이며 `type`/`extend type`/`input` block의 한 줄 field 선언, comma-delimited argument list, 기본 `Query`/`Mutation`/`Subscription` root names만 다룬다. response object와 input object는 같은 named type을 따라 cycle guard로 순회하지만, `schema { query: RootQuery }`, interfaces/unions/enums/scalars/directives/deprecation, fragments, multi-line argument lists, full GraphQL parser/LSP depth는 후속이다. defaulted non-null input은 required로 보지 않는다. GraphQL operation document consumer resolver는 D-036에서 top-level root field heuristic으로 확장했다. AsyncAPI diff는 D-035에서 확장했다.
 
 **관련 commit:** `feat(contracts): GraphQL contract diff 추가`
 
@@ -656,6 +657,24 @@
 **결과/위험:** v0 parser는 deterministic compact extractor이며 AsyncAPI 3.x `operations`/`channels`와 2.x `publish`/`subscribe` 형태의 local `#/...` refs를 우선 지원한다. payload schema는 JSON-schema-like object required/properties, local refs, nested/array/composition fingerprint를 compact path로 저장한다. operation removal은 endpoint-equivalent breaking change로 분류되고, message payload field removal/type change 및 newly required payload field는 message-level breaking change로 분류된다. event consumer impact persistence는 기존 `cross_repo_links`가 있을 때만 가능하므로, AsyncAPI consumer resolver가 들어오기 전까지 `BREAKS_COMPATIBILITY_WITH` link는 제한적이다. message trait/security/binding semantics, external refs, schema registry integration, producer/consumer direction inference는 후속이다.
 
 **관련 commit:** `feat(contracts): AsyncAPI contract diff 추가`
+
+---
+
+## D-036: GraphQL consumer resolver links operation documents to root fields
+
+**결정:** `workspace resolve-contracts`는 indexed workspace repo의 GraphQL provider endpoint(`Query.users`, `Mutation.createUser`, `Subscription.userUpdated`)와 consumer file에 포함된 GraphQL operation document의 top-level root field를 매칭한다. v0는 기존 `cross_repo_links` 저장 경로를 재사용하고, `CONSUMES_HTTP_ENDPOINT` provenance의 `http.method`를 `GRAPHQL`, `http.path`를 `Query.users` 같은 root field coordinate로 저장한다.
+
+**맥락:** GraphQL contract diff v0는 removed root field와 schema field breaking change를 분류할 수 있지만, known downstream consumer가 없으면 `BREAKS_COMPATIBILITY_WITH` link를 만들 수 없다. GraphQL Inspector와 Apollo/Rover 계열 도구의 공통 패턴은 schema diff와 operation document usage를 분리하는 것이다. Impact Trace는 hosted registry나 operation telemetry 없이 local-first로 동작해야 하므로, latest completed index의 파일 hash를 신뢰 경계로 삼아 consumer operation documents만 작게 연결한다.
+
+**대안:**
+- GraphQL Inspector/Hive document validation을 core dependency로 도입 — operation validation 품질은 좋지만 dependency와 hosted/CI surface가 커져 core local-first resolver에는 거부한다.
+- Apollo GraphOS/Rover operation checks 사용 — historical operation usage는 강력하지만 GraphOS auth/registry/metrics가 필요해 v0 경계를 넘는다.
+- 새 `CONSUMES_GRAPHQL_FIELD` link kind 추가 — 의미는 명확하지만 `contract-diff`와 MCP resource가 이미 `CONSUMES_HTTP_ENDPOINT`/`BREAKS_COMPATIBILITY_WITH` envelope를 읽고 있어 schema migration 없이 작은 slice로 검증하기 어렵다.
+- GraphQL consumer resolver를 full parser까지 미룸 — 정확도는 높아지지만 provider root field removal의 실제 consumer impact를 계속 놓친다.
+
+**결과/위험:** v0는 deterministic heuristic이다. `.graphql`, `.gql`, `.ts`, `.tsx`, `.js`, `.jsx` consumer file만 scan하고 `query`/`mutation`/`subscription` operation의 selection set에서 top-level root field만 본다. provider root type과 field name이 맞으면 link를 저장한다. indexed file과 live file hash가 다르면 기존 resolver처럼 skip하고 warning을 남긴다. fragment expansion, cross-file fragments, full schema validation, directive semantics, persisted query manifest, generated client mapping, Apollo client metadata, custom root operation type remap은 후속이다. Link kind 이름은 기존 envelope 재사용 때문에 아직 HTTP 명칭을 유지하지만 provenance method/path로 GraphQL 여부를 구분한다.
+
+**관련 commit:** `feat(workspace): GraphQL consumer resolver 추가`
 
 ---
 

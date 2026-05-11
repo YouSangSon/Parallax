@@ -142,6 +142,360 @@ test('resolveCrossRepoContracts links workspace consumer files to provider OpenA
   assert.deepEqual(JSON.parse(cliRun.stdout), result);
 });
 
+test('resolveCrossRepoContracts links GraphQL operation consumers to provider root fields', async () => {
+  const consumerRoot = await makeRepo('impact-trace-graphql-consumer-');
+  const providerRoot = await makeRepo('impact-trace-graphql-provider-');
+  const consumerReal = realpathSync(consumerRoot);
+  const providerReal = realpathSync(providerRoot);
+  await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
+
+  await writeFile(
+    path.join(consumerRoot, 'src/users-query.ts'),
+    [
+      'export const usersQuery = `',
+      '  query UsersScreen {',
+      '    users {',
+      '      id',
+      '    }',
+      '  }',
+      '`;',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(providerRoot, 'contracts/schema.graphql'),
+    [
+      'type Query {',
+      '  users: [User!]!',
+      '}',
+      '',
+      'type User {',
+      '  id: ID!',
+      '  name: String!',
+      '}',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'users-graphql'
+  });
+
+  const result = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+
+  assert.equal(result.workspace.name, 'platform');
+  assert.equal(result.links.length, 1);
+  assert.deepEqual(result.links[0], {
+    kind: 'CONSUMES_HTTP_ENDPOINT',
+    confidence: 'heuristic',
+    consumerService: 'web',
+    consumerRepoPath: consumerReal,
+    consumerPath: 'src/users-query.ts',
+    providerService: 'users-graphql',
+    providerRepoPath: providerReal,
+    providerContractPath: 'contracts/schema.graphql',
+    providerEndpointId: 'endpoint:graphql:Query.users',
+    httpMethod: 'GRAPHQL',
+    routePath: 'Query.users'
+  });
+
+  const db = new DatabaseSync(databasePath(consumerRoot), { readOnly: true });
+  try {
+    const row = db
+      .prepare(
+        `SELECT kind, confidence, provenance
+         FROM cross_repo_links`
+      )
+      .get() as { kind: string; confidence: string; provenance: string };
+    assert.equal(row.kind, 'CONSUMES_HTTP_ENDPOINT');
+    assert.equal(row.confidence, 'heuristic');
+    assert.deepEqual(JSON.parse(row.provenance), {
+      schemaVersion: 1,
+      resolver: 'cross-repo-contracts-v0',
+      consumer: {
+        serviceName: 'web',
+        repoPath: consumerReal,
+        path: 'src/users-query.ts'
+      },
+      provider: {
+        serviceName: 'users-graphql',
+        repoPath: providerReal,
+        contractPath: 'contracts/schema.graphql',
+        endpointId: 'endpoint:graphql:Query.users'
+      },
+      http: {
+        method: 'GRAPHQL',
+        path: 'Query.users'
+      },
+      evidence: {
+        filePath: 'src/users-query.ts',
+        snippet: 'users {'
+      }
+    });
+  } finally {
+    db.close();
+  }
+});
+
+test('resolveCrossRepoContracts ignores GraphQL operation examples in non-consumer files', async () => {
+  const consumerRoot = await makeRepo('impact-trace-graphql-doc-consumer-');
+  const providerRoot = await makeRepo('impact-trace-graphql-doc-provider-');
+  await mkdir(path.join(consumerRoot, 'docs'), { recursive: true });
+  await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
+
+  await writeFile(
+    path.join(consumerRoot, 'README.md'),
+    [
+      '# Example query',
+      '',
+      '```graphql',
+      'query UsersScreen {',
+      '  users {',
+      '    id',
+      '  }',
+      '}',
+      '```',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(consumerRoot, 'docs/example.graphql'),
+    [
+      'query UsersScreen {',
+      '  users {',
+      '    id',
+      '  }',
+      '}',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(providerRoot, 'contracts/schema.graphql'),
+    [
+      'type Query {',
+      '  users: [User!]!',
+      '}',
+      '',
+      'type User {',
+      '  id: ID!',
+      '}',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'users-graphql'
+  });
+
+  const result = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+
+  assert.equal(result.links.length, 0);
+});
+
+test('resolveCrossRepoContracts does not treat ordinary TS blocks as anonymous GraphQL consumers', async () => {
+  const consumerRoot = await makeRepo('impact-trace-graphql-ts-false-consumer-');
+  const providerRoot = await makeRepo('impact-trace-graphql-ts-false-provider-');
+  await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
+
+  await writeFile(
+    path.join(consumerRoot, 'src/component.ts'),
+    [
+      'export function renderUsersList() {',
+      '  users();',
+      '}',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(providerRoot, 'contracts/schema.graphql'),
+    [
+      'type Query {',
+      '  users: [User!]!',
+      '}',
+      '',
+      'type User {',
+      '  id: ID!',
+      '}',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'users-graphql'
+  });
+
+  const result = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+
+  assert.equal(result.links.length, 0);
+});
+
+test('resolveCrossRepoContracts does not treat TS functions named query as GraphQL operations', async () => {
+  const consumerRoot = await makeRepo('impact-trace-graphql-ts-query-function-consumer-');
+  const providerRoot = await makeRepo('impact-trace-graphql-ts-query-function-provider-');
+  await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
+
+  await writeFile(
+    path.join(consumerRoot, 'src/component.ts'),
+    [
+      'export function query() {',
+      '  users();',
+      '}',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(providerRoot, 'contracts/schema.graphql'),
+    [
+      'type Query {',
+      '  users: [User!]!',
+      '}',
+      '',
+      'type User {',
+      '  id: ID!',
+      '}',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'users-graphql'
+  });
+
+  const result = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+
+  assert.equal(result.links.length, 0);
+});
+
+test('resolveCrossRepoContracts does not treat protobuf Query services as GraphQL providers', async () => {
+  const consumerRoot = await makeRepo('impact-trace-graphql-protobuf-consumer-');
+  const providerRoot = await makeRepo('impact-trace-graphql-protobuf-provider-');
+  await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
+
+  await writeFile(
+    path.join(consumerRoot, 'src/users-query.ts'),
+    [
+      'export const usersQuery = `',
+      '  query UsersScreen {',
+      '    users {',
+      '      id',
+      '    }',
+      '  }',
+      '`;',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(providerRoot, 'contracts/service.proto'),
+    [
+      'syntax = "proto3";',
+      '',
+      'service Query {',
+      '  rpc users (UsersRequest) returns (UsersResponse);',
+      '}',
+      '',
+      'message UsersRequest {}',
+      'message UsersResponse {',
+      '  string id = 1;',
+      '}',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'users-protobuf'
+  });
+
+  const result = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+
+  assert.equal(result.links.length, 0);
+});
+
+test('resolveCrossRepoContracts ignores TS comment backticks when detecting GraphQL templates', async () => {
+  const consumerRoot = await makeRepo('impact-trace-graphql-ts-comment-backtick-consumer-');
+  const providerRoot = await makeRepo('impact-trace-graphql-ts-comment-backtick-provider-');
+  await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
+
+  await writeFile(
+    path.join(consumerRoot, 'src/component.ts'),
+    [
+      '// copied from docs: `',
+      'export function query() {',
+      '  users();',
+      '}',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(providerRoot, 'contracts/schema.graphql'),
+    [
+      'type Query {',
+      '  users: [User!]!',
+      '}',
+      '',
+      'type User {',
+      '  id: ID!',
+      '}',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'users-graphql'
+  });
+
+  const result = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+
+  assert.equal(result.links.length, 0);
+});
+
 test('resolveCrossRepoContracts skips stale consumer files instead of linking unindexed edits', async () => {
   const consumerRoot = await makeRepo('impact-trace-consumer-stale-');
   const providerRoot = await makeRepo('impact-trace-provider-stale-');

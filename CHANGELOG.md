@@ -17,6 +17,7 @@ For day-by-day developer log see [docs/progress.ko.md](docs/progress.ko.md). For
 - **OpenAPI contract impact baseline** — path-obvious OpenAPI/Swagger/AsyncAPI YAML/JSON files are indexed as contracts, persisted to contract baseline/version tables, and reverse-linked from implementing code when the contract explicitly names repo-local source paths.
 - **Workspace catalog v0** — `impact-trace workspace init/add-repo/list` manages an explicit local repo allowlist in `.impact-trace/workspace.json` and syncs it into `workspaces`/`workspace_repos` without cloning or network access.
 - **Cross-repo contract resolver v0** — `impact-trace workspace resolve-contracts` reads indexed local workspace repos, matches consumer HTTP literals to provider OpenAPI endpoints, and persists deterministic `cross_repo_links` without cloning or network access.
+- **GraphQL consumer resolver v0** — `impact-trace workspace resolve-contracts` also matches indexed GraphQL operation documents to provider `Query.*`/`Mutation.*`/`Subscription.*` root fields, reusing compact cross-repo links so contract diff can persist known GraphQL consumer impact.
 - **OpenAPI contract diff v0** — `impact-trace workspace contract-diff` compares the latest indexed OpenAPI endpoint surface with the current contract file, classifies removed endpoints as breaking and added endpoints as non-breaking, and persists impacted consumers as `BREAKS_COMPATIBILITY_WITH` links.
 - **OpenAPI nested schema diff v0** — JSON/YAML OpenAPI compatibility signatures now use schemaVersion 2 with nested object paths, root/nested array item paths, allOf object merges, and oneOf/anyOf property/root body fingerprints so contract diff can report nested body breaking changes without sending whole contract files to the agent.
 - **Protobuf contract diff v0** — `.proto` baselines now store compact `protobuf-compat-v0` service/RPC/message signatures, and `workspace contract-diff` classifies removed RPCs plus response message field removals/type changes as breaking without requiring Buf, BSR, or raw contract snapshots in SQLite.
@@ -49,7 +50,7 @@ Originally developed on `feature/phase6-adapter-foundations`; landed on `main` a
 
 ### Follow-up scope
 
-- GraphQL/protobuf/AsyncAPI consumer resolver and full parser/LSP depth.
+- Protobuf/AsyncAPI consumer resolver and GraphQL/protobuf/AsyncAPI full parser/LSP depth.
 
 ---
 

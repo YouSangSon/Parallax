@@ -113,6 +113,9 @@ async function listSourceFiles(root: string): Promise<string[]> {
 
 test('core src does not introduce an implicit HTTP daemon or websocket listener', async () => {
   const srcRoot = path.resolve('src');
+  const explicitLocalServerModules = new Set([
+    path.resolve('src/ui.ts')
+  ]);
   const forbiddenPatterns: Array<[RegExp, string]> = [
     [/\bnode:http\b/, 'node:http'],
     [/\bnode:https\b/, 'node:https'],
@@ -123,6 +126,10 @@ test('core src does not introduce an implicit HTTP daemon or websocket listener'
 
   for (const file of await listSourceFiles(srcRoot)) {
     const text = await readFile(file, 'utf8');
+    if (explicitLocalServerModules.has(file)) {
+      assert.match(text, /options\.host\s*\?\?\s*'127\.0\.0\.1'/, `${path.relative(process.cwd(), file)} must bind to loopback by default`);
+      continue;
+    }
     for (const [pattern, label] of forbiddenPatterns) {
       assert.doesNotMatch(text, pattern, `${path.relative(process.cwd(), file)} must not use ${label}`);
     }

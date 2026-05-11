@@ -30,9 +30,9 @@ Impact-trace가 만들려는 것은 더 좁고 선명하다. **코드/문서/정
 
 | 상태 | 항목 |
 |---|---|
-| landed | `impact_trace_search_context` keyword/relation/evidence RRF ranking v1, retrieval depth v0(FTS5/BM25 entity lane, `semanticRank`, `graphProximityRank`), search budget/diversification v0(`brief`/`standard`/`deep`, returned bytes, estimated tokens, omitted counts, path/entity/relation interleave), persistent entity/relation_evidence/facts FTS projection + retrieval bench v0, sqlite-vec ANN semantic lane with brute-force fallback, evidence resource v0, context telemetry v0, doctor v0, MCP surface guard, opt-in `import-session` v0, graph JSON pagination, typed error envelope v0, explicit supersession v0, persisted context pack reuse v0 |
-| next | UI Explorer v0 |
-| later | UI Explorer session timeline, context rank feedback, workspace/contract impact |
+| landed | `impact_trace_search_context` keyword/relation/evidence RRF ranking v1, retrieval depth v0(FTS5/BM25 entity lane, `semanticRank`, `graphProximityRank`), search budget/diversification v0(`brief`/`standard`/`deep`, returned bytes, estimated tokens, omitted counts, path/entity/relation interleave), persistent entity/relation_evidence/facts FTS projection + retrieval bench v0, sqlite-vec ANN semantic lane with brute-force fallback, evidence resource v0, context telemetry v0, doctor v0, MCP surface guard, opt-in `import-session` v0, graph JSON pagination, typed error envelope v0, explicit supersession v0, persisted context pack reuse v0, UI Explorer v0 |
+| next | parser-backed adapter depth 또는 workspace/contract impact |
+| later | UI Explorer session timeline, context rank feedback, multi-repo workspace catalog |
 
 ---
 
@@ -124,7 +124,7 @@ flowchart TB
   Compact --> Expand["expandIds when needed"]
 ```
 
-Impact-trace의 `impact_trace_search_context`는 v0에서 SQLite `LIKE` 기반 deterministic search와 compact evidence/resource URI 계약을 먼저 닫았다. v1은 이 계약을 유지하면서 keyword/relation/evidence stream을 분리하고 RRF rank signal을 노출한다. 현재 depth v0는 schema v14 persistent FTS5/BM25 entity lane, 기존 `fact_embeddings` 기반 `semanticRank`, matched seed의 1-hop `graphProximityRank`, persistent evidence/fact FTS projection까지 붙였다. semantic lane은 sqlite-vec ANN을 먼저 쓰고 실패 시 brute-force path로 fallback한다. context pack reuse v0는 schema v15 `context_packs`와 `impact-trace://context-packs/{id}` resource로 반복 호출이 같은 context 배열을 재전송하지 않게 한다. 다음 개선은 **UI Explorer v0로 같은 resource contract를 사람이 검증하게 하는 것**이다.
+Impact-trace의 `impact_trace_search_context`는 v0에서 SQLite `LIKE` 기반 deterministic search와 compact evidence/resource URI 계약을 먼저 닫았다. v1은 이 계약을 유지하면서 keyword/relation/evidence stream을 분리하고 RRF rank signal을 노출한다. 현재 depth v0는 schema v14 persistent FTS5/BM25 entity lane, 기존 `fact_embeddings` 기반 `semanticRank`, matched seed의 1-hop `graphProximityRank`, persistent evidence/fact FTS projection까지 붙였다. semantic lane은 sqlite-vec ANN을 먼저 쓰고 실패 시 brute-force path로 fallback한다. context pack reuse v0는 schema v15 `context_packs`와 `impact-trace://context-packs/{id}` resource로 반복 호출이 같은 context 배열을 재전송하지 않게 한다. UI Explorer v0는 `impact-trace ui`에서 같은 report/graph/coverage/context pack data shape를 사람이 검증하게 한다.
 
 ---
 
@@ -374,8 +374,8 @@ transaction을 기준으로 current/as-of visibility를 판단한다. 현재 vie
 | 1 | explicit memory supersession | 완료. `supersedesFactIds`, `fact_provenance.kind='supersedes'`, edge `tx_id`로 오래된 decision/summary/policy fact를 현재/as-of recall/profile/semantic recall에서 정확히 제외한다. |
 | 2 | entity persistent FTS + sqlite-vec ANN lane | 완료. schema v14 entity FTS live-write/backfill/restart repair와 ANN-first/fallback parity test를 추가했다. |
 | 3 | persisted context pack id / repeated-query reuse | 완료. 첫 full pack 이후 같은 cache key는 `context_pack_reference`만 반환하고 full pack은 resource로 재사용한다. |
-| 4 | UI Explorer v0 | active next. resource contract가 안정된 뒤 사람이 같은 evidence와 session timeline을 검증한다. |
-| 5 | workspace/contract impact | single repo + repo-local docs가 안정된 뒤 OpenAPI/protobuf/GraphQL consumer risk로 넓힌다. |
+| 4 | UI Explorer v0 | 완료. `impact-trace ui`가 read-only localhost workbench로 report, evidence, graph, coverage, context pack summary를 보여준다. |
+| 5 | workspace/contract impact | active next. single repo + repo-local docs가 안정된 뒤 OpenAPI/protobuf/GraphQL consumer risk로 넓힌다. |
 
 이미 완료된 guardrail은 유지한다: adoption boundary doc, search RRF initial v1, telemetry v0, MCP allowlist/security tests, doctor v0, opt-in session import v0.
 

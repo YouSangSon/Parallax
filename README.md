@@ -180,6 +180,7 @@ impact-trace index [--max-file-bytes 1000000]
 impact-trace analyze --changed src/file.ts [--depth 2] [--json]
 impact-trace analyze --base main [--head HEAD] [--depth 2] [--json]
 impact-trace graph export --report <id> [--format mermaid|json|dot]
+impact-trace ui [--report <id>] [--port <n>]
 impact-trace mcp serve
 
 # agent memory (Phase 1+2)
@@ -314,6 +315,20 @@ impact-trace doctor
 
 `doctor`는 workspace 파일을 만들지 않습니다. database가 없거나 schema가 오래된 경우 stdout에는
 진단 JSON을 출력하고 exit code는 1이 됩니다.
+
+### `ui`
+
+현재 저장소의 `.impact-trace/impact.db`를 read-only로 열고 `127.0.0.1`에 local workbench를 띄웁니다.
+첫 화면은 landing page가 아니라 최신 report 기준 Change Set, Impact Paths, Evidence,
+Focused Graph, Coverage Gaps, Doctor Findings를 바로 보여줍니다. JSON API는 MCP resource와 같은
+shape를 재사용합니다.
+
+```bash
+impact-trace ui
+impact-trace ui --report <report-id> --port 3717
+```
+
+기본 포트가 사용 중이면 자동으로 빈 포트로 fallback하고, 터미널에 출력된 URL을 브라우저에서 열면 됩니다.
 
 ### `import-session`
 
@@ -547,6 +562,7 @@ npm audit --audit-level=high
 | `npm run docs:lint` | git tracked Markdown 파일에서 local metadata와 secret-like content를 검사합니다. |
 | `npm run test:mcp` | MCP impact/context 응답, repo-local telemetry/memory write 경계, path validation을 검증합니다. |
 | `npm run test:security` | path containment와 redaction을 검증합니다. |
+| `npm run test:ui` | `impact-trace ui` snapshot, localhost server, JSON resource endpoints를 검증합니다. |
 
 ## 문서
 

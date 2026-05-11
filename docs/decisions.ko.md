@@ -30,6 +30,7 @@
 | [D-018](#d-018-sqlite-vec-ann-with-per-model-vec0-tables-lazy-create-and-brute-force-fallback) | sqlite-vec ANN with per-model vec0 tables, lazy create, brute-force fallback | P4 | 2026-05-01 |
 | [D-019](#d-019-search-context-uses-persistent-projections-in-read-only-mode) | search_context uses persistent projections in read-only mode | P3 | 2026-05-11 |
 | [D-020](#d-020-context-packs-are-persisted-by-cache-key-and-reused-by-reference) | context packs are persisted by cache key and reused by reference | P3 | 2026-05-11 |
+| [D-021](#d-021-ui-explorer-is-local-read-only-and-resource-shaped) | UI Explorer is local, read-only, and resource-shaped | P3 | 2026-05-11 |
 
 ---
 
@@ -371,6 +372,24 @@
 **결과/위험:** cache key는 contract version, latest indexRunId, normalized changed files, effective budget/depth/fanout, changed-file content hashes, current git snapshot을 포함한다. pack id는 request cache key에서, `contentHash`는 full compact pack JSON에서 나온다. repeated response는 작지만 union shape이므로 `kind='context_pack_reference'`를 명시한다. context pack resource read는 `context_resource_accesses.resource_kind='context_pack'`로 기록된다. v0에는 TTL/GC가 없으므로 DB 성장은 후속 cleanup 정책에서 다룬다. pre-v15 read-only DB는 `schema_outdated`로 `impact-trace init`을 안내한다.
 
 **관련 commit:** `feat(context): persist reusable context packs`
+
+---
+
+## D-021: UI Explorer is local, read-only, and resource-shaped
+
+**결정:** 첫 UI는 `impact-trace ui` CLI가 여는 `127.0.0.1` read-only workbench로 제한한다. 첫 화면은 landing page가 아니라 최신 impact report의 Change Set, Impact Paths, Evidence, Focused Graph, Verification Queue, Doctor Findings, Context Packs, Coverage Gaps를 바로 보여준다. JSON endpoint는 persisted `ImpactReport`, `GraphExport`, coverage, context pack shape를 재사용한다.
+
+**맥락:** 제품 목표는 Claude/Codex가 받는 context를 줄이는 것과, 사람이 같은 근거를 눈으로 검증하는 것이다. UI가 별도 product surface나 cloud dashboard로 커지면 로컬 SQLite provenance와 MCP resource contract가 흐려진다. v0는 사람이 agent와 같은 report/resource를 보는 최소 workbench여야 한다.
+
+**대안:**
+- React/SPA + bundler 도입 — 빠르게 화려해질 수 있지만 dependency와 build surface가 커지고 core CLI 검증이 느려진다.
+- cloud/team dashboard — 현재 local-first identity와 보안 경계를 벗어난다.
+- report markdown만 생성 — 사람이 훑기 쉽지만 graph/resource/API contract와 drift가 생긴다.
+- UI에서 index/analyze/write action 제공 — 편하지만 v0 read-only 안전 모델을 깨고 의도치 않은 repo-local write를 늘린다.
+
+**결과/위험:** UI server는 loopback host에만 bind하고 DB를 read-only로 연다. 기본 포트가 사용 중이면 빈 포트로 fallback한다. `/api/reports/{id}/graph/json`은 `limit/cursor` pagination을 유지해 큰 graph를 한 번에 밀어 넣지 않는다. v0는 vanilla HTML/CSS/JS라 유지비가 작지만, session timeline, rank feedback, multi-repo workspace view 같은 richer interaction은 후속 slice에서 별도 설계가 필요하다.
+
+**관련 commit:** `feat(ui): add local report workbench`
 
 ---
 

@@ -26,6 +26,8 @@ export type { DoctorFinding, DoctorOptions, DoctorReport } from './doctor.js';
 export { importSession } from './session_import.js';
 export type { SessionImportFormat, SessionImportOptions, SessionImportResult } from './session_import.js';
 export { createMcpServer, serveMcp } from './mcp.js';
+export { buildUiSnapshot, renderUiHtml, startUiServer } from './ui.js';
+export type { UiContextPackSummary, UiCoverageSnapshot, UiGraphPreview, UiReportPreview, UiReportSummary, UiServerOptions, UiSnapshot } from './ui.js';
 export { computeEmbedding, computeEmbeddingSync, STUB_MODEL_NAME } from './embeddings.js';
 export type { EmbeddingResult } from './embeddings.js';
 export { summarize, STUB_LLM_MODEL } from './llm.js';

@@ -34,6 +34,20 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === 'ui') {
+    const { startUiServer } = await import('./ui.js');
+    const reportId = parseOptionalArg(args, '--report');
+    const port = parseIntegerArg(args, '--port');
+    const ui = await startUiServer({
+      repoRoot,
+      ...(reportId !== undefined ? { reportId } : {}),
+      ...(port !== undefined ? { port } : {})
+    });
+    console.log(`Impact Trace UI: ${ui.url}`);
+    await waitForShutdown(ui.close);
+    return;
+  }
+
   if (command === 'import-session') {
     const { importSession } = await import('./index.js');
     const file = parseRequiredArg(args, '--file');
@@ -362,7 +376,7 @@ function parseIntegerArg(args: string[], name: string): number | undefined {
 function parsePositionals(args: string[]): string[] {
   const valueFlags = new Set([
     '--changed', '--base', '--head', '--depth', '--max-fanout', '--max-file-bytes',
-    '--report', '--format', '--file',
+    '--report', '--format', '--file', '--port',
     '--entity', '--attribute', '--value', '--branch', '--agent', '--evidence-fact-ids',
     '--name', '--from', '--fact-id', '--k', '--op', '--as-of-tx',
     '--target', '--source', '--query', '--model',
@@ -396,6 +410,7 @@ Commands:
   impact-trace init
   impact-trace index [--max-file-bytes 1000000]
   impact-trace doctor
+  impact-trace ui [--report <id>] [--port <n>]
   impact-trace import-session --file <path> --format codex|claude [--branch <name>]
   impact-trace analyze --changed src/file.ts [--depth 2] [--json]
   impact-trace analyze --base main [--head HEAD] [--depth 2] [--json]
@@ -424,6 +439,19 @@ Agent memory:
   impact-trace profile  --entity <id> [--branch <name>] [--k 50] [--as-of-tx <tx-id>]
   impact-trace trace    --fact-id <id> [--depth 5]
 `);
+}
+
+function waitForShutdown(close: () => Promise<void>): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let closing = false;
+    const shutdown = (): void => {
+      if (closing) return;
+      closing = true;
+      close().then(resolve, reject);
+    };
+    process.once('SIGINT', shutdown);
+    process.once('SIGTERM', shutdown);
+  });
 }
 
 function parseAgentMemoryValue(raw: string): unknown {

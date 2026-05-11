@@ -227,7 +227,7 @@ test('initProject creates config and SQLite database tables', async () => {
     assert.match(tables.names, /search_entities_fts/);
     assert.match(tables.names, /search_relation_evidence_fts/);
     assert.match(tables.names, /search_facts_fts/);
-    assert.equal(schemaVersion.version, 14);
+    assert.equal(schemaVersion.version, 15);
   } finally {
     db.close();
   }
@@ -3449,7 +3449,7 @@ test('currentOnly uses supersession edge tx for reused archived replacement fact
   ]);
 });
 
-test('agent memory read APIs report schema v14 requirement for old read-only databases', async () => {
+test('agent memory read APIs report schema v15 requirement for old read-only databases', async () => {
   const repoRoot = await makeFixtureRepo();
   await initProject({ repoRoot });
 
@@ -3493,7 +3493,7 @@ test('agent memory read APIs report schema v14 requirement for old read-only dat
       withAgentMemoryDb(repoRoot, true, (readDb) =>
         recall(readDb, { entity: 'policy:schema-guard', attribute: 'decision' })
       ),
-    /schema v14/
+    /schema v15/
   );
 });
 

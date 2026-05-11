@@ -812,6 +812,17 @@ function countReports(repoRoot: string): number {
   }
 }
 
+function contextPackRows(repoRoot: string): Array<{ id: string; hit_count: number; returned_bytes: number }> {
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    return db
+      .prepare('SELECT id, hit_count, returned_bytes FROM context_packs ORDER BY created_at, id')
+      .all() as Array<{ id: string; hit_count: number; returned_bytes: number }>;
+  } finally {
+    db.close();
+  }
+}
+
 type ContextToolRunRow = {
   tool_name: string;
   index_run_id: number | null;
@@ -943,6 +954,11 @@ test('MCP stdio server initializes and exposes the full agent memory tool surfac
       'standard',
       'deep'
     ]);
+    assert.deepEqual(toolByName.get('impact_trace_context_for_change')!.inputSchema?.properties?.reusePolicy?.enum, [
+      'auto',
+      'full',
+      'reference'
+    ]);
     assert.equal(toolByName.get('impact_trace_search_context')!.inputSchema?.properties?.query?.type, 'string');
     assert.equal(toolByName.get('impact_trace_search_context')!.inputSchema?.properties?.k?.maximum, 50);
     assert.equal(toolByName.get('impact_trace_explain_entity')!.inputSchema?.properties?.relationLimit?.maximum, 100);
@@ -1045,7 +1061,7 @@ test('MCP doctor returns the local health report without telemetry writes', asyn
     assert.equal(report.version, 0);
     assert.equal(report.repoRoot, '[REPO_ROOT]');
     assert.equal(report.database.path, '.impact-trace/impact.db');
-    assert.equal(report.database.schemaVersion, 14);
+    assert.equal(report.database.schemaVersion, 15);
     assert.equal(report.index.latestCompletedRun?.status, 'completed');
     assert.equal(report.telemetry.toolRuns, 0);
   } finally {
@@ -1129,16 +1145,25 @@ test('MCP context_for_change returns budgeted compact context without persisting
     assert.equal(response.result.content[0].type, 'text');
     const pack = JSON.parse(response.result.content[0].text) as {
       version: number;
+      contextPackId: string;
+      resourceUri: string;
+      contentHash: string;
+      reused: boolean;
       budget: string;
       indexRunId: number;
       changed: Array<{ entity: { id: string }; resourceUri: string }>;
       context: Array<{ path: string; resourceUri: string; relations: string[] }>;
       evidence: Array<{ id: string; snippet: string; file: string; resourceUri?: string }>;
-      resources: { coverage: string; entities: string[]; evidence: string[] };
+      resources: { contextPack: string; coverage: string; entities: string[]; evidence: string[] };
       limits: { affectedLimit: number; evidenceLimit: number; snippetChars: number };
       omittedCounts: { affected: number; evidence: number; actions: number };
     };
     assert.equal(pack.version, 0);
+    assert.match(pack.contextPackId, /^ctxpack:/);
+    assert.equal(pack.resourceUri, `impact-trace://context-packs/${encodeURIComponent(pack.contextPackId)}`);
+    assert.equal(pack.resources.contextPack, pack.resourceUri);
+    assert.equal(pack.reused, false);
+    assert.match(pack.contentHash, /^[0-9a-f]{64}$/);
     assert.equal(pack.budget, 'brief');
     assert.equal(pack.changed[0]?.entity.id, 'file:src/a.ts');
     assert.equal(pack.changed[0]?.resourceUri, `impact-trace://entities/${encodeURIComponent('file:src/a.ts')}`);
@@ -1163,6 +1188,21 @@ test('MCP context_for_change returns budgeted compact context without persisting
       const evidenceJson = JSON.parse(evidenceResource.result.contents[0].text) as { id: string };
       assert.ok(pack.evidence.some((item) => item.id === evidenceJson.id));
     }
+    const packResource = await client.request('resources/read', { uri: pack.resourceUri });
+    assert.equal(packResource.error, undefined);
+    const persistedPack = JSON.parse(packResource.result.contents[0].text) as {
+      contextPackId: string;
+      reused: boolean;
+      context: unknown[];
+      evidence: unknown[];
+    };
+    assert.equal(persistedPack.contextPackId, pack.contextPackId);
+    assert.equal(persistedPack.reused, false);
+    assert.equal(persistedPack.context.length, pack.context.length);
+    assert.equal(persistedPack.evidence.length, pack.evidence.length);
+    const packRows = contextPackRows(repoRoot);
+    assert.equal(packRows.length, 1);
+    assert.equal(packRows[0]!.id, pack.contextPackId);
     const telemetryRuns = contextToolRuns(repoRoot);
     assert.equal(telemetryRuns.length, 1);
     assert.equal(telemetryRuns[0]!.tool_name, 'impact_trace_context_for_change');
@@ -1171,11 +1211,12 @@ test('MCP context_for_change returns budgeted compact context without persisting
     assert.deepEqual(JSON.parse(telemetryRuns[0]!.changed_files_json), ['src/a.ts']);
     assert.equal(telemetryRuns[0]!.index_run_id, pack.indexRunId);
     assert.ok(telemetryRuns[0]!.returned_bytes > 0);
-    assert.equal(telemetryRuns[0]!.resource_count, pack.resources.entities.length + pack.resources.evidence.length + 1);
+    assert.equal(telemetryRuns[0]!.resource_count, pack.resources.entities.length + pack.resources.evidence.length + 2);
     assert.deepEqual(JSON.parse(telemetryRuns[0]!.omitted_json), pack.omittedCounts);
     const telemetryAccesses = contextResourceAccesses(repoRoot);
-    assert.equal(telemetryAccesses.length, pack.resources.evidence.length);
-    assert.ok(telemetryAccesses.every((item) => item.resource_kind === 'evidence'));
+    assert.equal(telemetryAccesses.length, pack.resources.evidence.length + 1);
+    assert.equal(telemetryAccesses.filter((item) => item.resource_kind === 'evidence').length, pack.resources.evidence.length);
+    assert.equal(telemetryAccesses.filter((item) => item.resource_kind === 'context_pack').length, 1);
     assert.ok(telemetryAccesses.every((item) => item.index_run_id === pack.indexRunId));
     assert.ok(telemetryAccesses.every((item) => item.returned_bytes > 0));
     assert.equal(pack.limits.affectedLimit, 5);
@@ -1186,6 +1227,241 @@ test('MCP context_for_change returns budgeted compact context without persisting
       names.filter((name) => !/\.db-(wal|shm)$/.test(name));
     assert.deepEqual(filterWalAux(dbArtifacts(repoRoot)), filterWalAux(artifactsBefore));
     assert.equal(existsSync(path.join(repoRoot, '.impact-trace/reports')), false);
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP context_for_change reuses persisted context packs by reference', async () => {
+  const repoRoot = await makeRepo();
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+    const firstResponse = await client.request('tools/call', {
+      name: 'impact_trace_context_for_change',
+      arguments: { changedFiles: ['src/a.ts'], budget: 'brief' }
+    });
+    assert.equal(firstResponse.error, undefined);
+    const first = JSON.parse(firstResponse.result.content[0].text) as {
+      contextPackId: string;
+      resourceUri: string;
+      reused: boolean;
+      context: unknown[];
+      evidence: unknown[];
+      actions: unknown[];
+      resources: { contextPack: string };
+    };
+    assert.equal(first.reused, false);
+    assert.ok(first.context.length > 0);
+    assert.equal(first.resources.contextPack, first.resourceUri);
+
+    const secondResponse = await client.request('tools/call', {
+      name: 'impact_trace_context_for_change',
+      arguments: { changedFiles: ['src/a.ts'], budget: 'brief' }
+    });
+    assert.equal(secondResponse.error, undefined);
+    const second = JSON.parse(secondResponse.result.content[0].text) as {
+      kind: string;
+      contextPackId: string;
+      resourceUri: string;
+      reused: boolean;
+      resources: { contextPack: string };
+      omittedCounts: { contextItems: number; evidence: number; actions: number; fullContextPackBytes: number };
+      context?: unknown[];
+      evidence?: unknown[];
+      actions?: unknown[];
+    };
+    assert.equal(second.kind, 'context_pack_reference');
+    assert.equal(second.reused, true);
+    assert.equal(second.contextPackId, first.contextPackId);
+    assert.equal(second.resourceUri, first.resourceUri);
+    assert.equal(second.resources.contextPack, first.resourceUri);
+    assert.equal(second.context, undefined);
+    assert.equal(second.evidence, undefined);
+    assert.equal(second.actions, undefined);
+    assert.equal(second.omittedCounts.contextItems, first.context.length);
+    assert.equal(second.omittedCounts.evidence, first.evidence.length);
+    assert.equal(second.omittedCounts.actions, first.actions.length);
+    assert.ok(secondResponse.result.content[0].text.length < firstResponse.result.content[0].text.length);
+
+    const packResource = await client.request('resources/read', { uri: first.resourceUri });
+    assert.equal(packResource.error, undefined);
+    const persisted = JSON.parse(packResource.result.contents[0].text) as {
+      contextPackId: string;
+      reused: boolean;
+      context: unknown[];
+      evidence: unknown[];
+    };
+    assert.equal(persisted.contextPackId, first.contextPackId);
+    assert.equal(persisted.reused, false);
+    assert.equal(persisted.context.length, first.context.length);
+    assert.equal(persisted.evidence.length, first.evidence.length);
+
+    const deepResponse = await client.request('tools/call', {
+      name: 'impact_trace_context_for_change',
+      arguments: { changedFiles: ['src/a.ts'], budget: 'deep' }
+    });
+    const deep = JSON.parse(deepResponse.result.content[0].text) as { contextPackId: string; reused: boolean };
+    assert.notEqual(deep.contextPackId, first.contextPackId);
+    assert.equal(deep.reused, false);
+
+    await writeFile(path.join(repoRoot, 'src/a.ts'), 'import { b } from "./b";\nexport const a = b + 2;\n');
+    const dirtyResponse = await client.request('tools/call', {
+      name: 'impact_trace_context_for_change',
+      arguments: { changedFiles: ['src/a.ts'], budget: 'brief' }
+    });
+    const dirty = JSON.parse(dirtyResponse.result.content[0].text) as { contextPackId: string; reused: boolean };
+    assert.notEqual(dirty.contextPackId, first.contextPackId);
+    assert.equal(dirty.reused, false);
+
+    const rows = contextPackRows(repoRoot);
+    assert.equal(rows.length, 3);
+    assert.equal(rows.find((row) => row.id === first.contextPackId)?.hit_count, 2);
+    assert.ok(contextResourceAccesses(repoRoot).some((item) =>
+      item.resource_kind === 'context_pack' && item.resource_id === first.contextPackId
+    ));
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP context_for_change honors explicit context pack reuse policies', async () => {
+  const repoRoot = await makeRepo();
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+    const firstResponse = await client.request('tools/call', {
+      name: 'impact_trace_context_for_change',
+      arguments: { changedFiles: ['src/a.ts'], budget: 'brief' }
+    });
+    const first = JSON.parse(firstResponse.result.content[0].text) as {
+      contextPackId: string;
+      resourceUri: string;
+      reused: boolean;
+      context: unknown[];
+      evidence: unknown[];
+    };
+    assert.equal(first.reused, false);
+    assert.ok(Array.isArray(first.context));
+
+    const fullResponse = await client.request('tools/call', {
+      name: 'impact_trace_context_for_change',
+      arguments: { changedFiles: ['src/a.ts'], budget: 'brief', reusePolicy: 'full' }
+    });
+    const full = JSON.parse(fullResponse.result.content[0].text) as {
+      kind?: string;
+      contextPackId: string;
+      resourceUri: string;
+      reused: boolean;
+      context: unknown[];
+      evidence: unknown[];
+    };
+    assert.equal(full.kind, undefined);
+    assert.equal(full.contextPackId, first.contextPackId);
+    assert.equal(full.resourceUri, first.resourceUri);
+    assert.equal(full.reused, false);
+    assert.equal(full.context.length, first.context.length);
+    assert.equal(full.evidence.length, first.evidence.length);
+
+    const referenceRepo = await makeRepo();
+    const referenceClient = new McpProcessClient(referenceRepo);
+    try {
+      await referenceClient.initialize();
+      const referenceResponse = await referenceClient.request('tools/call', {
+        name: 'impact_trace_context_for_change',
+        arguments: { changedFiles: ['src/a.ts'], budget: 'brief', reusePolicy: 'reference' }
+      });
+      const reference = JSON.parse(referenceResponse.result.content[0].text) as {
+        kind: string;
+        contextPackId: string;
+        resourceUri: string;
+        reused: boolean;
+        context?: unknown[];
+        evidence?: unknown[];
+      };
+      assert.equal(reference.kind, 'context_pack_reference');
+      assert.equal(reference.reused, true);
+      assert.equal(reference.context, undefined);
+      assert.equal(reference.evidence, undefined);
+      const packResource = await referenceClient.request('resources/read', { uri: reference.resourceUri });
+      assert.equal(packResource.error, undefined);
+      const persisted = JSON.parse(packResource.result.contents[0].text) as {
+        contextPackId: string;
+        context: unknown[];
+        evidence: unknown[];
+      };
+      assert.equal(persisted.contextPackId, reference.contextPackId);
+      assert.ok(persisted.context.length > 0);
+      assert.ok(persisted.evidence.length > 0);
+      assert.equal(contextPackRows(referenceRepo).length, 1);
+    } finally {
+      await referenceClient.close();
+    }
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP context_for_change cache key tracks normalized inputs and index freshness', async () => {
+  const repoRoot = await makeRepo();
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+    const orderedResponse = await client.request('tools/call', {
+      name: 'impact_trace_context_for_change',
+      arguments: { changedFiles: ['src/a.ts', 'src/b.ts'], budget: 'brief' }
+    });
+    const ordered = JSON.parse(orderedResponse.result.content[0].text) as {
+      contextPackId: string;
+      reused: boolean;
+    };
+    assert.equal(ordered.reused, false);
+
+    const reversedResponse = await client.request('tools/call', {
+      name: 'impact_trace_context_for_change',
+      arguments: { changedFiles: ['src/b.ts', 'src/a.ts'], budget: 'brief' }
+    });
+    const reversed = JSON.parse(reversedResponse.result.content[0].text) as {
+      kind: string;
+      contextPackId: string;
+      reused: boolean;
+    };
+    assert.equal(reversed.kind, 'context_pack_reference');
+    assert.equal(reversed.contextPackId, ordered.contextPackId);
+    assert.equal(reversed.reused, true);
+
+    const depthResponse = await client.request('tools/call', {
+      name: 'impact_trace_context_for_change',
+      arguments: { changedFiles: ['src/a.ts', 'src/b.ts'], budget: 'brief', maxDepth: 2, maxFanout: 50 }
+    });
+    const depth = JSON.parse(depthResponse.result.content[0].text) as {
+      contextPackId: string;
+      reused: boolean;
+    };
+    assert.notEqual(depth.contextPackId, ordered.contextPackId);
+    assert.equal(depth.reused, false);
+
+    await indexProject({ repoRoot });
+    const reindexedResponse = await client.request('tools/call', {
+      name: 'impact_trace_context_for_change',
+      arguments: { changedFiles: ['src/a.ts', 'src/b.ts'], budget: 'brief' }
+    });
+    const reindexed = JSON.parse(reindexedResponse.result.content[0].text) as {
+      contextPackId: string;
+      reused: boolean;
+    };
+    assert.notEqual(reindexed.contextPackId, ordered.contextPackId);
+    assert.equal(reindexed.reused, false);
+
+    const rowsBeforeBadInput = contextPackRows(repoRoot).length;
+    const bad = await client.request('tools/call', {
+      name: 'impact_trace_context_for_change',
+      arguments: { changedFiles: ['../outside.ts'], budget: 'brief' }
+    });
+    assert.equal(bad.error, undefined);
+    assert.equal(bad.result.isError, true);
+    assert.match(bad.result.content[0].text, /outside repo root/);
+    assert.equal(contextPackRows(repoRoot).length, rowsBeforeBadInput);
   } finally {
     await client.close();
   }
@@ -2164,11 +2440,12 @@ test('MCP search_context semantic lane hides facts superseded by visible main ed
   }
 });
 
-test('MCP search_context returns schema_outdated for pre-v14 read-only databases', async () => {
+test('MCP search_context returns schema_outdated for pre-v15 read-only databases', async () => {
   const repoRoot = await makeRepo();
   const db = new DatabaseSync(databasePath(repoRoot), { readOnly: false });
   try {
-    db.prepare('DELETE FROM schema_versions WHERE version >= 14').run();
+    db.prepare('DELETE FROM schema_versions WHERE version >= 15').run();
+    db.prepare('DROP TABLE IF EXISTS context_packs').run();
   } finally {
     db.close();
   }
@@ -2187,7 +2464,7 @@ test('MCP search_context returns schema_outdated for pre-v14 read-only databases
       error: { code: string; problem: string; fix: string };
     };
     assert.equal(envelope.error.code, 'schema_outdated');
-    assert.match(envelope.error.problem, /schema v14/);
+    assert.match(envelope.error.problem, /schema v15/);
     assert.match(envelope.error.fix, /impact-trace init/);
   } finally {
     await client.close();
@@ -2589,6 +2866,7 @@ test('MCP exposes report, entity, evidence, graph, and coverage resources', asyn
     assert.ok(templateUris.includes('impact-trace://reports/{reportId}'));
     assert.ok(templateUris.includes('impact-trace://entities/{entityId}'));
     assert.ok(templateUris.includes('impact-trace://evidence/{evidenceId}'));
+    assert.ok(templateUris.includes('impact-trace://context-packs/{contextPackId}'));
     assert.ok(templateUris.includes('impact-trace://reports/{reportId}/graph/{format}'));
 
     const resources = await client.request('resources/list', {});
@@ -2653,6 +2931,17 @@ test('MCP exposes report, entity, evidence, graph, and coverage resources', asyn
     assert.equal(missingEvidenceEnvelope.error.code, 'resource_not_found');
     assert.match(missingEvidenceEnvelope.error.problem, /impact evidence not found/);
     assert.ok(missingEvidenceEnvelope.error.fix.length > 0);
+
+    const missingContextPack = await client.request('resources/read', {
+      uri: 'impact-trace://context-packs/not-found'
+    });
+    assert.ok(missingContextPack.error);
+    const missingContextPackEnvelope = JSON.parse(missingContextPack.error.message) as {
+      error: { code: string; problem: string; fix: string };
+    };
+    assert.equal(missingContextPackEnvelope.error.code, 'resource_not_found');
+    assert.match(missingContextPackEnvelope.error.problem, /impact context pack not found/);
+    assert.ok(missingContextPackEnvelope.error.fix.length > 0);
 
     const graphResource = await client.request('resources/read', {
       uri: `impact-trace://reports/${report.id}/graph/dot`
@@ -3002,7 +3291,7 @@ test('MCP trace walks fact_provenance back through the causal chain', async () =
   }
 });
 
-test('MCP trace reports schema_outdated for pre-v14 fact_provenance tables', async () => {
+test('MCP trace reports schema_outdated for pre-v15 fact_provenance tables', async () => {
   const repoRoot = await makeRepo();
   let factId = '';
   const writer = new McpProcessClient(repoRoot);
@@ -3037,7 +3326,7 @@ test('MCP trace reports schema_outdated for pre-v14 fact_provenance tables', asy
       error: { code: string; problem: string; fix: string };
     };
     assert.equal(envelope.error.code, 'schema_outdated');
-    assert.match(envelope.error.problem, /schema v14/);
+    assert.match(envelope.error.problem, /schema v15/);
     assert.doesNotMatch(envelope.error.problem, /no such column/);
     assert.match(envelope.error.fix, /impact-trace init/);
   } finally {

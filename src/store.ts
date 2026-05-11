@@ -6,7 +6,7 @@ import path from 'node:path';
 import * as sqliteVec from 'sqlite-vec';
 
 export type Db = DatabaseSync;
-export const CURRENT_SCHEMA_VERSION = 14;
+export const CURRENT_SCHEMA_VERSION = 15;
 
 type OpenDatabaseOptions = {
   readOnly?: boolean;
@@ -671,6 +671,40 @@ function migrate(db: Db, options: MigrateOptions): void {
     VALUES (10, datetime('now'));
   `);
 
+  // Schema v15: persisted MCP context packs. Context tools can return a
+  // content-addressed resource reference on repeated calls instead of
+  // retransmitting the same large compact context payload.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS context_packs (
+      id TEXT PRIMARY KEY NOT NULL,
+      repo_id INTEGER NOT NULL,
+      index_run_id INTEGER NOT NULL,
+      budget TEXT NOT NULL,
+      request_hash TEXT NOT NULL,
+      changed_files_json TEXT NOT NULL,
+      content_hash TEXT NOT NULL,
+      pack_json TEXT NOT NULL,
+      returned_bytes INTEGER NOT NULL,
+      resource_count INTEGER NOT NULL,
+      omitted_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      last_accessed_at TEXT NOT NULL,
+      hit_count INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY(repo_id) REFERENCES repos(id),
+      FOREIGN KEY(index_run_id) REFERENCES index_runs(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_context_packs_repo_time
+      ON context_packs(repo_id, last_accessed_at);
+    CREATE INDEX IF NOT EXISTS idx_context_packs_repo_request
+      ON context_packs(repo_id, request_hash);
+    CREATE INDEX IF NOT EXISTS idx_context_packs_repo_index
+      ON context_packs(repo_id, index_run_id);
+
+    INSERT OR IGNORE INTO schema_versions (version, applied_at)
+    VALUES (15, datetime('now'));
+  `);
+
   // Schema v11/v14: persistent FTS projections for context search. These
   // projections make entities, relation evidence, and selected memory facts
   // searchable from read-only MCP calls without rebuilding temp FTS tables per
@@ -1023,9 +1057,10 @@ export function assertCurrentSchema(db: Db, feature: string): void {
     tableExists(db, 'search_entities_fts')
     && tableExists(db, 'search_relation_evidence_fts')
     && tableExists(db, 'search_facts_fts');
-  if (version < CURRENT_SCHEMA_VERSION || !hasProvenanceTx || !hasCurrentSearchProjections) {
+  const hasContextPackStore = tableExists(db, 'context_packs');
+  if (version < CURRENT_SCHEMA_VERSION || !hasProvenanceTx || !hasCurrentSearchProjections || !hasContextPackStore) {
     throw new Error(
-      `${feature} requires Impact Trace schema v${CURRENT_SCHEMA_VERSION} with current search projections; current database is v${version}. Run impact-trace init with the current build to apply additive migrations.`
+      `${feature} requires Impact Trace schema v${CURRENT_SCHEMA_VERSION} with current search projections and context pack store; current database is v${version}. Run impact-trace init with the current build to apply additive migrations.`
     );
   }
 }

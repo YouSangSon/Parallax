@@ -34,6 +34,7 @@ export type DoctorTableState = {
   factEmbeddings: boolean;
   contextToolRuns: boolean;
   contextResourceAccesses: boolean;
+  contextPacks: boolean;
 };
 
 export type DoctorIndexRun = {
@@ -249,7 +250,8 @@ function emptyTableState(): DoctorTableState {
     indexCoverage: false,
     factEmbeddings: false,
     contextToolRuns: false,
-    contextResourceAccesses: false
+    contextResourceAccesses: false,
+    contextPacks: false
   };
 }
 
@@ -262,7 +264,8 @@ function readTableState(db: Db): DoctorTableState {
     indexCoverage: tableExists(db, 'index_coverage'),
     factEmbeddings: tableExists(db, 'fact_embeddings'),
     contextToolRuns: tableExists(db, 'context_tool_runs'),
-    contextResourceAccesses: tableExists(db, 'context_resource_accesses')
+    contextResourceAccesses: tableExists(db, 'context_resource_accesses'),
+    contextPacks: tableExists(db, 'context_packs')
   };
 }
 

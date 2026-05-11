@@ -186,6 +186,7 @@ export type ImpactReport = {
 };
 
 export type ContextBudget = 'brief' | 'standard' | 'deep';
+export type ContextPackReusePolicy = 'auto' | 'full' | 'reference';
 
 export type ContextForChangeOptions = {
   repoRoot: string;
@@ -227,6 +228,10 @@ export type ContextPackEvidence = {
 
 export type ContextPack = {
   version: 0;
+  contextPackId?: string;
+  resourceUri?: string;
+  contentHash?: string;
+  reused?: boolean;
   budget: ContextBudget;
   indexRunId: number;
   summary: string[];
@@ -235,6 +240,7 @@ export type ContextPack = {
   actions: ImpactAction[];
   evidence: ContextPackEvidence[];
   resources: {
+    contextPack?: string;
     coverage: 'impact-trace://coverage/latest';
     entities: string[];
     evidence: string[];

@@ -29,6 +29,7 @@
 | [D-017](#d-017-time-based-auto-abandon-piggybacks-on-gc-branches---max-age) | time-based auto-abandon piggybacks on `gc-branches --max-age` | P4 | 2026-05-01 |
 | [D-018](#d-018-sqlite-vec-ann-with-per-model-vec0-tables-lazy-create-and-brute-force-fallback) | sqlite-vec ANN with per-model vec0 tables, lazy create, brute-force fallback | P4 | 2026-05-01 |
 | [D-019](#d-019-search-context-uses-persistent-projections-in-read-only-mode) | search_context uses persistent projections in read-only mode | P3 | 2026-05-11 |
+| [D-020](#d-020-context-packs-are-persisted-by-cache-key-and-reused-by-reference) | context packs are persisted by cache key and reused by reference | P3 | 2026-05-11 |
 
 ---
 
@@ -352,6 +353,24 @@
 **결과/위험:** schema v14는 `entities` trigger, backfill, restart repair를 추가한다. `search_context`는 항상 `entities.updated_index_run_id = latestCompletedIndexRun` join으로 currentness를 보장한다. sqlite-vec ANN은 post-join visibility filter를 그대로 적용하므로 branch-only/archived/superseded fact가 surface되지 않는다. ANN이 빈 결과 또는 SQL 오류를 내면 brute-force fallback을 사용해 recall을 우선한다. pre-v14 read-only DB는 `schema_outdated`로 `impact-trace init`을 안내한다. context telemetry write는 current-schema projection scan을 건너뛰는 lightweight open을 사용하지만, schema upgrade/missing-table backfill과 명시적인 normal writable open repair 계약은 유지한다.
 
 **관련 commit:** `feat(search): persist entity fts and ann context`
+
+---
+
+## D-020: context packs are persisted by cache key and reused by reference
+
+**결정:** `impact_trace_context_for_change`는 schema v15 `context_packs` table에 compact `ContextPack`만 저장한다. 첫 호출은 기존 full compact pack shape를 유지하되 `contextPackId`, `resourceUri`, `contentHash`, `reused=false`, `resources.contextPack`을 추가한다. 같은 cache key가 다시 요청되면 기본 `reusePolicy='auto'`는 `kind='context_pack_reference'`, `reused=true`, pack id/resource URI, budget/indexRunId, 작은 summary만 반환하고 `context`/`actions`/`evidence` arrays는 재전송하지 않는다. 필요하면 `impact-trace://context-packs/{contextPackId}` resource를 읽어 full pack을 복원한다.
+
+**맥락:** Impact Trace의 핵심 목표는 Claude/Codex 같은 coding agent가 전체 repo/report를 반복으로 받지 않게 하는 것이다. 기존 `context_for_change`는 report persistence를 피했지만, 같은 changed file/budget 호출을 반복하면 같은 compact payload를 계속 전송했다. agent workflow에서는 "한 번 본 context"를 이후 turn에서 resource id로 지칭할 수 있어야 token 절감이 커진다.
+
+**대안:**
+- report JSON 재사용 — full report persistence를 다시 도입해 context 절감 목표와 privacy boundary가 흐려짐.
+- content hash만으로 reuse — changed-file content/git snapshot/depth/fanout이 달라도 pack output이 우연히 같으면 stale mental model을 만들 수 있음.
+- always reference-only — 첫 호출 backward compatibility가 깨지고 agent가 한 번 더 resource read를 해야 함.
+- in-memory cache — MCP process 재시작 시 사라져 local-first memory substrate와 맞지 않음.
+
+**결과/위험:** cache key는 contract version, latest indexRunId, normalized changed files, effective budget/depth/fanout, changed-file content hashes, current git snapshot을 포함한다. pack id는 request cache key에서, `contentHash`는 full compact pack JSON에서 나온다. repeated response는 작지만 union shape이므로 `kind='context_pack_reference'`를 명시한다. context pack resource read는 `context_resource_accesses.resource_kind='context_pack'`로 기록된다. v0에는 TTL/GC가 없으므로 DB 성장은 후속 cleanup 정책에서 다룬다. pre-v15 read-only DB는 `schema_outdated`로 `impact-trace init`을 안내한다.
+
+**관련 commit:** `feat(context): persist reusable context packs`
 
 ---
 

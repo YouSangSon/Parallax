@@ -21,14 +21,14 @@ function withTempDb<T>(callback: (db: Db) => T): T {
   }
 }
 
-test('migrate records schema_versions through v14', () => {
+test('migrate records schema_versions through v15', () => {
   withTempDb((db) => {
     const versions = db
       .prepare('SELECT version FROM schema_versions ORDER BY version')
       .all() as Array<{ version: number }>;
     assert.deepEqual(
       versions.map((row) => row.version),
-      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
     );
   });
 });
@@ -47,6 +47,7 @@ test('migrate creates the agent memory tables and later extension tables', () =>
       'reflections',
       'context_tool_runs',
       'context_resource_accesses',
+      'context_packs',
       'search_entities_fts',
       'search_relation_evidence_fts',
       'search_facts_fts'
@@ -620,7 +621,7 @@ test('migrate is idempotent across re-runs', () => {
         .all() as Array<{ version: number }>;
       assert.deepEqual(
         versions.map((row) => row.version),
-        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
       );
     } finally {
       second.close();
@@ -648,9 +649,11 @@ test('migrate upgrades a synthetic v6 schema by adding v7/v8/v9 columns and tabl
       seed.prepare('DELETE FROM schema_versions WHERE version = 12').run();
       seed.prepare('DELETE FROM schema_versions WHERE version = 13').run();
       seed.prepare('DELETE FROM schema_versions WHERE version = 14').run();
+      seed.prepare('DELETE FROM schema_versions WHERE version = 15').run();
       seed.prepare('DROP TABLE IF EXISTS reflections').run();
       seed.prepare('DROP TABLE IF EXISTS context_tool_runs').run();
       seed.prepare('DROP TABLE IF EXISTS context_resource_accesses').run();
+      seed.prepare('DROP TABLE IF EXISTS context_packs').run();
       seed.prepare('DROP TABLE IF EXISTS search_entities_fts').run();
       seed.prepare('DROP TABLE IF EXISTS search_relation_evidence_fts').run();
       seed.prepare('DROP TABLE IF EXISTS search_facts_fts').run();
@@ -765,11 +768,15 @@ test('migrate upgrades a synthetic v6 schema by adding v7/v8/v9 columns and tabl
       const versions = upgraded
         .prepare('SELECT max(version) AS v FROM schema_versions')
         .get() as { v: number };
-      assert.equal(versions.v, 14);
+      assert.equal(versions.v, 15);
       const telemetry = upgraded
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'context_tool_runs'")
         .get();
       assert.ok(telemetry, 'context_tool_runs table must exist after upgrade');
+      const contextPacks = upgraded
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'context_packs'")
+        .get();
+      assert.ok(contextPacks, 'context_packs table must exist after upgrade');
       const entitySearchFts = upgraded
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'search_entities_fts'")
         .get();

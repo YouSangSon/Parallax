@@ -379,7 +379,12 @@ MCP에서 노출하는 주요 tool은 아래와 같습니다.
 | `impact_trace_restore_branch` | abandoned branch의 state + tx archived를 복구합니다 (Phase 4 P3). |
 
 `impact_trace_context_for_change`는 report를 persist하지 않습니다. v0는 `impact-trace://entities/{entityId}`,
-`impact-trace://evidence/{evidenceId}`, `impact-trace://coverage/latest` resource link를 반환하고,
+`impact-trace://evidence/{evidenceId}`, `impact-trace://coverage/latest` resource link를 반환합니다.
+schema v15부터는 compact context pack 자체를 `context_packs`에 content-addressable row로 저장하고,
+첫 응답에 `contextPackId`, `resourceUri`, `resources.contextPack`, `reused=false`를 포함합니다.
+기본 `reusePolicy='auto'`에서 같은 index/input/content/git snapshot의 반복 호출은
+`kind='context_pack_reference'`, `reused=true`, `impact-trace://context-packs/{contextPackId}`만
+반환해 같은 context 배열을 재전송하지 않습니다. full pack이 다시 필요할 때만 해당 resource를 읽습니다.
 큰 graph는 JSON resource에서 `?limit=<1..500>&cursor=<nextCursor>`로 page 단위 확장이 가능합니다.
 `impact_trace_search_context` v1은 `k=10`, `includeEvidence=true`, `evidencePerEntity=2`,
 `snippetChars=240`을 기본으로 하며, keyword/relation/evidence stream을 RRF로 fuse합니다.
@@ -389,7 +394,7 @@ FTS5/BM25 projection을 우선 사용하고, relation evidence와 non-redacted a
 schema v11 persistent FTS projection으로 검색합니다. 기존 `fact_embeddings`가 있으면 semantic
 lane도 RRF에 fuse되며, sqlite-vec `vec_facts_<model>` table이 있으면 ANN을 먼저 쓰고 없거나
 실패하면 brute-force int8 dot product로 fallback합니다. path/literal query는 LIKE fallback을
-유지하고, pre-v14 read-only DB는 `schema_outdated`로 `impact-trace init`을 안내합니다.
+유지하고, pre-v15 read-only DB는 `schema_outdated`로 `impact-trace init`을 안내합니다.
 `impact_trace_explain_entity` v0는 `relationLimit=20`을 incoming/outgoing 각각에 적용하고,
 `evidenceLimit=10`, `snippetChars=300`으로 선택된 relation 전체의 evidence payload를 제한합니다.
 `impact_trace_context_telemetry` v0는 `context_tool_runs`, `context_resource_accesses`를 읽어

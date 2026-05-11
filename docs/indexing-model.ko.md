@@ -278,6 +278,12 @@ erDiagram
 - `impact_trace_search_context`는 read-only MCP 호출에서 temp FTS table을 만들지 않는다. natural-language entity query는 `search_entities_fts`를 읽고, path/literal query(`.`, `/`, `%`, `_`, `\\`, `:` 포함)는 기존 LIKE fallback을 유지한다.
 - semantic search stream은 `fact_embeddings`를 canonical source로 유지하되, sqlite-vec `vec_facts_<model>` table이 있으면 ANN을 먼저 사용하고 extension/table 부재 또는 SQL 실패 시 brute-force int8 dot product로 fallback한다.
 
+### Schema v15 추가 (persisted context pack reuse)
+
+- `context_packs` — `impact_trace_context_for_change`가 만든 compact context pack JSON을 저장한다. full impact report는 여전히 저장하지 않는다.
+- pack id는 contract version, latest index run, normalized changed files, effective budget/depth/fanout, changed-file content hashes, current git snapshot을 포함한 cache key에서 만든다. `contentHash`는 full compact pack JSON의 hash로 별도 기록한다.
+- 반복 호출은 기본 `reusePolicy='auto'`에서 full `context`/`actions`/`evidence` arrays를 다시 보내지 않고 `impact-trace://context-packs/{contextPackId}` reference를 반환한다. resource read는 `context_resource_accesses.resource_kind='context_pack'`으로 기록된다.
+
 ### 핵심 invariants
 
 - **Content-addressable fact id** = `SHA-256(entity_id, attribute, value_blob, op)`. 동일 (entity, attribute, value, op) 조합은 한 번만 저장.

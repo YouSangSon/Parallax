@@ -1,4 +1,5 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
 import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
@@ -9,11 +10,13 @@ import { abandonBranch, gcBranches, restoreBranch } from './branch_gc.js';
 import { doctorProject, redactDoctorReportForMcp } from './doctor.js';
 import { computeEmbedding, selectedEmbeddingModel } from './embeddings.js';
 import type { EmbeddingResult } from './embeddings.js';
+import { readGitSnapshot } from './git-snapshot.js';
 import { reflectFacts, repairReflections } from './reflection.js';
 import { profileEntity } from './profile.js';
-import { normalizeRepoRoot, redactSecrets } from './security.js';
+import { normalizeRepoRoot, redactSecrets, resolveInsideRoot } from './security.js';
 import {
   assertCurrentSchema,
+  contentHash,
   getRepoId,
   hasVecTable,
   isVectorExtensionLoaded,
@@ -27,6 +30,7 @@ import type {
   ContextPack,
   ContextPackEvidence,
   ContextPackItem,
+  ContextPackReusePolicy,
   EntityRef,
   Evidence,
   GraphExport,
@@ -94,6 +98,7 @@ export function createMcpServer(context: McpContext): McpServer {
       inputSchema: {
         changedFiles: z.array(z.string()).min(1),
         budget: z.enum(['brief', 'standard', 'deep']).optional(),
+        reusePolicy: z.enum(['auto', 'full', 'reference']).optional(),
         maxDepth: z.number().int().min(1).max(8).optional(),
         maxFanout: z.number().int().min(1).max(2_000).optional()
       },
@@ -105,9 +110,10 @@ export function createMcpServer(context: McpContext): McpServer {
         openWorldHint: false
       }
     },
-    async ({ changedFiles, budget, maxDepth, maxFanout }) => {
+    async ({ changedFiles, budget, reusePolicy, maxDepth, maxFanout }) => {
       try {
         const normalizedBudget = normalizeContextBudget(budget);
+        const normalizedReusePolicy = normalizeContextPackReusePolicy(reusePolicy);
         const preset = contextBudgetPreset(normalizedBudget);
         const { analyzeDiff } = await import('./analyzer.js');
         const report = await analyzeDiff({
@@ -119,12 +125,21 @@ export function createMcpServer(context: McpContext): McpServer {
           maxFanout: maxFanout ?? preset.maxFanout
         });
         const pack = buildContextPack(report, normalizedBudget);
-        return toolJsonResponse(context, 'impact_trace_context_for_change', pack, {
-          indexRunId: pack.indexRunId,
-          budget: pack.budget,
+        const persisted = persistContextPackForReuse(context, pack, {
           changedFiles: report.changedFiles,
-          resourceCount: pack.resources.entities.length + pack.resources.evidence.length + 1,
-          omitted: pack.omittedCounts
+          maxDepth: maxDepth ?? preset.maxDepth,
+          maxFanout: maxFanout ?? preset.maxFanout
+        });
+        const response =
+          normalizedReusePolicy === 'reference' || (normalizedReusePolicy === 'auto' && persisted.wasReused)
+            ? contextPackReference(persisted.pack, report.changedFiles, persisted.fullBytes)
+            : persisted.pack;
+        return toolJsonResponse(context, 'impact_trace_context_for_change', response, {
+          indexRunId: persisted.pack.indexRunId,
+          budget: persisted.pack.budget,
+          changedFiles: report.changedFiles,
+          resourceCount: resourceCountOf(response),
+          omitted: omittedCountsOf(response)
         });
       } catch (error) {
         return typedToolErrorResponse(error);
@@ -639,6 +654,28 @@ export function createMcpServer(context: McpContext): McpServer {
   );
 
   server.registerResource(
+    'impact_trace_context_packs',
+    new ResourceTemplate('impact-trace://context-packs/{contextPackId}', {
+      list: () => ({ resources: listContextPackResources(context) })
+    }),
+    {
+      title: 'Impact Trace Context Packs',
+      description: 'Persisted compact context packs keyed by content hash for repeated MCP reuse.',
+      mimeType: 'application/json'
+    },
+    async (uri, variables) => {
+      const contextPackId = decodeURIComponent(String(variables.contextPackId));
+      return telemetryJsonResource(
+        context,
+        uri.toString(),
+        'context_pack',
+        contextPackId,
+        readContextPack(context, contextPackId)
+      );
+    }
+  );
+
+  server.registerResource(
     'impact_trace_graphs',
     new ResourceTemplate('impact-trace://reports/{reportId}/graph/{format}', {
       list: () => ({ resources: listGraphResources(context) })
@@ -743,6 +780,10 @@ function normalizeContextBudget(value: unknown): ContextBudget {
   return value === 'brief' || value === 'standard' || value === 'deep' ? value : 'standard';
 }
 
+function normalizeContextPackReusePolicy(value: unknown): ContextPackReusePolicy {
+  return value === 'full' || value === 'reference' || value === 'auto' ? value : 'auto';
+}
+
 function contextBudgetPreset(budget: ContextBudget): ContextBudgetPreset {
   return contextBudgetPresets[budget];
 }
@@ -816,6 +857,173 @@ function buildContextPack(report: ImpactReport, budget: ContextBudget): ContextP
       evidenceTruncated: dedupeEvidenceForContext(report.evidence).length > preset.evidenceLimit
     },
     ...(report.warnings && report.warnings.length > 0 ? { warnings: report.warnings } : {})
+  };
+}
+
+type PersistedContextPack = ContextPack & {
+  contextPackId: string;
+  resourceUri: string;
+  contentHash: string;
+  reused: false;
+  resources: ContextPack['resources'] & { contextPack: string };
+};
+
+type ContextPackReference = {
+  version: 0;
+  kind: 'context_pack_reference';
+  contextPackId: string;
+  resourceUri: string;
+  contentHash: string;
+  reused: true;
+  budget: ContextBudget;
+  indexRunId: number;
+  summary: string[];
+  changedFiles: string[];
+  resources: {
+    contextPack: string;
+  };
+  omittedCounts: {
+    contextItems: number;
+    evidence: number;
+    actions: number;
+    fullContextPackBytes: number;
+  };
+};
+
+function persistContextPackForReuse(
+  context: McpContext,
+  pack: ContextPack,
+  request: {
+    changedFiles: string[];
+    maxDepth: number;
+    maxFanout: number;
+  }
+): { pack: PersistedContextPack; wasReused: boolean; fullBytes: number } {
+  const packJsonForHash = JSON.stringify(pack);
+  const hash = contentHash('context-pack-v0', packJsonForHash);
+  const requestHash = contextPackRequestHash(context, pack, request);
+  const contextPackId = `ctxpack:${requestHash.slice(0, 32)}`;
+  const resourceUri = contextPackResourceUri(contextPackId);
+  const persistedPack: PersistedContextPack = {
+    ...pack,
+    contextPackId,
+    resourceUri,
+    contentHash: hash,
+    reused: false,
+    resources: {
+      contextPack: resourceUri,
+      ...pack.resources
+    }
+  };
+  const packJson = JSON.stringify(persistedPack);
+  const fullBytes = byteLength(packJson);
+  const wasReused = withWritableDb(context, (db, repoId) => {
+    const now = new Date().toISOString();
+    const result = db
+      .prepare(`
+        INSERT OR IGNORE INTO context_packs (
+          id, repo_id, index_run_id, budget, request_hash, changed_files_json,
+          content_hash, pack_json, returned_bytes, resource_count, omitted_json,
+          created_at, last_accessed_at, hit_count
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+      `)
+      .run(
+        contextPackId,
+        repoId,
+        pack.indexRunId,
+        pack.budget,
+        requestHash,
+        JSON.stringify(sanitizeTelemetryPaths(request.changedFiles)),
+        hash,
+        packJson,
+        fullBytes,
+        resourceCountOf(persistedPack),
+        JSON.stringify(pack.omittedCounts),
+        now,
+        now
+      ) as { changes?: number };
+    if ((result.changes ?? 0) > 0) return false;
+    db
+      .prepare(`
+        UPDATE context_packs
+           SET last_accessed_at = ?,
+               hit_count = hit_count + 1
+         WHERE repo_id = ? AND id = ?
+      `)
+      .run(now, repoId, contextPackId);
+    return true;
+  }, { skipProjectionRepair: true });
+  return { pack: persistedPack, wasReused, fullBytes };
+}
+
+const CONTEXT_PACK_CACHE_VERSION = 'context-pack-cache-v1';
+
+function contextPackRequestHash(
+  context: McpContext,
+  pack: ContextPack,
+  request: {
+    changedFiles: string[];
+    maxDepth: number;
+    maxFanout: number;
+  }
+): string {
+  const repoRoot = normalizeRepoRoot(context.repoRoot);
+  const gitSnapshot = readGitSnapshot(repoRoot);
+  const fileHashes = request.changedFiles
+    .map((filePath) => ({
+      path: filePath,
+      hash: changedFileContentHash(repoRoot, filePath)
+    }))
+    .sort((left, right) => left.path.localeCompare(right.path));
+  return contentHash(
+    CONTEXT_PACK_CACHE_VERSION,
+    String(pack.indexRunId),
+    pack.budget,
+    String(request.maxDepth),
+    String(request.maxFanout),
+    JSON.stringify(fileHashes),
+    JSON.stringify(gitSnapshot)
+  );
+}
+
+function changedFileContentHash(repoRoot: string, filePath: string): string {
+  const absolutePath = resolveInsideRoot(repoRoot, filePath);
+  if (!existsSync(absolutePath)) return 'missing';
+  const hash = createHash('sha256');
+  hash.update(readFileSync(absolutePath));
+  return hash.digest('hex');
+}
+
+function contextPackReference(
+  pack: PersistedContextPack,
+  changedFiles: string[],
+  fullBytes: number
+): ContextPackReference {
+  return {
+    version: 0,
+    kind: 'context_pack_reference',
+    contextPackId: pack.contextPackId,
+    resourceUri: pack.resourceUri,
+    contentHash: pack.contentHash,
+    reused: true,
+    budget: pack.budget,
+    indexRunId: pack.indexRunId,
+    summary: [
+      `Reusing persisted context pack ${pack.contextPackId}.`,
+      `Fetch ${pack.resourceUri} only if the full compact context is needed.`,
+      `${pack.context.length} context item(s), ${pack.evidence.length} evidence item(s), and ${pack.actions.length} action(s) are stored in the resource.`
+    ],
+    changedFiles,
+    resources: {
+      contextPack: pack.resourceUri
+    },
+    omittedCounts: {
+      contextItems: pack.context.length,
+      evidence: pack.evidence.length,
+      actions: pack.actions.length,
+      fullContextPackBytes: fullBytes
+    }
   };
 }
 
@@ -926,6 +1134,10 @@ function entityResourceUri(entity: EntityRef): string {
 
 function evidenceResourceUri(evidenceId: string): string {
   return `impact-trace://evidence/${encodeURIComponent(evidenceId)}`;
+}
+
+function contextPackResourceUri(contextPackId: string): string {
+  return `impact-trace://context-packs/${encodeURIComponent(contextPackId)}`;
 }
 
 function persistedEvidenceResourceUri(evidence: Evidence): string | undefined {
@@ -1438,6 +1650,26 @@ function listEvidenceResources(context: McpContext): Array<{ uri: string; name: 
   });
 }
 
+function listContextPackResources(context: McpContext): Array<{ uri: string; name: string; mimeType: string }> {
+  return withReadOnlyDb(context, (db, repoId) => {
+    if (!mcpHasTable(db, 'context_packs')) return [];
+    const rows = db
+      .prepare(`
+        SELECT id, budget, index_run_id
+        FROM context_packs
+        WHERE repo_id = ?
+        ORDER BY last_accessed_at DESC, created_at DESC
+        LIMIT 50
+      `)
+      .all(repoId) as Array<{ id: string; budget: string; index_run_id: number }>;
+    return rows.map((row) => ({
+      uri: contextPackResourceUri(row.id),
+      name: `${row.budget} context pack for index run ${row.index_run_id}`,
+      mimeType: 'application/json'
+    }));
+  });
+}
+
 function listGraphResources(context: McpContext): Array<{ uri: string; name: string; mimeType: string }> {
   return withReadOnlyDb(context, (db, repoId) => {
     const rows = db
@@ -1539,6 +1771,21 @@ function readReport(context: McpContext, reportId: string): unknown {
     const row = db.prepare('SELECT json FROM reports WHERE repo_id = ? AND id = ?').get(repoId, reportId) as { json: string } | undefined;
     if (!row) throw typedMcpError(new Error(`impact report not found: ${reportId}`), 'resource_not_found');
     return JSON.parse(row.json) as unknown;
+  });
+}
+
+function readContextPack(context: McpContext, contextPackId: string): unknown {
+  return withReadOnlyDb(context, (db, repoId) => {
+    if (!mcpHasTable(db, 'context_packs')) {
+      throw typedMcpError(new Error(`impact context pack not found: ${contextPackId}`), 'resource_not_found');
+    }
+    const row = db
+      .prepare('SELECT pack_json FROM context_packs WHERE repo_id = ? AND id = ?')
+      .get(repoId, contextPackId) as { pack_json: string } | undefined;
+    if (!row) {
+      throw typedMcpError(new Error(`impact context pack not found: ${contextPackId}`), 'resource_not_found');
+    }
+    return JSON.parse(row.pack_json) as unknown;
   });
 }
 

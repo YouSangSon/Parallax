@@ -715,19 +715,29 @@ function asyncApiEventAddressAliases(
 ): Array<{ name: string; declarationLineIndex: number }> {
   const aliases: Array<{ name: string; declarationLineIndex: number }> = [];
   const quotedRoutePath = escapeRegExp(routePath);
-  const assignmentPattern = new RegExp(
-    `^\\s*(?:export\\s+)?(?:(?:const|let|var)\\s+)?([_$A-Za-z][_$0-9A-Za-z]*)\\s*(?::\\s*[^=]+)?=\\s*(["'\`])${quotedRoutePath}\\2\\s*(?:[;,}]|$)`
-  );
+  const assignmentPatterns = [
+    `^\\s*(?:export\\s+)?(?:(?:const|let|var)\\s+)?([_$A-Za-z][_$0-9A-Za-z]*)\\s*(?::\\s*[^=]+)?=\\s*(["'\`])${quotedRoutePath}\\2\\s*(?:[;,}]|$)`,
+    `^\\s*(?:(?:private|public|protected|internal)\\s+)*(?:const\\s+)?val\\s+([_$A-Za-z][_$0-9A-Za-z]*)\\s*(?::\\s*[^=]+)?=\\s*(["'\`])${quotedRoutePath}\\2\\s*(?:[;,}]|$)`,
+    `^\\s*(?:(?:private|public|protected|static|final)\\s+)*(?:String|java\\.lang\\.String)\\s+([_$A-Za-z][_$0-9A-Za-z]*)\\s*=\\s*(["'\`])${quotedRoutePath}\\2\\s*;?\\s*$`
+  ].map((pattern) => new RegExp(pattern));
 
   for (const [lineIndex, line] of lines.entries()) {
     if (isAsyncApiEventCallSyntax(line.masked)) continue;
-    const assignment = assignmentPattern.exec(line.masked);
+    const assignment = firstRegexMatch(assignmentPatterns, line.masked);
     if (assignment?.[1] !== undefined) {
       aliases.push({ name: assignment[1], declarationLineIndex: lineIndex });
     }
   }
 
   return uniqueAsyncApiEventAddressAliases(aliases);
+}
+
+function firstRegexMatch(patterns: RegExp[], value: string): RegExpExecArray | null {
+  for (const pattern of patterns) {
+    const match = pattern.exec(value);
+    if (match) return match;
+  }
+  return null;
 }
 
 function uniqueAsyncApiEventAddressAliases(

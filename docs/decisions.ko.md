@@ -865,7 +865,7 @@
 
 ## D-047: AsyncAPI event alias resolution stays same-file and literal-only
 
-**결정:** `workspace resolve-contracts`의 AsyncAPI consumer/producer resolver는 같은 파일 안의 standalone string alias만 event address로 인정한다. 지원 범위는 `const TOPIC = "orders.submitted"`와 `TOPIC = "orders.submitted"`처럼 정확한 quoted literal을 저장한 뒤, 같은 파일의 direction-bearing `subscribe`/`send`/listener/writer call site가 해당 identifier를 직접 인자로 쓰는 경우다. source file의 bare dotted expression, object property key, member assignment, string concatenation, template interpolation, wildcard, placeholder/default expression은 link로 승격하지 않는다.
+**결정:** `workspace resolve-contracts`의 AsyncAPI consumer/producer resolver는 같은 파일 안의 standalone string alias만 event address로 인정한다. 지원 범위는 TS/JS `const TOPIC = "orders.submitted"`, 일반 `TOPIC = "orders.submitted"`, Java `static final String TOPIC = "orders.submitted"`, Kotlin `const val TOPIC = "orders.submitted"`처럼 정확한 quoted literal을 저장한 뒤, 같은 파일의 direction-bearing `subscribe`/`send`/listener/writer call site가 해당 identifier를 직접 인자로 쓰는 경우다. source file의 bare dotted expression, object property key, member assignment, string concatenation, template interpolation, wildcard, placeholder/default expression은 link로 승격하지 않는다.
 
 **맥락:** D-039의 event topology v0는 exact event address literal이 call site line에 직접 있어야 했다. 실제 TS/JS/Java/Kotlin/Python/Go/Rust 코드에서는 topic을 같은 파일 상수로 빼는 경우가 흔하므로, Claude/Codex context pack이 event consumer/producer impact를 놓치지 않으려면 작은 alias depth가 필요하다. 다만 이 resolver는 아직 AST/data-flow가 아니므로 alias 범위를 넓히면 `orders.submitted.v2`, `${TOPIC}.*`, `consumer.topic = ...`, object default config 같은 computed/runtime 값까지 잘못 downstream impact로 연결할 위험이 크다.
 

@@ -20,6 +20,8 @@ type RelationRow = {
   targetName: string;
   targetLocationJson: string | null;
   snippet: string | null;
+  startLine: number | null;
+  startCol: number | null;
 };
 
 async function makeRepo(prefix: string): Promise<string> {
@@ -42,7 +44,9 @@ function relationRows(repoRoot: string, indexRunId: number): RelationRow[] {
            target.language_id AS targetLanguage,
            target.display_name AS targetName,
            target_version.location_json AS targetLocationJson,
-           evidence.snippet AS snippet
+           evidence.snippet AS snippet,
+           evidence.start_line AS startLine,
+           evidence.start_col AS startCol
          FROM relations relation
          INNER JOIN entities source ON source.id = relation.source_entity_id
          INNER JOIN entities target ON target.id = relation.target_entity_id
@@ -345,6 +349,147 @@ test('indexProject extracts Maven Gradle Go Cargo and pyproject dependencies', a
     row.targetName === 'fastapi' &&
     row.targetLanguage === 'python'
   ));
+});
+
+test('indexProject resolves Maven POM properties in package and dependency coordinates', async () => {
+  const repoRoot = await makeRepo('impact-trace-build-maven-properties-');
+  await mkdir(path.join(repoRoot, 'service'), { recursive: true });
+
+  await writeFile(
+    path.join(repoRoot, 'service/pom.xml'),
+    [
+      '<project>',
+      '  <modelVersion>4.0.0</modelVersion>',
+      '  <parent>',
+      '    <groupId>com.parent</groupId>',
+      '    <artifactId>platform-parent</artifactId>',
+      '    <version>${revision}</version>',
+      '  </parent>',
+      '  <properties>',
+      '    <company.group>com.acme</company.group>',
+      '    <revision>1.2.3</revision>',
+      '    <spring.boot.version>3.2.0</spring.boot.version>',
+      '    <internal.artifact>shared-api</internal.artifact>',
+      '  </properties>',
+      '  <build>',
+      '    <plugins>',
+      '      <plugin>',
+      '        <groupId>org.apache.maven.plugins</groupId>',
+      '        <artifactId>maven-checkstyle-plugin</artifactId>',
+      '        <dependencies>',
+      '          <dependency>',
+      '            <groupId>com.false</groupId>',
+      '            <artifactId>plugin-helper</artifactId>',
+      '            <version>1.0.0</version>',
+      '          </dependency>',
+      '        </dependencies>',
+      '      </plugin>',
+      '    </plugins>',
+      '  </build>',
+      '  <!-- dependency declarations below must keep evidence offsets stable -->',
+      '  <groupId>${company.group}</groupId>',
+      '  <artifactId>orders-service</artifactId>',
+      '  <version>${revision}</version>',
+      '  <dependencies>',
+      '    <dependency>',
+      '      <groupId>${project.groupId}</groupId>',
+      '      <artifactId>${internal.artifact}</artifactId>',
+      '      <version>${project.version}</version>',
+      '    </dependency>',
+      '    <dependency>',
+      '      <groupId>${project.parent.groupId}</groupId>',
+      '      <artifactId>parent-managed</artifactId>',
+      '      <version>${project.parent.version}</version>',
+      '    </dependency>',
+      '    <dependency>',
+      '      <groupId>org.springframework.boot</groupId>',
+      '      <artifactId>spring-boot-starter-web</artifactId>',
+      '      <version>${spring.boot.version}</version>',
+      '    </dependency>',
+      '  </dependencies>',
+      '  <profiles>',
+      '    <profile>',
+      '      <id>inactive</id>',
+      '      <properties>',
+      '        <company.group>com.false</company.group>',
+      '        <profile.dep.version>9.9.9</profile.dep.version>',
+      '      </properties>',
+      '      <dependencies>',
+      '        <dependency>',
+      '          <groupId>com.false</groupId>',
+      '          <artifactId>profile-only</artifactId>',
+      '          <version>${profile.dep.version}</version>',
+      '        </dependency>',
+      '      </dependencies>',
+      '    </profile>',
+      '  </profiles>',
+      '</project>',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const rows = relationRows(repoRoot, index.indexRunId);
+  const declaredPackage = rows.find((row) =>
+    row.kind === 'DECLARES' &&
+    row.sourcePath === 'service/pom.xml' &&
+    row.targetKind === 'package' &&
+    row.targetLanguage === 'maven' &&
+    row.targetName === 'com.acme:orders-service'
+  );
+  assert.ok(declaredPackage);
+  assert.equal(targetMetadata(declaredPackage).version, '1.2.3');
+  const internalDependency = rows.find((row) =>
+    row.kind === 'DEPENDS_ON' &&
+    row.sourceName === 'com.acme:orders-service' &&
+    row.targetKind === 'package' &&
+    row.targetLanguage === 'maven' &&
+    row.targetName === 'com.acme:shared-api'
+  );
+  assert.ok(internalDependency);
+  assert.equal(targetMetadata(internalDependency).version, '1.2.3');
+  assert.ok(internalDependency.snippet?.includes('<dependency>'));
+  assert.equal(internalDependency.startLine, 34);
+  assert.equal(internalDependency.startCol, 1);
+  const parentDependency = rows.find((row) =>
+    row.kind === 'DEPENDS_ON' &&
+    row.sourceName === 'com.acme:orders-service' &&
+    row.targetKind === 'package' &&
+    row.targetLanguage === 'maven' &&
+    row.targetName === 'com.parent:parent-managed'
+  );
+  assert.ok(parentDependency);
+  assert.equal(targetMetadata(parentDependency).version, '1.2.3');
+  assert.ok(parentDependency.snippet?.includes('<dependency>'));
+  assert.equal(parentDependency.startLine, 39);
+  assert.equal(parentDependency.startCol, 1);
+  const springDependency = rows.find((row) =>
+    row.kind === 'DEPENDS_ON' &&
+    row.sourceName === 'com.acme:orders-service' &&
+    row.targetKind === 'package' &&
+    row.targetLanguage === 'maven' &&
+    row.targetName === 'org.springframework.boot:spring-boot-starter-web'
+  );
+  assert.ok(springDependency);
+  assert.equal(targetMetadata(springDependency).version, '3.2.0');
+  assert.ok(springDependency.snippet?.includes('<dependency>'));
+  assert.equal(springDependency.startLine, 44);
+  assert.equal(springDependency.startCol, 1);
+  assert.equal(
+    rows.some((row) => row.kind === 'DEPENDS_ON' && row.targetName.includes('${')),
+    false
+  );
+  assert.equal(
+    rows.some((row) =>
+      row.kind === 'DEPENDS_ON' &&
+      row.sourceName === 'com.acme:orders-service' &&
+      (row.targetName === 'com.false:profile-only' ||
+        row.targetName === 'com.false:plugin-helper')
+    ),
+    false
+  );
 });
 
 test('indexProject resolves Gradle version catalog library and bundle aliases', async () => {

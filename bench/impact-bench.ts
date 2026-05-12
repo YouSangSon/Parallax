@@ -163,6 +163,8 @@ const expectedRelations: readonly ExpectedRelation[] = [
   packageDeclareRelation('package.json', '@acme/impact-bench', 'npm package declares bench workspace package'),
   packageManifestIdentityRelation('package.json', 'npm package identity depends on package manifest'),
   packageDependencyRelation('package.json', 'typescript', 'npm package depends on TypeScript package'),
+  packageManifestIdentityRelation('pom.xml', 'Maven package identity depends on build manifest'),
+  packageDependencyRelation('pom.xml', 'org.springframework.boot:spring-boot-starter-web', 'Maven property dependency depends on Spring Web package'),
   packageManifestIdentityRelation('app/build.gradle.kts', 'Gradle package identity depends on build manifest'),
   packageDependencyRelation('app/build.gradle.kts', 'org.springframework.boot:spring-boot-starter-web', 'Gradle version catalog alias depends on Spring Web package'),
   endpointRelation('src/main/java/com/example/UserController.java', 'GET /api/users', 'Spring Java GET endpoint'),
@@ -696,6 +698,27 @@ async function writeFixture(repoRoot: string): Promise<void> {
       typescript: '^5.9.3'
     }
   }, null, 2));
+  await writeFile(path.join(repoRoot, 'pom.xml'), [
+    '<project>',
+    '  <modelVersion>4.0.0</modelVersion>',
+    '  <properties>',
+    '    <acme.group>com.acme</acme.group>',
+    '    <revision>1.0.0</revision>',
+    '    <spring.boot.version>3.2.0</spring.boot.version>',
+    '  </properties>',
+    '  <groupId>${acme.group}</groupId>',
+    '  <artifactId>impact-bench-service</artifactId>',
+    '  <version>${revision}</version>',
+    '  <dependencies>',
+    '    <dependency>',
+    '      <groupId>org.springframework.boot</groupId>',
+    '      <artifactId>spring-boot-starter-web</artifactId>',
+    '      <version>${spring.boot.version}</version>',
+    '    </dependency>',
+    '  </dependencies>',
+    '</project>',
+    ''
+  ].join('\n'));
   await writeFile(path.join(repoRoot, 'tsconfig.json'), JSON.stringify({
     compilerOptions: {
       baseUrl: '.',

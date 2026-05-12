@@ -60,6 +60,7 @@
 | [D-048](#d-048-openapi-http-route-alias-resolution-is-call-site-gated) | OpenAPI HTTP route alias resolution is call-site gated | P0/P1 | 2026-05-12 |
 | [D-049](#d-049-gradle-version-catalog-resolution-stays-manifest-only) | Gradle version catalog resolution stays manifest-only | P1/P2 | 2026-05-12 |
 | [D-050](#d-050-maven-property-interpolation-stays-pom-local-in-v0) | Maven property interpolation stays POM-local in v0 | P1/P2 | 2026-05-12 |
+| [D-051](#d-051-go-workspace-and-replace-resolution-stays-local-path-only-in-v0) | Go workspace and replace resolution stays local-path only in v0 | P1/P2 | 2026-05-12 |
 
 ---
 
@@ -934,6 +935,23 @@
 **결과/위험:** 같은 POM 안에서 선언된 property와 project/parent alias는 실제 package 좌표와 version metadata로 저장된다. v0는 deterministic XML subset 치환이므로 multi-file parent inheritance, active profile, property precedence, dependencyManagement import BOM, plugin-generated model은 후속 package/build depth에서 다룬다.
 
 **관련 commit:** `feat(adapters): Maven property resolver 추가`
+
+---
+
+## D-051: Go workspace and replace resolution stays local-path only in v0
+
+**결정:** build-system/package resolver는 `go.work`의 `use` 디렉터리를 해당 `go.mod` 파일에 `CONFIGURES` relation으로 연결하고, `go.mod`의 `replace <module> => ./local-path` 또는 `../local-path`를 repo 안의 실제 Go module package alias로 등록한다. 지원 범위는 index된 repo 내부 local path replacement와 workspace use directory뿐이며, `go` command 실행, module download, `go env`, vendor mode, remote replacement, absolute path replacement, transitive module graph 해석은 하지 않는다.
+
+**맥락:** Go monorepo는 `go.work`로 여러 module을 묶고, 개발 중인 shared module을 `replace github.com/acme/shared => ../shared`처럼 로컬 경로로 가리키는 경우가 많다. v0가 `require github.com/acme/shared`를 그대로 외부 package로 저장하면 실제 변경 impact는 repo 안 shared module인데 agent/UI에는 외부 dependency처럼 보인다. 반대로 `go list`나 module download를 실행하면 네트워크, cache, environment 의존성이 생긴다.
+
+**대안:**
+- `go list -m -json all` 실행 — 실제 module graph에 가깝지만 local-first/offline/no execution 경계와 맞지 않아 거부한다.
+- `replace`를 무시하고 `require`만 저장 — 구현은 단순하지만 local module impact를 외부 package로 오분류한다.
+- go.work 전체 build list와 transitive dependency graph까지 구현 — 필요하지만 lockfile/transitive package phase로 분리한다.
+
+**결과/위험:** repo 내부 local replacement는 실제 target `go.mod` package로 연결되고, `go.work` 변경은 포함 module manifests까지 전파된다. v0는 line-oriented parser라 quoted/complex module directive 일부와 multi-repo absolute path, remote replace, `go.work.sum`, build tags, vendor/module cache semantics는 후속 package/build depth에서 다룬다.
+
+**관련 commit:** `feat(adapters): Go workspace resolver 추가`
 
 ---
 

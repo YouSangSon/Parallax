@@ -29,7 +29,7 @@ test('ImpactBench runner writes deterministic report shape', async () => {
     assert.equal(report.fixtureId, 'phase6b-multilanguage-v0');
     assert.equal(report.outputPath, '.impact-trace/bench/impact-bench-report.json');
     assert.equal(report.summary.passed, true);
-    assert.equal(report.summary.expectedRelations, 53);
+    assert.equal(report.summary.expectedRelations, 58);
     assert.equal(report.summary.expectedRelations, report.summary.matchedRelations);
     assert.equal(report.summary.unexpectedRelations, 0);
     assert.equal(report.scores.affectedFileRecall, 1);
@@ -85,6 +85,9 @@ test('ImpactBench runner writes deterministic report shape', async () => {
       'Spring controller implements OpenAPI contract',
       'Maven property dependency depends on Spring Web package',
       'Gradle version catalog alias depends on Spring Web package',
+      'Go workspace includes service module',
+      'Go workspace includes shared module',
+      'Go replace dependency depends on local shared module',
       'Python class declares Helper',
       'Python function declares helper',
       'Go function declares Add',

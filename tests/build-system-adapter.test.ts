@@ -18,6 +18,7 @@ type RelationRow = {
   targetPath: string | null;
   targetLanguage: string | null;
   targetName: string;
+  targetLocationJson: string | null;
   snippet: string | null;
 };
 
@@ -40,10 +41,14 @@ function relationRows(repoRoot: string, indexRunId: number): RelationRow[] {
            target.path AS targetPath,
            target.language_id AS targetLanguage,
            target.display_name AS targetName,
+           target_version.location_json AS targetLocationJson,
            evidence.snippet AS snippet
          FROM relations relation
          INNER JOIN entities source ON source.id = relation.source_entity_id
          INNER JOIN entities target ON target.id = relation.target_entity_id
+         LEFT JOIN entity_versions target_version
+           ON target_version.entity_id = target.id
+          AND target_version.index_run_id = relation.index_run_id
          LEFT JOIN relation_evidence evidence ON evidence.relation_id = relation.id
          WHERE relation.index_run_id = ?
          ORDER BY relation.kind, source.display_name, target.display_name`
@@ -52,6 +57,12 @@ function relationRows(repoRoot: string, indexRunId: number): RelationRow[] {
   } finally {
     db.close();
   }
+}
+
+function targetMetadata(row: RelationRow): Readonly<Record<string, unknown>> {
+  if (!row.targetLocationJson) return {};
+  const parsed = JSON.parse(row.targetLocationJson) as { metadata?: Readonly<Record<string, unknown>> };
+  return parsed.metadata ?? {};
 }
 
 test('indexProject extracts npm workspace package graph', async () => {
@@ -334,6 +345,185 @@ test('indexProject extracts Maven Gradle Go Cargo and pyproject dependencies', a
     row.targetName === 'fastapi' &&
     row.targetLanguage === 'python'
   ));
+});
+
+test('indexProject resolves Gradle version catalog library and bundle aliases', async () => {
+  const repoRoot = await makeRepo('impact-trace-build-gradle-catalog-');
+  await mkdir(path.join(repoRoot, 'app'), { recursive: true });
+  await mkdir(path.join(repoRoot, 'gradle'), { recursive: true });
+  await mkdir(path.join(repoRoot, 'services/orders/gradle'), { recursive: true });
+
+  await writeFile(
+    path.join(repoRoot, 'gradle/libs.versions.toml'),
+    [
+      '[versions]',
+      'springBoot = "3.2.0"',
+      'jackson = "2.16.0"',
+      'acme = "1.1.0"',
+      '',
+      '[libraries]',
+      'spring-boot-starter-web = { module = "org.springframework.boot:spring-boot-starter-web", version.ref = "springBoot" }',
+      'spring-boot-dependencies = { module = "org.springframework.boot:spring-boot-dependencies", version.ref = "springBoot" }',
+      'jackson-kotlin = { group = "com.fasterxml.jackson.module", name = "jackson-module-kotlin", version.ref = "jackson" }',
+      'acme-bom = { group = "com.acme", name = "platform-bom", version.ref = "acme" }',
+      'junit-jupiter = "org.junit.jupiter:junit-jupiter:5.10.1"',
+      'shared-lib = "com.root:shared-lib:1.0.0"',
+      'comment-only = "com.false:comment-only:1.0.0"',
+      'block-only = "com.false:block-only:1.0.0"',
+      'string-only = "com.false:string-only:1.0.0"',
+      '',
+      '[bundles]',
+      'web = ["spring-boot-starter-web", "jackson-kotlin"]',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(repoRoot, 'settings.gradle.kts'),
+    [
+      'rootProject.name = "platform"',
+      'include(":app")',
+      'includeBuild("services/orders")',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(repoRoot, 'app/build.gradle.kts'),
+    [
+      'plugins { java }',
+      'dependencies {',
+      '  implementation(libs.spring.boot.starter.web)',
+      '  implementation(platform(libs.spring.boot.dependencies))',
+      '  api(enforcedPlatform(libs.acme.bom))',
+      '  implementation(libs.bundles.web)',
+      '  testImplementation(libs.junit.jupiter)',
+      '  runtimeOnly(libs.shared.lib)',
+      '  // runtimeOnly(libs.comment.only)',
+      '  /* runtimeOnly(libs.block.only) */',
+      '  implementation("libs.string.only")',
+      '}',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(repoRoot, 'services/orders/gradle/libs.versions.toml'),
+    [
+      '[libraries]',
+      'shared-lib = "com.orders:shared-lib:2.0.0"',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(repoRoot, 'services/orders/build.gradle.kts'),
+    [
+      'plugins { java }',
+      'dependencies {',
+      '  runtimeOnly(libs.shared.lib)',
+      '}',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const rows = relationRows(repoRoot, index.indexRunId);
+  assert.ok(rows.some((row) =>
+    row.kind === 'DECLARES' &&
+    row.sourceKind === 'config' &&
+    row.sourcePath === 'app/build.gradle.kts' &&
+    row.targetKind === 'package' &&
+    row.targetName === ':app'
+  ));
+  const springWebDependency = rows.find((row) =>
+    row.kind === 'DEPENDS_ON' &&
+    row.sourceName === ':app' &&
+    row.targetKind === 'package' &&
+    row.targetLanguage === 'gradle' &&
+    row.targetName === 'org.springframework.boot:spring-boot-starter-web' &&
+    row.snippet?.includes('implementation(libs.spring.boot.starter.web)')
+  );
+  assert.ok(springWebDependency);
+  assert.equal(targetMetadata(springWebDependency).version, '3.2.0');
+  const springBomDependency = rows.find((row) =>
+    row.kind === 'DEPENDS_ON' &&
+    row.sourceName === ':app' &&
+    row.targetKind === 'package' &&
+    row.targetLanguage === 'gradle' &&
+    row.targetName === 'org.springframework.boot:spring-boot-dependencies' &&
+    row.snippet?.includes('implementation(platform(libs.spring.boot.dependencies))')
+  );
+  assert.ok(springBomDependency);
+  assert.equal(targetMetadata(springBomDependency).version, '3.2.0');
+  const acmeBomDependency = rows.find((row) =>
+    row.kind === 'DEPENDS_ON' &&
+    row.sourceName === ':app' &&
+    row.targetKind === 'package' &&
+    row.targetLanguage === 'gradle' &&
+    row.targetName === 'com.acme:platform-bom' &&
+    row.snippet?.includes('api(enforcedPlatform(libs.acme.bom))')
+  );
+  assert.ok(acmeBomDependency);
+  assert.equal(targetMetadata(acmeBomDependency).version, '1.1.0');
+  assert.ok(rows.some((row) =>
+    row.kind === 'DEPENDS_ON' &&
+    row.sourceName === ':app' &&
+    row.targetKind === 'package' &&
+    row.targetLanguage === 'gradle' &&
+    row.targetName === 'com.fasterxml.jackson.module:jackson-module-kotlin' &&
+    row.snippet?.includes('implementation(libs.bundles.web)')
+  ));
+  const junitDependency = rows.find((row) =>
+    row.kind === 'DEPENDS_ON' &&
+    row.sourceName === ':app' &&
+    row.targetKind === 'package' &&
+    row.targetLanguage === 'gradle' &&
+    row.targetName === 'org.junit.jupiter:junit-jupiter' &&
+    row.snippet?.includes('testImplementation(libs.junit.jupiter)')
+  );
+  assert.ok(junitDependency);
+  assert.equal(targetMetadata(junitDependency).version, '5.10.1');
+  assert.ok(rows.some((row) =>
+    row.kind === 'DEPENDS_ON' &&
+    row.sourceName === ':app' &&
+    row.targetKind === 'package' &&
+    row.targetLanguage === 'gradle' &&
+    row.targetName === 'com.root:shared-lib' &&
+    row.snippet?.includes('runtimeOnly(libs.shared.lib)')
+  ));
+  assert.ok(rows.some((row) =>
+    row.kind === 'DEPENDS_ON' &&
+    row.sourceName === ':services:orders' &&
+    row.targetKind === 'package' &&
+    row.targetLanguage === 'gradle' &&
+    row.targetName === 'com.orders:shared-lib' &&
+    row.snippet?.includes('runtimeOnly(libs.shared.lib)')
+  ));
+  assert.equal(
+    rows.some((row) =>
+      row.kind === 'DEPENDS_ON' &&
+      row.sourceName === ':services:orders' &&
+      row.targetName === 'com.root:shared-lib'
+    ),
+    false
+  );
+  assert.equal(
+    rows.some((row) =>
+      row.kind === 'DEPENDS_ON' &&
+      row.sourceName === ':app' &&
+      (row.targetName === 'com.false:comment-only' ||
+        row.targetName === 'com.false:block-only' ||
+        row.targetName === 'com.false:string-only')
+    ),
+    false
+  );
+  assert.equal(
+    rows.some((row) =>
+      row.kind === 'DEPENDS_ON' &&
+      row.sourceName === ':app' &&
+      row.targetName.startsWith('libs.')
+    ),
+    false
+  );
 });
 
 test('indexProject reports malformed build manifests without failing the index run', async () => {

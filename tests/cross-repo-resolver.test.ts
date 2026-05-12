@@ -1216,6 +1216,94 @@ test('resolveCrossRepoContracts ignores AsyncAPI examples and partial topic matc
   assert.equal(result.links.length, 0);
 });
 
+test('resolveCrossRepoContracts links AsyncAPI event consumers through same-file topic aliases', async () => {
+  const consumerRoot = await makeRepo('impact-trace-asyncapi-consumer-alias-');
+  const providerRoot = await makeRepo('impact-trace-asyncapi-provider-alias-');
+  const consumerReal = realpathSync(consumerRoot);
+  const providerReal = realpathSync(providerRoot);
+  await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
+
+  await writeFile(
+    path.join(consumerRoot, 'src/orders-consumer.ts'),
+    [
+      'const ORDER_TOPIC = "orders.submitted";',
+      'export function startOrdersConsumer(bus: { subscribe(topic: string, handler: () => void): void }) {',
+      '  bus.subscribe(ORDER_TOPIC, () => undefined);',
+      '}',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(providerRoot, 'contracts/asyncapi.yaml'),
+    [
+      'asyncapi: 3.0.0',
+      'info:',
+      '  title: Orders events',
+      '  version: 1.0.0',
+      'channels:',
+      '  orderSubmitted:',
+      '    address: orders.submitted',
+      '    messages:',
+      '      OrderSubmitted:',
+      '        payload:',
+      '          type: object',
+      'operations:',
+      '  sendOrderSubmitted:',
+      '    action: send',
+      '    channel:',
+      '      $ref: "#/channels/orderSubmitted"',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'orders-events'
+  });
+
+  const result = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+
+  assert.equal(result.links.length, 1);
+  assert.deepEqual(result.links[0], {
+    kind: 'CONSUMES_HTTP_ENDPOINT',
+    confidence: 'heuristic',
+    consumerService: 'web',
+    consumerRepoPath: consumerReal,
+    consumerPath: 'src/orders-consumer.ts',
+    providerService: 'orders-events',
+    providerRepoPath: providerReal,
+    providerContractPath: 'contracts/asyncapi.yaml',
+    providerEndpointId: 'endpoint:asyncapi:SEND orders.submitted',
+    httpMethod: 'SEND',
+    routePath: 'orders.submitted',
+    eventTopology: {
+      providerAction: 'SEND',
+      counterpartyRole: 'consumer',
+      pattern: 'subscriber-call'
+    }
+  });
+
+  const db = new DatabaseSync(databasePath(consumerRoot), { readOnly: true });
+  try {
+    const row = db
+      .prepare(
+        `SELECT provenance
+         FROM cross_repo_links`
+      )
+      .get() as { provenance: string };
+    assert.equal(JSON.parse(row.provenance).evidence.snippet, 'bus.subscribe(ORDER_TOPIC, () => undefined);');
+  } finally {
+    db.close();
+  }
+});
+
 test('resolveCrossRepoContracts links AsyncAPI SEND operations to Spring Kafka listeners', async () => {
   const consumerRoot = await makeRepo('impact-trace-asyncapi-spring-consumer-');
   const providerRoot = await makeRepo('impact-trace-asyncapi-spring-provider-');
@@ -1368,6 +1456,157 @@ test('resolveCrossRepoContracts links AsyncAPI RECEIVE operations to event produ
   });
 });
 
+test('resolveCrossRepoContracts links AsyncAPI RECEIVE operations through same-file producer aliases', async () => {
+  const consumerRoot = await makeRepo('impact-trace-asyncapi-receive-producer-alias-');
+  const providerRoot = await makeRepo('impact-trace-asyncapi-receive-provider-alias-');
+  const consumerReal = realpathSync(consumerRoot);
+  const providerReal = realpathSync(providerRoot);
+  await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
+
+  await writeFile(
+    path.join(consumerRoot, 'src/orders-producer.ts'),
+    [
+      'const ORDER_COMMAND = "orders.commanded";',
+      'export async function publishOrderCommand(producer: { send(input: unknown): Promise<void> }) {',
+      '  await producer.send({ topic: ORDER_COMMAND, messages: [] });',
+      '}',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(providerRoot, 'contracts/asyncapi.yaml'),
+    [
+      'asyncapi: 3.0.0',
+      'info:',
+      '  title: Orders events',
+      '  version: 1.0.0',
+      'channels:',
+      '  orderCommanded:',
+      '    address: orders.commanded',
+      '    messages:',
+      '      OrderCommanded:',
+      '        payload:',
+      '          type: object',
+      'operations:',
+      '  receiveOrderCommanded:',
+      '    action: receive',
+      '    channel:',
+      '      $ref: "#/channels/orderCommanded"',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'checkout' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'orders-events'
+  });
+
+  const result = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+
+  assert.equal(result.links.length, 1);
+  assert.deepEqual(result.links[0], {
+    kind: 'CONSUMES_HTTP_ENDPOINT',
+    confidence: 'heuristic',
+    consumerService: 'checkout',
+    consumerRepoPath: consumerReal,
+    consumerPath: 'src/orders-producer.ts',
+    providerService: 'orders-events',
+    providerRepoPath: providerReal,
+    providerContractPath: 'contracts/asyncapi.yaml',
+    providerEndpointId: 'endpoint:asyncapi:RECEIVE orders.commanded',
+    httpMethod: 'RECEIVE',
+    routePath: 'orders.commanded',
+    eventTopology: {
+      providerAction: 'RECEIVE',
+      counterpartyRole: 'producer',
+      pattern: 'producer-send'
+    }
+  });
+});
+
+test('resolveCrossRepoContracts links AsyncAPI event consumers through assignment aliases', async () => {
+  const consumerRoot = await makeRepo('impact-trace-asyncapi-assignment-alias-');
+  const providerRoot = await makeRepo('impact-trace-asyncapi-assignment-provider-');
+  const consumerReal = realpathSync(consumerRoot);
+  const providerReal = realpathSync(providerRoot);
+  await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
+
+  await writeFile(
+    path.join(consumerRoot, 'src/orders-consumer.ts'),
+    [
+      'let ORDER_TOPIC: string;',
+      'ORDER_TOPIC = "orders.submitted";',
+      'export function startOrdersConsumer(bus: { subscribe(topic: string, handler: () => void): void }) {',
+      '  bus.subscribe(ORDER_TOPIC, () => undefined);',
+      '}',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(providerRoot, 'contracts/asyncapi.yaml'),
+    [
+      'asyncapi: 3.0.0',
+      'info:',
+      '  title: Orders events',
+      '  version: 1.0.0',
+      'channels:',
+      '  orderSubmitted:',
+      '    address: orders.submitted',
+      '    messages:',
+      '      OrderSubmitted:',
+      '        payload:',
+      '          type: object',
+      'operations:',
+      '  sendOrderSubmitted:',
+      '    action: send',
+      '    channel:',
+      '      $ref: "#/channels/orderSubmitted"',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'orders-events'
+  });
+
+  const result = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+
+  assert.equal(result.links.length, 1);
+  assert.deepEqual(result.links[0], {
+    kind: 'CONSUMES_HTTP_ENDPOINT',
+    confidence: 'heuristic',
+    consumerService: 'web',
+    consumerRepoPath: consumerReal,
+    consumerPath: 'src/orders-consumer.ts',
+    providerService: 'orders-events',
+    providerRepoPath: providerReal,
+    providerContractPath: 'contracts/asyncapi.yaml',
+    providerEndpointId: 'endpoint:asyncapi:SEND orders.submitted',
+    httpMethod: 'SEND',
+    routePath: 'orders.submitted',
+    eventTopology: {
+      providerAction: 'SEND',
+      counterpartyRole: 'consumer',
+      pattern: 'subscriber-call'
+    }
+  });
+});
+
 test('resolveCrossRepoContracts does not link AsyncAPI SEND operations to producer-only call sites', async () => {
   const consumerRoot = await makeRepo('impact-trace-asyncapi-producer-false-');
   const providerRoot = await makeRepo('impact-trace-asyncapi-producer-provider-');
@@ -1410,6 +1649,554 @@ test('resolveCrossRepoContracts does not link AsyncAPI SEND operations to produc
   await indexProject({ repoRoot: consumerRoot });
   await indexProject({ repoRoot: providerRoot });
   initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'checkout' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'orders-events'
+  });
+
+  const result = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+
+  assert.equal(result.links.length, 0);
+});
+
+test('resolveCrossRepoContracts ignores AsyncAPI alias evidence in comments', async () => {
+  const consumerRoot = await makeRepo('impact-trace-asyncapi-alias-comment-false-');
+  const providerRoot = await makeRepo('impact-trace-asyncapi-alias-comment-provider-');
+  await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
+
+  await writeFile(
+    path.join(consumerRoot, 'src/orders-consumer.ts'),
+    [
+      '// const ORDER_TOPIC = "orders.submitted";',
+      '/* bus.subscribe(ORDER_TOPIC, () => undefined); */',
+      'const localOnly = true;',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(providerRoot, 'contracts/asyncapi.yaml'),
+    [
+      'asyncapi: 3.0.0',
+      'info:',
+      '  title: Orders events',
+      '  version: 1.0.0',
+      'channels:',
+      '  orderSubmitted:',
+      '    address: orders.submitted',
+      '    messages:',
+      '      OrderSubmitted:',
+      '        payload:',
+      '          type: object',
+      'operations:',
+      '  sendOrderSubmitted:',
+      '    action: send',
+      '    channel:',
+      '      $ref: "#/channels/orderSubmitted"',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'orders-events'
+  });
+
+  const result = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+
+  assert.equal(result.links.length, 0);
+});
+
+test('resolveCrossRepoContracts ignores AsyncAPI partial literal aliases', async () => {
+  const consumerRoot = await makeRepo('impact-trace-asyncapi-partial-alias-false-');
+  const providerRoot = await makeRepo('impact-trace-asyncapi-partial-alias-provider-');
+  await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
+
+  await writeFile(
+    path.join(consumerRoot, 'src/orders-consumer.ts'),
+    [
+      'const ORDER_TOPIC = "orders.submitted.v2";',
+      'export function startOrdersConsumer(bus: { subscribe(topic: string, handler: () => void): void }) {',
+      '  bus.subscribe(ORDER_TOPIC, () => undefined);',
+      '}',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(providerRoot, 'contracts/asyncapi.yaml'),
+    [
+      'asyncapi: 3.0.0',
+      'info:',
+      '  title: Orders events',
+      '  version: 1.0.0',
+      'channels:',
+      '  orderSubmitted:',
+      '    address: orders.submitted',
+      '    messages:',
+      '      OrderSubmitted:',
+      '        payload:',
+      '          type: object',
+      'operations:',
+      '  sendOrderSubmitted:',
+      '    action: send',
+      '    channel:',
+      '      $ref: "#/channels/orderSubmitted"',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'orders-events'
+  });
+
+  const result = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+
+  assert.equal(result.links.length, 0);
+});
+
+test('resolveCrossRepoContracts ignores AsyncAPI direct concatenated event literals', async () => {
+  const consumerRoot = await makeRepo('impact-trace-asyncapi-direct-concat-false-');
+  const providerRoot = await makeRepo('impact-trace-asyncapi-direct-concat-provider-');
+  await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
+
+  await writeFile(
+    path.join(consumerRoot, 'src/orders-consumer.ts'),
+    [
+      'export function startOrdersConsumer(bus: { subscribe(topic: string, handler: () => void): void }) {',
+      '  bus.subscribe("orders.submitted" + ".v2", () => undefined);',
+      '}',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(providerRoot, 'contracts/asyncapi.yaml'),
+    [
+      'asyncapi: 3.0.0',
+      'info:',
+      '  title: Orders events',
+      '  version: 1.0.0',
+      'channels:',
+      '  orderSubmitted:',
+      '    address: orders.submitted',
+      '    messages:',
+      '      OrderSubmitted:',
+      '        payload:',
+      '          type: object',
+      'operations:',
+      '  sendOrderSubmitted:',
+      '    action: send',
+      '    channel:',
+      '      $ref: "#/channels/orderSubmitted"',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'orders-events'
+  });
+
+  const result = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+
+  assert.equal(result.links.length, 0);
+});
+
+test('resolveCrossRepoContracts ignores AsyncAPI source member and grouped computed literals', async () => {
+  const consumerRoot = await makeRepo('impact-trace-asyncapi-source-expression-false-');
+  const providerRoot = await makeRepo('impact-trace-asyncapi-source-expression-provider-');
+  await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
+
+  await writeFile(
+    path.join(consumerRoot, 'src/orders-consumer.ts'),
+    [
+      'export function startOrdersConsumer(bus: { subscribe(topic: string, handler: () => void): void }, orders: { submitted: string }) {',
+      '  bus.subscribe(orders.submitted, () => undefined);',
+      '  bus.subscribe(prefix + "orders.submitted", () => undefined);',
+      '  bus.subscribe(getTopic() ?? "orders.submitted", () => undefined);',
+      '  bus.subscribe(("orders.submitted") + ".v2", () => undefined);',
+      '  bus.subscribe("orders.submitted" as string + ".v2", () => undefined);',
+      '}',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(providerRoot, 'contracts/asyncapi.yaml'),
+    [
+      'asyncapi: 3.0.0',
+      'info:',
+      '  title: Orders events',
+      '  version: 1.0.0',
+      'channels:',
+      '  orderSubmitted:',
+      '    address: orders.submitted',
+      '    messages:',
+      '      OrderSubmitted:',
+      '        payload:',
+      '          type: object',
+      'operations:',
+      '  sendOrderSubmitted:',
+      '    action: send',
+      '    channel:',
+      '      $ref: "#/channels/orderSubmitted"',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'orders-events'
+  });
+
+  const result = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+
+  assert.equal(result.links.length, 0);
+});
+
+test('resolveCrossRepoContracts does not use AsyncAPI alias declarations as call-site evidence', async () => {
+  const consumerRoot = await makeRepo('impact-trace-asyncapi-alias-declaration-false-');
+  const providerRoot = await makeRepo('impact-trace-asyncapi-alias-declaration-provider-');
+  await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
+
+  await writeFile(
+    path.join(consumerRoot, 'src/orders-consumer.ts'),
+    [
+      'const consumer = "orders.submitted";',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(providerRoot, 'contracts/asyncapi.yaml'),
+    [
+      'asyncapi: 3.0.0',
+      'info:',
+      '  title: Orders events',
+      '  version: 1.0.0',
+      'channels:',
+      '  orderSubmitted:',
+      '    address: orders.submitted',
+      '    messages:',
+      '      OrderSubmitted:',
+      '        payload:',
+      '          type: object',
+      'operations:',
+      '  sendOrderSubmitted:',
+      '    action: send',
+      '    channel:',
+      '      $ref: "#/channels/orderSubmitted"',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'orders-events'
+  });
+
+  const result = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+
+  assert.equal(result.links.length, 0);
+});
+
+test('resolveCrossRepoContracts does not use AsyncAPI property alias declarations as exact evidence', async () => {
+  const consumerRoot = await makeRepo('impact-trace-asyncapi-property-alias-declaration-false-');
+  const providerRoot = await makeRepo('impact-trace-asyncapi-property-alias-declaration-provider-');
+  await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
+
+  await writeFile(
+    path.join(consumerRoot, 'src/orders-consumer.ts'),
+    [
+      'const consumer = { topic: "orders.submitted" };',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(providerRoot, 'contracts/asyncapi.yaml'),
+    [
+      'asyncapi: 3.0.0',
+      'info:',
+      '  title: Orders events',
+      '  version: 1.0.0',
+      'channels:',
+      '  orderSubmitted:',
+      '    address: orders.submitted',
+      '    messages:',
+      '      OrderSubmitted:',
+      '        payload:',
+      '          type: object',
+      'operations:',
+      '  sendOrderSubmitted:',
+      '    action: send',
+      '    channel:',
+      '      $ref: "#/channels/orderSubmitted"',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'orders-events'
+  });
+
+  const result = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+
+  assert.equal(result.links.length, 0);
+});
+
+test('resolveCrossRepoContracts does not treat AsyncAPI object property keys as bare aliases', async () => {
+  const consumerRoot = await makeRepo('impact-trace-asyncapi-property-bare-alias-false-');
+  const providerRoot = await makeRepo('impact-trace-asyncapi-property-bare-alias-provider-');
+  await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
+
+  await writeFile(
+    path.join(consumerRoot, 'src/orders-consumer.ts'),
+    [
+      'const defaults = { topic: "orders.submitted" };',
+      'export function startOrdersConsumer(bus: { subscribe(topic: string, handler: () => void): void }, topic: string) {',
+      '  bus.subscribe(topic, () => undefined);',
+      '  return defaults;',
+      '}',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(providerRoot, 'contracts/asyncapi.yaml'),
+    [
+      'asyncapi: 3.0.0',
+      'info:',
+      '  title: Orders events',
+      '  version: 1.0.0',
+      'channels:',
+      '  orderSubmitted:',
+      '    address: orders.submitted',
+      '    messages:',
+      '      OrderSubmitted:',
+      '        payload:',
+      '          type: object',
+      'operations:',
+      '  sendOrderSubmitted:',
+      '    action: send',
+      '    channel:',
+      '      $ref: "#/channels/orderSubmitted"',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'orders-events'
+  });
+
+  const result = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+
+  assert.equal(result.links.length, 0);
+});
+
+test('resolveCrossRepoContracts does not treat AsyncAPI member assignments as bare aliases', async () => {
+  const consumerRoot = await makeRepo('impact-trace-asyncapi-member-assignment-false-');
+  const providerRoot = await makeRepo('impact-trace-asyncapi-member-assignment-provider-');
+  await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
+
+  await writeFile(
+    path.join(consumerRoot, 'src/orders-consumer.ts'),
+    [
+      'consumer.topic = "orders.submitted";',
+      'export function startOrdersConsumer(bus: { subscribe(topic: string, handler: () => void): void }, topic: string) {',
+      '  bus.subscribe(topic, () => undefined);',
+      '}',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(providerRoot, 'contracts/asyncapi.yaml'),
+    [
+      'asyncapi: 3.0.0',
+      'info:',
+      '  title: Orders events',
+      '  version: 1.0.0',
+      'channels:',
+      '  orderSubmitted:',
+      '    address: orders.submitted',
+      '    messages:',
+      '      OrderSubmitted:',
+      '        payload:',
+      '          type: object',
+      'operations:',
+      '  sendOrderSubmitted:',
+      '    action: send',
+      '    channel:',
+      '      $ref: "#/channels/orderSubmitted"',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'orders-events'
+  });
+
+  const result = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+
+  assert.equal(result.links.length, 0);
+});
+
+test('resolveCrossRepoContracts ignores AsyncAPI alias interpolation and placeholders', async () => {
+  const consumerRoot = await makeRepo('impact-trace-asyncapi-alias-placeholder-false-');
+  const providerRoot = await makeRepo('impact-trace-asyncapi-alias-placeholder-provider-');
+  await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
+
+  await writeFile(
+    path.join(consumerRoot, 'src/orders-consumer.ts'),
+    [
+      'const ORDER_TOPIC = "orders.submitted";',
+      'export function startOrdersConsumer(bus: { subscribe(topic: string, handler: () => void): void }) {',
+      '  bus.subscribe(`${ORDER_TOPIC}.v2`, () => undefined);',
+      '  bus.subscribe(`${ORDER_TOPIC}.*`, () => undefined);',
+      '  const configLine = "consumer.topic=${ORDER_TOPIC}";',
+      '}',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(providerRoot, 'contracts/asyncapi.yaml'),
+    [
+      'asyncapi: 3.0.0',
+      'info:',
+      '  title: Orders events',
+      '  version: 1.0.0',
+      'channels:',
+      '  orderSubmitted:',
+      '    address: orders.submitted',
+      '    messages:',
+      '      OrderSubmitted:',
+      '        payload:',
+      '          type: object',
+      'operations:',
+      '  sendOrderSubmitted:',
+      '    action: send',
+      '    channel:',
+      '      $ref: "#/channels/orderSubmitted"',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'orders-events'
+  });
+
+  const result = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+
+  assert.equal(result.links.length, 0);
+});
+
+test('resolveCrossRepoContracts ignores AsyncAPI concatenated topic aliases', async () => {
+  const consumerRoot = await makeRepo('impact-trace-asyncapi-alias-concat-false-');
+  const providerRoot = await makeRepo('impact-trace-asyncapi-alias-concat-provider-');
+  await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
+
+  await writeFile(
+    path.join(consumerRoot, 'src/orders-consumer.ts'),
+    [
+      'const ORDER_TOPIC = "orders.submitted" + ".v2";',
+      'export function startOrdersConsumer(bus: { subscribe(topic: string, handler: () => void): void }) {',
+      '  bus.subscribe(ORDER_TOPIC, () => undefined);',
+      '}',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(providerRoot, 'contracts/asyncapi.yaml'),
+    [
+      'asyncapi: 3.0.0',
+      'info:',
+      '  title: Orders events',
+      '  version: 1.0.0',
+      'channels:',
+      '  orderSubmitted:',
+      '    address: orders.submitted',
+      '    messages:',
+      '      OrderSubmitted:',
+      '        payload:',
+      '          type: object',
+      'operations:',
+      '  sendOrderSubmitted:',
+      '    action: send',
+      '    channel:',
+      '      $ref: "#/channels/orderSubmitted"',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
   addWorkspaceRepo({
     repoRoot: consumerRoot,
     workspaceName: 'platform',

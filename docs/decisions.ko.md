@@ -57,6 +57,7 @@
 | [D-045](#d-045-ui-work-artifact-freshness-is-derived-from-compact-dates) | UI work artifact freshness is derived from compact dates | P3/P0 | 2026-05-12 |
 | [D-046](#d-046-mcp-context-packs-carry-body-free-work-artifact-previews) | MCP context packs carry body-free work artifact previews | P3/P0 | 2026-05-12 |
 | [D-047](#d-047-asyncapi-event-alias-resolution-stays-same-file-and-literal-only) | AsyncAPI event alias resolution stays same-file and literal-only | P0/P1 | 2026-05-12 |
+| [D-048](#d-048-openapi-http-route-alias-resolution-is-call-site-gated) | OpenAPI HTTP route alias resolution is call-site gated | P0/P1 | 2026-05-12 |
 
 ---
 
@@ -878,6 +879,24 @@
 **결과/위험:** same-file literal alias는 compact provenance와 기존 `CONSUMES_HTTP_ENDPOINT` envelope를 유지하면서 event topology recall을 올린다. snippet은 alias declaration이 아니라 실제 direction-bearing call site line으로 남는다. 여전히 line-oriented heuristic이므로 multi-line alias, imported constants, computed topic builders, Spring property placeholder, Kafka regex/wildcard, AMQP/NATS binding graph는 후속 parser/LSP/event-topology depth에서 다룬다.
 
 **관련 commit:** `feat(workspace): AsyncAPI event alias resolver 추가`
+
+---
+
+## D-048: OpenAPI HTTP route alias resolution is call-site gated
+
+**결정:** `workspace resolve-contracts`의 OpenAPI HTTP consumer resolver는 같은 파일 안의 standalone exact string alias를 route path로 인정하되, 실제 HTTP call-site가 그 alias나 route literal을 사용할 때만 `CONSUMES_HTTP_ENDPOINT` link를 만든다. 지원 범위는 TS/JS `const PATH = "/api/users"`, Java `static final String PATH = "/api/users"`, Kotlin `const val PATH = "/api/users"` 같은 quoted literal과 `fetch`, Feign context의 Spring `@GetMapping`/`@PostMapping`, Feign `@RequestLine`, `WebClient`, `RestTemplate`, `HttpMethod`, common JS HTTP client method call이다. 일반 Spring `@RestController` mapping, alias declaration 자체, string concatenation, template interpolation, imported constant, runtime path builder는 consumer evidence로 쓰지 않는다.
+
+**맥락:** D-027의 OpenAPI resolver v0는 route literal line을 찾는 수준이라 `GET` endpoint에서 `private static final String PATH = "/api/users"` 같은 선언만 있어도 consumer로 오인할 수 있었다. 반대로 실제 Spring Boot client code에서 흔한 `webClient.post().uri(PATH)`는 route literal이 call-site line에 없기 때문에 놓쳤다. 사용자의 주 stack이 Java/Kotlin/Spring Boot인 만큼, contract impact가 실제 client call-site를 보여주면서 false positive를 줄여야 한다.
+
+**대안:**
+- route literal이 보이는 모든 line을 계속 consumer로 인정 — recall은 높지만 declaration-only false positive가 contract diff까지 전파되어 거부한다.
+- full Java/Kotlin AST/LSP constant resolution까지 기다림 — 정확도는 높지만 same-file literal alias라는 common path를 계속 놓친다.
+- cross-file constants와 Spring property placeholder까지 추적 — 실제성은 높지만 v0 line-oriented resolver에서는 stale/runtime binding을 통제하기 어렵다.
+- HTTP client pattern을 Spring 전용으로 제한 — Spring Boot는 핵심이지만 TS/JS `fetch`/axios와 Feign annotation call-site를 잃기 때문에 거부한다.
+
+**결과/위험:** OpenAPI contract diff가 Spring `WebClient`/`RestTemplate` 같은 실제 client line을 evidence로 보존하고, route constant declaration만 있는 파일은 impacted consumer에서 빠진다. 아직 multi-line request builder, imported constants, `@FeignClient(path=...)` + method path composition, Spring property placeholder, generated SDK method-name to route mapping은 후속 parser/LSP/generated-client depth에서 다룬다.
+
+**관련 commit:** `feat(workspace): OpenAPI route alias resolver 추가`
 
 ---
 

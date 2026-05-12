@@ -142,6 +142,535 @@ test('resolveCrossRepoContracts links workspace consumer files to provider OpenA
   assert.deepEqual(JSON.parse(cliRun.stdout), result);
 });
 
+test('resolveCrossRepoContracts links OpenAPI HTTP consumers through same-file Java route constants', async () => {
+  const consumerRoot = await makeRepo('impact-trace-http-alias-consumer-');
+  const providerRoot = await makeRepo('impact-trace-http-alias-provider-');
+  const consumerReal = realpathSync(consumerRoot);
+  const providerReal = realpathSync(providerRoot);
+  await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
+
+  await writeFile(
+    path.join(consumerRoot, 'src/UsersClient.java'),
+    [
+      'package app;',
+      '',
+      'import org.springframework.web.reactive.function.client.WebClient;',
+      'import reactor.core.publisher.Mono;',
+      '',
+      'public class UsersClient {',
+      '  private static final String USERS_PATH = "/api/users";',
+      '',
+      '  Mono<Void> createUser(WebClient webClient) {',
+      '    return webClient.post().uri(USERS_PATH).retrieve().bodyToMono(Void.class);',
+      '  }',
+      '}',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(providerRoot, 'contracts/openapi.yaml'),
+    [
+      'openapi: 3.0.0',
+      'info:',
+      '  title: Users API',
+      '  version: 1.0.0',
+      'paths:',
+      '  /api/users:',
+      '    post:',
+      '      operationId: createUser',
+      '      responses:',
+      "        '204':",
+      '          description: created',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'users-api'
+  });
+
+  const result = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+
+  assert.equal(result.links.length, 1);
+  assert.deepEqual(result.links[0], {
+    kind: 'CONSUMES_HTTP_ENDPOINT',
+    confidence: 'heuristic',
+    consumerService: 'web',
+    consumerRepoPath: consumerReal,
+    consumerPath: 'src/UsersClient.java',
+    providerService: 'users-api',
+    providerRepoPath: providerReal,
+    providerContractPath: 'contracts/openapi.yaml',
+    providerEndpointId: 'endpoint:yaml:POST /api/users',
+    httpMethod: 'POST',
+    routePath: '/api/users'
+  });
+
+  const db = new DatabaseSync(databasePath(consumerRoot), { readOnly: true });
+  try {
+    const row = db
+      .prepare('SELECT provenance FROM cross_repo_links')
+      .get() as { provenance: string };
+    assert.equal(
+      JSON.parse(row.provenance).evidence.snippet,
+      'return webClient.post().uri(USERS_PATH).retrieve().bodyToMono(Void.class);'
+    );
+  } finally {
+    db.close();
+  }
+});
+
+test('resolveCrossRepoContracts does not use OpenAPI HTTP route declarations as consumer evidence', async () => {
+  const consumerRoot = await makeRepo('impact-trace-http-declaration-consumer-');
+  const providerRoot = await makeRepo('impact-trace-http-declaration-provider-');
+  await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
+
+  await writeFile(
+    path.join(consumerRoot, 'src/Routes.java'),
+    [
+      'package app;',
+      '',
+      'public class Routes {',
+      '  private static final String USERS_PATH = "/api/users";',
+      '}',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(providerRoot, 'contracts/openapi.yaml'),
+    [
+      'openapi: 3.0.0',
+      'info:',
+      '  title: Users API',
+      '  version: 1.0.0',
+      'paths:',
+      '  /api/users:',
+      '    get:',
+      '      operationId: listUsers',
+      '      responses:',
+      "        '200':",
+      '          description: ok',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'users-api'
+  });
+
+  const result = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+
+  assert.equal(result.links.length, 0);
+  const db = new DatabaseSync(databasePath(consumerRoot), { readOnly: true });
+  try {
+    const row = db
+      .prepare('SELECT COUNT(*) AS count FROM cross_repo_links')
+      .get() as { count: number };
+    assert.equal(row.count, 0);
+  } finally {
+    db.close();
+  }
+});
+
+test('resolveCrossRepoContracts does not treat Spring controller mappings as OpenAPI HTTP consumers', async () => {
+  const consumerRoot = await makeRepo('impact-trace-http-controller-consumer-');
+  const providerRoot = await makeRepo('impact-trace-http-controller-provider-');
+  await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
+
+  await writeFile(
+    path.join(consumerRoot, 'src/UsersController.java'),
+    [
+      'package app;',
+      '',
+      'import org.springframework.web.bind.annotation.GetMapping;',
+      'import org.springframework.web.bind.annotation.RestController;',
+      '',
+      '@RestController',
+      'public class UsersController {',
+      '  @GetMapping("/api/users")',
+      '  String listUsers() { return "ok"; }',
+      '}',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(providerRoot, 'contracts/openapi.yaml'),
+    [
+      'openapi: 3.0.0',
+      'info:',
+      '  title: Users API',
+      '  version: 1.0.0',
+      'paths:',
+      '  /api/users:',
+      '    get:',
+      '      operationId: listUsers',
+      '      responses:',
+      "        '200':",
+      '          description: ok',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'users-api'
+  });
+
+  const result = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+
+  assert.equal(result.links.length, 0);
+});
+
+test('resolveCrossRepoContracts treats Feign mapping annotations as OpenAPI HTTP consumers', async () => {
+  const consumerRoot = await makeRepo('impact-trace-http-feign-consumer-');
+  const providerRoot = await makeRepo('impact-trace-http-feign-provider-');
+  const consumerReal = realpathSync(consumerRoot);
+  const providerReal = realpathSync(providerRoot);
+  await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
+
+  await writeFile(
+    path.join(consumerRoot, 'src/UsersClient.java'),
+    [
+      'package app;',
+      '',
+      'import org.springframework.cloud.openfeign.FeignClient;',
+      'import org.springframework.web.bind.annotation.GetMapping;',
+      '',
+      '@FeignClient(name = "users")',
+      'public interface UsersClient {',
+      '  @GetMapping("/api/users")',
+      '  String listUsers();',
+      '}',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(providerRoot, 'contracts/openapi.yaml'),
+    [
+      'openapi: 3.0.0',
+      'info:',
+      '  title: Users API',
+      '  version: 1.0.0',
+      'paths:',
+      '  /api/users:',
+      '    get:',
+      '      operationId: listUsers',
+      '      responses:',
+      "        '200':",
+      '          description: ok',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'users-api'
+  });
+
+  const result = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+
+  assert.equal(result.links.length, 1);
+  assert.deepEqual(result.links[0], {
+    kind: 'CONSUMES_HTTP_ENDPOINT',
+    confidence: 'heuristic',
+    consumerService: 'web',
+    consumerRepoPath: consumerReal,
+    consumerPath: 'src/UsersClient.java',
+    providerService: 'users-api',
+    providerRepoPath: providerReal,
+    providerContractPath: 'contracts/openapi.yaml',
+    providerEndpointId: 'endpoint:yaml:GET /api/users',
+    httpMethod: 'GET',
+    routePath: '/api/users'
+  });
+});
+
+test('resolveCrossRepoContracts ignores ordinary dotted methods that reuse HTTP route constants', async () => {
+  const consumerRoot = await makeRepo('impact-trace-http-ordinary-method-consumer-');
+  const providerRoot = await makeRepo('impact-trace-http-ordinary-method-provider-');
+  await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
+
+  await writeFile(
+    path.join(consumerRoot, 'src/CacheRoutes.java'),
+    [
+      'package app;',
+      '',
+      'import java.util.Map;',
+      '',
+      'public class CacheRoutes {',
+      '  private static final String USERS_PATH = "/api/users";',
+      '',
+      '  void remember(Map<String, String> cache) {',
+      '    cache.put(USERS_PATH, "cached");',
+      '  }',
+      '}',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(providerRoot, 'contracts/openapi.yaml'),
+    [
+      'openapi: 3.0.0',
+      'info:',
+      '  title: Users API',
+      '  version: 1.0.0',
+      'paths:',
+      '  /api/users:',
+      '    put:',
+      '      operationId: replaceUsers',
+      '      responses:',
+      "        '204':",
+      '          description: replaced',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'users-api'
+  });
+
+  const result = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+
+  assert.equal(result.links.length, 0);
+});
+
+test('resolveCrossRepoContracts ignores commented Feign annotations when classifying Spring mappings', async () => {
+  const consumerRoot = await makeRepo('impact-trace-http-commented-feign-consumer-');
+  const providerRoot = await makeRepo('impact-trace-http-commented-feign-provider-');
+  await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
+
+  await writeFile(
+    path.join(consumerRoot, 'src/UsersController.java'),
+    [
+      'package app;',
+      '',
+      'import org.springframework.web.bind.annotation.GetMapping;',
+      'import org.springframework.web.bind.annotation.RestController;',
+      '',
+      '// @FeignClient(name = "users")',
+      '@RestController',
+      'public class UsersController {',
+      '  @GetMapping("/api/users")',
+      '  String listUsers() { return "ok"; }',
+      '}',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(providerRoot, 'contracts/openapi.yaml'),
+    [
+      'openapi: 3.0.0',
+      'info:',
+      '  title: Users API',
+      '  version: 1.0.0',
+      'paths:',
+      '  /api/users:',
+      '    get:',
+      '      operationId: listUsers',
+      '      responses:',
+      "        '200':",
+      '          description: ok',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'users-api'
+  });
+
+  const result = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+
+  assert.equal(result.links.length, 0);
+});
+
+test('resolveCrossRepoContracts scopes Feign mapping consumers to the Feign interface', async () => {
+  const consumerRoot = await makeRepo('impact-trace-http-mixed-feign-consumer-');
+  const providerRoot = await makeRepo('impact-trace-http-mixed-feign-provider-');
+  const consumerReal = realpathSync(consumerRoot);
+  const providerReal = realpathSync(providerRoot);
+  await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
+
+  await writeFile(
+    path.join(consumerRoot, 'src/MixedUsers.java'),
+    [
+      'package app;',
+      '',
+      'import org.springframework.cloud.openfeign.FeignClient;',
+      'import org.springframework.web.bind.annotation.GetMapping;',
+      'import org.springframework.web.bind.annotation.RestController;',
+      '',
+      '@RestController',
+      'class LocalUsersController {',
+      '  @GetMapping("/api/admin")',
+      '  String admin() { return "ok"; }',
+      '}',
+      '',
+      '@FeignClient(name = "users")',
+      'interface UsersClient {',
+      '  @GetMapping("/api/users")',
+      '  String listUsers();',
+      '}',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(providerRoot, 'contracts/openapi.yaml'),
+    [
+      'openapi: 3.0.0',
+      'info:',
+      '  title: Users API',
+      '  version: 1.0.0',
+      'paths:',
+      '  /api/users:',
+      '    get:',
+      '      operationId: listUsers',
+      '      responses:',
+      "        '200':",
+      '          description: ok',
+      '  /api/admin:',
+      '    get:',
+      '      operationId: admin',
+      '      responses:',
+      "        '200':",
+      '          description: ok',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'users-api'
+  });
+
+  const result = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+
+  assert.equal(result.links.length, 1);
+  assert.deepEqual(result.links[0], {
+    kind: 'CONSUMES_HTTP_ENDPOINT',
+    confidence: 'heuristic',
+    consumerService: 'web',
+    consumerRepoPath: consumerReal,
+    consumerPath: 'src/MixedUsers.java',
+    providerService: 'users-api',
+    providerRepoPath: providerReal,
+    providerContractPath: 'contracts/openapi.yaml',
+    providerEndpointId: 'endpoint:yaml:GET /api/users',
+    httpMethod: 'GET',
+    routePath: '/api/users'
+  });
+});
+
+test('resolveCrossRepoContracts ignores computed OpenAPI HTTP route constants', async () => {
+  const consumerRoot = await makeRepo('impact-trace-http-computed-consumer-');
+  const providerRoot = await makeRepo('impact-trace-http-computed-provider-');
+  await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
+
+  await writeFile(
+    path.join(consumerRoot, 'src/UsersClient.java'),
+    [
+      'package app;',
+      '',
+      'import org.springframework.web.reactive.function.client.WebClient;',
+      'import reactor.core.publisher.Mono;',
+      '',
+      'public class UsersClient {',
+      '  private static final String USERS_PATH = "/api" + "/users";',
+      '',
+      '  Mono<Void> createUser(WebClient webClient) {',
+      '    return webClient.post().uri(USERS_PATH).retrieve().bodyToMono(Void.class);',
+      '  }',
+      '}',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(providerRoot, 'contracts/openapi.yaml'),
+    [
+      'openapi: 3.0.0',
+      'info:',
+      '  title: Users API',
+      '  version: 1.0.0',
+      'paths:',
+      '  /api/users:',
+      '    post:',
+      '      operationId: createUser',
+      '      responses:',
+      "        '204':",
+      '          description: created',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'users-api'
+  });
+
+  const result = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+
+  assert.equal(result.links.length, 0);
+});
+
 test('resolveCrossRepoContracts links GraphQL operation consumers to provider root fields', async () => {
   const consumerRoot = await makeRepo('impact-trace-graphql-consumer-');
   const providerRoot = await makeRepo('impact-trace-graphql-provider-');

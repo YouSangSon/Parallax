@@ -1,6 +1,6 @@
 # Impact Trace 진행상황
 
-업데이트: 2026-05-12 (MCP work artifact context preview v0)
+업데이트: 2026-05-12 (OpenAPI HTTP route alias resolver v0)
 
 비전 / 로드맵 / 용어집: [vision.ko.md](vision.ko.md) · [roadmap.md](roadmap.md) · [glossary.md](glossary.md)
 제품 계획서: [Impact Context Layer 제품 계획](impact-context-layer-plan.ko.md) (MCP + UI + AI context 절감 + 정책/제안서 impact)
@@ -14,7 +14,7 @@ Phase 6 자료: [Phase 6 design](phase6-design.ko.md) · [Phase 6B multi-languag
 
 main 기준으로는 Phase 4 P1..P5(agent memory cap/repair/restore/auto-abandon/ANN)와
 Phase 6 adapter foundations가 완료된 상태다. 현재 next work는 영향 분석 축의
-**Phase 6B multi-language + Spring Boot adapter pack v0 + trusted evidence + OpenAPI contract baseline + workspace catalog v0 + cross-repo contract resolver v0 + GraphQL/Protobuf/AsyncAPI consumer resolver v0 + generated-client/event topology v0 + OpenAPI/Protobuf/GraphQL/AsyncAPI contract diff v0 + build-system/package resolver v0 + MCP work artifact context preview v0 + UI workspace topology surface v0 + UI work artifact impact/metadata/freshness surface v0**와
+**Phase 6B multi-language + Spring Boot adapter pack v0 + trusted evidence + OpenAPI contract baseline + workspace catalog v0 + cross-repo contract resolver v0 + OpenAPI HTTP route alias resolver v0 + GraphQL/Protobuf/AsyncAPI consumer resolver v0 + generated-client/event topology v0 + OpenAPI/Protobuf/GraphQL/AsyncAPI contract diff v0 + build-system/package resolver v0 + MCP work artifact context preview v0 + UI workspace topology surface v0 + UI work artifact impact/metadata/freshness surface v0**와
 **Phase B agent-ready MCP context 절감 lane**이다. 이는 Java/Kotlin/Spring Boot/Python/Go/Rust/TS/JS adapter v0,
 source-span evidence, git snapshot metadata, package manifest graph, compact MCP context search를 묶어 실제 stack의 첫 high-confidence lane을 닫는 작업이다.
 
@@ -120,6 +120,7 @@ source-span evidence, git snapshot metadata, package manifest graph, compact MCP
 | 2026-05-12 | Generated-client/event topology v0 | `workspace resolve-contracts`가 Connect-ES style generated client call과 `pkg.Service/Rpc` Protobuf route string을 매칭하고, AsyncAPI event address call-site를 Spring Kafka/KafkaJS/Python/Go/Rust common producer/consumer topology hint로 provenance에 저장한다. EventCatalog, AsyncAPI parser/diff, Buf/protoc 패턴은 참고하지만 runtime dependency나 build/network 실행은 들이지 않는다. |
 | 2026-05-12 | Contract diff event topology provenance | `workspace contract-diff`가 `CONSUMES_HTTP_ENDPOINT` link의 optional `eventTopology`를 impacted consumer와 `BREAKS_COMPATIBILITY_WITH` provenance까지 보존한다. removed AsyncAPI operation impact가 consumer/producer 방향 hint를 잃지 않고 MCP/UI context로 이어진다. |
 | 2026-05-12 | Contract topology surface v0 | `workspace contract-diff` summary가 topology breakdown을 제공하고, CLI human output과 MCP `/cross-repo-links` resource가 top-level `eventTopology` hint를 노출한다. agent와 UI가 nested provenance를 다시 파싱하지 않고 producer/consumer 방향을 바로 사용할 수 있다. |
+| 2026-05-12 | OpenAPI HTTP route alias resolver v0 | `workspace resolve-contracts`가 same-file exact route alias를 실제 HTTP call-site가 직접 쓰는 경우만 OpenAPI consumer link로 저장한다. Java/Kotlin/TS/JS standalone literal alias를 지원하고, declaration-only route constant와 computed path는 consumer evidence에서 제외해 Spring `WebClient`/`RestTemplate` impact의 false positive를 줄인다. |
 | 2026-05-12 | UI workspace topology surface v0 | `impact-trace ui` snapshot과 `/api/workspaces/{name}`가 workspace contract baseline, cross-repo provider/consumer link, AsyncAPI event topology hint, MCP resource URI를 같은 compact shape로 보여준다. UI read path는 DB를 read-only로 열고 full provenance expansion 없이 사람이 확인할 수 있는 bounded preview를 제공한다. |
 | 2026-05-12 | UI work artifact impact surface v0 | `impact-trace ui` snapshot의 `workArtifacts`와 Work Artifacts panel이 selected report에서 policy, decision, PRD, requirement, proposal impact만 분리해 보여준다. 문서 본문은 싣지 않고 entity resource URI로 expand-on-demand 흐름을 유지한다. |
 | 2026-05-12 | UI work artifact metadata preview v0 | Work Artifacts panel이 Markdown frontmatter/문서 선두 H1에서 title, owner, status, updatedAt을 추출해 보여준다. artifact evidence snippet은 bootstrap에서 계속 placeholder로 유지한다. |
@@ -132,13 +133,13 @@ source-span evidence, git snapshot metadata, package manifest graph, compact MCP
 |---|---|---|
 | Phase 6 | adapter foundations | `main` 반영 완료 |
 | Phase 6B | ImpactBench + adapter pack v0 routing | `npm run bench`가 `.impact-trace/bench/impact-bench-report.json`를 생성하며 relation recall/precision, affected-file recall, evidence/span, adapter attribution, context-pack readiness를 측정. TS/JS, JVM/Spring Boot, Python, Go, Rust는 별도 adapter run으로 귀속되고 OpenAPI contract baseline은 regex fallback lane에서 검증된다. |
-| Phase B | MCP retrieval depth + resource contract | context/search/explain/telemetry/doctor/session import v0/v1, search retrieval depth v0, search budget/diversification v0, persistent FTS + retrieval bench v0, JSON graph pagination, typed error envelope v0, explicit supersession v0, entity persistent FTS/ANN lane, persisted context pack reuse v0, MCP work artifact context preview v0, UI Explorer v0, MCP workspace/contract resources v0, build-system/package resolver v0, generated-client/event topology v0, contract diff topology provenance, contract topology surface v0, UI workspace topology surface v0, UI work artifact impact/metadata/freshness surface v0는 완료. 다음 slice는 full parser/LSP depth와 richer topology/package depth |
+| Phase B | MCP retrieval depth + resource contract | context/search/explain/telemetry/doctor/session import v0/v1, search retrieval depth v0, search budget/diversification v0, persistent FTS + retrieval bench v0, JSON graph pagination, typed error envelope v0, explicit supersession v0, entity persistent FTS/ANN lane, persisted context pack reuse v0, MCP work artifact context preview v0, UI Explorer v0, MCP workspace/contract resources v0, build-system/package resolver v0, generated-client/event topology v0, OpenAPI HTTP route alias resolver v0, contract diff topology provenance, contract topology surface v0, UI workspace topology surface v0, UI work artifact impact/metadata/freshness surface v0는 완료. 다음 slice는 full parser/LSP depth와 richer topology/package depth |
 | Phase B | agentmemory-informed context lifecycle | [agentmemory 적용성 분석](agentmemory-adoption-review.ko.md)에 따라 platform 도입은 거부하고 pattern만 적용. RRF ranking initial slice, context telemetry v0, session import v0, explicit supersession v0는 완료했고 bounded session facets는 후속 |
 | Phase 6B | Java/Kotlin/Spring Boot/Python/Go/Rust/TS/JS adapter v0 | 진행 중. 선언/import/test relation, Spring Boot endpoint/config/persistence/client relation, package manifest relation 정확도 개선 중 |
 | Phase 6B | source span persistence | `relation_evidence` line/col/range 저장과 analyzer evidence output은 구현됨. TS/JS parser-backed import span v0, JVM/Spring lightweight span v0, Python/Go/Rust lightweight span v0, OpenAPI operation/implementer span으로 bench `spanCompleteness`는 0.9565까지 개선됐고, workspace resolver는 cross-repo contract links까지 확장됨 |
 | Phase 6B | snapshot-safe indexing | `index_runs` commit/dirty/branch metadata와 stale warning 구현됨. migrated legacy run false-positive warning 회귀 테스트 포함 |
 | Phase D | repo-local Markdown work artifact adapter | 정책/제안서/PRD/결정 파일 path classifier + relation inference v0, MCP context pack work artifact preview, UI work artifact impact panel, frontmatter/heading metadata preview, stale/current/unknown freshness badge 완료 |
-| Phase 6/7 | workspace/cross-repo resolver | contract baseline, workspace catalog v0, OpenAPI provider/consumer resolver v0, GraphQL/Protobuf/AsyncAPI consumer resolver v0, generated-client/event topology v0, contract diff topology provenance, contract topology surface v0, OpenAPI endpoint-surface contract diff v0, JSON/YAML nested schema/body diff v0, Protobuf contract diff v0, GraphQL contract diff v0, AsyncAPI contract diff v0, MCP workspace/contract resources v0, UI workspace topology surface v0는 준비됨. UI work artifact impact surface v0는 selected report의 업무 산출물 impact를 별도 panel로 분리한다. richer generated-client/event topology와 full parser/LSP depth는 예정 |
+| Phase 6/7 | workspace/cross-repo resolver | contract baseline, workspace catalog v0, OpenAPI provider/consumer resolver v0, OpenAPI same-file HTTP route alias resolver v0, GraphQL/Protobuf/AsyncAPI consumer resolver v0, generated-client/event topology v0, contract diff topology provenance, contract topology surface v0, OpenAPI endpoint-surface contract diff v0, JSON/YAML nested schema/body diff v0, Protobuf contract diff v0, GraphQL contract diff v0, AsyncAPI contract diff v0, MCP workspace/contract resources v0, UI workspace topology surface v0는 준비됨. UI work artifact impact surface v0는 selected report의 업무 산출물 impact를 별도 panel로 분리한다. richer generated-client/event topology와 full parser/LSP depth는 예정 |
 | Phase 9 | 회사 업무 artifact adapter | schema와 entity kind는 준비, Google Drive/Obsidian/Markdown vault adapter는 예정 |
 | Agent Memory Phase 5 | 후보 backlog | MemoryBench, topic clustering, multi-layer reflection, concurrent reflect lock, reembed cleanup은 deferred |
 
@@ -192,13 +193,14 @@ source-span evidence, git snapshot metadata, package manifest graph, compact MCP
 9. ✅ Python/Go/Rust lightweight evidence span v0로 declaration/test relation 근거를 line/col range까지 정밀화했다.
 10. ✅ 실제 workspace catalog 파일을 정의하고 여러 repo를 등록/조회하는 CLI를 추가했다.
 11. ✅ indexed workspace repo 사이의 OpenAPI provider endpoint와 HTTP consumer file을 `cross_repo_links`로 연결하는 resolver를 추가했다.
-12. ✅ OpenAPI endpoint-surface contract diff와 known consumer breaking-change 분류를 구현했다.
-13. ✅ OpenAPI JSON/YAML nested schema/body diff, Protobuf contract diff v0, GraphQL contract diff v0, AsyncAPI contract diff v0, GraphQL/Protobuf/AsyncAPI consumer resolver v0를 완료했다.
-14. ✅ `package.json`, `pom.xml`, `build.gradle(.kts)`, `go.mod`, `Cargo.toml`, `pyproject.toml` manifest-only build-system/package resolver v0를 완료했다.
-15. ✅ generated-client/event topology v0로 Connect-ES/Protobuf route call-site와 AsyncAPI producer/consumer topology hint를 추가했다.
-16. ✅ contract diff가 event topology provenance를 impacted consumer와 breaking link까지 보존한다.
-17. ✅ topology summary, CLI human output, MCP cross-repo link top-level hint로 producer/consumer 방향을 compact surface에 노출한다.
-18. ✅ UI workspace topology surface로 사람이 같은 contract/link/resource shape를 바로 확인한다. 다음은 full parser/LSP depth와 richer topology/package depth로 확장한다.
+12. ✅ OpenAPI same-file HTTP route alias를 실제 call-site 기준으로 연결하고 declaration-only false positive를 차단했다.
+13. ✅ OpenAPI endpoint-surface contract diff와 known consumer breaking-change 분류를 구현했다.
+14. ✅ OpenAPI JSON/YAML nested schema/body diff, Protobuf contract diff v0, GraphQL contract diff v0, AsyncAPI contract diff v0, GraphQL/Protobuf/AsyncAPI consumer resolver v0를 완료했다.
+15. ✅ `package.json`, `pom.xml`, `build.gradle(.kts)`, `go.mod`, `Cargo.toml`, `pyproject.toml` manifest-only build-system/package resolver v0를 완료했다.
+16. ✅ generated-client/event topology v0로 Connect-ES/Protobuf route call-site와 AsyncAPI producer/consumer topology hint를 추가했다.
+17. ✅ contract diff가 event topology provenance를 impacted consumer와 breaking link까지 보존한다.
+18. ✅ topology summary, CLI human output, MCP cross-repo link top-level hint로 producer/consumer 방향을 compact surface에 노출한다.
+19. ✅ UI workspace topology surface로 사람이 같은 contract/link/resource shape를 바로 확인한다. 다음은 full parser/LSP depth와 richer topology/package depth로 확장한다.
 
 ### Agent Memory 트랙 (Phase 5 후보, deferred)
 

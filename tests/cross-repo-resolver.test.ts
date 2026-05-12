@@ -1382,6 +1382,86 @@ test('resolveCrossRepoContracts links AsyncAPI SEND operations to Spring Kafka l
   });
 });
 
+test('resolveCrossRepoContracts links AsyncAPI SEND operations through Java topic constants', async () => {
+  const consumerRoot = await makeRepo('impact-trace-asyncapi-java-constant-consumer-');
+  const providerRoot = await makeRepo('impact-trace-asyncapi-java-constant-provider-');
+  const consumerReal = realpathSync(consumerRoot);
+  const providerReal = realpathSync(providerRoot);
+  await mkdir(path.join(consumerRoot, 'src/main/java/com/example/orders'), { recursive: true });
+  await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
+
+  await writeFile(
+    path.join(consumerRoot, 'src/main/java/com/example/orders/OrdersListener.java'),
+    [
+      'package com.example.orders;',
+      '',
+      'class OrdersListener {',
+      '  private static final String ORDER_TOPIC = "orders.submitted";',
+      '',
+      '  @KafkaListener(topics = ORDER_TOPIC)',
+      '  void onOrderSubmitted(String payload) {}',
+      '}',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(providerRoot, 'contracts/asyncapi.yaml'),
+    [
+      'asyncapi: 3.0.0',
+      'info:',
+      '  title: Orders events',
+      '  version: 1.0.0',
+      'channels:',
+      '  orderSubmitted:',
+      '    address: orders.submitted',
+      '    messages:',
+      '      OrderSubmitted:',
+      '        payload:',
+      '          type: object',
+      'operations:',
+      '  sendOrderSubmitted:',
+      '    action: send',
+      '    channel:',
+      '      $ref: "#/channels/orderSubmitted"',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'fulfillment' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'orders-events'
+  });
+
+  const result = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+
+  assert.equal(result.links.length, 1);
+  assert.deepEqual(result.links[0], {
+    kind: 'CONSUMES_HTTP_ENDPOINT',
+    confidence: 'heuristic',
+    consumerService: 'fulfillment',
+    consumerRepoPath: consumerReal,
+    consumerPath: 'src/main/java/com/example/orders/OrdersListener.java',
+    providerService: 'orders-events',
+    providerRepoPath: providerReal,
+    providerContractPath: 'contracts/asyncapi.yaml',
+    providerEndpointId: 'endpoint:asyncapi:SEND orders.submitted',
+    httpMethod: 'SEND',
+    routePath: 'orders.submitted',
+    eventTopology: {
+      providerAction: 'SEND',
+      counterpartyRole: 'consumer',
+      pattern: 'spring-kafka-listener'
+    }
+  });
+});
+
 test('resolveCrossRepoContracts links AsyncAPI RECEIVE operations to event producers', async () => {
   const consumerRoot = await makeRepo('impact-trace-asyncapi-receive-producer-');
   const providerRoot = await makeRepo('impact-trace-asyncapi-receive-provider-');
@@ -1452,6 +1532,87 @@ test('resolveCrossRepoContracts links AsyncAPI RECEIVE operations to event produ
       providerAction: 'RECEIVE',
       counterpartyRole: 'producer',
       pattern: 'producer-send'
+    }
+  });
+});
+
+test('resolveCrossRepoContracts links AsyncAPI RECEIVE operations through Kotlin topic constants', async () => {
+  const consumerRoot = await makeRepo('impact-trace-asyncapi-kotlin-constant-producer-');
+  const providerRoot = await makeRepo('impact-trace-asyncapi-kotlin-constant-provider-');
+  const consumerReal = realpathSync(consumerRoot);
+  const providerReal = realpathSync(providerRoot);
+  await mkdir(path.join(consumerRoot, 'src/main/kotlin/com/example/orders'), { recursive: true });
+  await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
+
+  await writeFile(
+    path.join(consumerRoot, 'src/main/kotlin/com/example/orders/OrdersProducer.kt'),
+    [
+      'package com.example.orders',
+      '',
+      'private const val ORDER_COMMAND = "orders.commanded"',
+      '',
+      'class OrdersProducer(private val kafkaTemplate: KafkaTemplate<String, String>) {',
+      '  fun publish(payload: String) {',
+      '    kafkaTemplate.send(ORDER_COMMAND, payload)',
+      '  }',
+      '}',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(providerRoot, 'contracts/asyncapi.yaml'),
+    [
+      'asyncapi: 3.0.0',
+      'info:',
+      '  title: Orders events',
+      '  version: 1.0.0',
+      'channels:',
+      '  orderCommanded:',
+      '    address: orders.commanded',
+      '    messages:',
+      '      OrderCommanded:',
+      '        payload:',
+      '          type: object',
+      'operations:',
+      '  receiveOrderCommanded:',
+      '    action: receive',
+      '    channel:',
+      '      $ref: "#/channels/orderCommanded"',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'checkout' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'orders-events'
+  });
+
+  const result = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+
+  assert.equal(result.links.length, 1);
+  assert.deepEqual(result.links[0], {
+    kind: 'CONSUMES_HTTP_ENDPOINT',
+    confidence: 'heuristic',
+    consumerService: 'checkout',
+    consumerRepoPath: consumerReal,
+    consumerPath: 'src/main/kotlin/com/example/orders/OrdersProducer.kt',
+    providerService: 'orders-events',
+    providerRepoPath: providerReal,
+    providerContractPath: 'contracts/asyncapi.yaml',
+    providerEndpointId: 'endpoint:asyncapi:RECEIVE orders.commanded',
+    httpMethod: 'RECEIVE',
+    routePath: 'orders.commanded',
+    eventTopology: {
+      providerAction: 'RECEIVE',
+      counterpartyRole: 'producer',
+      pattern: 'spring-kafka-template-send'
     }
   });
 });
@@ -2197,6 +2358,66 @@ test('resolveCrossRepoContracts ignores AsyncAPI concatenated topic aliases', as
   await indexProject({ repoRoot: consumerRoot });
   await indexProject({ repoRoot: providerRoot });
   initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    localPath: providerRoot,
+    serviceName: 'orders-events'
+  });
+
+  const result = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+
+  assert.equal(result.links.length, 0);
+});
+
+test('resolveCrossRepoContracts ignores computed JVM AsyncAPI topic constants', async () => {
+  const consumerRoot = await makeRepo('impact-trace-asyncapi-jvm-computed-constant-false-');
+  const providerRoot = await makeRepo('impact-trace-asyncapi-jvm-computed-constant-provider-');
+  await mkdir(path.join(consumerRoot, 'src/main/java/com/example/orders'), { recursive: true });
+  await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
+
+  await writeFile(
+    path.join(consumerRoot, 'src/main/java/com/example/orders/OrdersListener.java'),
+    [
+      'package com.example.orders;',
+      '',
+      'class OrdersListener {',
+      '  private static final String ORDER_TOPIC = "orders.submitted" + ".v2";',
+      '',
+      '  @KafkaListener(topics = ORDER_TOPIC)',
+      '  void onOrderSubmitted(String payload) {}',
+      '}',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(providerRoot, 'contracts/asyncapi.yaml'),
+    [
+      'asyncapi: 3.0.0',
+      'info:',
+      '  title: Orders events',
+      '  version: 1.0.0',
+      'channels:',
+      '  orderSubmitted:',
+      '    address: orders.submitted',
+      '    messages:',
+      '      OrderSubmitted:',
+      '        payload:',
+      '          type: object',
+      'operations:',
+      '  sendOrderSubmitted:',
+      '    action: send',
+      '    channel:',
+      '      $ref: "#/channels/orderSubmitted"',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'fulfillment' });
   addWorkspaceRepo({
     repoRoot: consumerRoot,
     workspaceName: 'platform',

@@ -58,6 +58,7 @@
 | [D-046](#d-046-mcp-context-packs-carry-body-free-work-artifact-previews) | MCP context packs carry body-free work artifact previews | P3/P0 | 2026-05-12 |
 | [D-047](#d-047-asyncapi-event-alias-resolution-stays-same-file-and-literal-only) | AsyncAPI event alias resolution stays same-file and literal-only | P0/P1 | 2026-05-12 |
 | [D-048](#d-048-openapi-http-route-alias-resolution-is-call-site-gated) | OpenAPI HTTP route alias resolution is call-site gated | P0/P1 | 2026-05-12 |
+| [D-049](#d-049-gradle-version-catalog-resolution-stays-manifest-only) | Gradle version catalog resolution stays manifest-only | P1/P2 | 2026-05-12 |
 
 ---
 
@@ -720,7 +721,7 @@
 - 언어 adapter나 regex fallback에 manifest 처리를 계속 섞는다 — 빠르지만 package graph attribution, adapter diagnostics, bench coverage가 흐려진다.
 - lockfile/transitive/semver/Gradle DSL/Maven profile/Cargo feature/Go workspace까지 한 번에 구현한다 — 제품 가치는 있지만 scope가 커서 v0 regression gate를 만들기 어렵다.
 
-**결과/위험:** v0는 manifest-only extractor라 dependency resolution의 실제 build semantics를 보장하지 않는다. npm workspace/file dependency, Gradle `project(":x")`, Cargo path dependency는 proven local signal로 취급하고, registry/external coordinate는 heuristic package dependency로 남긴다. package → manifest identity edge를 저장하므로 manifest file 변경은 dependent package manifests까지 도달한다. exact repo-local path mention은 `CONFIGURES`로 보존해 build manifest가 기존 system/config reference lane을 완전히 잃지 않게 한다. lockfile drift, transitive dependency, Gradle version catalog, Maven parent/profile/property interpolation, Go replace/workspace, Python optional dependencies/Poetry/uv, generated-client/source usage graph는 후속이다.
+**결과/위험:** v0는 manifest-only extractor라 dependency resolution의 실제 build semantics를 보장하지 않는다. npm workspace/file dependency, Gradle `project(":x")`, Cargo path dependency는 proven local signal로 취급하고, registry/external coordinate는 heuristic package dependency로 남긴다. package → manifest identity edge를 저장하므로 manifest file 변경은 dependent package manifests까지 도달한다. exact repo-local path mention은 `CONFIGURES`로 보존해 build manifest가 기존 system/config reference lane을 완전히 잃지 않게 한다. lockfile drift, transitive dependency, custom/imported Gradle catalog, Maven parent/profile/property interpolation, Go replace/workspace, Python optional dependencies/Poetry/uv, generated-client/source usage graph는 후속이다.
 
 **관련 commit:** `feat(adapters): build-system package resolver 추가`
 
@@ -897,6 +898,24 @@
 **결과/위험:** OpenAPI contract diff가 Spring `WebClient`/`RestTemplate` 같은 실제 client line을 evidence로 보존하고, route constant declaration만 있는 파일은 impacted consumer에서 빠진다. 아직 multi-line request builder, imported constants, `@FeignClient(path=...)` + method path composition, Spring property placeholder, generated SDK method-name to route mapping은 후속 parser/LSP/generated-client depth에서 다룬다.
 
 **관련 commit:** `feat(workspace): OpenAPI route alias resolver 추가`
+
+---
+
+## D-049: Gradle version catalog resolution stays manifest-only
+
+**결정:** build-system/package resolver는 default path `gradle/libs.versions.toml`의 `[versions]`, `[libraries]`, `[bundles]`를 실행 없이 읽어 `build.gradle(.kts)`의 `libs.*` accessor dependency를 실제 Gradle package 좌표로 펼친다. 지원 범위는 가장 가까운 root/included-build default catalog, `"group:name:version"` string notation, `{ module = "group:name", version.ref = "..." }`, `{ group = "...", name = "...", version.ref = "..." }`, bundle alias 배열, `platform(libs.*)`/`enforcedPlatform(libs.*)`처럼 dependency call 내부에 중첩된 accessor다. Gradle task 실행, plugin resolution, settings-level custom catalog name, imported external catalog, generated accessor type 확인은 하지 않는다.
+
+**맥락:** D-038은 build-system/package resolver v0를 manifest-only로 고정했지만 Gradle version catalog는 Java/Kotlin/Spring Boot repo에서 매우 흔한 manifest-level dependency source다. `implementation(libs.spring.boot.starter.web)`를 `libs.*` pseudo package로 저장하면 dependency impact가 agent context에서 쓸모없어진다. 반대로 Gradle을 실행하면 네트워크/빌드 비용과 사용자 환경 의존이 커진다.
+
+**대안:**
+- Gradle Tooling API나 `gradle dependencies` 실행 — 정확도는 높지만 local-first/offline/side-effect-free 원칙과 맞지 않아 거부한다.
+- `libs.*` accessor를 그대로 package로 저장 — implementation은 쉽지만 실제 package impact를 보여주지 못한다.
+- version catalog support를 lockfile/transitive phase까지 미룸 — Spring Boot 프로젝트의 common path를 계속 놓치므로 거부한다.
+- 모든 TOML 문법을 완전 파싱 — dependency 추가 없이 v0 범위에는 과하다.
+
+**결과/위험:** Gradle version catalog alias와 bundle이 package graph에 실제 외부 package dependency로 나타나므로, Spring Boot dependency 변경 impact가 더 정확해진다. `version.ref`는 같은 catalog의 `[versions]` 값을 package metadata version으로 역참조한다. 여러 default catalog가 있으면 build manifest 경로 기준 가장 가까운 catalog만 사용해 included-build 간 alias 충돌을 줄인다. v0 parser는 line-oriented TOML subset만 지원하고, settings custom catalog name, imported catalog, plugin alias, rich version constraint, capability/variant semantics는 후속 package/build depth에서 다룬다.
+
+**관련 commit:** `feat(adapters): Gradle version catalog resolver 추가`
 
 ---
 

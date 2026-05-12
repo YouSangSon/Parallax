@@ -163,6 +163,8 @@ const expectedRelations: readonly ExpectedRelation[] = [
   packageDeclareRelation('package.json', '@acme/impact-bench', 'npm package declares bench workspace package'),
   packageManifestIdentityRelation('package.json', 'npm package identity depends on package manifest'),
   packageDependencyRelation('package.json', 'typescript', 'npm package depends on TypeScript package'),
+  packageManifestIdentityRelation('app/build.gradle.kts', 'Gradle package identity depends on build manifest'),
+  packageDependencyRelation('app/build.gradle.kts', 'org.springframework.boot:spring-boot-starter-web', 'Gradle version catalog alias depends on Spring Web package'),
   endpointRelation('src/main/java/com/example/UserController.java', 'GET /api/users', 'Spring Java GET endpoint'),
   endpointRelation('src/main/java/com/example/UserController.java', 'POST /api/users', 'Spring Java POST endpoint'),
   languageRelation('DEPENDS_ON', 'src/main/java/com/example/UserController.java', 'src/main/java/com/example/UserService.java', 'Spring controller imports service'),
@@ -681,6 +683,8 @@ async function writeFixture(repoRoot: string): Promise<void> {
     'tests/python',
     'src/go',
     'src/rust',
+    'app',
+    'gradle',
     '.github/workflows'
   ];
   await Promise.all(dirs.map((dir) => mkdir(path.join(repoRoot, dir), { recursive: true })));
@@ -700,6 +704,21 @@ async function writeFixture(repoRoot: string): Promise<void> {
       }
     }
   }, null, 2));
+  await writeFile(path.join(repoRoot, 'gradle/libs.versions.toml'), [
+    '[versions]',
+    'springBoot = "3.2.0"',
+    '',
+    '[libraries]',
+    'spring-boot-starter-web = { module = "org.springframework.boot:spring-boot-starter-web", version.ref = "springBoot" }',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'app/build.gradle.kts'), [
+    'plugins { java }',
+    'dependencies {',
+    '  implementation(libs.spring.boot.starter.web)',
+    '}',
+    ''
+  ].join('\n'));
   await writeFile(path.join(repoRoot, 'src/ts/session.ts'), [
     'export type Session = { token: string };',
     'export function validateSession(token: string): boolean {',

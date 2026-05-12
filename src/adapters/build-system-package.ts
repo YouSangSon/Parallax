@@ -42,7 +42,23 @@ type ParsedManifest = {
 };
 
 type PackageIndex = ReadonlyMap<string, LocalPackage>;
-type BuildManifestKind = PackageEcosystem | 'gradle-settings' | 'go-work' | 'pnpm-workspace';
+type BuildManifestKind = PackageEcosystem | 'gradle-settings' | 'gradle-version-catalog' | 'go-work' | 'pnpm-workspace';
+
+type GradleCatalogLibrary = {
+  name: string;
+  displayName: string;
+  version?: string;
+};
+
+type GradleVersionCatalog = {
+  libraries: ReadonlyMap<string, GradleCatalogLibrary>;
+  bundles: ReadonlyMap<string, readonly string[]>;
+};
+
+type GradleVersionCatalogEntry = {
+  rootDir: string;
+  catalog: GradleVersionCatalog;
+};
 
 const buildSystemCapabilities: readonly AdapterCapability[] = ['packages', 'references'];
 
@@ -56,11 +72,12 @@ export class BuildSystemPackageAdapter implements SemanticAdapter {
   }
 
   start(ctx: ExtractCtx, files: readonly ScannedFile[]): AdapterRun {
-    const packageIndex = discoverLocalPackages(files);
+    const gradleCatalogs = discoverGradleVersionCatalogs(files);
+    const packageIndex = discoverLocalPackages(files, gradleCatalogs);
     const filePathSet = new Set(ctx.indexedFiles.map((file) => file.relativePath));
     return {
       async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
-        yield* extractBuildSystemEvents(file, packageIndex, filePathSet);
+        yield* extractBuildSystemEvents(file, packageIndex, filePathSet, gradleCatalogs);
       }
     };
   }
@@ -69,9 +86,10 @@ export class BuildSystemPackageAdapter implements SemanticAdapter {
 async function* extractBuildSystemEvents(
   file: ScannedFile,
   packageIndex: PackageIndex,
-  filePathSet: ReadonlySet<string>
+  filePathSet: ReadonlySet<string>,
+  gradleCatalogs: readonly GradleVersionCatalogEntry[]
 ): AsyncIterable<IndexEvent> {
-  const parsed = parseBuildManifest(file);
+  const parsed = parseBuildManifest(file, gradleCatalogs);
   const fileDescriptor: EntityDescriptor = {
     kind: 'config',
     path: file.relativePath,
@@ -139,10 +157,10 @@ function localPackageDependencyConfidence(confidence: Confidence): Confidence {
   return confidence === 'proven' ? 'proven' : 'inferred';
 }
 
-function discoverLocalPackages(files: readonly ScannedFile[]): PackageIndex {
+function discoverLocalPackages(files: readonly ScannedFile[], gradleCatalogs: readonly GradleVersionCatalogEntry[]): PackageIndex {
   const packages = new Map<string, LocalPackage>();
   for (const file of files) {
-    const parsed = parseBuildManifest(file);
+    const parsed = parseBuildManifest(file, gradleCatalogs);
     if (!parsed.package) continue;
     for (const alias of parsed.package.aliases) {
       packages.set(packageKey(parsed.package.ecosystem, alias), parsed.package);
@@ -151,12 +169,12 @@ function discoverLocalPackages(files: readonly ScannedFile[]): PackageIndex {
   return packages;
 }
 
-function parseBuildManifest(file: ScannedFile): ParsedManifest {
+function parseBuildManifest(file: ScannedFile, gradleCatalogs: readonly GradleVersionCatalogEntry[]): ParsedManifest {
   const kind = buildManifestKind(file.relativePath);
   const parsed =
     kind === 'npm' ? parseNpmPackageJson(file)
     : kind === 'maven' ? parseMavenPom(file)
-    : kind === 'gradle' ? parseGradleBuild(file)
+    : kind === 'gradle' ? parseGradleBuild(file, gradleVersionCatalogForBuild(file.relativePath, gradleCatalogs))
     : kind === 'go' ? parseGoMod(file)
     : kind === 'cargo' ? parseCargoToml(file)
     : kind === 'python' ? parsePyprojectToml(file)
@@ -173,6 +191,7 @@ function buildManifestKind(relativePath: string): BuildManifestKind | undefined 
   if (basename === 'pom.xml') return 'maven';
   if (basename === 'settings.gradle' || basename === 'settings.gradle.kts') return 'gradle-settings';
   if (basename === 'build.gradle' || basename === 'build.gradle.kts') return 'gradle';
+  if (basename === 'libs.versions.toml') return 'gradle-version-catalog';
   if (basename === 'go.mod') return 'go';
   if (basename === 'go.work') return 'go-work';
   if (basename === 'Cargo.toml') return 'cargo';
@@ -324,7 +343,7 @@ function parseMavenPom(file: ScannedFile): ParsedManifest {
   };
 }
 
-function parseGradleBuild(file: ScannedFile): ParsedManifest {
+function parseGradleBuild(file: ScannedFile, gradleCatalog: GradleVersionCatalog): ParsedManifest {
   const projectPath = gradleProjectPath(file.relativePath);
   const pkg = localPackage('gradle', projectPath, file.relativePath, projectPath, undefined, [projectPath]);
   const dependencies: PackageDependency[] = [];
@@ -351,7 +370,314 @@ function parseGradleBuild(file: ScannedFile): ParsedManifest {
       evidence: evidenceLineAt(file.content, file.relativePath, match.index ?? 0)
     });
   }
+  dependencies.push(...gradleVersionCatalogDependencies(file, gradleCatalog));
   return { package: pkg, dependencies: dedupeDependencies(dependencies), diagnostics: [] };
+}
+
+function discoverGradleVersionCatalogs(files: readonly ScannedFile[]): GradleVersionCatalogEntry[] {
+  return files
+    .filter((file) => isDefaultGradleVersionCatalogPath(file.relativePath))
+    .map((file) => ({
+      rootDir: gradleCatalogRootDir(file.relativePath),
+      catalog: parseGradleVersionCatalog(file.content)
+    }))
+    .sort((left, right) => right.rootDir.length - left.rootDir.length || left.rootDir.localeCompare(right.rootDir));
+}
+
+function parseGradleVersionCatalog(content: string): GradleVersionCatalog {
+  const versionEntries: Array<[string, string]> = [];
+  const libraryEntries: Array<[string, string]> = [];
+  const bundleEntries: Array<[string, string]> = [];
+  let section = '';
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = stripTomlComment(rawLine).trim();
+    if (line.length === 0) continue;
+    const sectionMatch = /^\[([^\]]+)\]$/.exec(line);
+    if (sectionMatch) {
+      section = sectionMatch[1]!;
+      continue;
+    }
+    const assignment = /^([A-Za-z0-9_.-]+)\s*=\s*(.+)$/.exec(line);
+    if (!assignment) continue;
+    const alias = assignment[1]!;
+    const value = assignment[2]!;
+    if (section === 'versions') versionEntries.push([alias, value]);
+    if (section === 'libraries') libraryEntries.push([alias, value]);
+    if (section === 'bundles') bundleEntries.push([alias, value]);
+  }
+
+  const versions = new Map<string, string>();
+  for (const [alias, value] of versionEntries) {
+    const version = tomlInlineString(value);
+    if (version) versions.set(alias, version);
+  }
+
+  const libraries = new Map<string, GradleCatalogLibrary>();
+  const bundles = new Map<string, readonly string[]>();
+  for (const [alias, value] of libraryEntries) {
+    const library = gradleCatalogLibrary(alias, value, versions);
+    if (library) libraries.set(gradleAccessorName(alias), library);
+  }
+  for (const [alias, value] of bundleEntries) {
+    const bundleAliases = [...value.matchAll(/"([^"]+)"/g)].map((match) => gradleAccessorName(match[1]!));
+    if (bundleAliases.length > 0) bundles.set(gradleAccessorName(alias), bundleAliases);
+  }
+  return { libraries, bundles };
+}
+
+function gradleCatalogLibrary(
+  alias: string,
+  value: string,
+  versions: ReadonlyMap<string, string>
+): GradleCatalogLibrary | undefined {
+  const quotedCoordinate = /^"([^"]+)"/.exec(value)?.[1];
+  const moduleCoordinate = /(?:^|[,{\s])module\s*=\s*"([^"]+)"/.exec(value)?.[1];
+  const group = /(?:^|[,{\s])group\s*=\s*"([^"]+)"/.exec(value)?.[1];
+  const name = /(?:^|[,{\s])name\s*=\s*"([^"]+)"/.exec(value)?.[1];
+  const version = /(?:^|[,{\s])version\s*=\s*"([^"]+)"/.exec(value)?.[1];
+  const versionRef = /(?:^|[,{\s])version\.ref\s*=\s*"([^"]+)"/.exec(value)?.[1];
+  const coordinate = moduleCoordinate ?? (group && name ? `${group}:${name}` : quotedCoordinate);
+  if (!coordinate) return undefined;
+  const parts = coordinate.split(':');
+  if (parts.length < 2) return undefined;
+  const displayName = `${parts[0]}:${parts[1]}`;
+  const libraryVersion = parts[2] ?? version ?? (versionRef ? versions.get(versionRef) : undefined);
+  return {
+    name: displayName,
+    displayName,
+    ...(libraryVersion ? { version: libraryVersion } : {})
+  };
+}
+
+function gradleVersionCatalogDependencies(
+  file: ScannedFile,
+  catalog: GradleVersionCatalog
+): PackageDependency[] {
+  const dependencies: PackageDependency[] = [];
+  const accessorPattern = /\blibs((?:\.[A-Za-z_][\w]*)+)/g;
+  for (const call of gradleDependencyCalls(file.content)) {
+    for (const match of call.argument.matchAll(accessorPattern)) {
+      const accessor = match[1]!.replace(/^\./, '');
+      if (accessor.startsWith('bundles.')) {
+        const bundleAccessor = accessor.slice('bundles.'.length);
+        for (const libraryAccessor of catalog.bundles.get(bundleAccessor) ?? []) {
+          const library = catalog.libraries.get(libraryAccessor);
+          if (library) dependencies.push(gradleCatalogDependency(file, library, call.dependencyType, call.offset));
+        }
+        continue;
+      }
+      const library = catalog.libraries.get(accessor);
+      if (library) dependencies.push(gradleCatalogDependency(file, library, call.dependencyType, call.offset));
+    }
+  }
+  return dependencies;
+}
+
+function gradleVersionCatalogForBuild(
+  relativePath: string,
+  catalogs: readonly GradleVersionCatalogEntry[]
+): GradleVersionCatalog {
+  const match = catalogs.find((entry) => pathInsideGradleRoot(relativePath, entry.rootDir));
+  return match?.catalog ?? emptyGradleVersionCatalog();
+}
+
+function emptyGradleVersionCatalog(): GradleVersionCatalog {
+  return { libraries: new Map<string, GradleCatalogLibrary>(), bundles: new Map<string, readonly string[]>() };
+}
+
+function isDefaultGradleVersionCatalogPath(relativePath: string): boolean {
+  const parts = relativePath.split('/');
+  return parts.length >= 2 && parts.at(-2) === 'gradle' && parts.at(-1) === 'libs.versions.toml';
+}
+
+function gradleCatalogRootDir(relativePath: string): string {
+  const gradleDir = path.posix.dirname(relativePath);
+  const rootDir = path.posix.dirname(gradleDir);
+  return rootDir === '.' ? '' : rootDir;
+}
+
+function pathInsideGradleRoot(relativePath: string, rootDir: string): boolean {
+  return rootDir.length === 0 || relativePath === rootDir || relativePath.startsWith(`${rootDir}/`);
+}
+
+function gradleDependencyCalls(content: string): Array<{ dependencyType: string; argument: string; offset: number }> {
+  const calls: Array<{ dependencyType: string; argument: string; offset: number }> = [];
+  const maskedContent = maskCommentsAndStrings(content);
+  const configurationPattern = /\b(api|implementation|compileOnly|runtimeOnly|testImplementation|testRuntimeOnly)\s*\(/g;
+  for (const match of maskedContent.matchAll(configurationPattern)) {
+    const openParen = (match.index ?? 0) + match[0]!.length - 1;
+    const closeParen = matchingDelimiterIndex(maskedContent, openParen, '(', ')');
+    if (closeParen < 0) continue;
+    calls.push({
+      dependencyType: match[1]!,
+      argument: maskedContent.slice(openParen + 1, closeParen),
+      offset: match.index ?? 0
+    });
+  }
+
+  const linePattern = /\b(api|implementation|compileOnly|runtimeOnly|testImplementation|testRuntimeOnly)\s+(?!\()([^\r\n]+)/g;
+  for (const match of maskedContent.matchAll(linePattern)) {
+    calls.push({
+      dependencyType: match[1]!,
+      argument: match[2]!,
+      offset: match.index ?? 0
+    });
+  }
+  return calls;
+}
+
+function maskCommentsAndStrings(content: string): string {
+  let output = '';
+  let index = 0;
+  let quote: string | undefined;
+  let escaped = false;
+  let lineComment = false;
+  let blockComment = false;
+  while (index < content.length) {
+    const char = content[index]!;
+    const next = content[index + 1];
+    if (lineComment) {
+      if (char === '\n' || char === '\r') {
+        lineComment = false;
+        output += char;
+      } else {
+        output += ' ';
+      }
+      index += 1;
+      continue;
+    }
+    if (blockComment) {
+      if (char === '*' && next === '/') {
+        output += '  ';
+        index += 2;
+        blockComment = false;
+      } else {
+        output += char === '\n' || char === '\r' ? char : ' ';
+        index += 1;
+      }
+      continue;
+    }
+    if (quote) {
+      output += char === '\n' || char === '\r' ? char : ' ';
+      if (escaped) {
+        escaped = false;
+      } else if (char === '\\') {
+        escaped = true;
+      } else if (char === quote) {
+        quote = undefined;
+      }
+      index += 1;
+      continue;
+    }
+    if (char === '/' && next === '/') {
+      output += '  ';
+      index += 2;
+      lineComment = true;
+      continue;
+    }
+    if (char === '/' && next === '*') {
+      output += '  ';
+      index += 2;
+      blockComment = true;
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      output += ' ';
+      index += 1;
+      continue;
+    }
+    output += char;
+    index += 1;
+  }
+  return output;
+}
+
+function matchingDelimiterIndex(
+  content: string,
+  openIndex: number,
+  open: string,
+  close: string
+): number {
+  let depth = 0;
+  let quote: string | undefined;
+  let escaped = false;
+  for (let index = openIndex; index < content.length; index += 1) {
+    const char = content[index]!;
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (quote) {
+      if (char === quote) quote = undefined;
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      continue;
+    }
+    if (char === open) depth += 1;
+    if (char === close) {
+      depth -= 1;
+      if (depth === 0) return index;
+    }
+  }
+  return -1;
+}
+
+function stripTomlComment(line: string): string {
+  let quote: string | undefined;
+  let escaped = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index]!;
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (quote) {
+      if (char === quote) quote = undefined;
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      continue;
+    }
+    if (char === '#') return line.slice(0, index);
+  }
+  return line;
+}
+
+function tomlInlineString(value: string): string | undefined {
+  return /^\s*"([^"]+)"/.exec(value)?.[1];
+}
+
+function gradleCatalogDependency(
+  file: ScannedFile,
+  library: GradleCatalogLibrary,
+  dependencyType: string,
+  offset: number
+): PackageDependency {
+  return {
+    ecosystem: 'gradle',
+    name: library.name,
+    displayName: library.displayName,
+    version: library.version,
+    dependencyType,
+    confidence: 'heuristic',
+    evidence: evidenceLineAt(file.content, file.relativePath, offset)
+  };
+}
+
+function gradleAccessorName(alias: string): string {
+  return alias.replace(/[-_.]+/g, '.');
 }
 
 function parseGoMod(file: ScannedFile): ParsedManifest {

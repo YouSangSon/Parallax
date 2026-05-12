@@ -351,6 +351,118 @@ test('indexProject extracts Maven Gradle Go Cargo and pyproject dependencies', a
   ));
 });
 
+test('indexProject resolves Go workspace use directories and local replace modules', async () => {
+  const repoRoot = await makeRepo('impact-trace-build-go-work-replace-');
+  await mkdir(path.join(repoRoot, 'apps/api'), { recursive: true });
+  await mkdir(path.join(repoRoot, 'apps/other'), { recursive: true });
+  await mkdir(path.join(repoRoot, 'libs/shared'), { recursive: true });
+
+  await writeFile(
+    path.join(repoRoot, 'go.work'),
+    [
+      'go 1.22',
+      '',
+      '// apps/api/go.mod is mentioned before the directive but must not become evidence',
+      'use (',
+      '  ./apps/api',
+      '  ./libs/shared',
+      ')',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(repoRoot, 'apps/api/go.mod'),
+    [
+      'module example.com/api',
+      '',
+      'go 1.22',
+      '',
+      'require github.com/acme/shared v0.0.0',
+      '',
+      'replace github.com/acme/shared => ../../libs/shared',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(repoRoot, 'libs/shared/go.mod'),
+    [
+      'module example.com/internal/shared',
+      '',
+      'go 1.22',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(repoRoot, 'apps/other/go.mod'),
+    [
+      'module example.com/other',
+      '',
+      'go 1.22',
+      '',
+      'require github.com/acme/shared v0.0.0',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const rows = relationRows(repoRoot, index.indexRunId);
+  assert.ok(rows.some((row) =>
+    row.kind === 'CONFIGURES' &&
+    row.sourcePath === 'go.work' &&
+    row.targetKind === 'config' &&
+    row.targetPath === 'apps/api/go.mod' &&
+    row.snippet?.includes('./apps/api')
+  ));
+  assert.ok(rows.some((row) =>
+    row.kind === 'CONFIGURES' &&
+    row.sourcePath === 'go.work' &&
+    row.targetKind === 'config' &&
+    row.targetPath === 'libs/shared/go.mod' &&
+    row.snippet?.includes('./libs/shared')
+  ));
+  const localReplaceDependency = rows.find((row) =>
+    row.kind === 'DEPENDS_ON' &&
+    row.sourceName === 'example.com/api' &&
+    row.targetKind === 'package' &&
+    row.targetLanguage === 'go' &&
+    row.targetName === 'example.com/internal/shared'
+  );
+  assert.ok(localReplaceDependency);
+  assert.equal(localReplaceDependency.targetPath, 'libs/shared/go.mod');
+  assert.ok(localReplaceDependency.snippet?.includes('require github.com/acme/shared v0.0.0'));
+  assert.equal(
+    rows.some((row) =>
+      row.kind === 'DEPENDS_ON' &&
+      row.sourceName === 'example.com/api' &&
+      row.targetKind === 'package' &&
+      row.targetLanguage === 'go' &&
+      row.targetName === 'github.com/acme/shared'
+    ),
+    false
+  );
+  const unreplacedDependency = rows.find((row) =>
+    row.kind === 'DEPENDS_ON' &&
+    row.sourceName === 'example.com/other' &&
+    row.targetKind === 'package' &&
+    row.targetLanguage === 'go' &&
+    row.targetName === 'github.com/acme/shared'
+  );
+  assert.ok(unreplacedDependency);
+  assert.equal(unreplacedDependency.targetPath, null);
+  assert.equal(
+    rows.some((row) =>
+      row.kind === 'DEPENDS_ON' &&
+      row.sourceName === 'example.com/other' &&
+      row.targetKind === 'package' &&
+      row.targetLanguage === 'go' &&
+      row.targetName === 'example.com/internal/shared'
+    ),
+    false
+  );
+});
+
 test('indexProject resolves Maven POM properties in package and dependency coordinates', async () => {
   const repoRoot = await makeRepo('impact-trace-build-maven-properties-');
   await mkdir(path.join(repoRoot, 'service'), { recursive: true });

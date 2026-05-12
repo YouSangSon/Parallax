@@ -167,6 +167,11 @@ const expectedRelations: readonly ExpectedRelation[] = [
   packageDependencyRelation('pom.xml', 'org.springframework.boot:spring-boot-starter-web', 'Maven property dependency depends on Spring Web package'),
   packageManifestIdentityRelation('app/build.gradle.kts', 'Gradle package identity depends on build manifest'),
   packageDependencyRelation('app/build.gradle.kts', 'org.springframework.boot:spring-boot-starter-web', 'Gradle version catalog alias depends on Spring Web package'),
+  buildSystemConfigRelation('go.work', 'services/go-api/go.mod', 'Go workspace includes service module'),
+  buildSystemConfigRelation('go.work', 'libs/go-shared/go.mod', 'Go workspace includes shared module'),
+  packageManifestIdentityRelation('services/go-api/go.mod', 'Go service package identity depends on module manifest'),
+  packageManifestIdentityRelation('libs/go-shared/go.mod', 'Go shared package identity depends on module manifest'),
+  localPackageDependencyRelation('services/go-api/go.mod', 'libs/go-shared/go.mod', 'Go replace dependency depends on local shared module'),
   endpointRelation('src/main/java/com/example/UserController.java', 'GET /api/users', 'Spring Java GET endpoint'),
   endpointRelation('src/main/java/com/example/UserController.java', 'POST /api/users', 'Spring Java POST endpoint'),
   languageRelation('DEPENDS_ON', 'src/main/java/com/example/UserController.java', 'src/main/java/com/example/UserService.java', 'Spring controller imports service'),
@@ -497,6 +502,22 @@ function fallbackRelation(
   };
 }
 
+function buildSystemConfigRelation(
+  sourcePath: string,
+  targetPath: string,
+  label: string
+): ExpectedRelation {
+  return {
+    kind: 'CONFIGURES',
+    sourceKind: fileKindForPath(sourcePath),
+    sourcePath,
+    targetKind: fileKindForPath(targetPath),
+    targetPath,
+    adapterId: BUILD_SYSTEM_PACKAGE_ADAPTER_ID,
+    label
+  };
+}
+
 function springDeclareRelation(
   sourcePath: string,
   targetSymbol: string,
@@ -660,6 +681,22 @@ function packageDependencyRelation(
   };
 }
 
+function localPackageDependencyRelation(
+  sourcePath: string,
+  targetPath: string,
+  label: string
+): ExpectedRelation {
+  return {
+    kind: 'DEPENDS_ON',
+    sourceKind: 'package',
+    sourcePath,
+    targetKind: 'package',
+    targetPath,
+    adapterId: BUILD_SYSTEM_PACKAGE_ADAPTER_ID,
+    label
+  };
+}
+
 function adapterIdForPath(relativePath: string): string {
   if (isBuildSystemManifestPath(relativePath)) return BUILD_SYSTEM_PACKAGE_ADAPTER_ID;
   const language = languageIdForPath(relativePath);
@@ -684,6 +721,8 @@ async function writeFixture(repoRoot: string): Promise<void> {
     'src/python',
     'tests/python',
     'src/go',
+    'services/go-api',
+    'libs/go-shared',
     'src/rust',
     'app',
     'gradle',
@@ -740,6 +779,31 @@ async function writeFixture(repoRoot: string): Promise<void> {
     'dependencies {',
     '  implementation(libs.spring.boot.starter.web)',
     '}',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'go.work'), [
+    'go 1.22',
+    '',
+    'use (',
+    '  ./services/go-api',
+    '  ./libs/go-shared',
+    ')',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'services/go-api/go.mod'), [
+    'module example.com/go-api',
+    '',
+    'go 1.22',
+    '',
+    'require github.com/acme/shared v0.0.0',
+    '',
+    'replace github.com/acme/shared => ../../libs/go-shared',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'libs/go-shared/go.mod'), [
+    'module example.com/internal/shared',
+    '',
+    'go 1.22',
     ''
   ].join('\n'));
   await writeFile(path.join(repoRoot, 'src/ts/session.ts'), [
@@ -1186,6 +1250,7 @@ function isBuildSystemManifestPath(filePath: string): boolean {
     'build.gradle',
     'build.gradle.kts',
     'go.mod',
+    'go.work',
     'Cargo.toml',
     'pyproject.toml'
   ]).has(basename);

@@ -59,6 +59,7 @@
 | [D-047](#d-047-asyncapi-event-alias-resolution-stays-same-file-and-literal-only) | AsyncAPI event alias resolution stays same-file and literal-only | P0/P1 | 2026-05-12 |
 | [D-048](#d-048-openapi-http-route-alias-resolution-is-call-site-gated) | OpenAPI HTTP route alias resolution is call-site gated | P0/P1 | 2026-05-12 |
 | [D-049](#d-049-gradle-version-catalog-resolution-stays-manifest-only) | Gradle version catalog resolution stays manifest-only | P1/P2 | 2026-05-12 |
+| [D-050](#d-050-maven-property-interpolation-stays-pom-local-in-v0) | Maven property interpolation stays POM-local in v0 | P1/P2 | 2026-05-12 |
 
 ---
 
@@ -916,6 +917,23 @@
 **결과/위험:** Gradle version catalog alias와 bundle이 package graph에 실제 외부 package dependency로 나타나므로, Spring Boot dependency 변경 impact가 더 정확해진다. `version.ref`는 같은 catalog의 `[versions]` 값을 package metadata version으로 역참조한다. 여러 default catalog가 있으면 build manifest 경로 기준 가장 가까운 catalog만 사용해 included-build 간 alias 충돌을 줄인다. v0 parser는 line-oriented TOML subset만 지원하고, settings custom catalog name, imported catalog, plugin alias, rich version constraint, capability/variant semantics는 후속 package/build depth에서 다룬다.
 
 **관련 commit:** `feat(adapters): Gradle version catalog resolver 추가`
+
+---
+
+## D-050: Maven property interpolation stays POM-local in v0
+
+**결정:** build-system/package resolver는 `pom.xml`의 같은 파일 안에 있는 `<properties>`와 Maven built-in alias `project.*`, `pom.*`, `project.parent.*`, `pom.parent.*`를 package/dependency 좌표와 version metadata에 치환한다. 지원 범위는 현재 POM 본문과 그 안의 `<parent>` metadata까지이며, parent POM 파일 탐색, profile activation, dependencyManagement inheritance, plugin execution, Maven CLI 실행은 하지 않는다.
+
+**맥락:** Spring Boot/Maven 프로젝트는 `${spring.boot.version}`, `${project.groupId}`, `${revision}` 같은 property를 dependency coordinate에 자주 쓴다. 이를 그대로 저장하면 agent/UI가 `org.springframework.boot:spring-boot-starter-web` 같은 실제 package impact를 보지 못하고 `${...}` pseudo coordinate를 받는다. 반대로 Maven model builder를 실행하면 로컬 settings, repository, profile, plugin side effect와 네트워크 표면이 커진다.
+
+**대안:**
+- Maven CLI 또는 Maven Model Builder 실행 — 실제 effective POM에 가깝지만 local-first/offline/side-effect-free 원칙과 맞지 않아 거부한다.
+- `${...}`를 그대로 저장 — 구현은 쉽지만 Spring Boot dependency impact가 실제 좌표로 좁혀지지 않는다.
+- parent/profile/dependencyManagement inheritance까지 한 번에 구현 — 필요하지만 범위가 커서 v0 regression gate가 흐려진다.
+
+**결과/위험:** 같은 POM 안에서 선언된 property와 project/parent alias는 실제 package 좌표와 version metadata로 저장된다. v0는 deterministic XML subset 치환이므로 multi-file parent inheritance, active profile, property precedence, dependencyManagement import BOM, plugin-generated model은 후속 package/build depth에서 다룬다.
+
+**관련 commit:** `feat(adapters): Maven property resolver 추가`
 
 ---
 

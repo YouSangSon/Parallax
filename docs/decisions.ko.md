@@ -56,6 +56,7 @@
 | [D-044](#d-044-ui-work-artifact-metadata-stays-compact-and-body-free) | UI work artifact metadata stays compact and body-free | P3/P0 | 2026-05-12 |
 | [D-045](#d-045-ui-work-artifact-freshness-is-derived-from-compact-dates) | UI work artifact freshness is derived from compact dates | P3/P0 | 2026-05-12 |
 | [D-046](#d-046-mcp-context-packs-carry-body-free-work-artifact-previews) | MCP context packs carry body-free work artifact previews | P3/P0 | 2026-05-12 |
+| [D-047](#d-047-asyncapi-event-alias-resolution-stays-same-file-and-literal-only) | AsyncAPI event alias resolution stays same-file and literal-only | P0/P1 | 2026-05-12 |
 
 ---
 
@@ -859,6 +860,24 @@
 **결과/위험:** agent는 전체 문서 본문 없이도 어떤 정책/결정/PRD/제안서가 변경 영향을 받는지 알 수 있다. `context-pack-cache-v2`로 cache key를 bump해 이전 shape의 persisted pack과 충돌하지 않게 했다. v0는 owner/reviewer routing과 팀별 freshness threshold config는 다루지 않는다.
 
 **관련 commit:** `feat(context): work artifact preview 추가`
+
+---
+
+## D-047: AsyncAPI event alias resolution stays same-file and literal-only
+
+**결정:** `workspace resolve-contracts`의 AsyncAPI consumer/producer resolver는 같은 파일 안의 standalone string alias만 event address로 인정한다. 지원 범위는 `const TOPIC = "orders.submitted"`와 `TOPIC = "orders.submitted"`처럼 정확한 quoted literal을 저장한 뒤, 같은 파일의 direction-bearing `subscribe`/`send`/listener/writer call site가 해당 identifier를 직접 인자로 쓰는 경우다. source file의 bare dotted expression, object property key, member assignment, string concatenation, template interpolation, wildcard, placeholder/default expression은 link로 승격하지 않는다.
+
+**맥락:** D-039의 event topology v0는 exact event address literal이 call site line에 직접 있어야 했다. 실제 TS/JS/Java/Kotlin/Python/Go/Rust 코드에서는 topic을 같은 파일 상수로 빼는 경우가 흔하므로, Claude/Codex context pack이 event consumer/producer impact를 놓치지 않으려면 작은 alias depth가 필요하다. 다만 이 resolver는 아직 AST/data-flow가 아니므로 alias 범위를 넓히면 `orders.submitted.v2`, `${TOPIC}.*`, `consumer.topic = ...`, object default config 같은 computed/runtime 값까지 잘못 downstream impact로 연결할 위험이 크다.
+
+**대안:**
+- cross-file constant resolution과 framework config binding까지 추적 — 실제성은 높지만 AST/LSP 없이 false positive를 통제하기 어렵다.
+- object property와 member assignment도 alias로 인정 — `topic` 같은 일반 parameter를 event address로 오인할 수 있어 거부한다.
+- source file에서 unquoted dotted token도 event address로 인정 — `orders.submitted` member expression과 string event address를 구분할 수 없어 거부한다.
+- alias support를 full parser/LSP phase까지 미룸 — 정확도는 높지만 같은 파일 상수라는 common path를 계속 놓친다.
+
+**결과/위험:** same-file literal alias는 compact provenance와 기존 `CONSUMES_HTTP_ENDPOINT` envelope를 유지하면서 event topology recall을 올린다. snippet은 alias declaration이 아니라 실제 direction-bearing call site line으로 남는다. 여전히 line-oriented heuristic이므로 multi-line alias, imported constants, computed topic builders, Spring property placeholder, Kafka regex/wildcard, AMQP/NATS binding graph는 후속 parser/LSP/event-topology depth에서 다룬다.
+
+**관련 commit:** `feat(workspace): AsyncAPI event alias resolver 추가`
 
 ---
 

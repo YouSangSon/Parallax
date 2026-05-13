@@ -177,6 +177,12 @@ const expectedRelations: readonly ExpectedRelation[] = [
   packageManifestIdentityRelation('services/go-api/go.mod', 'Go service package identity depends on module manifest'),
   packageManifestIdentityRelation('libs/go-shared/go.mod', 'Go shared package identity depends on module manifest'),
   localPackageDependencyRelation('services/go-api/go.mod', 'libs/go-shared/go.mod', 'Go replace dependency depends on local shared module'),
+  buildSystemConfigRelation('Cargo.toml', 'crates/bench-api/Cargo.toml', 'Cargo workspace includes API crate'),
+  buildSystemConfigRelation('Cargo.toml', 'crates/bench-core/Cargo.toml', 'Cargo workspace includes core crate'),
+  packageManifestIdentityRelation('crates/bench-api/Cargo.toml', 'Cargo API package identity depends on manifest'),
+  packageManifestIdentityRelation('crates/bench-core/Cargo.toml', 'Cargo core package identity depends on manifest'),
+  localPackageDependencyRelation('crates/bench-api/Cargo.toml', 'crates/bench-core/Cargo.toml', 'Cargo path dependency depends on local core crate'),
+  packageDependencyRelation('crates/bench-api/Cargo.toml', 'serde', 'Cargo workspace dependency depends on serde package'),
   endpointRelation('src/main/java/com/example/UserController.java', 'GET /api/users', 'Spring Java GET endpoint'),
   endpointRelation('src/main/java/com/example/UserController.java', 'POST /api/users', 'Spring Java POST endpoint'),
   languageRelation('DEPENDS_ON', 'src/main/java/com/example/UserController.java', 'src/main/java/com/example/UserService.java', 'Spring controller imports service'),
@@ -728,6 +734,8 @@ async function writeFixture(repoRoot: string): Promise<void> {
     'src/go',
     'services/go-api',
     'libs/go-shared',
+    'crates/bench-api',
+    'crates/bench-core',
     'src/rust',
     'app',
     'gradle',
@@ -833,6 +841,34 @@ async function writeFixture(repoRoot: string): Promise<void> {
     'module example.com/internal/shared',
     '',
     'go 1.22',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'Cargo.toml'), [
+    '[workspace]',
+    'members = [',
+    '  "crates/*",',
+    ']',
+    '',
+    '[workspace.dependencies]',
+    'serde = "1"',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'crates/bench-api/Cargo.toml'), [
+    '[package]',
+    'name = "bench-api"',
+    'version = "0.1.0"',
+    'edition = "2021"',
+    '',
+    '[dependencies]',
+    'bench-core = { path = "../bench-core", version = "0.1.0" }',
+    'serde = { workspace = true }',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'crates/bench-core/Cargo.toml'), [
+    '[package]',
+    'name = "bench-core"',
+    'version = "0.1.0"',
+    'edition = "2021"',
     ''
   ].join('\n'));
   await writeFile(path.join(repoRoot, 'src/ts/session.ts'), [

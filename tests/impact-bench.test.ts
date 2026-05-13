@@ -29,7 +29,7 @@ test('ImpactBench runner writes deterministic report shape', async () => {
     assert.equal(report.fixtureId, 'phase6b-multilanguage-v0');
     assert.equal(report.outputPath, '.impact-trace/bench/impact-bench-report.json');
     assert.equal(report.summary.passed, true);
-    assert.equal(report.summary.expectedRelations, 63);
+    assert.equal(report.summary.expectedRelations, 69);
     assert.equal(report.summary.expectedRelations, report.summary.matchedRelations);
     assert.equal(report.summary.unexpectedRelations, 0);
     assert.equal(report.scores.affectedFileRecall, 1);
@@ -88,6 +88,10 @@ test('ImpactBench runner writes deterministic report shape', async () => {
       'Go workspace includes service module',
       'Go workspace includes shared module',
       'Go replace dependency depends on local shared module',
+      'Cargo workspace includes API crate',
+      'Cargo workspace includes core crate',
+      'Cargo path dependency depends on local core crate',
+      'Cargo workspace dependency depends on serde package',
       'Python project dependency depends on FastAPI package',
       'Python optional dependency depends on pytest package',
       'Python dependency group depends on mypy package',

@@ -47,6 +47,10 @@ type LocalPackageDiscovery = {
   byManifest: ReadonlyMap<string, LocalPackage>;
 };
 type ScopedPackageIndex = ReadonlyMap<string, PackageIndex>;
+type PackageDependencyOverride = {
+  version?: string;
+};
+type ScopedPackageDependencyOverrides = ReadonlyMap<string, ReadonlyMap<string, PackageDependencyOverride>>;
 type BuildManifestKind = PackageEcosystem | 'gradle-settings' | 'gradle-version-catalog' | 'go-work' | 'pnpm-workspace';
 
 type GradleCatalogLibrary = {
@@ -81,6 +85,32 @@ type TomlStringArrayAssignment = {
   values: readonly TomlStringValue[];
 };
 
+type CargoDependencyContext = {
+  localDependencies: ScopedPackageIndex;
+  dependencyOverrides: ScopedPackageDependencyOverrides;
+};
+
+type CargoDependencyEntry = {
+  name: string;
+  dependencyType: string;
+  version?: string;
+  path?: string;
+  workspaceInherited: boolean;
+  offset: number;
+};
+
+type CargoWorkspaceDefinition = {
+  rootManifestPath: string;
+  rootDir: string;
+  dependencies: ReadonlyMap<string, CargoWorkspaceDependency>;
+};
+
+type CargoWorkspaceDependency = {
+  name: string;
+  version?: string;
+  path?: string;
+};
+
 const buildSystemCapabilities: readonly AdapterCapability[] = ['packages', 'references'];
 
 export class BuildSystemPackageAdapter implements SemanticAdapter {
@@ -96,10 +126,18 @@ export class BuildSystemPackageAdapter implements SemanticAdapter {
     const gradleCatalogs = discoverGradleVersionCatalogs(files);
     const packageDiscovery = discoverLocalPackages(files, gradleCatalogs);
     const goReplacementIndex = discoverGoLocalReplacementIndex(files, packageDiscovery.byManifest);
+    const cargoDependencyContext = discoverCargoDependencyContext(files, packageDiscovery.byManifest);
     const filePathSet = new Set(ctx.indexedFiles.map((file) => file.relativePath));
     return {
       async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
-        yield* extractBuildSystemEvents(file, packageDiscovery.byAlias, filePathSet, gradleCatalogs, goReplacementIndex);
+        yield* extractBuildSystemEvents(
+          file,
+          packageDiscovery.byAlias,
+          filePathSet,
+          gradleCatalogs,
+          goReplacementIndex,
+          cargoDependencyContext
+        );
       }
     };
   }
@@ -110,9 +148,10 @@ async function* extractBuildSystemEvents(
   packageIndex: PackageIndex,
   filePathSet: ReadonlySet<string>,
   gradleCatalogs: readonly GradleVersionCatalogEntry[],
-  goReplacementIndex: ScopedPackageIndex
+  goReplacementIndex: ScopedPackageIndex,
+  cargoDependencyContext: CargoDependencyContext
 ): AsyncIterable<IndexEvent> {
-  const parsed = parseBuildManifest(file, gradleCatalogs);
+  const parsed = parseBuildManifest(file, gradleCatalogs, cargoDependencyContext.dependencyOverrides);
   const fileDescriptor: EntityDescriptor = {
     kind: 'config',
     path: file.relativePath,
@@ -159,7 +198,13 @@ async function* extractBuildSystemEvents(
   );
 
   for (const dependency of parsed.dependencies) {
-    const localTarget = localPackageTarget(file, dependency, packageIndex, goReplacementIndex);
+    const localTarget = localPackageTarget(
+      file,
+      dependency,
+      packageIndex,
+      goReplacementIndex,
+      cargoDependencyContext.localDependencies
+    );
     const target = localTarget
       ? localPackageDescriptor(localTarget)
       : externalPackageDescriptor(dependency);
@@ -214,27 +259,104 @@ function discoverGoLocalReplacementIndex(
   return replacementsByManifest;
 }
 
+function discoverCargoDependencyContext(
+  files: readonly ScannedFile[],
+  packagesByManifest: ReadonlyMap<string, LocalPackage>
+): CargoDependencyContext {
+  const localDependenciesByManifest = new Map<string, PackageIndex>();
+  const overridesByManifest = new Map<string, Map<string, PackageDependencyOverride>>();
+  const workspaceDefinitions = discoverCargoWorkspaceDefinitions(files);
+  for (const file of files) {
+    if (buildManifestKind(file.relativePath) !== 'cargo') continue;
+    const localDependencies = new Map<string, LocalPackage>();
+    const dependencyOverrides = new Map<string, PackageDependencyOverride>();
+    const workspace = cargoWorkspaceForManifest(file.relativePath, workspaceDefinitions);
+    for (const dependency of cargoDependencyEntries(file)) {
+      const workspaceDependency = dependency.workspaceInherited
+        ? workspace?.dependencies.get(dependency.name)
+        : undefined;
+      const dependencyPath = dependency.path ?? workspaceDependency?.path;
+      const dependencyVersion = dependency.version ?? workspaceDependency?.version;
+      const key = packageKey('cargo', dependency.name);
+      if (dependencyVersion) dependencyOverrides.set(key, { version: dependencyVersion });
+      const targetManifestPath = dependencyPath ? cargoLocalManifestPath(file.relativePath, dependencyPath) : undefined;
+      const localTarget = targetManifestPath ? packagesByManifest.get(targetManifestPath) : undefined;
+      if (localTarget) localDependencies.set(key, localTarget);
+    }
+    if (localDependencies.size > 0) localDependenciesByManifest.set(file.relativePath, localDependencies);
+    if (dependencyOverrides.size > 0) overridesByManifest.set(file.relativePath, dependencyOverrides);
+  }
+  return {
+    localDependencies: localDependenciesByManifest,
+    dependencyOverrides: overridesByManifest
+  };
+}
+
+function discoverCargoWorkspaceDefinitions(files: readonly ScannedFile[]): CargoWorkspaceDefinition[] {
+  return files
+    .filter((file) => buildManifestKind(file.relativePath) === 'cargo' && tomlSectionBlock(file.content, 'workspace'))
+    .map((file) => ({
+      rootManifestPath: file.relativePath,
+      rootDir: cargoManifestDir(file.relativePath),
+      dependencies: cargoWorkspaceDependencies(file)
+    }))
+    .sort((left, right) => right.rootDir.length - left.rootDir.length || left.rootManifestPath.localeCompare(right.rootManifestPath));
+}
+
+function cargoWorkspaceForManifest(
+  relativePath: string,
+  workspaces: readonly CargoWorkspaceDefinition[]
+): CargoWorkspaceDefinition | undefined {
+  return workspaces.find((workspace) => (
+    relativePath === workspace.rootManifestPath ||
+    workspace.rootDir.length === 0 ||
+    relativePath.startsWith(`${workspace.rootDir}/`)
+  ));
+}
+
+function cargoWorkspaceDependencies(file: ScannedFile): Map<string, CargoWorkspaceDependency> {
+  const dependencies = new Map<string, CargoWorkspaceDependency>();
+  const section = tomlSectionBlock(file.content, 'workspace.dependencies');
+  if (!section) return dependencies;
+  for (const dependency of cargoDependencyEntriesInSection(section)) {
+    dependencies.set(dependency.name, {
+      name: dependency.name,
+      ...(dependency.version ? { version: dependency.version } : {}),
+      ...(dependency.path ? { path: dependency.path } : {})
+    });
+  }
+  return dependencies;
+}
+
 function localPackageTarget(
   file: ScannedFile,
   dependency: PackageDependency,
   packageIndex: PackageIndex,
-  goReplacementIndex: ScopedPackageIndex
+  goReplacementIndex: ScopedPackageIndex,
+  cargoLocalDependencyIndex: ScopedPackageIndex
 ): LocalPackage | undefined {
   const key = packageKey(dependency.ecosystem, dependency.name);
   if (dependency.ecosystem === 'go') {
     return goReplacementIndex.get(file.relativePath)?.get(key) ?? packageIndex.get(key);
   }
+  if (dependency.ecosystem === 'cargo') {
+    return cargoLocalDependencyIndex.get(file.relativePath)?.get(key) ?? packageIndex.get(key);
+  }
   return packageIndex.get(key);
 }
 
-function parseBuildManifest(file: ScannedFile, gradleCatalogs: readonly GradleVersionCatalogEntry[]): ParsedManifest {
+function parseBuildManifest(
+  file: ScannedFile,
+  gradleCatalogs: readonly GradleVersionCatalogEntry[],
+  dependencyOverrides: ScopedPackageDependencyOverrides = new Map()
+): ParsedManifest {
   const kind = buildManifestKind(file.relativePath);
   const parsed =
     kind === 'npm' ? parseNpmPackageJson(file)
     : kind === 'maven' ? parseMavenPom(file)
     : kind === 'gradle' ? parseGradleBuild(file, gradleVersionCatalogForBuild(file.relativePath, gradleCatalogs))
     : kind === 'go' ? parseGoMod(file)
-    : kind === 'cargo' ? parseCargoToml(file)
+    : kind === 'cargo' ? parseCargoToml(file, dependencyOverrides.get(file.relativePath))
     : kind === 'python' ? parsePyprojectToml(file)
     : { dependencies: [], diagnostics: [] };
   return {
@@ -985,34 +1107,100 @@ function stripGoDirectiveComment(line: string): string {
   return line.replace(/\s+\/\/.*$/, '').replace(/^\/\/.*$/, '');
 }
 
-function parseCargoToml(file: ScannedFile): ParsedManifest {
+function parseCargoToml(
+  file: ScannedFile,
+  dependencyOverrides: ReadonlyMap<string, PackageDependencyOverride> | undefined
+): ParsedManifest {
   const packageName = tomlStringInSection(file.content, 'package', 'name');
-  if (!packageName) return { dependencies: [], diagnostics: [`Cargo.toml missing [package].name: ${file.relativePath}`] };
-  const pkg = localPackage('cargo', packageName, file.relativePath, packageName, tomlStringInSection(file.content, 'package', 'version'), [packageName]);
-  const dependencies: PackageDependency[] = [];
-  let section = '';
-  const lines = file.content.split(/\r?\n/);
-  let offset = 0;
-  for (const line of lines) {
-    const sectionMatch = /^\s*\[([^\]]+)\]\s*$/.exec(line);
-    if (sectionMatch) {
-      section = sectionMatch[1]!;
-    } else if (/^(?:dependencies|dev-dependencies|build-dependencies)$/.test(section)) {
-      const dependencyMatch = /^\s*([A-Za-z0-9_-]+)\s*=/.exec(line);
-      if (dependencyMatch) {
-        dependencies.push({
-          ecosystem: 'cargo',
-          name: dependencyMatch[1]!,
-          displayName: dependencyMatch[1]!,
-          dependencyType: section,
-          confidence: line.includes('path') ? 'proven' : 'heuristic',
-          evidence: evidenceLineAt(file.content, file.relativePath, offset)
-        });
-      }
-    }
-    offset += line.length + 1;
+  if (!packageName) {
+    return tomlSectionBlock(file.content, 'workspace')
+      ? { dependencies: [], diagnostics: [] }
+      : { dependencies: [], diagnostics: [`Cargo.toml missing [package].name: ${file.relativePath}`] };
   }
+  const pkg = localPackage('cargo', packageName, file.relativePath, packageName, tomlStringInSection(file.content, 'package', 'version'), [packageName]);
+  const dependencies = cargoDependencyEntries(file).map((dependency) => cargoDependency(file, dependency, dependencyOverrides));
   return { package: pkg, dependencies: dedupeDependencies(dependencies), diagnostics: [] };
+}
+
+function cargoDependency(
+  file: ScannedFile,
+  dependency: CargoDependencyEntry,
+  dependencyOverrides: ReadonlyMap<string, PackageDependencyOverride> | undefined
+): PackageDependency {
+  const override = dependencyOverrides?.get(packageKey('cargo', dependency.name));
+  return {
+    ecosystem: 'cargo',
+    name: dependency.name,
+    displayName: dependency.name,
+    version: dependency.version ?? override?.version,
+    dependencyType: dependency.dependencyType,
+    confidence: dependency.path ? 'proven' : 'heuristic',
+    evidence: evidenceLineAt(file.content, file.relativePath, dependency.offset)
+  };
+}
+
+function cargoDependencyEntries(file: ScannedFile): CargoDependencyEntry[] {
+  return tomlSections(file.content)
+    .filter((section) => cargoDependencyType(section.name) !== undefined)
+    .flatMap((section) => cargoDependencyEntriesInSection(section));
+}
+
+function cargoDependencyEntriesInSection(section: TomlSectionBlock): CargoDependencyEntry[] {
+  const dependencyType = cargoDependencyType(section.name) ?? section.name;
+  const dependencies: CargoDependencyEntry[] = [];
+  let lineOffset = 0;
+  for (const line of section.text.split(/\r?\n/)) {
+    const uncommented = stripTomlComment(line);
+    const dottedWorkspace = /^[ \t]*([A-Za-z0-9_-]+)\.workspace[ \t]*=[ \t]*true\b/.exec(uncommented);
+    if (dottedWorkspace) {
+      dependencies.push({
+        name: dottedWorkspace[1]!,
+        dependencyType,
+        workspaceInherited: true,
+        offset: section.start + lineOffset + line.indexOf(dottedWorkspace[1]!)
+      });
+      lineOffset += line.length + 1;
+      continue;
+    }
+    const dependencyMatch = /^[ \t]*([A-Za-z0-9_-]+)[ \t]*=[ \t]*(.+)$/.exec(uncommented);
+    if (dependencyMatch) {
+      const value = dependencyMatch[2]!.trim();
+      const version = tomlInlineString(value) ?? tomlInlineStringField(value, 'version');
+      const dependencyPath = tomlInlineStringField(value, 'path');
+      dependencies.push({
+        name: dependencyMatch[1]!,
+        dependencyType,
+        workspaceInherited: cargoDependencyUsesWorkspace(value),
+        offset: section.start + lineOffset + line.indexOf(dependencyMatch[1]!),
+        ...(version ? { version } : {}),
+        ...(dependencyPath ? { path: dependencyPath } : {})
+      });
+    }
+    lineOffset += line.length + 1;
+  }
+  return dependencies;
+}
+
+function cargoDependencyType(sectionName: string): string | undefined {
+  if (/^(?:dependencies|dev-dependencies|build-dependencies)$/.test(sectionName)) return sectionName;
+  if (/^target\..+\.(?:dependencies|dev-dependencies|build-dependencies)$/.test(sectionName)) return sectionName;
+  return undefined;
+}
+
+function cargoDependencyUsesWorkspace(value: string): boolean {
+  return /(?:^|[,{ \t])workspace[ \t]*=[ \t]*true\b/.test(value);
+}
+
+function cargoLocalManifestPath(relativePath: string, crateDir: string): string | undefined {
+  if (path.posix.isAbsolute(crateDir)) return undefined;
+  const manifestPath = path.posix.normalize(path.posix.join(path.posix.dirname(relativePath), crateDir, 'Cargo.toml'));
+  if (manifestPath === '..' || manifestPath.startsWith('../') || path.posix.isAbsolute(manifestPath)) return undefined;
+  return manifestPath;
+}
+
+function cargoManifestDir(relativePath: string): string {
+  const dir = path.posix.dirname(relativePath);
+  return dir === '.' ? '' : dir;
 }
 
 function parsePyprojectToml(file: ScannedFile): ParsedManifest {
@@ -1193,6 +1381,13 @@ function manifestTextTargets(
       targets.push(target);
     }
   }
+  if (buildManifestKind(file.relativePath) === 'cargo') {
+    for (const target of cargoWorkspaceMemberTargets(file, filePathSet)) {
+      if (seen.has(target.path)) continue;
+      seen.add(target.path);
+      targets.push(target);
+    }
+  }
   for (const target of inferManifestTextTargets(file, filePathSet)) {
     if (seen.has(target.path)) continue;
     seen.add(target.path);
@@ -1219,6 +1414,51 @@ function inferManifestTextTargets(
     });
   }
   return targets;
+}
+
+function cargoWorkspaceMemberTargets(
+  file: ScannedFile,
+  filePathSet: ReadonlySet<string>
+): Array<{ path: string; evidence: PendingEvidence }> {
+  const workspace = tomlSectionBlock(file.content, 'workspace');
+  if (!workspace) return [];
+  const members = tomlStringArrayAssignments(workspace).find((assignment) => assignment.key === 'members');
+  if (!members) return [];
+  return members.values.flatMap((member) =>
+    cargoWorkspaceMemberManifestPaths(file.relativePath, member.value, filePathSet).map((memberPath) => ({
+      path: memberPath,
+      evidence: evidenceLineAt(file.content, file.relativePath, member.offset)
+    }))
+  );
+}
+
+function cargoWorkspaceMemberManifestPaths(
+  relativePath: string,
+  memberPattern: string,
+  filePathSet: ReadonlySet<string>
+): string[] {
+  if (!hasGlobToken(memberPattern)) {
+    const memberManifestPath = cargoLocalManifestPath(relativePath, memberPattern);
+    return memberManifestPath && filePathSet.has(memberManifestPath) ? [memberManifestPath] : [];
+  }
+  const rootDir = cargoManifestDir(relativePath);
+  const normalizedPattern = path.posix.normalize(path.posix.join(rootDir, memberPattern, 'Cargo.toml'));
+  if (normalizedPattern === '..' || normalizedPattern.startsWith('../') || path.posix.isAbsolute(normalizedPattern)) return [];
+  const regex = globPatternRegex(normalizedPattern);
+  return [...filePathSet]
+    .filter((candidatePath) => regex.test(candidatePath))
+    .sort();
+}
+
+function hasGlobToken(value: string): boolean {
+  return /[*?]/.test(value);
+}
+
+function globPatternRegex(pattern: string): RegExp {
+  const escaped = escapeRegExp(pattern)
+    .replace(/\\\*/g, '[^/]*')
+    .replace(/\\\?/g, '[^/]');
+  return new RegExp(`^${escaped}$`);
 }
 
 function pathMentionOffset(lowerContent: string, relativePath: string): number {

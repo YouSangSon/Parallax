@@ -65,6 +65,22 @@ type GradleVersionCatalogEntry = {
   catalog: GradleVersionCatalog;
 };
 
+type TomlSectionBlock = {
+  name: string;
+  text: string;
+  start: number;
+};
+
+type TomlStringValue = {
+  value: string;
+  offset: number;
+};
+
+type TomlStringArrayAssignment = {
+  key: string;
+  values: readonly TomlStringValue[];
+};
+
 const buildSystemCapabilities: readonly AdapterCapability[] = ['packages', 'references'];
 
 export class BuildSystemPackageAdapter implements SemanticAdapter {
@@ -1000,9 +1016,10 @@ function parseCargoToml(file: ScannedFile): ParsedManifest {
 }
 
 function parsePyprojectToml(file: ScannedFile): ParsedManifest {
-  const projectName = tomlStringInSection(file.content, 'project', 'name');
-  if (!projectName) return { dependencies: [], diagnostics: [`pyproject.toml missing [project].name: ${file.relativePath}`] };
-  const pkg = localPackage('python', projectName, file.relativePath, projectName, tomlStringInSection(file.content, 'project', 'version'), [normalizePythonPackageName(projectName)]);
+  const projectName = tomlStringInSection(file.content, 'project', 'name') ?? tomlStringInSection(file.content, 'tool.poetry', 'name');
+  if (!projectName) return { dependencies: [], diagnostics: [`pyproject.toml missing [project].name or [tool.poetry].name: ${file.relativePath}`] };
+  const version = tomlStringInSection(file.content, 'project', 'version') ?? tomlStringInSection(file.content, 'tool.poetry', 'version');
+  const pkg = localPackage('python', projectName, file.relativePath, projectName, version, [normalizePythonPackageName(projectName)]);
   return {
     package: pkg,
     dependencies: pyprojectDependencies(file),
@@ -1012,21 +1029,82 @@ function parsePyprojectToml(file: ScannedFile): ParsedManifest {
 
 function pyprojectDependencies(file: ScannedFile): PackageDependency[] {
   const dependencies: PackageDependency[] = [];
-  const start = file.content.search(/^\s*dependencies\s*=\s*\[/m);
-  if (start < 0) return dependencies;
-  const end = file.content.indexOf(']', start);
-  const block = file.content.slice(start, end < 0 ? file.content.length : end);
-  for (const match of block.matchAll(/"([^"]+)"/g)) {
-    const name = pythonDependencyName(match[1]!);
-    if (!name) continue;
-    dependencies.push({
-      ecosystem: 'python',
-      name: normalizePythonPackageName(name),
-      displayName: normalizePythonPackageName(name),
-      dependencyType: 'dependencies',
-      confidence: 'heuristic',
-      evidence: evidenceLineAt(file.content, file.relativePath, start + (match.index ?? 0))
-    });
+  const project = tomlSectionBlock(file.content, 'project');
+  if (project) {
+    for (const assignment of tomlStringArrayAssignments(project).filter((item) => item.key === 'dependencies')) {
+      dependencies.push(...pythonStringDependencies(file, assignment.values, 'dependencies'));
+    }
+  }
+
+  const optionalDependencies = tomlSectionBlock(file.content, 'project.optional-dependencies');
+  if (optionalDependencies) {
+    for (const assignment of tomlStringArrayAssignments(optionalDependencies)) {
+      dependencies.push(...pythonStringDependencies(file, assignment.values, `optional-dependencies:${assignment.key}`));
+    }
+  }
+
+  const dependencyGroups = tomlSectionBlock(file.content, 'dependency-groups');
+  if (dependencyGroups) {
+    for (const assignment of tomlStringArrayAssignments(dependencyGroups)) {
+      dependencies.push(...pythonStringDependencies(file, assignment.values, `dependency-groups:${assignment.key}`));
+    }
+  }
+
+  for (const section of tomlSectionsMatching(file.content, /^tool\.poetry\.group\.([^.]+)\.dependencies$/)) {
+    const groupName = /^tool\.poetry\.group\.([^.]+)\.dependencies$/.exec(section.name)?.[1];
+    if (!groupName) continue;
+    dependencies.push(...poetryGroupDependencies(file, section, groupName));
+  }
+
+  return dedupeDependencies(dependencies);
+}
+
+function pythonStringDependencies(
+  file: ScannedFile,
+  values: readonly TomlStringValue[],
+  dependencyType: string
+): PackageDependency[] {
+  return values.flatMap((value) => {
+    const name = pythonDependencyName(value.value);
+    if (!name) return [];
+    const normalizedName = normalizePythonPackageName(name);
+    return [{
+      ecosystem: 'python' as const,
+      name: normalizedName,
+      displayName: normalizedName,
+      dependencyType,
+      confidence: 'heuristic' as const,
+      evidence: evidenceLineAt(file.content, file.relativePath, value.offset)
+    }];
+  });
+}
+
+function poetryGroupDependencies(
+  file: ScannedFile,
+  section: TomlSectionBlock,
+  groupName: string
+): PackageDependency[] {
+  const dependencies: PackageDependency[] = [];
+  let lineOffset = 0;
+  for (const line of section.text.split(/\r?\n/)) {
+    const uncommented = stripTomlComment(line);
+    const dependencyMatch = /^[ \t]*([A-Za-z0-9_.-]+)[ \t]*=/.exec(uncommented);
+    if (dependencyMatch) {
+      const name = normalizePythonPackageName(dependencyMatch[1]!);
+      if (name !== 'python') {
+        const value = uncommented.slice(dependencyMatch[0]!.length);
+        dependencies.push({
+          ecosystem: 'python',
+          name,
+          displayName: name,
+          version: tomlInlineString(value) ?? tomlInlineStringField(value, 'version'),
+          dependencyType: `poetry-group:${groupName}`,
+          confidence: 'heuristic',
+          evidence: evidenceLineAt(file.content, file.relativePath, section.start + lineOffset + line.indexOf(dependencyMatch[1]!))
+        });
+      }
+    }
+    lineOffset += line.length + 1;
   }
   return dedupeDependencies(dependencies);
 }
@@ -1220,13 +1298,112 @@ function tomlStringInSection(content: string, sectionName: string, key: string):
 }
 
 function tomlSection(content: string, sectionName: string): string | undefined {
-  const pattern = new RegExp(`^\\s*\\[${escapeRegExp(sectionName)}\\]\\s*$`, 'm');
-  const match = pattern.exec(content);
-  if (!match) return undefined;
-  const start = (match.index ?? 0) + match[0]!.length;
-  const rest = content.slice(start);
-  const next = /^\s*\[[^\]]+\]\s*$/m.exec(rest);
-  return next ? rest.slice(0, next.index) : rest;
+  return tomlSectionBlock(content, sectionName)?.text;
+}
+
+function tomlSectionBlock(content: string, sectionName: string): TomlSectionBlock | undefined {
+  return tomlSections(content).find((section) => section.name === sectionName);
+}
+
+function tomlSectionsMatching(content: string, pattern: RegExp): TomlSectionBlock[] {
+  return tomlSections(content).filter((section) => pattern.test(section.name));
+}
+
+function tomlSections(content: string): TomlSectionBlock[] {
+  const headerPattern = /^\s*(?:\[([^\[\]\r\n]+)\]|\[\[([^\[\]\r\n]+)\]\])\s*(?:#.*)?$/gm;
+  const headers = [...content.matchAll(headerPattern)].map((match) => ({
+    name: match[1] ?? match[2] ?? '',
+    headerStart: match.index ?? 0,
+    bodyStart: (match.index ?? 0) + match[0]!.length
+  }));
+  return headers.map((header, index) => {
+    const nextHeader = headers[index + 1];
+    return {
+      name: header.name,
+      text: content.slice(header.bodyStart, nextHeader?.headerStart ?? content.length),
+      start: header.bodyStart
+    };
+  });
+}
+
+function tomlStringArrayAssignments(section: TomlSectionBlock): TomlStringArrayAssignment[] {
+  const assignments: TomlStringArrayAssignment[] = [];
+  const assignmentPattern = /^[ \t]*([A-Za-z0-9_.-]+)[ \t]*=[ \t]*\[/gm;
+  let match: RegExpExecArray | null;
+  while ((match = assignmentPattern.exec(section.text)) !== null) {
+    const openBracket = match.index + match[0]!.lastIndexOf('[');
+    const closeBracket = matchingDelimiterIndex(section.text, openBracket, '[', ']');
+    if (closeBracket < 0) continue;
+    const arrayText = section.text.slice(openBracket, closeBracket + 1);
+    assignments.push({
+      key: match[1]!,
+      values: tomlArrayStringValues(arrayText, section.start + openBracket)
+    });
+    assignmentPattern.lastIndex = closeBracket + 1;
+  }
+  return assignments;
+}
+
+function tomlArrayStringValues(arrayText: string, arrayOffset: number): TomlStringValue[] {
+  const values: TomlStringValue[] = [];
+  let quote: string | undefined;
+  let stringStart = -1;
+  let capture = false;
+  let escaped = false;
+  let braceDepth = 0;
+  let comment = false;
+  for (let index = 1; index < arrayText.length - 1; index += 1) {
+    const char = arrayText[index]!;
+    if (comment) {
+      if (char === '\n' || char === '\r') comment = false;
+      continue;
+    }
+    if (quote) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (quote === '"' && char === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (char === quote) {
+        if (capture) {
+          values.push({
+            value: arrayText.slice(stringStart + 1, index),
+            offset: arrayOffset + stringStart
+          });
+        }
+        quote = undefined;
+        capture = false;
+        stringStart = -1;
+      }
+      continue;
+    }
+    if (char === '#') {
+      comment = true;
+      continue;
+    }
+    if (char === '{') {
+      braceDepth += 1;
+      continue;
+    }
+    if (char === '}') {
+      braceDepth = Math.max(0, braceDepth - 1);
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      stringStart = index;
+      capture = braceDepth === 0;
+    }
+  }
+  return values;
+}
+
+function tomlInlineStringField(value: string, key: string): string | undefined {
+  const match = new RegExp(`(?:^|[,{\\s])${escapeRegExp(key)}\\s*=\\s*"([^"]+)"`).exec(value);
+  return match?.[1];
 }
 
 function pythonDependencyName(specifier: string): string | undefined {

@@ -163,6 +163,11 @@ const expectedRelations: readonly ExpectedRelation[] = [
   packageDeclareRelation('package.json', '@acme/impact-bench', 'npm package declares bench workspace package'),
   packageManifestIdentityRelation('package.json', 'npm package identity depends on package manifest'),
   packageDependencyRelation('package.json', 'typescript', 'npm package depends on TypeScript package'),
+  packageManifestIdentityRelation('pyproject.toml', 'Python package identity depends on pyproject manifest'),
+  packageDependencyRelation('pyproject.toml', 'fastapi', 'Python project dependency depends on FastAPI package'),
+  packageDependencyRelation('pyproject.toml', 'pytest', 'Python optional dependency depends on pytest package'),
+  packageDependencyRelation('pyproject.toml', 'mypy', 'Python dependency group depends on mypy package'),
+  packageDependencyRelation('pyproject.toml', 'mkdocs', 'Poetry dependency group depends on mkdocs package'),
   packageManifestIdentityRelation('pom.xml', 'Maven package identity depends on build manifest'),
   packageDependencyRelation('pom.xml', 'org.springframework.boot:spring-boot-starter-web', 'Maven property dependency depends on Spring Web package'),
   packageManifestIdentityRelation('app/build.gradle.kts', 'Gradle package identity depends on build manifest'),
@@ -737,6 +742,30 @@ async function writeFixture(repoRoot: string): Promise<void> {
       typescript: '^5.9.3'
     }
   }, null, 2));
+  await writeFile(path.join(repoRoot, 'pyproject.toml'), [
+    '[project]',
+    'name = "impact-api"',
+    'version = "0.1.0"',
+    'dependencies = [',
+    '  "fastapi>=0.110",',
+    ']',
+    '',
+    '[project.optional-dependencies]',
+    'dev = [',
+    '  "pytest>=8",',
+    ']',
+    '',
+    '[dependency-groups]',
+    'typing = [',
+    '  "mypy>=1.10",',
+    '  { include-group = "test" },',
+    ']',
+    'test = []',
+    '',
+    '[tool.poetry.group.docs.dependencies]',
+    'mkdocs = "^1.6"',
+    ''
+  ].join('\n'));
   await writeFile(path.join(repoRoot, 'pom.xml'), [
     '<project>',
     '  <modelVersion>4.0.0</modelVersion>',

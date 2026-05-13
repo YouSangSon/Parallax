@@ -63,6 +63,7 @@
 | [D-051](#d-051-go-workspace-and-replace-resolution-stays-local-path-only-in-v0) | Go workspace and replace resolution stays local-path only in v0 | P1/P2 | 2026-05-12 |
 | [D-052](#d-052-python-dependency-groups-stay-pyproject-local-in-v0) | Python dependency groups stay pyproject-local in v0 | P1/P2 | 2026-05-12 |
 | [D-053](#d-053-cargo-workspace-and-path-resolution-stays-manifest-only) | Cargo workspace and path resolution stays manifest-only | P1/P2 | 2026-05-13 |
+| [D-054](#d-054-configinfra-adapter-lifts-explicit-path-impact-out-of-regex-fallback) | Config/infra adapter lifts explicit path impact out of regex fallback | P1 | 2026-05-13 |
 
 ---
 
@@ -989,6 +990,23 @@
 **결과/위험:** Cargo workspace root 변경은 member manifests로 전파되고, local path dependency는 실제 target package manifest로 연결된다. `workspace = true` dependency는 root `[workspace.dependencies]`의 version/path metadata를 가져와 external package version 또는 local path target을 더 정확히 보여준다. v0는 line-oriented TOML subset과 단순 glob만 지원하므로 `package.workspace` override, `[workspace].exclude`, complex glob, package rename, feature unification, target cfg evaluation, optional feature graph, lockfile/transitive resolution은 후속 package/build depth에서 다룬다.
 
 **관련 commit:** `feat(adapters): Cargo workspace resolver 추가`
+
+---
+
+## D-054: Config/infra adapter lifts explicit path impact out of regex fallback
+
+**결정:** GitHub Actions workflow YAML, Dockerfile/Containerfile, Terraform `.tf` 파일의 explicit repo-local path reference는 `config-infra-semantic-v0` adapter가 처리한다. workflow와 Terraform path mention은 `CONFIGURES`로, Dockerfile `COPY`/`ADD` source는 `DEPENDS_ON`으로 저장하고 Dockerfile의 explicit path mention은 기존처럼 `CONFIGURES`도 남긴다. OpenAPI/AsyncAPI YAML, generic YAML stem matching, Spring `application.yml`의 class-name heuristic은 이 slice에서 전용 adapter로 옮기지 않는다.
+
+**맥락:** CI, container, infra 파일은 코드 변경의 실제 배포/검증 경로를 만든다. 기존 regex fallback도 일부 path mention을 찾지만 adapter attribution이 `multi-language-regex-mvp`로 남아 config/infra coverage를 따로 측정하거나 개선하기 어렵다. 먼저 explicit path reference만 전용 adapter로 분리하면 false positive를 넓히지 않고 A5 config/CI/infra lane의 첫 회귀 기준을 만들 수 있다.
+
+**대안:**
+- 모든 YAML을 전용 adapter로 이동 — OpenAPI/AsyncAPI contract extraction과 Spring config heuristic까지 한 번에 건드려 scope가 커진다.
+- 기존 regex fallback 유지 — 구현은 단순하지만 workflow/Docker/Terraform impact가 generic fallback에 묻혀 adapter quality gate로 관리되지 않는다.
+- GitHub Actions/Docker/Terraform full parser 도입 — 정확도는 높지만 v0의 local-first/no execution heuristic lane보다 무겁다.
+
+**결과/위험:** workflow, Dockerfile, Terraform의 explicit path impact가 전용 adapter run과 coverage로 귀속된다. v0는 file path literal만 신뢰하므로 workflow matrix/env interpolation, Docker build context/glob/multistage semantics, Terraform module graph/provider evaluation, generic YAML key semantics는 후속 config/infra depth에서 다룬다.
+
+**관련 commit:** `feat(adapters): config infra adapter 추가`
 
 ---
 

@@ -61,6 +61,7 @@
 | [D-049](#d-049-gradle-version-catalog-resolution-stays-manifest-only) | Gradle version catalog resolution stays manifest-only | P1/P2 | 2026-05-12 |
 | [D-050](#d-050-maven-property-interpolation-stays-pom-local-in-v0) | Maven property interpolation stays POM-local in v0 | P1/P2 | 2026-05-12 |
 | [D-051](#d-051-go-workspace-and-replace-resolution-stays-local-path-only-in-v0) | Go workspace and replace resolution stays local-path only in v0 | P1/P2 | 2026-05-12 |
+| [D-052](#d-052-python-dependency-groups-stay-pyproject-local-in-v0) | Python dependency groups stay pyproject-local in v0 | P1/P2 | 2026-05-12 |
 
 ---
 
@@ -952,6 +953,24 @@
 **결과/위험:** repo 내부 local replacement는 실제 target `go.mod` package로 연결되고, `go.work` 변경은 포함 module manifests까지 전파된다. v0는 line-oriented parser라 quoted/complex module directive 일부와 multi-repo absolute path, remote replace, `go.work.sum`, build tags, vendor/module cache semantics는 후속 package/build depth에서 다룬다.
 
 **관련 commit:** `feat(adapters): Go workspace resolver 추가`
+
+---
+
+## D-052: Python dependency groups stay pyproject-local in v0
+
+**결정:** build-system/package resolver는 `pyproject.toml` 안의 `[project].dependencies`, `[project.optional-dependencies]`, PEP 735 `[dependency-groups]`, Poetry `[tool.poetry.group.<group>.dependencies]`를 실행 없이 읽어 Python package dependency graph에 추가한다. package identity는 `[project].name`을 우선하고 legacy Poetry 프로젝트는 `[tool.poetry].name`을 fallback으로 쓴다. 지원 범위는 같은 파일 안의 PEP 508 string dependency와 Poetry group dependency key이며, PEP 735 `{ include-group = "..." }` 객체는 dependency package로 오인하지 않는다. include expansion, lockfile/transitive resolution, virtualenv inspection, Poetry/PDM/uv CLI 실행은 하지 않는다.
+
+**맥락:** Python 프로젝트는 runtime dependency 외에 dev/test/docs/typecheck dependency를 optional extras, PEP 735 dependency groups, Poetry group dependencies로 나누는 경우가 많다. 이를 무시하면 `pytest`, `mypy`, `mkdocs` 같은 테스트/문서/타입체크 툴 변경 impact가 agent/UI에서 보이지 않는다. 반대로 package manager를 실행하면 local-first/offline/no execution 경계를 깨고 lockfile/환경별 resolver 차이를 끌어들인다.
+
+**대안:**
+- `pip`, Poetry, PDM, uv resolver 실행 — 실제 environment에 가깝지만 네트워크/cache/환경 의존이 생겨 거부한다.
+- `[project].dependencies`만 유지 — 구현은 단순하지만 dev/test/docs dependency impact를 놓친다.
+- PEP 735 include expansion과 Poetry include-groups까지 즉시 구현 — 필요하지만 cycle detection, duplicate handling, group normalization policy가 커서 v0 regression gate가 흐려진다.
+- TOML 전체 parser dependency 추가 — 정확도는 높지만 현재 manifest-only subset에는 과하고 dependency surface를 늘린다.
+
+**결과/위험:** Python `pyproject.toml` 변경 impact가 runtime dependency뿐 아니라 optional extras, dependency groups, Poetry docs/dev group까지 포함한다. evidence는 실제 dependency string 또는 Poetry dependency key line에 묶인다. v0는 line-oriented TOML subset이므로 quoted group keys, include expansion, dynamic metadata, local path/VCS dependency semantics, lockfile/transitive dependency graph는 후속 package/build depth에서 다룬다.
+
+**관련 commit:** `feat(adapters): Python dependency groups 추가`
 
 ---
 

@@ -351,6 +351,127 @@ test('indexProject extracts Maven Gradle Go Cargo and pyproject dependencies', a
   ));
 });
 
+test('indexProject extracts pyproject optional and dependency group dependencies', async () => {
+  const repoRoot = await makeRepo('impact-trace-build-python-groups-');
+
+  await writeFile(
+    path.join(repoRoot, 'pyproject.toml'),
+    [
+      '[project]',
+      'name = "impact-api"',
+      'version = "0.1.0"',
+      'dependencies = [',
+      '  "FastAPI>=0.110",',
+      ']',
+      '',
+      '[project.optional-dependencies]',
+      'dev = [',
+      '  "PyTest>=8",',
+      '  "ruff>=0.5",',
+      ']',
+      'data = ["pandas>=2"]',
+      '',
+      '[dependency-groups]',
+      'lint = [',
+      '  "mypy>=1.10",',
+      '  { include-group = "test" },',
+      ']',
+      'test = ["pytest-cov>=5"]',
+      '',
+      '[tool.poetry.group.docs.dependencies]',
+      'mkdocs = "^1.6"',
+      'mkdocs-material = { version = "^9.5" }',
+      'python = ">=3.12"',
+      '',
+      '[tool.poetry.group.dev.dependencies]',
+      'ipython = "^8"',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const rows = relationRows(repoRoot, index.indexRunId);
+  const dependency = (targetName: string, dependencyType: string) => rows.find((row) =>
+    row.kind === 'DEPENDS_ON' &&
+    row.sourceName === 'impact-api' &&
+    row.targetKind === 'package' &&
+    row.targetLanguage === 'python' &&
+    row.targetName === targetName &&
+    targetMetadata(row).dependencyType === dependencyType
+  );
+
+  assert.ok(dependency('fastapi', 'dependencies')?.snippet?.includes('"FastAPI>=0.110"'));
+  assert.ok(dependency('pytest', 'optional-dependencies:dev')?.snippet?.includes('"PyTest>=8"'));
+  assert.ok(dependency('ruff', 'optional-dependencies:dev')?.snippet?.includes('"ruff>=0.5"'));
+  assert.ok(dependency('pandas', 'optional-dependencies:data')?.snippet?.includes('data = ["pandas>=2"]'));
+  assert.ok(dependency('mypy', 'dependency-groups:lint')?.snippet?.includes('"mypy>=1.10"'));
+  assert.ok(dependency('pytest-cov', 'dependency-groups:test')?.snippet?.includes('test = ["pytest-cov>=5"]'));
+  assert.ok(dependency('mkdocs', 'poetry-group:docs')?.snippet?.includes('mkdocs = "^1.6"'));
+  assert.ok(dependency('mkdocs-material', 'poetry-group:docs')?.snippet?.includes('mkdocs-material'));
+  assert.ok(dependency('ipython', 'poetry-group:dev')?.snippet?.includes('ipython = "^8"'));
+  assert.deepEqual(
+    rows
+      .filter((row) =>
+        row.kind === 'DEPENDS_ON' &&
+        row.sourceName === 'impact-api' &&
+        row.targetKind === 'package' &&
+        row.targetLanguage === 'python' &&
+        targetMetadata(row).dependencyType === 'dependency-groups:lint'
+      )
+      .map((row) => row.targetName)
+      .sort(),
+    ['mypy']
+  );
+  assert.equal(
+    rows.some((row) =>
+      row.kind === 'DEPENDS_ON' &&
+      row.sourceName === 'impact-api' &&
+      (row.targetName === 'include-group' || row.targetName === 'python')
+    ),
+    false
+  );
+});
+
+test('indexProject extracts Poetry group dependencies from tool.poetry projects', async () => {
+  const repoRoot = await makeRepo('impact-trace-build-poetry-groups-');
+
+  await writeFile(
+    path.join(repoRoot, 'pyproject.toml'),
+    [
+      '[tool.poetry]',
+      'name = "legacy-api"',
+      'version = "0.2.0"',
+      '',
+      '[tool.poetry.group.docs.dependencies]',
+      'mkdocs = "^1.6"',
+      ''
+    ].join('\n')
+  );
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const rows = relationRows(repoRoot, index.indexRunId);
+  assert.ok(rows.some((row) =>
+    row.kind === 'DECLARES' &&
+    row.sourcePath === 'pyproject.toml' &&
+    row.targetKind === 'package' &&
+    row.targetLanguage === 'python' &&
+    row.targetName === 'legacy-api'
+  ));
+  assert.ok(rows.some((row) =>
+    row.kind === 'DEPENDS_ON' &&
+    row.sourceName === 'legacy-api' &&
+    row.targetKind === 'package' &&
+    row.targetLanguage === 'python' &&
+    row.targetName === 'mkdocs' &&
+    targetMetadata(row).dependencyType === 'poetry-group:docs' &&
+    row.snippet?.includes('mkdocs = "^1.6"')
+  ));
+});
+
 test('indexProject resolves Go workspace use directories and local replace modules', async () => {
   const repoRoot = await makeRepo('impact-trace-build-go-work-replace-');
   await mkdir(path.join(repoRoot, 'apps/api'), { recursive: true });

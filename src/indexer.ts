@@ -4,6 +4,7 @@ import path from 'node:path';
 
 import { AdapterRegistry } from './adapters/registry.js';
 import { BuildSystemPackageAdapter } from './adapters/build-system-package.js';
+import { ConfigInfraSemanticAdapter } from './adapters/config-infra.js';
 import {
   GoSemanticAdapter,
   JvmSpringSemanticAdapter,
@@ -913,6 +914,7 @@ async function indexProjectInternal(
 function createDefaultRegistry(): AdapterRegistry {
   const registry = new AdapterRegistry();
   registry.register(new BuildSystemPackageAdapter());
+  registry.register(new ConfigInfraSemanticAdapter());
   registry.register(new TypeScriptJavaScriptSemanticAdapter());
   registry.register(new JvmSpringSemanticAdapter());
   registry.register(new PythonSemanticAdapter());

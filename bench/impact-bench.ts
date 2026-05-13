@@ -15,6 +15,7 @@ import {
   TS_JS_SEMANTIC_ADAPTER_ID
 } from '../src/adapters/multi-language-regex.js';
 import { BUILD_SYSTEM_PACKAGE_ADAPTER_ID } from '../src/adapters/build-system-package.js';
+import { CONFIG_INFRA_SEMANTIC_ADAPTER_ID } from '../src/adapters/config-infra.js';
 
 const fixtureId = 'phase6b-multilanguage-v0';
 const schemaVersion = 2;
@@ -159,7 +160,7 @@ const expectedRelations: readonly ExpectedRelation[] = [
   languageRelation('DEPENDS_ON', 'tests/session.test.ts', 'src/ts/session.ts', 'TS test imports session'),
   languageRelation('VERIFIES', 'tests/session.test.ts', 'src/ts/session.ts', 'TS test verifies session'),
   fallbackRelation('DOCUMENTS', 'README.md', 'src/ts/session.ts', 'Markdown documents session'),
-  fallbackRelation('CONFIGURES', '.github/workflows/ci.yml', 'src/ts/session.ts', 'Workflow config references session'),
+  configInfraRelation('CONFIGURES', '.github/workflows/ci.yml', 'src/ts/session.ts', 'Workflow config references session'),
   packageDeclareRelation('package.json', '@acme/impact-bench', 'npm package declares bench workspace package'),
   packageManifestIdentityRelation('package.json', 'npm package identity depends on package manifest'),
   packageDependencyRelation('package.json', 'typescript', 'npm package depends on TypeScript package'),
@@ -207,8 +208,8 @@ const expectedRelations: readonly ExpectedRelation[] = [
   contractEndpointRelation('contracts/openapi.yaml', 'GET /api/users', 'OpenAPI contract declares users endpoint'),
   contractReferenceRelation('contracts/openapi.yaml', 'src/main/java/com/example/UserController.java', 'OpenAPI contract references controller implementation'),
   contractImplementerRelation('src/main/java/com/example/UserController.java', 'contracts/openapi.yaml', 'Spring controller implements OpenAPI contract'),
-  fallbackRelation('DEPENDS_ON', 'Dockerfile', 'src/main/java/com/example/UserController.java', 'Dockerfile COPY dependency'),
-  fallbackRelation('CONFIGURES', 'Dockerfile', 'src/main/java/com/example/UserController.java', 'Dockerfile copies controller'),
+  configInfraRelation('DEPENDS_ON', 'Dockerfile', 'src/main/java/com/example/UserController.java', 'Dockerfile COPY dependency'),
+  configInfraRelation('CONFIGURES', 'Dockerfile', 'src/main/java/com/example/UserController.java', 'Dockerfile copies controller'),
   languageDeclareRelation('src/python/util.py', 'Helper', 'Python class declares Helper'),
   languageDeclareRelation('src/python/util.py', 'helper', 'Python function declares helper'),
   languageRelation('DEPENDS_ON', 'src/python/app.py', 'src/python/util.py', 'Python module imports util'),
@@ -513,6 +514,23 @@ function fallbackRelation(
   };
 }
 
+function configInfraRelation(
+  kind: string,
+  sourcePath: string,
+  targetPath: string,
+  label: string
+): ExpectedRelation {
+  return {
+    kind,
+    sourceKind: fileKindForPath(sourcePath),
+    sourcePath,
+    targetKind: fileKindForPath(targetPath),
+    targetPath,
+    adapterId: CONFIG_INFRA_SEMANTIC_ADAPTER_ID,
+    label
+  };
+}
+
 function buildSystemConfigRelation(
   sourcePath: string,
   targetPath: string,
@@ -710,6 +728,12 @@ function localPackageDependencyRelation(
 
 function adapterIdForPath(relativePath: string): string {
   if (isBuildSystemManifestPath(relativePath)) return BUILD_SYSTEM_PACKAGE_ADAPTER_ID;
+  if (
+    relativePath.startsWith('.github/workflows/') ||
+    relativePath === 'Dockerfile' ||
+    relativePath === 'Containerfile' ||
+    relativePath.endsWith('.tf')
+  ) return CONFIG_INFRA_SEMANTIC_ADAPTER_ID;
   const language = languageIdForPath(relativePath);
   if (language === 'typescript' || language === 'javascript') return TS_JS_SEMANTIC_ADAPTER_ID;
   if (language === 'java' || language === 'kotlin') return JVM_SPRING_SEMANTIC_ADAPTER_ID;

@@ -977,7 +977,7 @@
 
 ## D-053: Cargo workspace and path resolution stays manifest-only
 
-**결정:** build-system/package resolver는 `Cargo.toml`의 `[workspace].members`를 index된 member `Cargo.toml`에 `CONFIGURES` relation으로 연결하고, `[dependencies]`, `[dev-dependencies]`, `[build-dependencies]`, target-specific dependency table의 local `path` dependency를 repo 안의 실제 Cargo package로 연결한다. `[workspace.dependencies]`의 version/path metadata는 member manifest의 `workspace = true` dependency에 보강한다. Cargo 실행, feature resolver, `Cargo.lock`, transitive graph, target cfg evaluation, registry/git fetch는 하지 않는다.
+**결정:** build-system/package resolver는 `Cargo.toml`의 `[workspace].members`를 index된 member `Cargo.toml`에 `CONFIGURES` relation으로 연결하고, `[dependencies]`, `[dev-dependencies]`, `[build-dependencies]`, target-specific dependency table의 local `path` dependency를 repo 안의 실제 Cargo package로 연결한다. `[workspace.dependencies]`의 version/path metadata는 member manifest의 `workspace = true` dependency에 보강한다. Cargo 실행, feature resolver, `Cargo.lock`, transitive graph, target cfg evaluation, registry/git fetch는 하지 않는다. `package.workspace` override, `[workspace].exclude`, Cargo의 전체 glob semantics는 v0 범위에서 제외한다.
 
 **맥락:** Rust workspace는 여러 crate가 `crates/*` 아래에 있고 member crate가 `{ path = "../core" }` 또는 `serde = { workspace = true }`로 local/shared dependency를 선언하는 형태가 흔하다. v0가 이를 단순 외부 package로만 보면 local crate 변경이 dependent crate manifest로 전파되지 않고, workspace-shared version metadata도 context pack에서 사라진다. 반대로 Cargo resolver를 실행하면 target, feature, lockfile, registry/cache 상태에 의존한다.
 
@@ -986,7 +986,7 @@
 - 기존 Cargo dependency key만 저장 — 구현은 단순하지만 workspace member와 local crate impact를 놓친다.
 - Cargo feature/target cfg/lockfile/transitive graph까지 한 번에 구현 — 중요하지만 범위가 커서 v0 regression gate가 흐려진다.
 
-**결과/위험:** Cargo workspace root 변경은 member manifests로 전파되고, local path dependency는 실제 target package manifest로 연결된다. `workspace = true` dependency는 root `[workspace.dependencies]`의 version/path metadata를 가져와 external package version 또는 local path target을 더 정확히 보여준다. v0는 line-oriented TOML subset과 단순 glob만 지원하므로 `exclude`, complex glob, package rename, feature unification, target cfg evaluation, optional feature graph, lockfile/transitive resolution은 후속 package/build depth에서 다룬다.
+**결과/위험:** Cargo workspace root 변경은 member manifests로 전파되고, local path dependency는 실제 target package manifest로 연결된다. `workspace = true` dependency는 root `[workspace.dependencies]`의 version/path metadata를 가져와 external package version 또는 local path target을 더 정확히 보여준다. v0는 line-oriented TOML subset과 단순 glob만 지원하므로 `package.workspace` override, `[workspace].exclude`, complex glob, package rename, feature unification, target cfg evaluation, optional feature graph, lockfile/transitive resolution은 후속 package/build depth에서 다룬다.
 
 **관련 commit:** `feat(adapters): Cargo workspace resolver 추가`
 

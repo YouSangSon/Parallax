@@ -49,6 +49,7 @@ type LocalPackageDiscovery = {
 type ScopedPackageIndex = ReadonlyMap<string, PackageIndex>;
 type PackageDependencyOverride = {
   version?: string;
+  path?: string;
 };
 type ScopedPackageDependencyOverrides = ReadonlyMap<string, ReadonlyMap<string, PackageDependencyOverride>>;
 type BuildManifestKind = PackageEcosystem | 'gradle-settings' | 'gradle-version-catalog' | 'go-work' | 'pnpm-workspace';
@@ -278,8 +279,16 @@ function discoverCargoDependencyContext(
       const dependencyPath = dependency.path ?? workspaceDependency?.path;
       const dependencyVersion = dependency.version ?? workspaceDependency?.version;
       const key = packageKey('cargo', dependency.name);
-      if (dependencyVersion) dependencyOverrides.set(key, { version: dependencyVersion });
-      const targetManifestPath = dependencyPath ? cargoLocalManifestPath(file.relativePath, dependencyPath) : undefined;
+      if (dependencyVersion || dependencyPath) {
+        dependencyOverrides.set(key, {
+          ...(dependencyVersion ? { version: dependencyVersion } : {}),
+          ...(dependencyPath ? { path: dependencyPath } : {})
+        });
+      }
+      const dependencyPathBase = dependency.path ? file.relativePath : workspace?.rootManifestPath;
+      const targetManifestPath = dependencyPath && dependencyPathBase
+        ? cargoLocalManifestPath(dependencyPathBase, dependencyPath)
+        : undefined;
       const localTarget = targetManifestPath ? packagesByManifest.get(targetManifestPath) : undefined;
       if (localTarget) localDependencies.set(key, localTarget);
     }
@@ -1128,13 +1137,14 @@ function cargoDependency(
   dependencyOverrides: ReadonlyMap<string, PackageDependencyOverride> | undefined
 ): PackageDependency {
   const override = dependencyOverrides?.get(packageKey('cargo', dependency.name));
+  const dependencyPath = dependency.path ?? override?.path;
   return {
     ecosystem: 'cargo',
     name: dependency.name,
     displayName: dependency.name,
     version: dependency.version ?? override?.version,
     dependencyType: dependency.dependencyType,
-    confidence: dependency.path ? 'proven' : 'heuristic',
+    confidence: dependencyPath ? 'proven' : 'heuristic',
     evidence: evidenceLineAt(file.content, file.relativePath, dependency.offset)
   };
 }

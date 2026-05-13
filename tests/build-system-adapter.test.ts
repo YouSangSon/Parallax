@@ -10,6 +10,7 @@ import { databasePath } from '../src/store.js';
 
 type RelationRow = {
   kind: string;
+  confidence: string;
   sourceKind: string;
   sourcePath: string | null;
   sourceLanguage: string | null;
@@ -35,6 +36,7 @@ function relationRows(repoRoot: string, indexRunId: number): RelationRow[] {
       .prepare(
         `SELECT
            relation.kind AS kind,
+           relation.confidence AS confidence,
            source.kind AS sourceKind,
            source.path AS sourcePath,
            source.language_id AS sourceLanguage,
@@ -476,6 +478,7 @@ test('indexProject resolves Cargo workspace members and local path dependencies'
   const repoRoot = await makeRepo('impact-trace-build-cargo-workspace-');
   await mkdir(path.join(repoRoot, 'crates/api'), { recursive: true });
   await mkdir(path.join(repoRoot, 'crates/core'), { recursive: true });
+  await mkdir(path.join(repoRoot, 'crates/support'), { recursive: true });
   await mkdir(path.join(repoRoot, 'tools/xtask'), { recursive: true });
   await mkdir(path.join(repoRoot, 'outside/helper'), { recursive: true });
 
@@ -489,6 +492,7 @@ test('indexProject resolves Cargo workspace members and local path dependencies'
       ']',
       '',
       '[workspace.dependencies]',
+      'core-lib = { path = "crates/core", version = "0.1.0" }',
       'serde = "1"',
       'anyhow = { version = "1" }',
       ''
@@ -503,7 +507,8 @@ test('indexProject resolves Cargo workspace members and local path dependencies'
       'edition = "2021"',
       '',
       '[dependencies]',
-      'core-lib = { path = "../core", version = "0.1.0" }',
+      'core-lib = { workspace = true }',
+      'api-support = { path = "../support", version = "0.1.0" }',
       'serde = { workspace = true, features = ["derive"] }',
       'outside-helper = { path = "../../outside/helper" }',
       ''
@@ -519,6 +524,16 @@ test('indexProject resolves Cargo workspace members and local path dependencies'
       '',
       '[dev-dependencies]',
       'anyhow.workspace = true',
+      ''
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(repoRoot, 'crates/support/Cargo.toml'),
+    [
+      '[package]',
+      'name = "api-support"',
+      'version = "0.1.0"',
+      'edition = "2021"',
       ''
     ].join('\n')
   );
@@ -573,11 +588,24 @@ test('indexProject resolves Cargo workspace members and local path dependencies'
     row.sourceName === 'api' &&
     row.targetKind === 'package' &&
     row.targetLanguage === 'cargo' &&
-    row.targetName === 'core-lib'
+    row.targetName === 'api-support'
   );
   assert.ok(localPathDependency);
-  assert.equal(localPathDependency.targetPath, 'crates/core/Cargo.toml');
-  assert.ok(localPathDependency.snippet?.includes('core-lib = { path = "../core"'));
+  assert.equal(localPathDependency.confidence, 'proven');
+  assert.equal(localPathDependency.targetPath, 'crates/support/Cargo.toml');
+  assert.ok(localPathDependency.snippet?.includes('api-support = { path = "../support"'));
+  const workspacePathDependency = rows.find((row) =>
+    row.kind === 'DEPENDS_ON' &&
+    row.sourceName === 'api' &&
+    row.targetKind === 'package' &&
+    row.targetLanguage === 'cargo' &&
+    row.targetName === 'core-lib'
+  );
+  assert.ok(workspacePathDependency);
+  assert.equal(workspacePathDependency.confidence, 'proven');
+  assert.equal(workspacePathDependency.targetPath, 'crates/core/Cargo.toml');
+  assert.equal(targetMetadata(workspacePathDependency).version, '0.1.0');
+  assert.ok(workspacePathDependency.snippet?.includes('core-lib = { workspace = true'));
   const outsidePathDependency = rows.find((row) =>
     row.kind === 'DEPENDS_ON' &&
     row.sourceName === 'api' &&

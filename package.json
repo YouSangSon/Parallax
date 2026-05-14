@@ -1,0 +1,64 @@
+{
+  "name": "impact-trace",
+  "version": "0.1.0",
+  "description": "Local-first code impact analysis for agentic coding workflows.",
+  "license": "MIT",
+  "author": "YouSangSon",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YouSangSon/Impact-trace.git"
+  },
+  "bugs": {
+    "url": "https://github.com/YouSangSon/Impact-trace/issues"
+  },
+  "homepage": "https://github.com/YouSangSon/Impact-trace#readme",
+  "keywords": [
+    "agentic-coding",
+    "code-analysis",
+    "impact-analysis",
+    "mcp",
+    "typescript"
+  ],
+  "type": "module",
+  "exports": {
+    ".": "./dist/src/index.js",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "impact-trace": "./dist/src/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "bench": "tsx bench/impact-bench.ts",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test tests/**/*.test.ts",
+    "test:fixtures": "npm test",
+    "test:security": "tsx --test tests/security.test.ts",
+    "test:mcp": "tsx --test tests/mcp.test.ts",
+    "test:ui": "tsx --test tests/ui.test.ts",
+    "test:benchmark": "npm run bench",
+    "test:install-smoke": "npm run build && node dist/src/cli.js --help",
+    "docs:lint": "node scripts/docs-lint.js",
+    "lint": "npm run check && npm run docs:lint"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "docs"
+  ],
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.0"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^4.2.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "sqlite-vec": "^0.1.9",
+    "typescript": "^5.9.3",
+    "yaml": "^2.9.0",
+    "zod": "^4.3.6"
+  }
+}

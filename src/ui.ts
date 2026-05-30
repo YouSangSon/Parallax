@@ -418,6 +418,7 @@ function renderImpactSummaryPanel(snapshot: UiSnapshot): string {
   const blast = blastRadiusLabel(report.affectedCount);
   const displayedPathCount = buildImpactMap(snapshot.graph, report).edges.length;
   const impactLanes = buildImpactLanes(report, snapshot.workArtifacts);
+  const trustSummary = renderAnalysisTrustSummary(snapshot, report);
   const confidenceRows = ['proven', 'inferred', 'heuristic', 'unknown'].map((confidence) => {
     const count = report.affectedFiles.filter((item) => item.confidence === confidence).length;
     return `<span class="confidence-meter confidence-${escapeHtml(confidence)}"><b>${count}</b>${escapeHtml(confidence)}</span>`;
@@ -460,6 +461,7 @@ function renderImpactSummaryPanel(snapshot: UiSnapshot): string {
         <strong>${escapeHtml(blast)}</strong>
         <small>${escapeHtml(primaryChange)} touches ${report.affectedCount} targets through ${displayedPathCount} displayed paths.</small>
       </div>
+      ${trustSummary}
       <div class="confidence-strip" aria-label="Affected files by confidence">${confidenceRows}</div>
       <ul class="impact-lanes filterable" aria-label="Affected targets by product lane">${laneRows}</ul>
       <div class="summary-columns">
@@ -472,6 +474,52 @@ function renderImpactSummaryPanel(snapshot: UiSnapshot): string {
           <ul class="summary-list">${changedPreview || '<li class="empty">No changed entities.</li>'}</ul>
         </div>
       </div>
+    </section>
+  `;
+}
+
+function renderAnalysisTrustSummary(snapshot: UiSnapshot, report: UiReportPreview): string {
+  const coverage = snapshot.doctor.index.coverage;
+  const fallbackCoverageRows = snapshot.coverage?.coverage ?? [];
+  const indexedPaths = coverage?.indexedPaths ?? fallbackCoverageRows.filter((item) => item.status === 'indexed').length;
+  const skippedPaths = coverage?.skippedPaths ?? fallbackCoverageRows.filter((item) => item.status === 'skipped').length;
+  const totalRows = coverage?.totalRows ?? indexedPaths + skippedPaths;
+  const adapterInsights = report.adapterInsights ?? [];
+  const adapterCount = adapterInsights.length || snapshot.doctor.index.adapterRuns.length;
+  const knownGaps = uniqueSortedStrings(adapterInsights.flatMap((adapter) => adapter.knownGaps));
+  const weakAdapterCount = adapterInsights.filter((adapter) => adapter.confidence === 'heuristic' || adapter.confidence === 'unknown').length;
+  const failedAdapterCount = adapterInsights.filter((adapter) => adapter.status !== 'completed').length;
+  const coverageTone = skippedPaths > 0 ? 'amber' : totalRows > 0 ? 'green' : 'blue';
+  const adapterTone = failedAdapterCount > 0 ? 'red' : weakAdapterCount > 0 ? 'amber' : adapterCount > 0 ? 'green' : 'blue';
+  const gapTone = knownGaps.length > 0 ? 'amber' : 'green';
+  const stateTone = skippedPaths > 0 || failedAdapterCount > 0 ? 'red' : knownGaps.length > 0 || weakAdapterCount > 0 ? 'amber' : 'green';
+  const stateLabel = stateTone === 'red' ? 'Review gaps' : stateTone === 'amber' ? 'Use with gaps' : 'Ready to use';
+  const gapPreview = knownGaps.slice(0, 2).map((gap) => `<li title="${escapeHtml(gap)}">${escapeHtml(shortenMiddle(gap, 88))}</li>`).join('');
+
+  return `
+    <section class="analysis-trust" aria-label="Analysis trust signals">
+      <div class="analysis-trust-heading">
+        <h3>Analysis Trust</h3>
+        <span class="trust-state-${escapeHtml(stateTone)}">${escapeHtml(stateLabel)}</span>
+      </div>
+      <ul class="trust-signals">
+        <li class="trust-signal trust-signal-${escapeHtml(coverageTone)}">
+          <span>Coverage</span>
+          <strong>${escapeHtml(String(indexedPaths))}/${escapeHtml(String(totalRows))}</strong>
+          <small>${escapeHtml(skippedPaths > 0 ? `${skippedPaths} skipped path${skippedPaths === 1 ? '' : 's'}` : 'No skipped paths')}</small>
+        </li>
+        <li class="trust-signal trust-signal-${escapeHtml(adapterTone)}">
+          <span>Adapters</span>
+          <strong>${escapeHtml(String(adapterCount))}</strong>
+          <small>${escapeHtml(failedAdapterCount > 0 ? `${failedAdapterCount} incomplete` : weakAdapterCount > 0 ? `${weakAdapterCount} heuristic/unknown` : 'Confidence metadata present')}</small>
+        </li>
+        <li class="trust-signal trust-signal-${escapeHtml(gapTone)}">
+          <span>Known gaps</span>
+          <strong>${escapeHtml(String(knownGaps.length))}</strong>
+          <small>${escapeHtml(knownGaps.length > 0 ? 'Open limitations' : 'None reported')}</small>
+        </li>
+      </ul>
+      ${gapPreview ? `<ul class="trust-gap-preview" aria-label="Known gap preview">${gapPreview}</ul>` : ''}
     </section>
   `;
 }
@@ -975,6 +1023,10 @@ function actionTargetLabels(actions: readonly ImpactAction[]): Set<string> {
 
 function sortedSetDifference(left: ReadonlySet<string>, right: ReadonlySet<string>): string[] {
   return [...left].filter((item) => !right.has(item)).sort((a, b) => a.localeCompare(b));
+}
+
+function uniqueSortedStrings(values: readonly string[]): string[] {
+  return [...new Set(values.filter((value) => value.trim().length > 0))].sort((a, b) => a.localeCompare(b));
 }
 
 function comparisonBucket(label: string, current: number, previous: number): UiReportComparisonBucket {
@@ -2467,7 +2519,7 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
     .impact-summary-panel {
       align-self: start;
       display: grid;
-      grid-template-rows: auto auto auto auto minmax(0, 1fr);
+      grid-template-rows: auto auto auto auto auto minmax(0, 1fr);
     }
     .blast-card {
       margin: 14px;
@@ -2489,6 +2541,106 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       font-size: 31px;
       line-height: 1;
       text-transform: capitalize;
+    }
+    .analysis-trust {
+      display: grid;
+      gap: 8px;
+      margin: 0 14px 14px;
+      padding: 10px;
+      border: 1px solid #d9ded5;
+      border-radius: 8px;
+      background: #fffefa;
+    }
+    .analysis-trust-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .analysis-trust-heading h3 {
+      margin: 0;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+    .analysis-trust-heading span {
+      border: 1px solid #bad9ca;
+      border-radius: 999px;
+      padding: 2px 7px;
+      background: #eef8f3;
+      color: var(--green);
+      font-size: 10px;
+      font-weight: 900;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .analysis-trust-heading .trust-state-amber {
+      border-color: #e0c999;
+      background: #fff7e8;
+      color: var(--amber);
+    }
+    .analysis-trust-heading .trust-state-red {
+      border-color: #e3b8b2;
+      background: #fff1ef;
+      color: var(--red);
+    }
+    .trust-signals {
+      list-style: none;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 7px;
+      margin: 0;
+      padding: 0;
+    }
+    .trust-signal {
+      min-width: 0;
+      display: grid;
+      gap: 3px;
+      border: 1px solid var(--line);
+      border-top: 3px solid var(--line-strong);
+      border-radius: 8px;
+      padding: 7px;
+      background: #fbfaf5;
+    }
+    .trust-signal span {
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+    .trust-signal strong {
+      color: var(--ink);
+      font-size: 18px;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+    .trust-signal small {
+      color: var(--muted);
+      font-size: 10px;
+      line-height: 1.2;
+      overflow-wrap: anywhere;
+    }
+    .trust-signal-green { border-top-color: var(--green); }
+    .trust-signal-amber { border-top-color: var(--amber); }
+    .trust-signal-red { border-top-color: var(--red); }
+    .trust-signal-blue { border-top-color: var(--blue); }
+    .trust-gap-preview {
+      list-style: none;
+      display: grid;
+      gap: 4px;
+      margin: 0;
+      padding: 0;
+    }
+    .trust-gap-preview li {
+      border: 1px solid #e0c999;
+      border-radius: 6px;
+      padding: 5px 7px;
+      background: #fff7e8;
+      color: #7b520f;
+      font-size: 11px;
+      line-height: 1.3;
+      overflow-wrap: anywhere;
     }
     .confidence-strip {
       display: grid;
@@ -3336,6 +3488,7 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       .action-controls { grid-column: auto; justify-content: flex-start; }
       .impact-path-meta { justify-content: flex-start; max-width: none; }
       .confidence-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .trust-signals { grid-template-columns: 1fr; }
       .delta-metrics, .delta-lanes, .delta-presets { grid-template-columns: 1fr; }
     }
   </style>

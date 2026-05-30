@@ -226,6 +226,12 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(html, /triage-step triage-step-affected selectable-impact" tabindex="0" role="button" data-impact-path="src\/a\.ts"/);
     assert.match(html, /triage-step triage-step-action selectable-impact" tabindex="0" role="button" data-impact-path="tests\/b\.test\.ts"/);
     assert.match(html, /src\/b\.ts touches 3 targets through 4 displayed paths/);
+    assert.match(html, /Analysis Trust/);
+    assert.match(html, /aria-label="Analysis trust signals"[\s\S]*Coverage[\s\S]*<strong>4\/4<\/strong>[\s\S]*No skipped paths/);
+    assert.match(html, /aria-label="Analysis trust signals"[\s\S]*Adapters[\s\S]*<strong>2<\/strong>[\s\S]*2 heuristic\/unknown/);
+    assert.match(html, /aria-label="Analysis trust signals"[\s\S]*trust-state-amber">Use with gaps/);
+    assert.match(html, /aria-label="Analysis trust signals"[\s\S]*Known gaps[\s\S]*<strong>4<\/strong>[\s\S]*Open limitations/);
+    assert.match(html, /\.trust-signals \{[\s\S]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/);
     assert.match(html, /aria-label="Affected targets by product lane"/);
     assert.match(html, /@media \(max-width: 560px\)[\s\S]*\.toolbar \{\s*display: grid;\s*grid-template-columns: minmax\(0, 0\.85fr\) minmax\(0, 1\.15fr\);/);
     assert.match(html, /@media \(max-width: 980px\)[\s\S]*\.map-content \{\s*grid-template-columns: minmax\(0, 1fr\);\s*height: auto;\s*\}/);

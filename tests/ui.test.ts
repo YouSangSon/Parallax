@@ -221,6 +221,8 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(html, /Impact Inspector/);
     assert.match(html, /data-impact-path="src\/a\.ts"/);
     assert.match(html, /selectedImpactPath/);
+    assert.match(html, /Open source L\d+/);
+    assert.match(html, /\/source\?path=src%2Fa\.ts&amp;line=\d+/);
     assert.match(html, /Coverage Gaps/);
     assert.match(html, /Workspace Contracts/);
     assert.match(html, /overflow-wrap: anywhere/);
@@ -462,6 +464,16 @@ test('UI server exposes bootstrap and resource-shaped JSON endpoints', async () 
       coverage: Array<{ path: string }>;
     };
     assert.ok(coverageJson.coverage.some((item) => item.path === 'src/a.ts'));
+
+    const sourceResponse = await fetch(new URL('/source?path=src/a.ts&line=1', ui.url));
+    assert.equal(sourceResponse.status, 200);
+    const sourceHtml = await sourceResponse.text();
+    assert.match(sourceHtml, /src\/a\.ts/);
+    assert.match(sourceHtml, /source-line-active/);
+    assert.match(sourceHtml, /export const a/);
+
+    const outsideSource = await fetch(new URL('/source?path=../package.json&line=1', ui.url));
+    assert.equal(outsideSource.status, 400);
 
     const missingPack = await (await fetch(new URL('/api/context-packs/missing-pack', ui.url))).json() as {
       error: { code: string };

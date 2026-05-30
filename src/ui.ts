@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { readFile, stat } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
@@ -7,7 +8,7 @@ import { PACKAGE_NAME } from './branding.js';
 import { doctorProject, type DoctorReport } from './doctor.js';
 import { exportImpactGraph } from './graph.js';
 import { databasePath, getRepoId, latestCompletedIndexRun, openDatabase } from './store.js';
-import { normalizeRepoRoot } from './security.js';
+import { normalizeRepoRoot, resolveInsideRoot } from './security.js';
 import type { GraphExport, ImpactAction, ImpactReport } from './types.js';
 
 export type UiOptions = {
@@ -184,6 +185,12 @@ type ContextPackRow = {
 type GraphPageCursor = {
   nodeOffset: number;
   edgeOffset: number;
+};
+
+type SourceLocation = {
+  href: string;
+  label: string;
+  line: number;
 };
 
 type WorkspaceRow = {
@@ -638,9 +645,25 @@ function renderImpactInspector(item: UiReportPreview['affectedFiles'][number] | 
           <dt>Evidence hits</dt>
           <dd id="inspectorEvidence">0</dd>
         </div>
+        <div>
+          <dt>Source</dt>
+          <dd id="inspectorSource">Select evidence to open a local source view</dd>
+        </div>
       </dl>
     </section>
   `;
+}
+
+function evidenceSourceLocation(item: UiEvidencePreview): SourceLocation | undefined {
+  if (!item.file || item.file.includes('\0')) return undefined;
+  const line = item.startLine ?? 1;
+  if (!Number.isInteger(line) || line < 1) return undefined;
+  const endLine = item.endLine && item.endLine > line ? item.endLine : undefined;
+  return {
+    href: `/source?path=${encodeURIComponent(item.file)}&line=${line}`,
+    label: endLine ? `L${line}-L${endLine}` : `L${line}`,
+    line
+  };
 }
 
 function compactMapLabel(value: string, maxLength: number): string {
@@ -699,16 +722,20 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       <span class="badge confidence-${escapeHtml(item.confidence)}">${escapeHtml(item.confidence)}</span>
     </li>
   `).join('');
-  const evidenceRows = (report?.evidence ?? []).slice(0, 30).map((item) => `
-    <li class="evidence-row" data-impact-path="${escapeHtml(item.file)}" data-filter-text="${escapeHtml(`${item.file} ${item.kind} ${item.snippet}`)}">
+  const evidenceRows = (report?.evidence ?? []).slice(0, 30).map((item) => {
+    const source = evidenceSourceLocation(item);
+    return `
+    <li class="evidence-row" data-impact-path="${escapeHtml(item.file)}" data-source-href="${escapeHtml(source?.href ?? '')}" data-source-label="${escapeHtml(source?.label ?? '')}" data-filter-text="${escapeHtml(`${item.file} ${item.kind} ${item.snippet}`)}">
       <div class="evidence-meta">
         <strong>${escapeHtml(item.file)}</strong>
         <span>${escapeHtml(item.kind)} · ${escapeHtml(item.confidence)}</span>
+        ${source ? `<a class="source-link" href="${escapeHtml(source.href)}" target="_blank" rel="noreferrer">Open source ${escapeHtml(source.label)}</a>` : ''}
         ${item.resourceUri ? `<small>${escapeHtml(item.resourceUri)}</small>` : ''}
       </div>
       <pre>${escapeHtml(item.snippet)}</pre>
     </li>
-  `).join('');
+  `;
+  }).join('');
   const actionRows = (report?.actions ?? []).slice(0, 20).map((item) => `
     <li class="action-row">
       <span class="kind">${escapeHtml(item.kind)}</span>
@@ -992,6 +1019,25 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
     .evidence-meta {
       display: grid;
       gap: 3px;
+    }
+    .source-link {
+      width: fit-content;
+      border: 1px solid #8bb8bc;
+      border-radius: 6px;
+      padding: 3px 8px;
+      color: var(--teal);
+      background: #eef7f8;
+      font-size: 12px;
+      font-weight: 800;
+      text-decoration: none;
+    }
+    .source-link:hover {
+      background: #e2f2f4;
+      border-color: var(--teal);
+    }
+    .source-link:focus-visible {
+      outline: 2px solid #73c2ac;
+      outline-offset: 2px;
     }
     pre {
       margin: 9px 0 0;
@@ -1465,6 +1511,25 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       setText('inspectorConfidence', item.confidence);
       setText('inspectorRelation', item.relationPath?.join(' -> ') || 'direct or not recorded');
       setText('inspectorEvidence', String(evidenceHitCount(path)));
+      const firstEvidence = Array.from(document.querySelectorAll('.evidence-row'))
+        .find((row) => row.getAttribute('data-impact-path') === path);
+      const sourceHref = firstEvidence?.getAttribute('data-source-href') || '';
+      const sourceLabel = firstEvidence?.getAttribute('data-source-label') || '';
+      const sourceTarget = document.getElementById('inspectorSource');
+      if (sourceTarget) {
+        sourceTarget.replaceChildren();
+        if (sourceHref) {
+          const link = document.createElement('a');
+          link.className = 'source-link';
+          link.href = sourceHref;
+          link.target = '_blank';
+          link.rel = 'noreferrer';
+          link.textContent = 'Open source ' + sourceLabel;
+          sourceTarget.append(link);
+        } else {
+          sourceTarget.textContent = 'No source span recorded';
+        }
+      }
       for (const row of document.querySelectorAll('[data-impact-path]')) {
         const rowPath = row.getAttribute('data-impact-path');
         const isSelected = rowPath === path;
@@ -1504,6 +1569,142 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
 </html>`;
 }
 
+async function renderSourceViewerHtml(repoRootInput: string, url: URL): Promise<string> {
+  const repoRoot = normalizeRepoRoot(repoRootInput);
+  const requestedPath = url.searchParams.get('path') ?? '';
+  const requestedLine = parseSourceLine(url.searchParams.get('line'));
+  const absolutePath = resolveInsideRoot(repoRoot, requestedPath);
+  const info = await stat(absolutePath);
+  if (!info.isFile()) throw new Error('source path must be a file');
+  if (info.size > 1_000_000) throw new Error('source file is too large for the UI preview');
+
+  const content = await readFile(absolutePath, 'utf8');
+  const lines = content.split(/\r?\n/);
+  const targetLine = Math.min(requestedLine, Math.max(1, lines.length));
+  const startLine = Math.max(1, targetLine - 12);
+  const endLine = Math.min(lines.length, targetLine + 12);
+  const sourceRows = lines.slice(startLine - 1, endLine).map((line, index) => {
+    const lineNumber = startLine + index;
+    return `<li id="L${lineNumber}" class="${lineNumber === targetLine ? 'source-line-active' : ''}"><code>${escapeHtml(line || ' ')}</code></li>`;
+  }).join('');
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtml(requestedPath)}:${targetLine}</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f2f4f1;
+      --surface: #fffefa;
+      --ink: #172019;
+      --muted: #667067;
+      --line: #d8d4c8;
+      --green: #18735f;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: 0;
+    }
+    header {
+      display: grid;
+      gap: 5px;
+      padding: 16px 18px;
+      border-bottom: 3px solid var(--green);
+      background: #20251f;
+      color: #f8f4e8;
+    }
+    header a {
+      width: fit-content;
+      color: #9ed3c4;
+      font-size: 13px;
+      font-weight: 800;
+      text-decoration: none;
+    }
+    h1 {
+      margin: 0;
+      overflow-wrap: anywhere;
+      font-size: 19px;
+      line-height: 1.25;
+    }
+    header span {
+      color: #bcc8bd;
+      font-size: 13px;
+    }
+    main {
+      width: min(1180px, 100%);
+      margin: 0 auto;
+      padding: 18px;
+    }
+    .source-card {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      box-shadow: 0 18px 45px rgba(23, 32, 25, 0.08);
+    }
+    .source-card > div {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+    ol {
+      margin: 0;
+      padding: 12px 0 12px 58px;
+      background: #f9fbf7;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+    li {
+      padding: 0 14px 0 8px;
+      color: #8b948b;
+    }
+    li code {
+      color: #18211b;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    .source-line-active {
+      background: #e0f4ea;
+      box-shadow: inset 4px 0 0 #18735f;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <a href="/">Back to Impact Workbench</a>
+    <h1>${escapeHtml(requestedPath)}</h1>
+    <span>Line ${targetLine} · ${escapeHtml(repoRoot)}</span>
+  </header>
+  <main>
+    <section class="source-card">
+      <div><span>${escapeHtml(requestedPath)}</span><span>L${startLine}-L${endLine}</span></div>
+      <ol start="${startLine}">${sourceRows}</ol>
+    </section>
+  </main>
+</body>
+</html>`;
+}
+
+function parseSourceLine(value: string | null): number {
+  if (value === null || value === '') return 1;
+  const line = Number(value);
+  if (!Number.isInteger(line) || line < 1) throw new Error('source line must be a positive integer');
+  return line;
+}
+
 export async function startUiServer(options: UiServerOptions): Promise<{ server: Server; url: string; close: () => Promise<void> }> {
   const host = options.host ?? '127.0.0.1';
   const preferredPort = options.port ?? 3717;
@@ -1513,6 +1714,17 @@ export async function startUiServer(options: UiServerOptions): Promise<{ server:
       if (url.pathname === '/healthz') {
         response.writeHead(200, jsonHeaders());
         response.end(JSON.stringify({ ok: true }));
+        return;
+      }
+      if (url.pathname === '/source') {
+        try {
+          const html = await renderSourceViewerHtml(options.repoRoot, url);
+          response.writeHead(200, htmlHeaders());
+          response.end(html);
+        } catch (error) {
+          response.writeHead(400, textHeaders());
+          response.end(errorMessage(error));
+        }
         return;
       }
       const reportId = url.searchParams.get('report') ?? options.reportId;

@@ -939,10 +939,11 @@ function isUiConfigPath(pathLower: string): boolean {
 function renderImpactMapPanel(graph: UiGraphPreview | null, report: UiReportPreview | null): string {
   const map = buildImpactMap(graph, report);
   const firstImpact = [...(report?.affectedFiles ?? [])].sort(compareAffectedFilesForUi)[0];
+  const displayedPathCount = map.edges.length;
   const chips = `
     <span>${map.changedNodes.length} changed</span>
     <span>${map.affectedNodes.length} affected</span>
-    <span>${graph?.totalEdges ?? graph?.edges.length ?? map.edges.length} graph links</span>
+    <span>${displayedPathCount} displayed paths</span>
   `;
   if (map.changedNodes.length === 0 && map.affectedNodes.length === 0) {
     return `
@@ -957,7 +958,7 @@ function renderImpactMapPanel(graph: UiGraphPreview | null, report: UiReportPrev
   }
 
   const svg = renderImpactMapSvg(map);
-  const insight = renderImpactMapInsight(map, graph?.totalEdges ?? graph?.edges.length ?? map.edges.length);
+  const insight = renderImpactMapInsight(map, displayedPathCount);
   const edgeRows = map.edges.slice(0, 6).map((edge) => {
     const from = map.nodeById.get(edge.from);
     const to = map.nodeById.get(edge.to);
@@ -993,7 +994,7 @@ function renderImpactMapPanel(graph: UiGraphPreview | null, report: UiReportPrev
   `;
 }
 
-function renderImpactMapInsight(map: ReturnType<typeof buildImpactMap>, totalLinks: number): string {
+function renderImpactMapInsight(map: ReturnType<typeof buildImpactMap>, displayedPathCount: number): string {
   const primaryChange = map.changedNodes[0]?.label ?? 'Changed root';
   const primaryTarget = map.affectedNodes[0];
   const primaryTargetLabel = primaryTarget?.label ?? 'No affected target';
@@ -1004,7 +1005,7 @@ function renderImpactMapInsight(map: ReturnType<typeof buildImpactMap>, totalLin
     <div class="map-insight" aria-label="Primary impact flow">
       <span>Primary impact flow</span>
       <strong>${escapeHtml(shortenMiddle(primaryChange, 34))} <em>&rarr;</em> ${escapeHtml(shortenMiddle(primaryTargetLabel, 34))}</strong>
-      <small>${escapeHtml(relation)} · ${escapeHtml(String(map.affectedNodes.length))} targets · ${escapeHtml(String(totalLinks))} graph links · ${escapeHtml(confidence)} confidence</small>
+      <small>${escapeHtml(relation)} · ${escapeHtml(String(map.affectedNodes.length))} targets · ${escapeHtml(String(displayedPathCount))} displayed paths · ${escapeHtml(confidence)} confidence</small>
     </div>
   `;
 }
@@ -1068,10 +1069,10 @@ function buildImpactMap(
 }
 
 function renderImpactMapSvg(map: ReturnType<typeof buildImpactMap>): string {
-  const width = 960;
-  const leftX = 46;
-  const rightX = 598;
-  const nodeWidth = 306;
+  const width = 760;
+  const leftX = 38;
+  const rightX = 462;
+  const nodeWidth = 238;
   const nodeHeight = 54;
   const rowCount = Math.max(map.changedNodes.length, map.affectedNodes.length, 1);
   const height = Math.max(420, 150 + rowCount * 70);
@@ -1108,8 +1109,8 @@ function renderImpactMapSvg(map: ReturnType<typeof buildImpactMap>): string {
           <path class="map-arrow" d="M 0 0 L 10 5 L 0 10 z" />
         </marker>
       </defs>
-      <rect class="map-stage map-stage-changed" x="24" y="58" width="350" height="${height - 86}" rx="16" />
-      <rect class="map-stage map-stage-affected" x="576" y="58" width="350" height="${height - 86}" rx="16" />
+      <rect class="map-stage map-stage-changed" x="24" y="58" width="290" height="${height - 86}" rx="16" />
+      <rect class="map-stage map-stage-affected" x="438" y="58" width="290" height="${height - 86}" rx="16" />
       <text class="map-column-label" x="${leftX}" y="36">Changed root</text>
       <text class="map-route-label" x="${(leftX + nodeWidth + rightX) / 2}" y="36" text-anchor="middle">Impact path</text>
       <text class="map-column-label" x="${rightX}" y="36">Affected targets</text>

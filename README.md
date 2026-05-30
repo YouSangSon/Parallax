@@ -15,7 +15,7 @@ Claude Code, Codex, Cursor 같은 에이전트가 코드를 고치기 전에<br/
 
 [🚀 빠른 시작](#-빠른-시작) · [✨ 주요 기능](#-주요-기능) · [🧱 핵심 개념](#-핵심-개념) · [🤖 MCP](#-mcp--agents) · [🔒 안전 모델](#-안전-모델) · [🗺️ Roadmap](#%EF%B8%8F-roadmap) · [📚 더 읽기](#-더-읽기)
 
-<img src="docs/assets/parallax-ui-demo.png" alt="Parallax Impact Workbench UI showing a graph-first impact map, impact summary, report delta, verification queue, affected paths, and evidence" width="100%">
+<img src="docs/assets/parallax-ui-demo.png" alt="Parallax Impact Workbench UI showing a graph-first impact map, impact summary, verification action, affected paths, and evidence" width="100%">
 
 </div>
 

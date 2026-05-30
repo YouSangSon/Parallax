@@ -229,6 +229,8 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(html, /Primary impact flow/);
     assert.match(html, /map-stage-changed/);
     assert.match(html, /marker-end="url\(#impactArrow\)"/);
+    assert.match(html, /4 displayed paths/);
+    assert.match(html, /viewBox="0 0 760 /);
     assert.match(html, /class="impact-svg"/);
     assert.match(html, /Impact Inspector/);
     assert.ok(html.indexOf('Impact Map') < html.indexOf('Impact Summary'));

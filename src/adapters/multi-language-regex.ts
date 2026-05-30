@@ -141,7 +141,7 @@ abstract class RegexBackedSemanticAdapter implements SemanticAdapter {
 
 export class TypeScriptJavaScriptSemanticAdapter extends RegexBackedSemanticAdapter {
   override readonly knownGaps = [
-    'TypeScript/JavaScript import, declaration, imported call-site, local identifier call, same-class this.method, class field arrow method caller/target, and same-file new ClassName instance call spans are parser-backed, but broader dynamic dispatch and type relation resolution are not yet complete',
+    'TypeScript/JavaScript import, declaration, imported call-site, local identifier call, same-class this.method, class field arrow method caller/target, class field instance method call, and same-file new ClassName instance call spans are parser-backed, but broader dynamic dispatch and type relation resolution are not yet complete',
     'polymorphism, alias-heavy object flows, generated code, and framework-specific routing may require deeper adapters'
   ];
 
@@ -1726,6 +1726,10 @@ function extractCalls(
     sourceFile,
     localCallables
   );
+  const classInstanceBindings = collectTypeScriptJavaScriptClassInstanceBindings(
+    sourceFile,
+    localCallables
+  );
   const calls: ExtractedCall[] = [];
 
   const visit = (node: ts.Node): void => {
@@ -1746,12 +1750,15 @@ function extractCalls(
             node.expression,
             localCallables,
             localInstanceBindings,
+            classInstanceBindings,
             localSource.name
           )
           : undefined;
         if (localSource && localTarget) {
           const evidence = nodeExactEvidence(file.content, sourceFile, node);
-          const provenanceKind = ts.isPropertyAccessExpression(node.expression)
+          const provenanceKind = isThisFieldInstanceCallExpression(node.expression)
+            ? 'field-instance-call'
+            : ts.isPropertyAccessExpression(node.expression)
             && ts.isIdentifier(node.expression.expression)
             ? 'instance-call'
             : ts.isPropertyAccessExpression(node.expression)
@@ -1839,6 +1846,30 @@ function collectTypeScriptJavaScriptLocalInstanceBindings(
       const className = classNameFromNewExpression(node.initializer);
       const scope = enclosingLocalCaller(node, localCallables);
       if (className && scope) addBinding(scope.name, node.name.text, className);
+    }
+    ts.forEachChild(node, visit);
+  };
+
+  visit(sourceFile);
+  return bindings;
+}
+
+function collectTypeScriptJavaScriptClassInstanceBindings(
+  sourceFile: ts.SourceFile,
+  localCallables: ReadonlyMap<string, TsLocalCallable>
+): Map<string, TsLocalInstanceBinding> {
+  const bindings = new Map<string, TsLocalInstanceBinding>();
+
+  const addBinding = (ownerClassName: string, propertyName: string, className: string): void => {
+    if (!hasLocalClassMethod(localCallables, className)) return;
+    bindings.set(scopedLocalName(ownerClassName, propertyName), { className });
+  };
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isPropertyDeclaration(node) && ts.isIdentifier(node.name)) {
+      const ownerClassName = enclosingTypeScriptJavaScriptClassName(node);
+      const className = classNameFromNewExpression(node.initializer);
+      if (ownerClassName && className) addBinding(ownerClassName, node.name.text, className);
     }
     ts.forEachChild(node, visit);
   };
@@ -1999,6 +2030,7 @@ function localCallTargetForExpression(
   expression: ts.Expression,
   localCallables: ReadonlyMap<string, TsLocalCallable>,
   localInstanceBindings: ReadonlyMap<string, TsLocalInstanceBinding>,
+  classInstanceBindings: ReadonlyMap<string, TsLocalInstanceBinding>,
   sourceScopeName: string
 ): TsLocalCallable | undefined {
   if (ts.isIdentifier(expression)) {
@@ -2008,6 +2040,14 @@ function localCallTargetForExpression(
     const instance = localInstanceBindings.get(scopedLocalName(sourceScopeName, expression.expression.text));
     return instance ? localCallables.get(`${instance.className}.${expression.name.text}`) : undefined;
   }
+  if (ts.isPropertyAccessExpression(expression)) {
+    const propertyName = thisPropertyName(expression.expression);
+    const className = enclosingTypeScriptJavaScriptClassName(expression);
+    const instance = className && propertyName
+      ? classInstanceBindings.get(scopedLocalName(className, propertyName))
+      : undefined;
+    if (instance) return localCallables.get(`${instance.className}.${expression.name.text}`);
+  }
   if (
     ts.isPropertyAccessExpression(expression) &&
     expression.expression.kind === ts.SyntaxKind.ThisKeyword
@@ -2016,6 +2056,16 @@ function localCallTargetForExpression(
     return className ? localCallables.get(`${className}.${expression.name.text}`) : undefined;
   }
   return undefined;
+}
+
+function isThisFieldInstanceCallExpression(expression: ts.Expression): boolean {
+  return ts.isPropertyAccessExpression(expression) && thisPropertyName(expression.expression) !== undefined;
+}
+
+function thisPropertyName(expression: ts.Expression): string | undefined {
+  if (!ts.isPropertyAccessExpression(expression)) return undefined;
+  if (expression.expression.kind !== ts.SyntaxKind.ThisKeyword) return undefined;
+  return ts.isIdentifier(expression.name) ? expression.name.text : undefined;
 }
 
 function scopedLocalName(scopeName: string, localName: string): string {

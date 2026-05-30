@@ -141,7 +141,7 @@ abstract class RegexBackedSemanticAdapter implements SemanticAdapter {
 
 export class TypeScriptJavaScriptSemanticAdapter extends RegexBackedSemanticAdapter {
   override readonly knownGaps = [
-    'TypeScript/JavaScript import, declaration, imported call-site, local identifier call, same-class this.method, static ClassName.method, class field arrow method caller/target, class field instance method call, same-file new ClassName instance call, and direct new ClassName().method call spans are parser-backed, but broader dynamic dispatch and type relation resolution are not yet complete',
+    'TypeScript/JavaScript import, declaration, imported call-site, local identifier call, same-class this.method, static ClassName.method, typed parameter instance method call, class field arrow method caller/target, class field instance method call, same-file new ClassName instance call, and direct new ClassName().method call spans are parser-backed, but broader dynamic dispatch and type relation resolution are not yet complete',
     'polymorphism, alias-heavy object flows, generated code, and framework-specific routing may require deeper adapters'
   ];
 
@@ -1860,6 +1860,10 @@ function collectTypeScriptJavaScriptLocalInstanceBindings(
       const className = classNameFromNewExpression(node.initializer);
       const scope = enclosingLocalCaller(node, localCallables);
       if (className && scope) addBinding(scope.name, node.name.text, className);
+    } else if (ts.isParameter(node) && ts.isIdentifier(node.name)) {
+      const className = classNameFromTypeReference(node.type);
+      const scope = enclosingLocalCaller(node, localCallables);
+      if (className && scope) addBinding(scope.name, node.name.text, className);
     }
     ts.forEachChild(node, visit);
   };
@@ -1924,6 +1928,11 @@ function hasLocalClassMethod(
 function classNameFromNewExpression(node: ts.Expression | undefined): string | undefined {
   if (!node || !ts.isNewExpression(node)) return undefined;
   return ts.isIdentifier(node.expression) ? node.expression.text : undefined;
+}
+
+function classNameFromTypeReference(node: ts.TypeNode | undefined): string | undefined {
+  if (!node || !ts.isTypeReferenceNode(node)) return undefined;
+  return ts.isIdentifier(node.typeName) ? node.typeName.text : undefined;
 }
 
 function isCallableInitializer(node: ts.Expression | undefined): boolean {

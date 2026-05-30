@@ -2164,7 +2164,7 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       display: grid;
       grid-template-columns: minmax(680px, 1.65fr) minmax(320px, 0.72fr);
       gap: 14px;
-      align-items: stretch;
+      align-items: start;
       margin-bottom: 14px;
     }
     .workbench {
@@ -2408,6 +2408,7 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
     }
     code { font-size: 12px; overflow-wrap: anywhere; color: var(--graph); }
     .impact-summary-panel {
+      align-self: start;
       display: grid;
       grid-template-rows: auto auto auto auto minmax(0, 1fr);
     }
@@ -2564,21 +2565,21 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
     .map-panel {
       min-height: 0;
       display: grid;
-      grid-template-rows: auto minmax(0, 1fr);
-      height: 100%;
+      grid-template-rows: auto auto;
+      align-self: start;
     }
     .map-content {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(260px, 0.34fr);
-      height: 100%;
-      min-height: 560px;
+      grid-template-columns: minmax(0, 1fr);
+      height: auto;
+      min-height: 0;
       align-items: stretch;
     }
     .map-frame {
       min-width: 0;
       min-height: 0;
       display: grid;
-      grid-template-rows: auto minmax(0, 1fr);
+      grid-template-rows: auto auto;
       align-content: start;
       align-items: start;
       gap: 12px;
@@ -2592,7 +2593,7 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       grid-template-columns: minmax(0, 1fr) minmax(180px, 0.42fr);
       align-items: center;
       gap: 12px;
-      max-width: 760px;
+      max-width: none;
       padding: 10px 12px;
       border: 1px solid rgba(168, 202, 186, 0.26);
       border-radius: 8px;
@@ -2791,15 +2792,17 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
     }
     .map-legend {
       display: grid;
+      grid-template-columns: minmax(270px, 1.15fr) minmax(170px, 0.55fr) minmax(210px, 0.8fr);
       align-content: start;
+      align-items: start;
       gap: 12px;
       padding: 14px;
-      border-left: 1px solid var(--line);
+      border-top: 1px solid var(--line);
       background: #fbfaf5;
       color: var(--muted);
       font-size: 12px;
       line-height: 1.4;
-      overflow: auto;
+      overflow: visible;
     }
     .map-legend-key {
       display: grid;
@@ -2835,6 +2838,8 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       margin: 0;
       padding: 10px 0 0 18px;
       border-top: 1px solid var(--line);
+      max-height: 246px;
+      overflow: auto;
     }
     .map-legend li strong {
       display: block;
@@ -2952,6 +2957,11 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       margin: 0;
       padding: 0;
     }
+    .inspector-evidence {
+      max-height: 246px;
+      overflow: auto;
+      padding-right: 2px;
+    }
     #inspectorEvidenceList li {
       display: grid;
       gap: 4px;
@@ -3017,6 +3027,14 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       .map-content {
         grid-template-columns: minmax(0, 1fr);
         height: auto;
+      }
+      .map-legend {
+        grid-template-columns: 1fr;
+      }
+      .map-route-list,
+      .inspector-evidence {
+        max-height: none;
+        overflow: visible;
       }
       .impact-svg { height: 380px; }
     }
@@ -3140,7 +3158,7 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
         padding: 6px 7px;
       }
       .impact-svg { height: 320px; }
-      .map-legend { max-height: 300px; padding: 10px; }
+      .map-legend { max-height: 300px; padding: 10px; overflow: auto; }
       .impact-row, .workspace-link-row, .action-row { grid-template-columns: 1fr; }
       .action-controls { grid-column: auto; justify-content: flex-start; }
       .impact-path-meta { justify-content: flex-start; max-width: none; }

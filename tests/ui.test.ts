@@ -239,6 +239,10 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(html, /summary-section-top-impact[\s\S]*Top Impact[\s\S]*<b>1<\/b>[\s\S]*tests\/b\.test\.ts[\s\S]*summary-section-changed[\s\S]*Changed[\s\S]*src\/b\.ts/);
     assert.match(html, /\.summary-columns \{[\s\S]*grid-auto-rows: max-content;[\s\S]*align-content: start;/);
     assert.match(html, /Impact Map/);
+    assert.match(html, /\.impact-overview \{[\s\S]*align-items: start;/);
+    assert.match(html, /\.map-content \{[\s\S]*grid-template-columns: minmax\(0, 1fr\);[\s\S]*min-height: 0;/);
+    assert.match(html, /\.map-legend \{[\s\S]*grid-template-columns: minmax\(270px, 1\.15fr\) minmax\(170px, 0\.55fr\) minmax\(210px, 0\.8fr\);/);
+    assert.match(html, /\.inspector-evidence \{[\s\S]*max-height: 246px;[\s\S]*overflow: auto;/);
     assert.match(html, /Primary impact flow/);
     assert.match(html, /Primary impact flow[\s\S]*id="mapFlowPath">src\/b\.ts <em>&rarr;<\/em> tests\/b\.test\.ts/);
     assert.match(html, /id="mapNextAction" class="map-next-action" aria-label="Next verification command"[\s\S]*<code>npm test -- tests\/b\.test\.ts<\/code>/);

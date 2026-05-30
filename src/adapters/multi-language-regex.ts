@@ -1511,6 +1511,7 @@ function extractTypeScriptJavaScriptSymbols(file: ScannedFile): ExtractedSymbol[
     scriptKindFor(file.relativePath)
   );
   const symbols: ExtractedSymbol[] = [];
+  const functionTypeAliases = collectTypeScriptJavaScriptFunctionTypeAliases(sourceFile);
 
   const addNamedNode = (
     name: ts.Node | undefined,
@@ -1557,7 +1558,7 @@ function extractTypeScriptJavaScriptSymbols(file: ScannedFile): ExtractedSymbol[
       if (typeName) {
         addSymbol(`${typeName}.${node.name.text}`, 'method', node, typeMemberOwnerHasExportModifier(node));
       }
-    } else if (isCallableTypePropertySignature(node)) {
+    } else if (isCallableTypePropertySignature(node, functionTypeAliases)) {
       const typeName = enclosingTypeScriptJavaScriptTypeMemberOwnerName(node);
       if (typeName && ts.isIdentifier(node.name)) {
         addSymbol(`${typeName}.${node.name.text}`, 'method', node, typeMemberOwnerHasExportModifier(node));
@@ -1826,6 +1827,7 @@ function collectTypeScriptJavaScriptLocalCallables(
   sourceFile: ts.SourceFile
 ): Map<string, TsLocalCallable> {
   const callables = new Map<string, TsLocalCallable>();
+  const functionTypeAliases = collectTypeScriptJavaScriptFunctionTypeAliases(sourceFile);
 
   const addCallable = (name: string | undefined, symbolKind: string): void => {
     if (!name) return;
@@ -1852,7 +1854,7 @@ function collectTypeScriptJavaScriptLocalCallables(
     } else if (ts.isMethodSignature(node) && ts.isIdentifier(node.name)) {
       const typeName = enclosingTypeScriptJavaScriptTypeMemberOwnerName(node);
       if (typeName) addCallable(`${typeName}.${node.name.text}`, 'method');
-    } else if (isCallableTypePropertySignature(node)) {
+    } else if (isCallableTypePropertySignature(node, functionTypeAliases)) {
       const typeName = enclosingTypeScriptJavaScriptTypeMemberOwnerName(node);
       if (typeName && ts.isIdentifier(node.name)) {
         addCallable(`${typeName}.${node.name.text}`, 'method');
@@ -2066,10 +2068,42 @@ function isCallableClassProperty(node: ts.Node): node is ts.PropertyDeclaration 
     && isCallableInitializer(node.initializer);
 }
 
-function isCallableTypePropertySignature(node: ts.Node): node is ts.PropertySignature {
+function isCallableTypePropertySignature(
+  node: ts.Node,
+  functionTypeAliases: ReadonlySet<string>
+): node is ts.PropertySignature {
   return ts.isPropertySignature(node)
     && ts.isIdentifier(node.name)
-    && Boolean(node.type && ts.isFunctionTypeNode(node.type));
+    && Boolean(
+      node.type
+      && (
+        ts.isFunctionTypeNode(node.type)
+        || isFunctionTypeAliasReference(node.type, functionTypeAliases)
+      )
+    );
+}
+
+function isFunctionTypeAliasReference(
+  node: ts.TypeNode,
+  functionTypeAliases: ReadonlySet<string>
+): boolean {
+  return ts.isTypeReferenceNode(node)
+    && ts.isIdentifier(node.typeName)
+    && functionTypeAliases.has(node.typeName.text);
+}
+
+function collectTypeScriptJavaScriptFunctionTypeAliases(sourceFile: ts.SourceFile): Set<string> {
+  const aliases = new Set<string>();
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isTypeAliasDeclaration(node) && ts.isFunctionTypeNode(node.type)) {
+      aliases.add(node.name.text);
+    }
+    ts.forEachChild(node, visit);
+  };
+
+  visit(sourceFile);
+  return aliases;
 }
 
 type TsImportBinding = {

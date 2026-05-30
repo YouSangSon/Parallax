@@ -23,7 +23,7 @@ import type {
 } from './types.js';
 
 export const MULTI_LANG_REGEX_ADAPTER_ID = 'multi-language-regex-mvp';
-export const MULTI_LANG_REGEX_ADAPTER_VERSION = '26';
+export const MULTI_LANG_REGEX_ADAPTER_VERSION = '27';
 export const TS_JS_SEMANTIC_ADAPTER_ID = 'typescript-javascript-semantic-v0';
 export const JVM_SPRING_SEMANTIC_ADAPTER_ID = 'jvm-spring-semantic-v0';
 export const PYTHON_SEMANTIC_ADAPTER_ID = 'python-semantic-v0';
@@ -187,7 +187,7 @@ abstract class RegexBackedSemanticAdapter implements SemanticAdapter {
 
 export class TypeScriptJavaScriptSemanticAdapter extends RegexBackedSemanticAdapter {
   override readonly knownGaps = [
-    'TypeScript/JavaScript import, declaration, same-file/named-imported/direct-named-re-exported/star-re-exported/namespace-re-exported/default-imported/direct-default-re-exported/namespace-imported class/interface heritage type relation, imported call-site, local identifier call, same-class this.method, same-file/direct-new-or-const-alias-inferred/namespace-constructor-inferred/factory-wrapper-inferred/named-imported/direct-named-re-exported/star-re-exported/namespace-imported/namespace-re-exported/default-imported/direct-default-re-exported factory return type instance method call, interface/type-literal method/function-property/function-type-alias signature, same-file/named-imported/direct-named-re-exported/star-re-exported/namespace-re-exported/default-imported/direct-default-re-exported/namespace-imported interface/type-literal typed receiver method call, same-file interface extends typed receiver method call, same-file alias-backed interface extends typed receiver method call, same-file type reference alias typed receiver method call, same-file simple generic type reference typed receiver method call, same-file generic constraint typed receiver method call, same-file intersection type alias typed receiver method call, direct intersection typed receiver method call, same-file simple union typed receiver method call, declared typed local/class field receiver method call, typed local variable instance method call, typed parameter instance method call, constructor parameter property instance method call, constructor assignment instance method call, class field arrow method caller/target, typed class field instance method call, class field instance method call, same-file new ClassName instance call, and direct new ClassName().method call spans are parser-backed, but broader dynamic dispatch and advanced type relation resolution are not yet complete',
+    'TypeScript/JavaScript import, declaration, same-file/named-imported/direct-named-re-exported/star-re-exported/namespace-re-exported/default-imported/direct-default-re-exported/namespace-imported class/interface heritage type relation, imported call-site, local identifier call, same-class this.method, same-file/direct-new-or-const-alias-inferred/namespace-constructor-inferred/factory-wrapper-inferred/direct-factory-call-receiver/named-imported/direct-named-re-exported/star-re-exported/namespace-imported/namespace-re-exported/default-imported/direct-default-re-exported factory return type instance method call, interface/type-literal method/function-property/function-type-alias signature, same-file/named-imported/direct-named-re-exported/star-re-exported/namespace-re-exported/default-imported/direct-default-re-exported/namespace-imported interface/type-literal typed receiver method call, same-file interface extends typed receiver method call, same-file alias-backed interface extends typed receiver method call, same-file type reference alias typed receiver method call, same-file simple generic type reference typed receiver method call, same-file generic constraint typed receiver method call, same-file intersection type alias typed receiver method call, direct intersection typed receiver method call, same-file simple union typed receiver method call, declared typed local/class field receiver method call, typed local variable instance method call, typed parameter instance method call, constructor parameter property instance method call, constructor assignment instance method call, class field arrow method caller/target, typed class field instance method call, class field instance method call, same-file new ClassName instance call, and direct new ClassName().method call spans are parser-backed, but broader dynamic dispatch and advanced type relation resolution are not yet complete',
     'polymorphism, alias-heavy object flows, generated code, and framework-specific routing may require deeper adapters'
   ];
 
@@ -2521,6 +2521,7 @@ function extractCalls(
             typeExtends,
             classExtends,
             typeIntersectionAliases,
+            factoryReturnTypes,
             localSource.name
           )
           : [];
@@ -2530,6 +2531,8 @@ function extractCalls(
             ? 'field-instance-call'
             : isDirectNewInstanceCallExpression(node.expression)
             ? 'direct-instance-call'
+            : isDirectFactoryInstanceCallExpression(node.expression, factoryReturnTypes)
+            ? 'direct-factory-instance-call'
             : isStaticClassCallExpression(node.expression, staticClassCallables, classExtends)
             ? 'static-call'
             : ts.isPropertyAccessExpression(node.expression)
@@ -3884,6 +3887,7 @@ function localCallTargetsForExpression(
   interfaceExtends: ReadonlyMap<string, readonly string[]>,
   classExtends: ReadonlyMap<string, readonly string[]>,
   typeIntersectionAliases: ReadonlyMap<string, readonly string[]>,
+  factoryReturnTypes: ReadonlyMap<string, string>,
   sourceScopeName: string
 ): TsLocalCallable[] {
   if (ts.isIdentifier(expression)) {
@@ -3923,6 +3927,19 @@ function localCallTargetsForExpression(
         interfaceExtends,
         typeIntersectionAliases
       );
+    }
+  }
+  if (ts.isPropertyAccessExpression(expression)) {
+    const className = classNameFromFactoryCall(expression.expression, factoryReturnTypes);
+    if (className) {
+      const callable = localTypeMemberCallable(
+        localCallables,
+        className,
+        expression.name.text,
+        interfaceExtends,
+        typeIntersectionAliases
+      );
+      return callable ? [callable] : [];
     }
   }
   if (ts.isPropertyAccessExpression(expression)) {
@@ -4057,6 +4074,14 @@ function isThisFieldInstanceCallExpression(expression: ts.Expression): boolean {
 function isDirectNewInstanceCallExpression(expression: ts.Expression): boolean {
   return ts.isPropertyAccessExpression(expression)
     && classNameFromNewExpression(expression.expression) !== undefined;
+}
+
+function isDirectFactoryInstanceCallExpression(
+  expression: ts.Expression,
+  factoryReturnTypes: ReadonlyMap<string, string>
+): boolean {
+  return ts.isPropertyAccessExpression(expression)
+    && classNameFromFactoryCall(expression.expression, factoryReturnTypes) !== undefined;
 }
 
 function isStaticClassCallExpression(

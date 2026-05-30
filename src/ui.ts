@@ -815,6 +815,71 @@ function sourceHref(file: string, line: number): string {
   return `/source?path=${encodeURIComponent(file)}&line=${line}`;
 }
 
+function renderImpactPathRow(
+  item: UiReportPreview['affectedFiles'][number],
+  evidenceCount: number,
+  action: ImpactAction | undefined
+): string {
+  const trail = impactTrailParts(item).map((part) => `<span>${escapeHtml(part)}</span>`).join('');
+  const actionCommand = action ? actionCommandText(action) : undefined;
+  const filterText = [
+    item.path,
+    item.reason,
+    item.confidence,
+    item.relationPath?.join(' '),
+    evidenceCount ? `${evidenceCount} evidence` : '',
+    actionCommand ?? ''
+  ].filter(Boolean).join(' ');
+
+  return `
+    <li class="impact-row impact-path-row selectable-impact" tabindex="0" role="button" data-impact-path="${escapeHtml(item.path)}" data-filter-text="${escapeHtml(filterText)}">
+      <div class="impact-path-main">
+        <strong>${escapeHtml(item.path)}</strong>
+        <span>${escapeHtml(item.reason)}</span>
+        <div class="relation-trail" aria-label="Relation trail">${trail}</div>
+      </div>
+      <div class="impact-path-meta">
+        <span class="badge confidence-${escapeHtml(item.confidence)}">${escapeHtml(item.confidence)}</span>
+        <span class="evidence-pill">${escapeHtml(String(evidenceCount))} evidence</span>
+        <a class="source-link" href="${escapeHtml(sourceHref(item.path, 1))}" target="_blank" rel="noreferrer">Source</a>
+        ${actionCommand ? `<button class="copy-command" type="button" data-command="${escapeHtml(actionCommand)}" aria-label="Copy verification command for ${escapeHtml(item.path)}">Copy verify</button>` : ''}
+      </div>
+    </li>
+  `;
+}
+
+function impactTrailParts(item: UiReportPreview['affectedFiles'][number]): string[] {
+  const parts = item.relationPath && item.relationPath.length > 0 ? item.relationPath : [item.reason];
+  return parts.slice(0, 4);
+}
+
+function evidenceCountByImpactPath(
+  affectedFiles: readonly UiReportPreview['affectedFiles'][number][],
+  evidence: readonly UiEvidencePreview[]
+): Map<string, number> {
+  const paths = new Set(affectedFiles.map((item) => item.path));
+  const counts = new Map<string, number>();
+  for (const pathValue of paths) counts.set(pathValue, 0);
+  for (const item of evidence) {
+    for (const pathValue of paths) {
+      if (item.file === pathValue || item.subject?.path === pathValue || item.snippet.includes(pathValue)) {
+        counts.set(pathValue, (counts.get(pathValue) ?? 0) + 1);
+      }
+    }
+  }
+  return counts;
+}
+
+function actionByTargetPath(actions: readonly ImpactAction[]): Map<string, ImpactAction> {
+  const byPath = new Map<string, ImpactAction>();
+  for (const action of actions) {
+    const targetPath = action.target.path;
+    if (!targetPath || byPath.has(targetPath)) continue;
+    byPath.set(targetPath, action);
+  }
+  return byPath;
+}
+
 function compactMapLabel(value: string, maxLength: number): string {
   if (value.length <= maxLength) return value;
   const pathParts = value.split('/').filter(Boolean);
@@ -862,15 +927,11 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       <span>${escapeHtml(entity.displayName ?? entity.path ?? entity.id)}</span>
     </li>
   `).join('');
-  const affectedRows = (report?.affectedFiles ?? []).slice(0, 40).map((item) => `
-    <li class="impact-row selectable-impact" tabindex="0" role="button" data-impact-path="${escapeHtml(item.path)}" data-filter-text="${escapeHtml(`${item.path} ${item.reason} ${item.confidence}`)}">
-      <div>
-        <strong>${escapeHtml(item.path)}</strong>
-        <span>${escapeHtml(item.reason)}</span>
-      </div>
-      <span class="badge confidence-${escapeHtml(item.confidence)}">${escapeHtml(item.confidence)}</span>
-    </li>
-  `).join('');
+  const evidenceCountsByPath = evidenceCountByImpactPath(report?.affectedFiles ?? [], report?.evidence ?? []);
+  const actionByPath = actionByTargetPath(report?.actions ?? []);
+  const affectedRows = (report?.affectedFiles ?? []).slice(0, 40).map((item) =>
+    renderImpactPathRow(item, evidenceCountsByPath.get(item.path) ?? 0, actionByPath.get(item.path))
+  ).join('');
   const evidenceRows = (report?.evidence ?? []).slice(0, 30).map((item) => {
     const source = evidenceSourceLocation(item);
     return `
@@ -1202,6 +1263,52 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       color: var(--red);
     }
     .impact-row, .workspace-link-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+    .impact-path-row {
+      align-items: start;
+      background: #fffefa;
+    }
+    .impact-path-main {
+      min-width: 0;
+      display: grid;
+      gap: 5px;
+    }
+    .impact-path-meta {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 6px;
+      max-width: 220px;
+    }
+    .relation-trail {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 5px;
+    }
+    .relation-trail span {
+      width: fit-content;
+      max-width: 100%;
+      border: 1px solid #d7b477;
+      border-radius: 6px;
+      padding: 2px 6px;
+      background: #fff6e7;
+      color: var(--amber);
+      font-size: 11px;
+      font-weight: 800;
+      line-height: 1.25;
+      overflow-wrap: anywhere;
+    }
+    .evidence-pill {
+      width: fit-content;
+      border: 1px solid #d9ded5;
+      border-radius: 6px;
+      padding: 3px 8px;
+      background: #f3f7f4;
+      color: var(--graph);
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
     .impact-row strong, .pack-row strong, .coverage-row strong, .work-artifact-row strong, .workspace-row strong, .workspace-link-row strong, .workspace-contract-row strong { display: block; overflow-wrap: anywhere; }
     .impact-row strong, .evidence-meta strong, .coverage-row strong, .workspace-link-row strong {
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
@@ -1642,6 +1749,7 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       .metrics { grid-template-columns: 1fr; }
       .impact-row, .workspace-link-row, .action-row { grid-template-columns: 1fr; }
       .action-controls { grid-column: auto; justify-content: flex-start; }
+      .impact-path-meta { justify-content: flex-start; max-width: none; }
       .confidence-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .panel-heading { align-items: flex-start; flex-direction: column; }
     }
@@ -1815,6 +1923,9 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
         event.preventDefault();
         selectImpact(element.getAttribute('data-impact-path'), { scroll: true });
       });
+    }
+    for (const element of document.querySelectorAll('.impact-path-row a, .impact-path-row button')) {
+      element.addEventListener('click', (event) => event.stopPropagation());
     }
     input?.addEventListener('input', () => {
       const query = input.value.trim().toLowerCase();

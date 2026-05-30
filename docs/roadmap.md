@@ -45,9 +45,10 @@ MCP는 read-only로 안정화됐다. 다음은 agent 사용성을 깊게 보는 
 
 지금 UI는 저장된 report와 graph를 읽는 첫 explorer 수준.
 
-- [ ] changed → affected → evidence → action 흐름의 단일 화면 검증
-- [ ] policy / decision / PRD / requirement / proposal 같은 work-artifact lane을 first-class panel로
-- [ ] evidence resource를 클릭 한 번에 원본 파일/라인으로 jump
+- [x] changed → affected → evidence → action 흐름의 단일 화면 검증
+- [x] policy / decision / PRD / requirement / proposal 같은 work-artifact lane을 first-class panel로
+- [x] evidence resource를 클릭 한 번에 원본 파일/라인으로 jump
+- [ ] selected impact의 relation/evidence/action을 더 깊게 drill-down하는 inspector 확장
 
 ## 6. 회고와 측정
 

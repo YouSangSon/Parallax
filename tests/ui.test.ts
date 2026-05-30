@@ -227,6 +227,11 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(html, /class="impact-svg"/);
     assert.match(html, /Impact Inspector/);
     assert.match(html, /data-impact-path="src\/a\.ts"/);
+    assert.match(html, /class="impact-row impact-path-row selectable-impact"/);
+    assert.match(html, /class="relation-trail"/);
+    assert.match(html, /1 evidence/);
+    assert.match(html, /\/source\?path=src%2Fa\.ts&amp;line=1/);
+    assert.match(html, /Copy verify/);
     assert.match(html, /selectedImpactPath/);
     assert.match(html, /Verification Queue/);
     assert.match(html, /Verify tests\/b\.test\.ts/);

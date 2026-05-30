@@ -150,7 +150,7 @@ parallax profile --entity file:src/auth.ts
 | **Change Set** | 분석된 변경 파일과 entity 요약 |
 | **Impact Summary** | 변경 수, 영향 범위, confidence 분포, 우선 확인 대상을 첫 화면에 요약 |
 | **Impact Lanes** | runtime code, tests, docs/policy, contracts, config/infra 영향 범주를 한눈에 분리 |
-| **Impact Paths** | 변경 → 영향 대상까지의 relation path |
+| **Impact Paths** | 변경 → 영향 대상까지의 relation trail, evidence count, source/action control |
 | **Verification Queue** | 영향받는 테스트/리뷰 action을 복사 가능한 command와 target source link로 표시 |
 | **Evidence** | redacted snippet, source span, relation provenance |
 | **Impact Map** | changed root와 affected target을 실제 graph link로 연결하고, target 선택 시 관련 경로와 evidence를 강조 |

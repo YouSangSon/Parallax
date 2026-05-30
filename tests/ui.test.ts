@@ -227,7 +227,12 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(html, /triage-step triage-step-action selectable-impact" tabindex="0" role="button" data-impact-path="tests\/b\.test\.ts"/);
     assert.match(html, /src\/b\.ts touches 3 targets through 4 displayed paths/);
     assert.match(html, /aria-label="Affected targets by product lane"/);
-    assert.match(html, /@media \(max-width: 560px\)[\s\S]*\.metrics \{\s*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
+    assert.match(html, /@media \(max-width: 560px\)[\s\S]*\.toolbar \{\s*display: grid;\s*grid-template-columns: minmax\(0, 0\.85fr\) minmax\(0, 1\.15fr\);/);
+    assert.match(html, /@media \(max-width: 980px\)[\s\S]*\.map-content \{\s*grid-template-columns: minmax\(0, 1fr\);\s*height: auto;\s*\}/);
+    assert.match(html, /@media \(max-width: 560px\)[\s\S]*\.metrics \{\s*grid-template-columns: none;\s*grid-auto-flow: column;\s*grid-auto-columns: minmax\(96px, 1fr\);/);
+    assert.match(html, /@media \(max-width: 560px\)[\s\S]*scrollbar-width: none;/);
+    assert.match(html, /@media \(max-width: 560px\)[\s\S]*\.triage-flow \{\s*grid-template-columns: minmax\(0, 0\.9fr\) minmax\(0, 0\.9fr\) minmax\(0, 1\.2fr\);/);
+    assert.match(html, /@media \(max-width: 560px\)[\s\S]*\.impact-svg \{ height: 320px; \}/);
     assert.match(html, /impact-lane-green[\s\S]*Runtime code[\s\S]*<b>1<\/b>[\s\S]*src\/a\.ts/);
     assert.match(html, /impact-lane-amber[\s\S]*Tests to verify[\s\S]*<b>1<\/b>[\s\S]*tests\/b\.test\.ts/);
     assert.match(html, /impact-lane-teal[\s\S]*Docs &amp; policy[\s\S]*<b>1<\/b>[\s\S]*README\.md/);

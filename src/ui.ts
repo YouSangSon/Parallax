@@ -2577,7 +2577,9 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
     }
     .impact-svg {
       display: block;
+      min-width: 0;
       width: 100%;
+      max-width: 100%;
       height: 470px;
       filter: drop-shadow(0 16px 30px rgba(0, 0, 0, 0.18));
     }
@@ -2884,34 +2886,140 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       .toolbar { justify-content: stretch; }
       .toolbar input, .toolbar select { width: 100%; }
       .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .impact-triage, .triage-flow { grid-template-columns: 1fr; }
+      .impact-triage { grid-template-columns: 1fr; }
       .triage-head { border-right: 0; border-bottom: 1px solid var(--line); }
-      .triage-step::after { display: none !important; }
       .delta-content, .delta-paths { grid-template-columns: 1fr; }
       .delta-hero, .delta-metrics { border-right: 0; border-bottom: 1px solid var(--line); }
       .delta-lanes, .delta-presets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .impact-overview, .workbench, .bottom, .map-content, .summary-columns { grid-template-columns: 1fr; }
       .summary-columns > div:first-child, .map-legend { border-right: 0; border-left: 0; }
-      .map-content { height: auto; }
+      .map-content {
+        grid-template-columns: minmax(0, 1fr);
+        height: auto;
+      }
       .impact-svg { height: 380px; }
     }
     @media (max-width: 560px) {
       .shell { padding: 10px; }
+      .topbar {
+        position: static;
+        min-height: 0;
+        gap: 10px;
+        padding: 10px 12px;
+      }
+      .eyebrow { margin-bottom: 3px; font-size: 10px; }
+      .title h1 { font-size: 19px; }
+      .title p {
+        margin-top: 4px;
+        font-size: 11px;
+        line-height: 1.25;
+      }
+      .toolbar {
+        display: grid;
+        grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+        gap: 7px;
+      }
+      .toolbar input, .toolbar select {
+        min-width: 0;
+        min-height: 34px;
+        padding: 0 8px;
+      }
       .metrics {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 8px;
+        grid-template-columns: none;
+        grid-auto-flow: column;
+        grid-auto-columns: minmax(96px, 1fr);
+        gap: 6px;
+        margin-bottom: 10px;
+        overflow-x: auto;
+        overscroll-behavior-x: contain;
+        padding-bottom: 2px;
+        scroll-snap-type: x proximity;
+        scrollbar-width: none;
       }
+      .metrics::-webkit-scrollbar { display: none; }
       .metric {
-        min-height: 58px;
-        padding: 8px 10px;
+        min-height: 48px;
+        padding: 7px 8px;
+        scroll-snap-align: start;
       }
-      .metric strong { font-size: 20px; }
+      .metric span {
+        font-size: 10px;
+        line-height: 1.15;
+      }
+      .metric strong {
+        margin-top: 5px;
+        font-size: 16px;
+        overflow-wrap: anywhere;
+        white-space: nowrap;
+      }
+      .impact-triage { margin-bottom: 10px; }
+      .triage-head {
+        gap: 4px;
+        padding: 10px 12px;
+      }
+      .triage-head h2 { font-size: 10px; }
+      .triage-head strong { font-size: 21px; }
+      .triage-head p {
+        font-size: 11px;
+        line-height: 1.25;
+      }
+      .triage-flow {
+        grid-template-columns: minmax(0, 0.9fr) minmax(0, 0.9fr) minmax(0, 1.2fr);
+        gap: 6px;
+        padding: 8px;
+      }
+      .triage-step {
+        min-height: 60px;
+        gap: 3px;
+        padding: 8px;
+      }
+      .triage-step:not(:last-child)::after {
+        right: -9px;
+        width: 14px;
+        height: 14px;
+        font-size: 9px;
+      }
+      .triage-step span { font-size: 9px; }
+      .triage-step strong {
+        font-size: 12px;
+        line-height: 1.18;
+      }
+      .triage-step small {
+        font-size: 10px;
+        line-height: 1.2;
+      }
+      .panel > h2, .panel-heading { padding: 10px 12px; }
+      .panel-heading {
+        align-items: center;
+        flex-direction: row;
+        flex-wrap: wrap;
+      }
+      .panel-heading h2 { flex: 0 0 auto; }
+      .panel-chips {
+        flex: 1 1 170px;
+        gap: 4px;
+        justify-content: flex-start;
+        min-width: 0;
+        font-size: 10px;
+      }
+      .panel-chips span { padding: 2px 5px; }
+      .map-frame {
+        gap: 8px;
+        padding: 10px;
+      }
+      .map-insight {
+        gap: 2px;
+        padding: 8px 9px;
+      }
+      .map-insight strong { font-size: 14px; }
+      .map-insight small { font-size: 11px; }
+      .impact-svg { height: 320px; }
+      .map-legend { max-height: 300px; padding: 10px; }
       .impact-row, .workspace-link-row, .action-row { grid-template-columns: 1fr; }
       .action-controls { grid-column: auto; justify-content: flex-start; }
       .impact-path-meta { justify-content: flex-start; max-width: none; }
       .confidence-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .delta-metrics, .delta-lanes, .delta-presets { grid-template-columns: 1fr; }
-      .panel-heading { align-items: flex-start; flex-direction: column; }
     }
   </style>
 </head>

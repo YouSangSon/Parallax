@@ -141,7 +141,7 @@ abstract class RegexBackedSemanticAdapter implements SemanticAdapter {
 
 export class TypeScriptJavaScriptSemanticAdapter extends RegexBackedSemanticAdapter {
   override readonly knownGaps = [
-    'TypeScript/JavaScript import, declaration, imported call-site, local identifier call, same-class this.method, class field arrow method caller/target, class field instance method call, same-file new ClassName instance call, and direct new ClassName().method call spans are parser-backed, but broader dynamic dispatch and type relation resolution are not yet complete',
+    'TypeScript/JavaScript import, declaration, imported call-site, local identifier call, same-class this.method, static ClassName.method, class field arrow method caller/target, class field instance method call, same-file new ClassName instance call, and direct new ClassName().method call spans are parser-backed, but broader dynamic dispatch and type relation resolution are not yet complete',
     'polymorphism, alias-heavy object flows, generated code, and framework-specific routing may require deeper adapters'
   ];
 
@@ -1593,6 +1593,14 @@ function hasExportModifier(node: ts.Node): boolean {
   );
 }
 
+function hasStaticModifier(node: ts.Node): boolean {
+  return Boolean(
+    (node as { modifiers?: readonly ts.ModifierLike[] }).modifiers?.some(
+      (modifier) => modifier.kind === ts.SyntaxKind.StaticKeyword
+    )
+  );
+}
+
 function symbolEvidenceForMatch(
   file: ScannedFile,
   match: RegExpExecArray
@@ -1730,6 +1738,7 @@ function extractCalls(
     sourceFile,
     localCallables
   );
+  const staticClassCallables = collectTypeScriptJavaScriptStaticClassCallables(sourceFile);
   const calls: ExtractedCall[] = [];
 
   const visit = (node: ts.Node): void => {
@@ -1751,6 +1760,7 @@ function extractCalls(
             localCallables,
             localInstanceBindings,
             classInstanceBindings,
+            staticClassCallables,
             localSource.name
           )
           : undefined;
@@ -1760,6 +1770,8 @@ function extractCalls(
             ? 'field-instance-call'
             : isDirectNewInstanceCallExpression(node.expression)
             ? 'direct-instance-call'
+            : isStaticClassCallExpression(node.expression, staticClassCallables)
+            ? 'static-call'
             : ts.isPropertyAccessExpression(node.expression)
             && ts.isIdentifier(node.expression.expression)
             ? 'instance-call'
@@ -1878,6 +1890,25 @@ function collectTypeScriptJavaScriptClassInstanceBindings(
 
   visit(sourceFile);
   return bindings;
+}
+
+function collectTypeScriptJavaScriptStaticClassCallables(sourceFile: ts.SourceFile): Set<string> {
+  const callables = new Set<string>();
+
+  const addCallable = (className: string | undefined, methodName: string | undefined): void => {
+    if (!className || !methodName) return;
+    callables.add(`${className}.${methodName}`);
+  };
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isMethodDeclaration(node) && ts.isIdentifier(node.name) && hasStaticModifier(node)) {
+      addCallable(enclosingTypeScriptJavaScriptClassName(node), node.name.text);
+    }
+    ts.forEachChild(node, visit);
+  };
+
+  visit(sourceFile);
+  return callables;
 }
 
 function hasLocalClassMethod(
@@ -2033,6 +2064,7 @@ function localCallTargetForExpression(
   localCallables: ReadonlyMap<string, TsLocalCallable>,
   localInstanceBindings: ReadonlyMap<string, TsLocalInstanceBinding>,
   classInstanceBindings: ReadonlyMap<string, TsLocalInstanceBinding>,
+  staticClassCallables: ReadonlySet<string>,
   sourceScopeName: string
 ): TsLocalCallable | undefined {
   if (ts.isIdentifier(expression)) {
@@ -2040,7 +2072,9 @@ function localCallTargetForExpression(
   }
   if (ts.isPropertyAccessExpression(expression) && ts.isIdentifier(expression.expression)) {
     const instance = localInstanceBindings.get(scopedLocalName(sourceScopeName, expression.expression.text));
-    return instance ? localCallables.get(`${instance.className}.${expression.name.text}`) : undefined;
+    if (instance) return localCallables.get(`${instance.className}.${expression.name.text}`);
+    const staticName = `${expression.expression.text}.${expression.name.text}`;
+    return staticClassCallables.has(staticName) ? localCallables.get(staticName) : undefined;
   }
   if (ts.isPropertyAccessExpression(expression)) {
     const propertyName = thisPropertyName(expression.expression);
@@ -2071,6 +2105,15 @@ function isThisFieldInstanceCallExpression(expression: ts.Expression): boolean {
 function isDirectNewInstanceCallExpression(expression: ts.Expression): boolean {
   return ts.isPropertyAccessExpression(expression)
     && classNameFromNewExpression(expression.expression) !== undefined;
+}
+
+function isStaticClassCallExpression(
+  expression: ts.Expression,
+  staticClassCallables: ReadonlySet<string>
+): boolean {
+  return ts.isPropertyAccessExpression(expression)
+    && ts.isIdentifier(expression.expression)
+    && staticClassCallables.has(`${expression.expression.text}.${expression.name.text}`);
 }
 
 function thisPropertyName(expression: ts.Expression): string | undefined {

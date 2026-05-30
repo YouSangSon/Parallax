@@ -1,13 +1,14 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import path from 'node:path';
 
 import { markdownArtifactMetadataFromContent, type MarkdownArtifactMetadata } from './artifacts.js';
 import { PACKAGE_NAME } from './branding.js';
 import { doctorProject, type DoctorReport } from './doctor.js';
 import { exportImpactGraph } from './graph.js';
-import { databasePath, getRepoId, latestCompletedIndexRun, openDatabase } from './store.js';
+import { databasePath, getRepoId, impactDir, latestCompletedIndexRun, openDatabase } from './store.js';
 import { normalizeRepoRoot, resolveInsideRoot } from './security.js';
 import type { GraphExport, ImpactAction, ImpactReport } from './types.js';
 
@@ -23,6 +24,7 @@ export type UiServerOptions = UiOptions & {
 
 type ImpactLaneId = 'code' | 'tests' | 'knowledge' | 'contracts' | 'config';
 type ImpactLaneTone = 'green' | 'amber' | 'teal' | 'blue' | 'red';
+type ReportDeltaSummary = 'wider' | 'narrower' | 'unchanged';
 
 export type UiSnapshot = {
   version: 0;
@@ -70,10 +72,12 @@ export type UiReportPreview = UiReportSummary & {
 export type UiReportComparison = {
   baseReportId: string;
   baseCreatedAt: string;
-  summary: 'wider' | 'narrower' | 'unchanged';
+  summary: ReportDeltaSummary;
   reviewLoadCurrent: number;
   reviewLoadPrevious: number;
   reviewLoadDelta: number;
+  policy: UiReportDeltaPolicy;
+  policyReason: string;
   changedDelta: number;
   affectedDelta: number;
   evidenceDelta: number;
@@ -101,6 +105,17 @@ export type UiReportComparisonLane = {
   previous: number;
   delta: number;
   topPath?: string;
+};
+
+export type UiReportDeltaPolicy = {
+  source: 'default' | 'config';
+  widenThreshold: number;
+  narrowThreshold: number;
+  weights: {
+    affected: number;
+    actions: number;
+    evidence: number;
+  };
 };
 
 export type UiEvidencePreview = ImpactReport['evidence'][number] & {
@@ -350,7 +365,8 @@ export async function buildUiSnapshot(options: UiOptions): Promise<UiSnapshot> {
     const selectedRow = requestedReport ?? (options.reportId ? null : reportRows[0] ?? null);
     const selectedReport = selectedRow ? reportPreviewFromRow(selectedRow) : null;
     const graph = selectedRow ? await graphPreview(repoRoot, selectedRow.id) : null;
-    const comparison = selectedRow ? readReportComparison(db, repoId, selectedRow) : null;
+    const reportDeltaPolicy = readReportDeltaPolicy(repoRoot);
+    const comparison = selectedRow ? readReportComparison(db, repoId, selectedRow, reportDeltaPolicy) : null;
     return {
       version: 0,
       generatedAt,
@@ -453,11 +469,7 @@ function renderReportDeltaPanel(comparison: UiReportComparison | null): string {
     : comparison.summary === 'narrower'
       ? 'Impact narrowed'
       : 'Impact unchanged';
-  const headlineDetail = comparison.summary === 'wider'
-    ? 'More review surface than the previous saved report.'
-    : comparison.summary === 'narrower'
-      ? 'Less review surface than the previous saved report.'
-      : 'Review surface is stable against the previous saved report.';
+  const headlineDetail = comparison.policyReason;
   const metricRows = [
     { label: 'Review load', value: String(comparison.reviewLoadCurrent), meta: formatSignedDelta(comparison.reviewLoadDelta), delta: comparison.reviewLoadDelta },
     { label: 'Affected paths', value: formatSignedDelta(comparison.affectedDelta), meta: 'delta', delta: comparison.affectedDelta },
@@ -496,6 +508,9 @@ function renderReportDeltaPanel(comparison: UiReportComparison | null): string {
         <h2>Report Delta</h2>
         <div class="panel-chips">
           <span>vs ${escapeHtml(comparison.baseReportId)}</span>
+          <span>policy ${escapeHtml(comparison.policy.source)}</span>
+          <span>widen +${escapeHtml(String(comparison.policy.widenThreshold))}</span>
+          <span>narrow -${escapeHtml(String(comparison.policy.narrowThreshold))}</span>
           <span>${escapeHtml(comparison.baseCreatedAt)}</span>
         </div>
       </div>
@@ -509,6 +524,11 @@ function renderReportDeltaPanel(comparison: UiReportComparison | null): string {
         <div class="delta-detail">
           <div class="delta-confidence" aria-label="Confidence delta">${confidenceRows || '<span><b>0</b>stable confidence</span>'}</div>
           <ul class="delta-lanes">${laneRows}</ul>
+          <div class="delta-policy" aria-label="Report delta policy weights">
+            <span>Affected weight ${escapeHtml(String(comparison.policy.weights.affected))}</span>
+            <span>Action weight ${escapeHtml(String(comparison.policy.weights.actions))}</span>
+            <span>Evidence weight ${escapeHtml(String(comparison.policy.weights.evidence))}</span>
+          </div>
           <div class="delta-paths">
             <section>
               <h3>Added impact</h3>
@@ -602,10 +622,61 @@ function buildImpactLanes(report: UiReportPreview, workArtifacts: readonly UiWor
   return lanes;
 }
 
+function readReportDeltaPolicy(repoRoot: string): UiReportDeltaPolicy {
+  const fallback = defaultReportDeltaPolicy();
+  const configPath = path.join(impactDir(repoRoot), 'config.json');
+  if (!existsSync(configPath)) return fallback;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(configPath, 'utf8')) as unknown;
+  } catch {
+    return fallback;
+  }
+  const rawPolicy = objectAt(objectAt(parsed, 'ui'), 'reportDeltaPolicy');
+  if (!rawPolicy) return fallback;
+  const rawWeights = objectAt(rawPolicy, 'weights');
+  return {
+    source: 'config',
+    widenThreshold: policyNumberAt(rawPolicy, 'widenThreshold', 1, 1_000) ?? fallback.widenThreshold,
+    narrowThreshold: policyNumberAt(rawPolicy, 'narrowThreshold', 1, 1_000) ?? fallback.narrowThreshold,
+    weights: {
+      affected: rawWeights ? policyNumberAt(rawWeights, 'affected', 0, 1_000) ?? fallback.weights.affected : fallback.weights.affected,
+      actions: rawWeights ? policyNumberAt(rawWeights, 'actions', 0, 1_000) ?? fallback.weights.actions : fallback.weights.actions,
+      evidence: rawWeights ? policyNumberAt(rawWeights, 'evidence', 0, 1_000) ?? fallback.weights.evidence : fallback.weights.evidence
+    }
+  };
+}
+
+function defaultReportDeltaPolicy(): UiReportDeltaPolicy {
+  return {
+    source: 'default',
+    widenThreshold: 1,
+    narrowThreshold: 1,
+    weights: {
+      affected: 3,
+      actions: 5,
+      evidence: 1
+    }
+  };
+}
+
+function policyNumberAt(
+  value: Record<string, unknown>,
+  key: string,
+  min: number,
+  max: number
+): number | undefined {
+  const candidate = value[key];
+  if (typeof candidate !== 'number' || !Number.isFinite(candidate)) return undefined;
+  if (candidate < min || candidate > max) return undefined;
+  return candidate;
+}
+
 function readReportComparison(
   db: ReturnType<typeof openDatabase>,
   repoId: number,
-  selectedRow: ReportRow
+  selectedRow: ReportRow,
+  policy: UiReportDeltaPolicy
 ): UiReportComparison | null {
   const previousRow = db
     .prepare(`
@@ -617,19 +688,24 @@ function readReportComparison(
       LIMIT 1
     `)
     .get(repoId, selectedRow.created_at, selectedRow.created_at, selectedRow.id) as ReportRow | undefined;
-  return previousRow ? reportComparisonFromRows(selectedRow, previousRow) : null;
+  return previousRow ? reportComparisonFromRows(selectedRow, previousRow, policy) : null;
 }
 
-function reportComparisonFromRows(currentRow: ReportRow, previousRow: ReportRow): UiReportComparison {
+function reportComparisonFromRows(
+  currentRow: ReportRow,
+  previousRow: ReportRow,
+  policy: UiReportDeltaPolicy
+): UiReportComparison {
   const current = reportPreviewFromRow(currentRow);
   const previous = reportPreviewFromRow(previousRow);
   const currentAffectedPaths = new Set(current.affectedFiles.map((item) => item.path));
   const previousAffectedPaths = new Set(previous.affectedFiles.map((item) => item.path));
   const currentActionTargets = actionTargetLabels(current.actions);
   const previousActionTargets = actionTargetLabels(previous.actions);
-  const currentLoad = reportReviewLoad(current);
-  const previousLoad = reportReviewLoad(previous);
+  const currentLoad = reportReviewLoad(current, policy);
+  const previousLoad = reportReviewLoad(previous, policy);
   const reviewLoadDelta = currentLoad - previousLoad;
+  const summary = reportDeltaSummary(reviewLoadDelta, policy);
   const currentLanes = buildImpactLanes(current, workArtifactsFromReportRow(currentRow));
   const previousLanesById = new Map(
     buildImpactLanes(previous, workArtifactsFromReportRow(previousRow)).map((lane) => [lane.id, lane])
@@ -638,10 +714,12 @@ function reportComparisonFromRows(currentRow: ReportRow, previousRow: ReportRow)
   return {
     baseReportId: previous.id,
     baseCreatedAt: previous.createdAt,
-    summary: reviewLoadDelta > 0 ? 'wider' : reviewLoadDelta < 0 ? 'narrower' : 'unchanged',
+    summary,
     reviewLoadCurrent: currentLoad,
     reviewLoadPrevious: previousLoad,
     reviewLoadDelta,
+    policy,
+    policyReason: reportDeltaPolicyReason(summary, reviewLoadDelta, policy),
     changedDelta: current.changedCount - previous.changedCount,
     affectedDelta: current.affectedCount - previous.affectedCount,
     evidenceDelta: current.evidenceCount - previous.evidenceCount,
@@ -672,8 +750,31 @@ function reportComparisonFromRows(currentRow: ReportRow, previousRow: ReportRow)
   };
 }
 
-function reportReviewLoad(report: UiReportPreview): number {
-  return report.affectedCount * 3 + report.actionCount * 5 + report.evidenceCount;
+function reportReviewLoad(report: UiReportPreview, policy: UiReportDeltaPolicy): number {
+  return report.affectedCount * policy.weights.affected
+    + report.actionCount * policy.weights.actions
+    + report.evidenceCount * policy.weights.evidence;
+}
+
+function reportDeltaSummary(delta: number, policy: UiReportDeltaPolicy): ReportDeltaSummary {
+  if (delta >= policy.widenThreshold) return 'wider';
+  if (delta <= -policy.narrowThreshold) return 'narrower';
+  return 'unchanged';
+}
+
+function reportDeltaPolicyReason(
+  summary: ReportDeltaSummary,
+  delta: number,
+  policy: UiReportDeltaPolicy
+): string {
+  const formattedDelta = formatSignedDelta(delta);
+  if (summary === 'wider') {
+    return `Review load changed by ${formattedDelta}; ${policy.source} policy marks wider at +${policy.widenThreshold}.`;
+  }
+  if (summary === 'narrower') {
+    return `Review load changed by ${formattedDelta}; ${policy.source} policy marks narrower at -${policy.narrowThreshold}.`;
+  }
+  return `Review load changed by ${formattedDelta}; ${policy.source} policy keeps it inside +${policy.widenThreshold}/-${policy.narrowThreshold}.`;
 }
 
 function actionTargetLabels(actions: readonly ImpactAction[]): Set<string> {
@@ -1507,6 +1608,21 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       margin-right: 4px;
       color: var(--ink);
       font-variant-numeric: tabular-nums;
+    }
+    .delta-policy {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .delta-policy span {
+      width: fit-content;
+      border: 1px solid #d9ded5;
+      border-radius: 6px;
+      padding: 3px 7px;
+      background: #f3f7f4;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
     }
     .delta-lanes {
       list-style: none;

@@ -269,6 +269,8 @@ test('UI snapshot and HTML compare the selected report to the previous saved rep
     assert.equal(snapshot.comparison?.summary, 'wider');
     assert.equal(snapshot.comparison?.affectedDelta, 2);
     assert.equal(snapshot.comparison?.actionDelta, 1);
+    assert.equal(snapshot.comparison?.policy.source, 'default');
+    assert.equal(snapshot.comparison?.reviewLoadDelta, 16);
     assert.ok(snapshot.comparison?.addedAffectedPaths.includes('README.md'));
     assert.ok(snapshot.comparison?.addedAffectedPaths.includes('tests/b.test.ts'));
     assert.ok(snapshot.comparison?.laneDeltas.some((item) =>
@@ -279,6 +281,9 @@ test('UI snapshot and HTML compare the selected report to the previous saved rep
     assert.match(html, /Report Delta/);
     assert.match(html, /Impact widened/);
     assert.match(html, /Saved report comparison/);
+    assert.match(html, /policy default/);
+    assert.match(html, /widen \+1/);
+    assert.match(html, /Review load changed by \+16/);
     assert.match(html, /Affected paths[\s\S]*\+2/);
     assert.match(html, /Tests to verify[\s\S]*\+1[\s\S]*tests\/b\.test\.ts/);
     assert.match(html, /Added impact[\s\S]*README\.md/);
@@ -287,6 +292,37 @@ test('UI snapshot and HTML compare the selected report to the previous saved rep
     assert.match(html, /\/source\?path=README\.md&amp;line=1/);
     assert.match(html, /document\.querySelectorAll\('\.selectable-impact a, \.selectable-impact button'\)/);
     assert.match(html, /bootstrap\.comparison/);
+  } finally {
+    await rm(repoRoot, { recursive: true, force: true });
+  }
+});
+
+test('UI report delta honors configured team policy thresholds', async () => {
+  const { repoRoot, reportId } = await makeUiRepo();
+  try {
+    seedPreviousReportBaseline(repoRoot, reportId);
+    await writeReportDeltaPolicy(repoRoot, {
+      widenThreshold: 20,
+      narrowThreshold: 8,
+      weights: { affected: 3, actions: 5, evidence: 1 }
+    });
+
+    const snapshot = await buildUiSnapshot({ repoRoot });
+    assert.equal(snapshot.comparison?.summary, 'unchanged');
+    assert.equal(snapshot.comparison?.policy.source, 'config');
+    assert.equal(snapshot.comparison?.policy.widenThreshold, 20);
+    assert.equal(snapshot.comparison?.policy.narrowThreshold, 8);
+    assert.equal(snapshot.comparison?.reviewLoadDelta, 16);
+
+    const html = renderUiHtml(snapshot);
+    assert.match(html, /Impact unchanged/);
+    assert.match(html, /policy config/);
+    assert.match(html, /widen \+20/);
+    assert.match(html, /narrow -8/);
+    assert.match(html, /inside \+20\/-8/);
+    assert.match(html, /Affected weight 3/);
+    assert.match(html, /Action weight 5/);
+    assert.match(html, /Evidence weight 1/);
   } finally {
     await rm(repoRoot, { recursive: true, force: true });
   }
@@ -596,6 +632,30 @@ function seedPreviousReportBaseline(repoRoot: string, currentReportId: string): 
   } finally {
     db.close();
   }
+}
+
+async function writeReportDeltaPolicy(
+  repoRoot: string,
+  policy: {
+    widenThreshold: number;
+    narrowThreshold: number;
+    weights: { affected: number; actions: number; evidence: number };
+  }
+): Promise<void> {
+  await writeFile(
+    path.join(repoRoot, '.parallax/config.json'),
+    `${JSON.stringify(
+      {
+        schemaVersion: 3,
+        project: 'parallax',
+        mcp: { readOnly: true },
+        redaction: { enabled: true },
+        ui: { reportDeltaPolicy: policy }
+      },
+      null,
+      2
+    )}\n`
+  );
 }
 
 function seedRecentReportRows(repoRoot: string, oldReportId: string, count: number): void {

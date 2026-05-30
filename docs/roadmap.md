@@ -51,7 +51,8 @@ MCP는 read-only로 안정화됐다. 다음은 agent 사용성을 깊게 보는 
 - [x] selected impact의 relation/evidence/action을 더 깊게 drill-down하는 inspector 확장
 - [x] saved report 간 비교와 regression delta UI
 - [x] report delta의 added path를 source viewer와 inspector/verification action에 직접 연결하고 removed path는 source viewer로 연결
-- [ ] report delta의 wider/narrower 판단 기준을 team policy로 설정 가능하게 만들기
+- [x] report delta의 wider/narrower 판단 기준을 team policy로 설정 가능하게 만들기
+- [ ] report delta policy preset을 UI에서 비교할 수 있게 만들기
 
 ## 6. 회고와 측정
 

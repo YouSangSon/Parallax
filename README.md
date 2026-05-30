@@ -160,6 +160,24 @@ parallax profile --entity file:src/auth.ts
 | **Coverage Gaps** | adapter confidence와 known-gap 확인 |
 | **Doctor Findings** | schema/index/vector/telemetry 상태 점검 |
 
+Report Delta의 wider/narrower 판정은 기본적으로 `affected * 3 + actions * 5 + evidence` review load로 계산한다. 팀 기준이 다르면 `.parallax/config.json`에 policy를 추가한다.
+
+```json
+{
+  "ui": {
+    "reportDeltaPolicy": {
+      "widenThreshold": 20,
+      "narrowThreshold": 8,
+      "weights": {
+        "affected": 3,
+        "actions": 5,
+        "evidence": 1
+      }
+    }
+  }
+}
+```
+
 ---
 
 ## 🧱 핵심 개념

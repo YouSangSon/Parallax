@@ -141,7 +141,7 @@ abstract class RegexBackedSemanticAdapter implements SemanticAdapter {
 
 export class TypeScriptJavaScriptSemanticAdapter extends RegexBackedSemanticAdapter {
   override readonly knownGaps = [
-    'TypeScript/JavaScript import, declaration, imported call-site, local identifier call, same-class this.method, static ClassName.method, same-file factory return type instance method call, interface method signature and typed receiver method call, typed local variable instance method call, typed parameter instance method call, constructor parameter property instance method call, constructor assignment instance method call, class field arrow method caller/target, typed class field instance method call, class field instance method call, same-file new ClassName instance call, and direct new ClassName().method call spans are parser-backed, but broader dynamic dispatch and type relation resolution are not yet complete',
+    'TypeScript/JavaScript import, declaration, imported call-site, local identifier call, same-class this.method, static ClassName.method, same-file factory return type instance method call, interface method/function-property signature and typed receiver method call, typed local variable instance method call, typed parameter instance method call, constructor parameter property instance method call, constructor assignment instance method call, class field arrow method caller/target, typed class field instance method call, class field instance method call, same-file new ClassName instance call, and direct new ClassName().method call spans are parser-backed, but broader dynamic dispatch and type relation resolution are not yet complete',
     'polymorphism, alias-heavy object flows, generated code, and framework-specific routing may require deeper adapters'
   ];
 
@@ -1557,6 +1557,11 @@ function extractTypeScriptJavaScriptSymbols(file: ScannedFile): ExtractedSymbol[
       if (interfaceName) {
         addSymbol(`${interfaceName}.${node.name.text}`, 'method', node, interfaceHasExportModifier(node));
       }
+    } else if (isCallableInterfacePropertySignature(node)) {
+      const interfaceName = enclosingTypeScriptJavaScriptInterfaceName(node);
+      if (interfaceName && ts.isIdentifier(node.name)) {
+        addSymbol(`${interfaceName}.${node.name.text}`, 'method', node, interfaceHasExportModifier(node));
+      }
     } else if (isCallableClassProperty(node)) {
       const className = enclosingTypeScriptJavaScriptClassName(node);
       if (className && ts.isIdentifier(node.name)) {
@@ -1847,6 +1852,11 @@ function collectTypeScriptJavaScriptLocalCallables(
     } else if (ts.isMethodSignature(node) && ts.isIdentifier(node.name)) {
       const interfaceName = enclosingTypeScriptJavaScriptInterfaceName(node);
       if (interfaceName) addCallable(`${interfaceName}.${node.name.text}`, 'method');
+    } else if (isCallableInterfacePropertySignature(node)) {
+      const interfaceName = enclosingTypeScriptJavaScriptInterfaceName(node);
+      if (interfaceName && ts.isIdentifier(node.name)) {
+        addCallable(`${interfaceName}.${node.name.text}`, 'method');
+      }
     } else if (isCallableClassProperty(node)) {
       const className = enclosingTypeScriptJavaScriptClassName(node);
       if (className && ts.isIdentifier(node.name)) {
@@ -2054,6 +2064,12 @@ function isCallableClassProperty(node: ts.Node): node is ts.PropertyDeclaration 
   return ts.isPropertyDeclaration(node)
     && ts.isIdentifier(node.name)
     && isCallableInitializer(node.initializer);
+}
+
+function isCallableInterfacePropertySignature(node: ts.Node): node is ts.PropertySignature {
+  return ts.isPropertySignature(node)
+    && ts.isIdentifier(node.name)
+    && Boolean(node.type && ts.isFunctionTypeNode(node.type));
 }
 
 type TsImportBinding = {

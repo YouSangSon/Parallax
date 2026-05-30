@@ -1742,13 +1742,16 @@ function extractCalls(
     importResolver
   );
   const localCallables = collectTypeScriptJavaScriptLocalCallables(file, sourceFile);
+  const factoryReturnTypes = collectTypeScriptJavaScriptFactoryReturnTypes(sourceFile);
   const localInstanceBindings = collectTypeScriptJavaScriptLocalInstanceBindings(
     sourceFile,
-    localCallables
+    localCallables,
+    factoryReturnTypes
   );
   const classInstanceBindings = collectTypeScriptJavaScriptClassInstanceBindings(
     sourceFile,
-    localCallables
+    localCallables,
+    factoryReturnTypes
   );
   const staticClassCallables = collectTypeScriptJavaScriptStaticClassCallables(sourceFile);
   const calls: ExtractedCall[] = [];
@@ -1856,9 +1859,33 @@ function collectTypeScriptJavaScriptLocalCallables(
   return callables;
 }
 
+function collectTypeScriptJavaScriptFactoryReturnTypes(sourceFile: ts.SourceFile): Map<string, string> {
+  const factoryReturnTypes = new Map<string, string>();
+
+  const addReturnType = (name: string | undefined, type: ts.TypeNode | undefined): void => {
+    if (!name) return;
+    const className = classNameFromTypeReference(type);
+    if (!className) return;
+    factoryReturnTypes.set(name, className);
+  };
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isFunctionDeclaration(node) && node.name) {
+      addReturnType(node.name.text, node.type);
+    } else if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
+      addReturnType(node.name.text, returnTypeFromCallableInitializer(node.initializer));
+    }
+    ts.forEachChild(node, visit);
+  };
+
+  visit(sourceFile);
+  return factoryReturnTypes;
+}
+
 function collectTypeScriptJavaScriptLocalInstanceBindings(
   sourceFile: ts.SourceFile,
-  localCallables: ReadonlyMap<string, TsLocalCallable>
+  localCallables: ReadonlyMap<string, TsLocalCallable>,
+  factoryReturnTypes: ReadonlyMap<string, string>
 ): Map<string, TsLocalInstanceBinding> {
   const bindings = new Map<string, TsLocalInstanceBinding>();
 
@@ -1869,7 +1896,7 @@ function collectTypeScriptJavaScriptLocalInstanceBindings(
 
   const visit = (node: ts.Node): void => {
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
-      const className = classNameFromNewExpression(node.initializer)
+      const className = classNameFromKnownInstanceExpression(node.initializer, factoryReturnTypes)
         ?? classNameFromInitializedTypeReference(node);
       const scope = enclosingLocalCaller(node, localCallables);
       if (className && scope) addBinding(scope.name, node.name.text, className);
@@ -1887,7 +1914,8 @@ function collectTypeScriptJavaScriptLocalInstanceBindings(
 
 function collectTypeScriptJavaScriptClassInstanceBindings(
   sourceFile: ts.SourceFile,
-  localCallables: ReadonlyMap<string, TsLocalCallable>
+  localCallables: ReadonlyMap<string, TsLocalCallable>,
+  factoryReturnTypes: ReadonlyMap<string, string>
 ): Map<string, TsLocalInstanceBinding> {
   const bindings = new Map<string, TsLocalInstanceBinding>();
 
@@ -1899,7 +1927,7 @@ function collectTypeScriptJavaScriptClassInstanceBindings(
   const visit = (node: ts.Node): void => {
     if (ts.isPropertyDeclaration(node) && ts.isIdentifier(node.name)) {
       const ownerClassName = enclosingTypeScriptJavaScriptClassName(node);
-      const className = classNameFromNewExpression(node.initializer)
+      const className = classNameFromKnownInstanceExpression(node.initializer, factoryReturnTypes)
         ?? classNameFromInitializedTypeReference(node);
       if (ownerClassName && className) addBinding(ownerClassName, node.name.text, className);
     } else if (ts.isParameter(node) && ts.isIdentifier(node.name) && isConstructorParameterProperty(node)) {
@@ -1909,7 +1937,7 @@ function collectTypeScriptJavaScriptClassInstanceBindings(
     } else if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
       const ownerClassName = enclosingTypeScriptJavaScriptClassName(node);
       const propertyName = thisPropertyName(node.left);
-      const className = classNameFromConstructorAssignment(node);
+      const className = classNameFromConstructorAssignment(node, factoryReturnTypes);
       if (ownerClassName && propertyName && className) addBinding(ownerClassName, propertyName, className);
     }
     ts.forEachChild(node, visit);
@@ -1953,9 +1981,31 @@ function classNameFromNewExpression(node: ts.Expression | undefined): string | u
   return ts.isIdentifier(node.expression) ? node.expression.text : undefined;
 }
 
+function classNameFromKnownInstanceExpression(
+  node: ts.Expression | undefined,
+  factoryReturnTypes: ReadonlyMap<string, string>
+): string | undefined {
+  return classNameFromNewExpression(node) ?? classNameFromFactoryCall(node, factoryReturnTypes);
+}
+
+function classNameFromFactoryCall(
+  node: ts.Expression | undefined,
+  factoryReturnTypes: ReadonlyMap<string, string>
+): string | undefined {
+  if (!node || !ts.isCallExpression(node)) return undefined;
+  if (!ts.isIdentifier(node.expression)) return undefined;
+  return factoryReturnTypes.get(node.expression.text);
+}
+
 function classNameFromTypeReference(node: ts.TypeNode | undefined): string | undefined {
   if (!node || !ts.isTypeReferenceNode(node)) return undefined;
   return ts.isIdentifier(node.typeName) ? node.typeName.text : undefined;
+}
+
+function returnTypeFromCallableInitializer(node: ts.Expression | undefined): ts.TypeNode | undefined {
+  if (!node) return undefined;
+  if (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) return node.type;
+  return undefined;
 }
 
 function classNameFromInitializedTypeReference(
@@ -1965,11 +2015,14 @@ function classNameFromInitializedTypeReference(
   return classNameFromTypeReference(node.type);
 }
 
-function classNameFromConstructorAssignment(node: ts.BinaryExpression): string | undefined {
+function classNameFromConstructorAssignment(
+  node: ts.BinaryExpression,
+  factoryReturnTypes: ReadonlyMap<string, string>
+): string | undefined {
   const constructorNode = enclosingConstructorDeclaration(node);
   if (!constructorNode) return undefined;
-  const directClassName = classNameFromNewExpression(node.right);
-  if (directClassName) return directClassName;
+  const className = classNameFromKnownInstanceExpression(node.right, factoryReturnTypes);
+  if (className) return className;
   if (!ts.isIdentifier(node.right)) return undefined;
   return classNameFromConstructorParameter(constructorNode, node.right.text);
 }

@@ -137,7 +137,7 @@ abstract class RegexBackedSemanticAdapter implements SemanticAdapter {
 
 export class TypeScriptJavaScriptSemanticAdapter extends RegexBackedSemanticAdapter {
   override readonly knownGaps = [
-    'TypeScript/JavaScript import, declaration, imported call-site, and local identifier call spans are parser-backed, but method dispatch and type relation resolution are not yet complete',
+    'TypeScript/JavaScript import, declaration, imported call-site, local identifier call, and same-class this.method spans are parser-backed, but broader dynamic dispatch and type relation resolution are not yet complete',
     'dynamic dispatch, generated code, and framework-specific routing may require deeper adapters'
   ];
 
@@ -1515,8 +1515,17 @@ function extractTypeScriptJavaScriptSymbols(file: ScannedFile): ExtractedSymbol[
     exported: boolean
   ): void => {
     if (!name || !ts.isIdentifier(name)) return;
+    addSymbol(name.text, kind, node, exported);
+  };
+
+  const addSymbol = (
+    name: string,
+    kind: string,
+    node: ts.Node,
+    exported: boolean
+  ): void => {
     symbols.push({
-      name: name.text,
+      name,
       kind,
       exported,
       evidence: nodeEvidence(file.content, sourceFile, node)
@@ -1534,6 +1543,11 @@ function extractTypeScriptJavaScriptSymbols(file: ScannedFile): ExtractedSymbol[
       addNamedNode(node.name, 'type', node, hasExportModifier(node));
     } else if (ts.isEnumDeclaration(node)) {
       addNamedNode(node.name, 'enum', node, hasExportModifier(node));
+    } else if (ts.isMethodDeclaration(node) && ts.isIdentifier(node.name)) {
+      const className = enclosingTypeScriptJavaScriptClassName(node);
+      if (className) {
+        addSymbol(`${className}.${node.name.text}`, 'method', node, classHasExportModifier(node));
+      }
     } else if (ts.isVariableStatement(node)) {
       const exported = hasExportModifier(node);
       const kind = variableKind(node.declarationList);
@@ -1719,12 +1733,16 @@ function extractCalls(
           : undefined;
         if (localSource && localTarget) {
           const evidence = nodeExactEvidence(file.content, sourceFile, node);
+          const provenanceKind = ts.isPropertyAccessExpression(node.expression)
+            && node.expression.expression.kind === ts.SyntaxKind.ThisKeyword
+            ? 'method-call'
+            : 'local-call';
           calls.push({
             ...evidence,
             source: localSource.descriptor,
             target: localTarget.descriptor,
             callee: localTarget.name,
-            provenance: `local-call:${localSource.name}->${localTarget.name}:${evidence.startLine}:${evidence.startCol}`
+            provenance: `${provenanceKind}:${localSource.name}->${localTarget.name}:${evidence.startLine}:${evidence.startCol}`
           });
         }
       }
@@ -1761,6 +1779,9 @@ function collectTypeScriptJavaScriptLocalCallables(
   const visit = (node: ts.Node): void => {
     if (ts.isFunctionDeclaration(node) && node.name) {
       addCallable(node.name.text, 'function');
+    } else if (ts.isMethodDeclaration(node) && ts.isIdentifier(node.name)) {
+      const className = enclosingTypeScriptJavaScriptClassName(node);
+      if (className) addCallable(`${className}.${node.name.text}`, 'method');
     } else if (ts.isVariableStatement(node)) {
       const symbolKind = variableKind(node.declarationList);
       for (const declaration of node.declarationList.declarations) {
@@ -1907,8 +1928,17 @@ function localCallTargetForExpression(
   expression: ts.Expression,
   localCallables: ReadonlyMap<string, TsLocalCallable>
 ): TsLocalCallable | undefined {
-  if (!ts.isIdentifier(expression)) return undefined;
-  return localCallables.get(expression.text);
+  if (ts.isIdentifier(expression)) {
+    return localCallables.get(expression.text);
+  }
+  if (
+    ts.isPropertyAccessExpression(expression) &&
+    expression.expression.kind === ts.SyntaxKind.ThisKeyword
+  ) {
+    const className = enclosingTypeScriptJavaScriptClassName(expression);
+    return className ? localCallables.get(`${className}.${expression.name.text}`) : undefined;
+  }
+  return undefined;
 }
 
 function enclosingLocalCaller(
@@ -1925,9 +1955,32 @@ function enclosingLocalCaller(
       const callable = localCallables.get(current.name.text);
       if (callable) return callable;
     }
+    if (ts.isMethodDeclaration(current) && ts.isIdentifier(current.name)) {
+      const className = enclosingTypeScriptJavaScriptClassName(current);
+      const callable = className ? localCallables.get(`${className}.${current.name.text}`) : undefined;
+      if (callable) return callable;
+    }
     current = current.parent;
   }
   return undefined;
+}
+
+function enclosingTypeScriptJavaScriptClassName(node: ts.Node): string | undefined {
+  let current: ts.Node | undefined = node.parent;
+  while (current) {
+    if (ts.isClassDeclaration(current) && current.name) return current.name.text;
+    current = current.parent;
+  }
+  return undefined;
+}
+
+function classHasExportModifier(node: ts.Node): boolean {
+  let current: ts.Node | undefined = node.parent;
+  while (current) {
+    if (ts.isClassDeclaration(current)) return hasExportModifier(current);
+    current = current.parent;
+  }
+  return false;
 }
 
 function dedupeCalls(calls: readonly ExtractedCall[]): ExtractedCall[] {

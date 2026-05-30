@@ -141,7 +141,7 @@ abstract class RegexBackedSemanticAdapter implements SemanticAdapter {
 
 export class TypeScriptJavaScriptSemanticAdapter extends RegexBackedSemanticAdapter {
   override readonly knownGaps = [
-    'TypeScript/JavaScript import, declaration, imported call-site, local identifier call, same-class this.method, static ClassName.method, same-file factory return type instance method call, interface/type-literal method/function-property signature and typed receiver method call, typed local variable instance method call, typed parameter instance method call, constructor parameter property instance method call, constructor assignment instance method call, class field arrow method caller/target, typed class field instance method call, class field instance method call, same-file new ClassName instance call, and direct new ClassName().method call spans are parser-backed, but broader dynamic dispatch and type relation resolution are not yet complete',
+    'TypeScript/JavaScript import, declaration, imported call-site, local identifier call, same-class this.method, static ClassName.method, same-file factory return type instance method call, interface/type-literal method/function-property/function-type-alias signature and same-file interface extends typed receiver method call, typed local variable instance method call, typed parameter instance method call, constructor parameter property instance method call, constructor assignment instance method call, class field arrow method caller/target, typed class field instance method call, class field instance method call, same-file new ClassName instance call, and direct new ClassName().method call spans are parser-backed, but broader dynamic dispatch and type relation resolution are not yet complete',
     'polymorphism, alias-heavy object flows, generated code, and framework-specific routing may require deeper adapters'
   ];
 
@@ -1753,16 +1753,19 @@ function extractCalls(
     importResolver
   );
   const localCallables = collectTypeScriptJavaScriptLocalCallables(file, sourceFile);
+  const interfaceExtends = collectTypeScriptJavaScriptInterfaceExtends(sourceFile);
   const factoryReturnTypes = collectTypeScriptJavaScriptFactoryReturnTypes(sourceFile);
   const localInstanceBindings = collectTypeScriptJavaScriptLocalInstanceBindings(
     sourceFile,
     localCallables,
-    factoryReturnTypes
+    factoryReturnTypes,
+    interfaceExtends
   );
   const classInstanceBindings = collectTypeScriptJavaScriptClassInstanceBindings(
     sourceFile,
     localCallables,
-    factoryReturnTypes
+    factoryReturnTypes,
+    interfaceExtends
   );
   const staticClassCallables = collectTypeScriptJavaScriptStaticClassCallables(sourceFile);
   const calls: ExtractedCall[] = [];
@@ -1787,6 +1790,7 @@ function extractCalls(
             localInstanceBindings,
             classInstanceBindings,
             staticClassCallables,
+            interfaceExtends,
             localSource.name
           )
           : undefined;
@@ -1902,15 +1906,38 @@ function collectTypeScriptJavaScriptFactoryReturnTypes(sourceFile: ts.SourceFile
   return factoryReturnTypes;
 }
 
+function collectTypeScriptJavaScriptInterfaceExtends(sourceFile: ts.SourceFile): Map<string, string[]> {
+  const interfaceExtends = new Map<string, string[]>();
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isInterfaceDeclaration(node)) {
+      const baseNames = (node.heritageClauses ?? [])
+        .filter((clause) => clause.token === ts.SyntaxKind.ExtendsKeyword)
+        .flatMap((clause) => clause.types)
+        .map((type) => type.expression)
+        .filter(ts.isIdentifier)
+        .map((identifier) => identifier.text);
+      if (baseNames.length > 0) {
+        interfaceExtends.set(node.name.text, baseNames);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+
+  visit(sourceFile);
+  return interfaceExtends;
+}
+
 function collectTypeScriptJavaScriptLocalInstanceBindings(
   sourceFile: ts.SourceFile,
   localCallables: ReadonlyMap<string, TsLocalCallable>,
-  factoryReturnTypes: ReadonlyMap<string, string>
+  factoryReturnTypes: ReadonlyMap<string, string>,
+  interfaceExtends: ReadonlyMap<string, readonly string[]>
 ): Map<string, TsLocalInstanceBinding> {
   const bindings = new Map<string, TsLocalInstanceBinding>();
 
   const addBinding = (scopeName: string, localName: string, className: string): void => {
-    if (!hasLocalTypeMemberMethod(localCallables, className)) return;
+    if (!hasLocalTypeMemberMethod(localCallables, className, interfaceExtends)) return;
     bindings.set(scopedLocalName(scopeName, localName), { className });
   };
 
@@ -1935,12 +1962,13 @@ function collectTypeScriptJavaScriptLocalInstanceBindings(
 function collectTypeScriptJavaScriptClassInstanceBindings(
   sourceFile: ts.SourceFile,
   localCallables: ReadonlyMap<string, TsLocalCallable>,
-  factoryReturnTypes: ReadonlyMap<string, string>
+  factoryReturnTypes: ReadonlyMap<string, string>,
+  interfaceExtends: ReadonlyMap<string, readonly string[]>
 ): Map<string, TsLocalInstanceBinding> {
   const bindings = new Map<string, TsLocalInstanceBinding>();
 
   const addBinding = (ownerClassName: string, propertyName: string, className: string): void => {
-    if (!hasLocalTypeMemberMethod(localCallables, className)) return;
+    if (!hasLocalTypeMemberMethod(localCallables, className, interfaceExtends)) return;
     bindings.set(scopedLocalName(ownerClassName, propertyName), { className });
   };
 
@@ -1988,10 +2016,17 @@ function collectTypeScriptJavaScriptStaticClassCallables(sourceFile: ts.SourceFi
 
 function hasLocalTypeMemberMethod(
   localCallables: ReadonlyMap<string, TsLocalCallable>,
-  typeName: string
+  typeName: string,
+  interfaceExtends: ReadonlyMap<string, readonly string[]>,
+  seen = new Set<string>()
 ): boolean {
+  if (seen.has(typeName)) return false;
+  seen.add(typeName);
   for (const name of localCallables.keys()) {
     if (name.startsWith(`${typeName}.`)) return true;
+  }
+  for (const baseName of interfaceExtends.get(typeName) ?? []) {
+    if (hasLocalTypeMemberMethod(localCallables, baseName, interfaceExtends, seen)) return true;
   }
   return false;
 }
@@ -2235,6 +2270,7 @@ function localCallTargetForExpression(
   localInstanceBindings: ReadonlyMap<string, TsLocalInstanceBinding>,
   classInstanceBindings: ReadonlyMap<string, TsLocalInstanceBinding>,
   staticClassCallables: ReadonlySet<string>,
+  interfaceExtends: ReadonlyMap<string, readonly string[]>,
   sourceScopeName: string
 ): TsLocalCallable | undefined {
   if (ts.isIdentifier(expression)) {
@@ -2242,7 +2278,14 @@ function localCallTargetForExpression(
   }
   if (ts.isPropertyAccessExpression(expression) && ts.isIdentifier(expression.expression)) {
     const instance = localInstanceBindings.get(scopedLocalName(sourceScopeName, expression.expression.text));
-    if (instance) return localCallables.get(`${instance.className}.${expression.name.text}`);
+    if (instance) {
+      return localTypeMemberCallable(
+        localCallables,
+        instance.className,
+        expression.name.text,
+        interfaceExtends
+      );
+    }
     const staticName = `${expression.expression.text}.${expression.name.text}`;
     return staticClassCallables.has(staticName) ? localCallables.get(staticName) : undefined;
   }
@@ -2252,7 +2295,14 @@ function localCallTargetForExpression(
     const instance = className && propertyName
       ? classInstanceBindings.get(scopedLocalName(className, propertyName))
       : undefined;
-    if (instance) return localCallables.get(`${instance.className}.${expression.name.text}`);
+    if (instance) {
+      return localTypeMemberCallable(
+        localCallables,
+        instance.className,
+        expression.name.text,
+        interfaceExtends
+      );
+    }
   }
   if (ts.isPropertyAccessExpression(expression)) {
     const className = classNameFromNewExpression(expression.expression);
@@ -2264,6 +2314,30 @@ function localCallTargetForExpression(
   ) {
     const className = enclosingTypeScriptJavaScriptClassName(expression);
     return className ? localCallables.get(`${className}.${expression.name.text}`) : undefined;
+  }
+  return undefined;
+}
+
+function localTypeMemberCallable(
+  localCallables: ReadonlyMap<string, TsLocalCallable>,
+  typeName: string,
+  memberName: string,
+  interfaceExtends: ReadonlyMap<string, readonly string[]>,
+  seen = new Set<string>()
+): TsLocalCallable | undefined {
+  const direct = localCallables.get(`${typeName}.${memberName}`);
+  if (direct) return direct;
+  if (seen.has(typeName)) return undefined;
+  seen.add(typeName);
+  for (const baseName of interfaceExtends.get(typeName) ?? []) {
+    const inherited = localTypeMemberCallable(
+      localCallables,
+      baseName,
+      memberName,
+      interfaceExtends,
+      seen
+    );
+    if (inherited) return inherited;
   }
   return undefined;
 }

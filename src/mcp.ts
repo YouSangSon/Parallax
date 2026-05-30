@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { createBranch, mergeBranches, recallOnRepo, rememberOnRepo, trace } from './agent_memory.js';
 import type { RememberValue } from './agent_memory.js';
 import { abandonBranch, gcBranches, restoreBranch } from './branch_gc.js';
+import { envValue } from './branding.js';
 import type { EventTopologyProvenance } from './contract_diff.js';
 import { doctorProject, redactDoctorReportForMcp } from './doctor.js';
 import { computeEmbedding, selectedEmbeddingModel } from './embeddings.js';
@@ -51,23 +52,23 @@ export type McpContext = {
 
 export function createMcpServer(context: McpContext): McpServer {
   const server = new McpServer({
-    name: 'impact-trace',
+    name: 'parallax',
     version: '0.1.0'
   });
   patchToolErrorFactory(server);
 
   server.registerTool(
-    'impact_trace_analyze_diff',
+    'parallax_analyze_diff',
     {
-      title: 'Analyze Impact Trace diff',
-      description: 'Analyze changed files against the latest completed Impact Trace index.',
+      title: 'Analyze Parallax diff',
+      description: 'Analyze changed files against the latest completed Parallax index.',
       inputSchema: {
         changedFiles: z.array(z.string()).min(1),
         maxDepth: z.number().int().min(1).max(8).optional(),
         maxFanout: z.number().int().min(1).max(2_000).optional()
       },
       annotations: {
-        title: 'Analyze Impact Trace diff',
+        title: 'Analyze Parallax diff',
         readOnlyHint: false,
         destructiveHint: false,
         idempotentHint: false,
@@ -85,7 +86,7 @@ export function createMcpServer(context: McpContext): McpServer {
           ...(maxDepth === undefined ? {} : { maxDepth }),
           ...(maxFanout === undefined ? {} : { maxFanout })
         });
-        return toolJsonResponse(context, 'impact_trace_analyze_diff', report, {
+        return toolJsonResponse(context, 'parallax_analyze_diff', report, {
           indexRunId: report.indexRunId,
           changedFiles: report.changedFiles
         });
@@ -96,7 +97,7 @@ export function createMcpServer(context: McpContext): McpServer {
   );
 
   server.registerTool(
-    'impact_trace_context_for_change',
+    'parallax_context_for_change',
     {
       title: 'Build compact context for a change',
       description:
@@ -144,7 +145,7 @@ export function createMcpServer(context: McpContext): McpServer {
           normalizedReusePolicy === 'reference' || (normalizedReusePolicy === 'auto' && persisted.wasReused)
             ? contextPackReference(persisted.pack, report.changedFiles, persisted.fullBytes)
             : persisted.pack;
-        return toolJsonResponse(context, 'impact_trace_context_for_change', response, {
+        return toolJsonResponse(context, 'parallax_context_for_change', response, {
           indexRunId: persisted.pack.indexRunId,
           budget: persisted.pack.budget,
           changedFiles: report.changedFiles,
@@ -158,11 +159,11 @@ export function createMcpServer(context: McpContext): McpServer {
   );
 
   server.registerTool(
-    'impact_trace_search_context',
+    'parallax_search_context',
     {
       title: 'Search indexed context',
       description:
-        'Search the latest Impact Trace index by keyword, path, symbol, relation provenance, or evidence snippet and return ranked entity context with resource links.',
+        'Search the latest Parallax index by keyword, path, symbol, relation provenance, or evidence snippet and return ranked entity context with resource links.',
       inputSchema: {
         query: z.string().trim().min(1),
         k: z.number().int().min(1).max(50).optional(),
@@ -190,7 +191,7 @@ export function createMcpServer(context: McpContext): McpServer {
           semanticEmbedding
         });
         const telemetry = searchContextTelemetry(result);
-        return toolJsonResponse(context, 'impact_trace_search_context', result, {
+        return toolJsonResponse(context, 'parallax_search_context', result, {
           indexRunId: telemetry.indexRunId,
           query,
           budget: normalizedBudget,
@@ -203,7 +204,7 @@ export function createMcpServer(context: McpContext): McpServer {
   );
 
   server.registerTool(
-    'impact_trace_contract_diff',
+    'parallax_contract_diff',
     {
       title: 'Analyze workspace contract diff',
       description:
@@ -238,7 +239,7 @@ export function createMcpServer(context: McpContext): McpServer {
           ...diff,
           resources: workspaceResources(diff.workspace.name)
         };
-        return toolJsonResponse(context, 'impact_trace_contract_diff', response, {
+        return toolJsonResponse(context, 'parallax_contract_diff', response, {
           indexRunId: diff.contract.indexRunId,
           query: contractPath,
           resourceCount: resourceCountOf(response)
@@ -250,7 +251,7 @@ export function createMcpServer(context: McpContext): McpServer {
   );
 
   server.registerTool(
-    'impact_trace_remember',
+    'parallax_remember',
     {
       title: 'Remember a fact',
       description:
@@ -289,7 +290,7 @@ export function createMcpServer(context: McpContext): McpServer {
   );
 
   server.registerTool(
-    'impact_trace_recall',
+    'parallax_recall',
     {
       title: 'Recall facts',
       description:
@@ -328,7 +329,7 @@ export function createMcpServer(context: McpContext): McpServer {
   );
 
   server.registerTool(
-    'impact_trace_branch',
+    'parallax_branch',
     {
       title: 'Create a branch',
       description: 'Create a new branch forking from an existing branch (default main). No data copied.',
@@ -356,7 +357,7 @@ export function createMcpServer(context: McpContext): McpServer {
   );
 
   server.registerTool(
-    'impact_trace_merge',
+    'parallax_merge',
     {
       title: 'Merge a branch into another',
       description:
@@ -387,7 +388,7 @@ export function createMcpServer(context: McpContext): McpServer {
   );
 
   server.registerTool(
-    'impact_trace_reflect',
+    'parallax_reflect',
     {
       title: 'Reflect facts into a summary',
       description:
@@ -420,7 +421,7 @@ export function createMcpServer(context: McpContext): McpServer {
   );
 
   server.registerTool(
-    'impact_trace_abandon_branch',
+    'parallax_abandon_branch',
     {
       title: 'Abandon a branch',
       description:
@@ -443,7 +444,7 @@ export function createMcpServer(context: McpContext): McpServer {
   );
 
   server.registerTool(
-    'impact_trace_gc_branches',
+    'parallax_gc_branches',
     {
       title: 'GC abandoned branches',
       description:
@@ -472,7 +473,7 @@ export function createMcpServer(context: McpContext): McpServer {
   );
 
   server.registerTool(
-    'impact_trace_profile',
+    'parallax_profile',
     {
       title: 'Profile an entity',
       description:
@@ -503,7 +504,7 @@ export function createMcpServer(context: McpContext): McpServer {
   );
 
   server.registerTool(
-    'impact_trace_explain_entity',
+    'parallax_explain_entity',
     {
       title: 'Explain an entity',
       description:
@@ -529,7 +530,7 @@ export function createMcpServer(context: McpContext): McpServer {
           evidenceLimit: evidenceLimit ?? 10
         });
         const telemetry = explainEntityTelemetry(result);
-        return toolJsonResponse(context, 'impact_trace_explain_entity', result, {
+        return toolJsonResponse(context, 'parallax_explain_entity', result, {
           indexRunId: telemetry.indexRunId,
           query: entity,
           resourceCount: telemetry.resourceCount
@@ -541,7 +542,7 @@ export function createMcpServer(context: McpContext): McpServer {
   );
 
   server.registerTool(
-    'impact_trace_context_telemetry',
+    'parallax_context_telemetry',
     {
       title: 'Inspect context telemetry',
       description:
@@ -564,14 +565,14 @@ export function createMcpServer(context: McpContext): McpServer {
   );
 
   server.registerTool(
-    'impact_trace_doctor',
+    'parallax_doctor',
     {
-      title: 'Inspect Impact Trace health',
+      title: 'Inspect Parallax health',
       description:
         'Return a read-only local health report covering database schema, latest index, coverage, adapter runs, vector state, and context telemetry availability.',
       inputSchema: {},
       annotations: {
-        title: 'Inspect Impact Trace health',
+        title: 'Inspect Parallax health',
         readOnlyHint: true,
         destructiveHint: false,
         idempotentHint: true,
@@ -585,7 +586,7 @@ export function createMcpServer(context: McpContext): McpServer {
   );
 
   server.registerTool(
-    'impact_trace_repair_reflections',
+    'parallax_repair_reflections',
     {
       title: 'Repair orphan reflection facts',
       description:
@@ -612,7 +613,7 @@ export function createMcpServer(context: McpContext): McpServer {
   );
 
   server.registerTool(
-    'impact_trace_restore_branch',
+    'parallax_restore_branch',
     {
       title: 'Restore an abandoned branch',
       description:
@@ -635,7 +636,7 @@ export function createMcpServer(context: McpContext): McpServer {
   );
 
   server.registerTool(
-    'impact_trace_trace',
+    'parallax_trace',
     {
       title: 'Trace causal chain',
       description: 'Walk fact_provenance edges from the given fact back through its evidence chain.',
@@ -663,13 +664,13 @@ export function createMcpServer(context: McpContext): McpServer {
   );
 
   server.registerResource(
-    'impact_trace_reports',
-    new ResourceTemplate('impact-trace://reports/{reportId}', {
+    'parallax_reports',
+    new ResourceTemplate('parallax://reports/{reportId}', {
       list: () => ({ resources: listReportResources(context) })
     }),
     {
-      title: 'Impact Trace Reports',
-      description: 'Persisted Impact Trace report JSON documents.',
+      title: 'Parallax Reports',
+      description: 'Persisted Parallax report JSON documents.',
       mimeType: 'application/json'
     },
     async (uri, variables) => {
@@ -679,12 +680,12 @@ export function createMcpServer(context: McpContext): McpServer {
   );
 
   server.registerResource(
-    'impact_trace_entities',
-    new ResourceTemplate('impact-trace://entities/{entityId}', {
+    'parallax_entities',
+    new ResourceTemplate('parallax://entities/{entityId}', {
       list: () => ({ resources: listEntityResources(context) })
     }),
     {
-      title: 'Impact Trace Entities',
+      title: 'Parallax Entities',
       description: 'Canonical indexed entities from the latest completed index run.',
       mimeType: 'application/json'
     },
@@ -695,12 +696,12 @@ export function createMcpServer(context: McpContext): McpServer {
   );
 
   server.registerResource(
-    'impact_trace_evidence',
-    new ResourceTemplate('impact-trace://evidence/{evidenceId}', {
+    'parallax_evidence',
+    new ResourceTemplate('parallax://evidence/{evidenceId}', {
       list: () => ({ resources: listEvidenceResources(context) })
     }),
     {
-      title: 'Impact Trace Evidence',
+      title: 'Parallax Evidence',
       description: 'Relation evidence with source span, redacted snippet, and source/target relation context.',
       mimeType: 'application/json'
     },
@@ -711,12 +712,12 @@ export function createMcpServer(context: McpContext): McpServer {
   );
 
   server.registerResource(
-    'impact_trace_context_packs',
-    new ResourceTemplate('impact-trace://context-packs/{contextPackId}', {
+    'parallax_context_packs',
+    new ResourceTemplate('parallax://context-packs/{contextPackId}', {
       list: () => ({ resources: listContextPackResources(context) })
     }),
     {
-      title: 'Impact Trace Context Packs',
+      title: 'Parallax Context Packs',
       description: 'Persisted compact context packs keyed by content hash for repeated MCP reuse.',
       mimeType: 'application/json'
     },
@@ -733,12 +734,12 @@ export function createMcpServer(context: McpContext): McpServer {
   );
 
   server.registerResource(
-    'impact_trace_workspaces',
-    new ResourceTemplate('impact-trace://workspaces/{workspaceName}', {
+    'parallax_workspaces',
+    new ResourceTemplate('parallax://workspaces/{workspaceName}', {
       list: () => ({ resources: listWorkspaceResources(context) })
     }),
     {
-      title: 'Impact Trace Workspaces',
+      title: 'Parallax Workspaces',
       description: 'Workspace catalog membership and compact links to contract and cross-repo impact resources.',
       mimeType: 'application/json'
     },
@@ -755,12 +756,12 @@ export function createMcpServer(context: McpContext): McpServer {
   );
 
   server.registerResource(
-    'impact_trace_workspace_contracts',
-    new ResourceTemplate('impact-trace://workspaces/{workspaceName}/contracts', {
+    'parallax_workspace_contracts',
+    new ResourceTemplate('parallax://workspaces/{workspaceName}/contracts', {
       list: () => ({ resources: listWorkspaceContractResources(context) })
     }),
     {
-      title: 'Impact Trace Workspace Contracts',
+      title: 'Parallax Workspace Contracts',
       description: 'Latest indexed contract baselines across the local workspace catalog.',
       mimeType: 'application/json'
     },
@@ -777,12 +778,12 @@ export function createMcpServer(context: McpContext): McpServer {
   );
 
   server.registerResource(
-    'impact_trace_workspace_cross_repo_links',
-    new ResourceTemplate('impact-trace://workspaces/{workspaceName}/cross-repo-links', {
+    'parallax_workspace_cross_repo_links',
+    new ResourceTemplate('parallax://workspaces/{workspaceName}/cross-repo-links', {
       list: () => ({ resources: listWorkspaceCrossRepoLinkResources(context) })
     }),
     {
-      title: 'Impact Trace Workspace Cross-Repo Links',
+      title: 'Parallax Workspace Cross-Repo Links',
       description: 'Workspace-scoped provider/consumer and breaking contract impact links.',
       mimeType: 'application/json'
     },
@@ -799,12 +800,12 @@ export function createMcpServer(context: McpContext): McpServer {
   );
 
   server.registerResource(
-    'impact_trace_graphs',
-    new ResourceTemplate('impact-trace://reports/{reportId}/graph/{format}', {
+    'parallax_graphs',
+    new ResourceTemplate('parallax://reports/{reportId}/graph/{format}', {
       list: () => ({ resources: listGraphResources(context) })
     }),
     {
-      title: 'Impact Trace Graphs',
+      title: 'Parallax Graphs',
       description: 'Report-scoped relationship graph projections in Mermaid, JSON, or DOT.',
       mimeType: 'text/plain'
     },
@@ -842,10 +843,10 @@ export function createMcpServer(context: McpContext): McpServer {
   );
 
   server.registerResource(
-    'impact_trace_coverage_latest',
-    'impact-trace://coverage/latest',
+    'parallax_coverage_latest',
+    'parallax://coverage/latest',
     {
-      title: 'Impact Trace Latest Coverage',
+      title: 'Parallax Latest Coverage',
       description: 'Index coverage rows for the latest completed index run.',
       mimeType: 'application/json'
     },
@@ -981,7 +982,7 @@ function buildContextPack(report: ImpactReport, budget: ContextBudget, asOfIso: 
     actions,
     evidence: selectedEvidence,
     resources: {
-      coverage: 'impact-trace://coverage/latest',
+      coverage: 'parallax://coverage/latest',
       entities: [...new Set(entityLinks)].sort(),
       evidence: [...new Set(evidenceLinks)].sort()
     },
@@ -1433,15 +1434,15 @@ function entityForContextPath(filePath: string): EntityRef {
 }
 
 function entityResourceUri(entity: EntityRef): string {
-  return `impact-trace://entities/${encodeURIComponent(entity.id)}`;
+  return `parallax://entities/${encodeURIComponent(entity.id)}`;
 }
 
 function evidenceResourceUri(evidenceId: string): string {
-  return `impact-trace://evidence/${encodeURIComponent(evidenceId)}`;
+  return `parallax://evidence/${encodeURIComponent(evidenceId)}`;
 }
 
 function contextPackResourceUri(contextPackId: string): string {
-  return `impact-trace://context-packs/${encodeURIComponent(contextPackId)}`;
+  return `parallax://context-packs/${encodeURIComponent(contextPackId)}`;
 }
 
 function persistedEvidenceResourceUri(evidence: Evidence): string | undefined {
@@ -1540,18 +1541,18 @@ function typedToolErrorResponse(error: unknown): ToolResponse {
   };
 }
 
-function typedMcpError(error: unknown, fallbackCode = 'impact_trace_error'): Error {
+function typedMcpError(error: unknown, fallbackCode = 'parallax_error'): Error {
   return new Error(JSON.stringify(typedMcpErrorEnvelope(error, fallbackCode)));
 }
 
-function typedMcpErrorEnvelope(error: unknown, fallbackCode = 'impact_trace_error'): TypedMcpErrorEnvelope {
+function typedMcpErrorEnvelope(error: unknown, fallbackCode = 'parallax_error'): TypedMcpErrorEnvelope {
   const message = errorMessage(error);
   const existing = parseTypedMcpError(message);
   if (existing) return existing;
 
   const normalized = message.toLowerCase();
   let code = fallbackCode;
-  let cause = 'Impact Trace could not complete the requested MCP operation.';
+  let cause = 'Parallax could not complete the requested MCP operation.';
   let fix = 'Check the request arguments, refresh the local index if needed, then retry the MCP call.';
 
   if (normalized.includes('outside repo root') || normalized.includes('resolves outside')) {
@@ -1560,11 +1561,11 @@ function typedMcpErrorEnvelope(error: unknown, fallbackCode = 'impact_trace_erro
     fix = 'Use a repo-relative path inside the current repository and rerun the request.';
   } else if (normalized.includes('not found')) {
     code = 'resource_not_found';
-    cause = 'The requested Impact Trace resource was not found in the local index or report store.';
+    cause = 'The requested Parallax resource was not found in the local index or report store.';
     fix = 'Refresh resources/list, rerun index/analyze if needed, and use a current resource URI.';
   } else if (normalized.includes('graph resource format')) {
     code = 'invalid_resource_format';
-    cause = 'The graph resource format is not one of the formats Impact Trace can render.';
+    cause = 'The graph resource format is not one of the formats Parallax can render.';
     fix = 'Use one of: mermaid, json, dot.';
   } else if (normalized.includes('graph page limit') || normalized.includes('graph page cursor')) {
     code = 'invalid_pagination';
@@ -1572,22 +1573,22 @@ function typedMcpErrorEnvelope(error: unknown, fallbackCode = 'impact_trace_erro
     fix = 'Use a positive integer limit up to 500 and pass cursor values returned by the previous page.';
   } else if (
     normalized.includes('search query must not be empty') ||
-    (normalized.includes('impact_trace_search_context') && normalized.includes('query') && normalized.includes('too small'))
+    (normalized.includes('parallax_search_context') && normalized.includes('query') && normalized.includes('too small'))
   ) {
     code = 'empty_search_query';
     cause = 'The search context tool received an empty query after trimming whitespace.';
     fix = 'Provide a non-empty keyword, path, symbol, relation kind, or evidence snippet.';
   } else if (normalized.includes('no completed index found') || normalized.includes('repo is not indexed')) {
     code = 'index_not_ready';
-    cause = 'The repository does not have a completed Impact Trace index yet.';
-    fix = 'Run impact-trace init and impact-trace index, then retry the MCP request.';
-  } else if (normalized.includes('requires impact trace schema v') || normalized.includes('database schema is v')) {
+    cause = 'The repository does not have a completed Parallax index yet.';
+    fix = 'Run parallax init and parallax index, then retry the MCP request.';
+  } else if (normalized.includes('requires parallax schema v') || normalized.includes('database schema is v')) {
     code = 'schema_outdated';
-    cause = 'The local Impact Trace database is older than the current tool contract.';
-    fix = 'Run impact-trace init with the current build to apply additive migrations.';
+    cause = 'The local Parallax database is older than the current tool contract.';
+    fix = 'Run parallax init with the current build to apply additive migrations.';
   } else if (normalized.includes('must be') || normalized.includes('between')) {
     code = 'invalid_tool_input';
-    cause = 'The MCP tool arguments do not match the Impact Trace input contract.';
+    cause = 'The MCP tool arguments do not match the Parallax input contract.';
     fix = 'Correct the argument type or allowed range, then retry the tool call.';
   }
 
@@ -1605,7 +1606,7 @@ function typedMcpErrorEnvelope(error: unknown, fallbackCode = 'impact_trace_erro
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === 'string') return error;
-  return 'unknown Impact Trace MCP error';
+  return 'unknown Parallax MCP error';
 }
 
 function parseTypedMcpError(message: string): TypedMcpErrorEnvelope | null {
@@ -1825,7 +1826,7 @@ function emptyContextTelemetry(): unknown {
 
 function bestEffortTelemetry(callback: () => void): void {
   try {
-    if (process.env.IMPACT_TRACE_TELEMETRY_FORCE_FAILURE === '1') {
+    if (envValue('TELEMETRY_FORCE_FAILURE') === '1') {
       throw new Error('forced telemetry failure');
     }
     callback();
@@ -1926,7 +1927,7 @@ type WorkspaceCrossRepoLinkRow = {
 };
 
 function workspaceResourceUri(workspaceName: string): string {
-  return `impact-trace://workspaces/${encodeURIComponent(workspaceName)}`;
+  return `parallax://workspaces/${encodeURIComponent(workspaceName)}`;
 }
 
 function workspaceContractsResourceUri(workspaceName: string): string {
@@ -2037,7 +2038,7 @@ function readWorkspaceContractsResource(context: McpContext, workspaceName: stri
         indexRunId,
         endpointCount: row.endpoint_count,
         contractDiffHint: {
-          tool: 'impact_trace_contract_diff',
+          tool: 'parallax_contract_diff',
           workspaceName: workspace.name,
           contractPath: row.path,
           providerServiceName: row.service_name ?? repo.serviceName
@@ -2144,7 +2145,7 @@ function listReportResources(context: McpContext): Array<{ uri: string; name: st
       .prepare('SELECT id FROM reports WHERE repo_id = ? ORDER BY created_at DESC LIMIT 20')
       .all(repoId) as Array<{ id: string }>;
     return rows.map((row) => ({
-      uri: `impact-trace://reports/${row.id}`,
+      uri: `parallax://reports/${row.id}`,
       name: `Impact report ${row.id}`,
       mimeType: 'application/json'
     }));
@@ -2164,7 +2165,7 @@ function listEntityResources(context: McpContext): Array<{ uri: string; name: st
       `)
       .all(repoId, indexRunId) as Array<{ id: string; display_name: string }>;
     return rows.map((row) => ({
-      uri: `impact-trace://entities/${encodeURIComponent(row.id)}`,
+      uri: `parallax://entities/${encodeURIComponent(row.id)}`,
       name: row.display_name,
       mimeType: 'application/json'
     }));
@@ -2217,7 +2218,7 @@ function listGraphResources(context: McpContext): Array<{ uri: string; name: str
       .prepare('SELECT id FROM reports WHERE repo_id = ? ORDER BY created_at DESC LIMIT 10')
       .all(repoId) as Array<{ id: string }>;
     return rows.flatMap((row) => (['mermaid', 'json', 'dot'] as const).map((format) => ({
-      uri: `impact-trace://reports/${row.id}/graph/${format}`,
+      uri: `parallax://reports/${row.id}/graph/${format}`,
       name: `Impact report ${row.id} graph (${format})`,
       mimeType: format === 'json' ? 'application/json' : 'text/plain'
     })));
@@ -2543,7 +2544,7 @@ const searchContextBudgetPresets: Record<ContextBudget, SearchContextBudgetPrese
 async function searchContextSemanticEmbedding(context: McpContext, query: string): Promise<EmbeddingResult | null> {
   const model = selectedEmbeddingModel();
   const hasEmbeddings = withReadOnlyDb(context, (db, repoId) => {
-    assertCurrentSchema(db, 'impact_trace_search_context');
+    assertCurrentSchema(db, 'parallax_search_context');
     if (!mcpHasTable(db, 'fact_embeddings')) return false;
     const row = db
       .prepare(`
@@ -2603,7 +2604,7 @@ function searchContext(context: McpContext, options: SearchContextOptions): unkn
   if (!query) throw new Error('search query must not be empty');
 
   return withReadOnlyDb(context, (db, repoId) => {
-    assertCurrentSchema(db, 'impact_trace_search_context');
+    assertCurrentSchema(db, 'parallax_search_context');
     const indexRunId = latestCompletedIndexRun(db, repoId);
     const likeQuery = `%${escapeLike(query)}%`;
     const ranking = searchRankedEntities(

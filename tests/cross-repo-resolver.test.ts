@@ -37,8 +37,8 @@ function runCli(repoRoot: string, args: string[]): { status: number | null; stdo
 }
 
 test('resolveCrossRepoContracts links workspace consumer files to provider OpenAPI endpoints', async () => {
-  const consumerRoot = await makeRepo('impact-trace-consumer-');
-  const providerRoot = await makeRepo('impact-trace-provider-');
+  const consumerRoot = await makeRepo('parallax-consumer-');
+  const providerRoot = await makeRepo('parallax-provider-');
   const consumerReal = realpathSync(consumerRoot);
   const providerReal = realpathSync(providerRoot);
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
@@ -143,8 +143,8 @@ test('resolveCrossRepoContracts links workspace consumer files to provider OpenA
 });
 
 test('resolveCrossRepoContracts links OpenAPI HTTP consumers through same-file Java route constants', async () => {
-  const consumerRoot = await makeRepo('impact-trace-http-alias-consumer-');
-  const providerRoot = await makeRepo('impact-trace-http-alias-provider-');
+  const consumerRoot = await makeRepo('parallax-http-alias-consumer-');
+  const providerRoot = await makeRepo('parallax-http-alias-provider-');
   const consumerReal = realpathSync(consumerRoot);
   const providerReal = realpathSync(providerRoot);
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
@@ -229,8 +229,8 @@ test('resolveCrossRepoContracts links OpenAPI HTTP consumers through same-file J
 });
 
 test('resolveCrossRepoContracts does not use OpenAPI HTTP route declarations as consumer evidence', async () => {
-  const consumerRoot = await makeRepo('impact-trace-http-declaration-consumer-');
-  const providerRoot = await makeRepo('impact-trace-http-declaration-provider-');
+  const consumerRoot = await makeRepo('parallax-http-declaration-consumer-');
+  const providerRoot = await makeRepo('parallax-http-declaration-provider-');
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
 
   await writeFile(
@@ -289,8 +289,8 @@ test('resolveCrossRepoContracts does not use OpenAPI HTTP route declarations as 
 });
 
 test('resolveCrossRepoContracts does not treat Spring controller mappings as OpenAPI HTTP consumers', async () => {
-  const consumerRoot = await makeRepo('impact-trace-http-controller-consumer-');
-  const providerRoot = await makeRepo('impact-trace-http-controller-provider-');
+  const consumerRoot = await makeRepo('parallax-http-controller-consumer-');
+  const providerRoot = await makeRepo('parallax-http-controller-provider-');
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
 
   await writeFile(
@@ -345,8 +345,8 @@ test('resolveCrossRepoContracts does not treat Spring controller mappings as Ope
 });
 
 test('resolveCrossRepoContracts treats Feign mapping annotations as OpenAPI HTTP consumers', async () => {
-  const consumerRoot = await makeRepo('impact-trace-http-feign-consumer-');
-  const providerRoot = await makeRepo('impact-trace-http-feign-provider-');
+  const consumerRoot = await makeRepo('parallax-http-feign-consumer-');
+  const providerRoot = await makeRepo('parallax-http-feign-provider-');
   const consumerReal = realpathSync(consumerRoot);
   const providerReal = realpathSync(providerRoot);
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
@@ -416,8 +416,8 @@ test('resolveCrossRepoContracts treats Feign mapping annotations as OpenAPI HTTP
 });
 
 test('resolveCrossRepoContracts ignores ordinary dotted methods that reuse HTTP route constants', async () => {
-  const consumerRoot = await makeRepo('impact-trace-http-ordinary-method-consumer-');
-  const providerRoot = await makeRepo('impact-trace-http-ordinary-method-provider-');
+  const consumerRoot = await makeRepo('parallax-http-ordinary-method-consumer-');
+  const providerRoot = await makeRepo('parallax-http-ordinary-method-provider-');
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
 
   await writeFile(
@@ -473,8 +473,8 @@ test('resolveCrossRepoContracts ignores ordinary dotted methods that reuse HTTP 
 });
 
 test('resolveCrossRepoContracts ignores commented Feign annotations when classifying Spring mappings', async () => {
-  const consumerRoot = await makeRepo('impact-trace-http-commented-feign-consumer-');
-  const providerRoot = await makeRepo('impact-trace-http-commented-feign-provider-');
+  const consumerRoot = await makeRepo('parallax-http-commented-feign-consumer-');
+  const providerRoot = await makeRepo('parallax-http-commented-feign-provider-');
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
 
   await writeFile(
@@ -530,8 +530,8 @@ test('resolveCrossRepoContracts ignores commented Feign annotations when classif
 });
 
 test('resolveCrossRepoContracts scopes Feign mapping consumers to the Feign interface', async () => {
-  const consumerRoot = await makeRepo('impact-trace-http-mixed-feign-consumer-');
-  const providerRoot = await makeRepo('impact-trace-http-mixed-feign-provider-');
+  const consumerRoot = await makeRepo('parallax-http-mixed-feign-consumer-');
+  const providerRoot = await makeRepo('parallax-http-mixed-feign-provider-');
   const consumerReal = realpathSync(consumerRoot);
   const providerReal = realpathSync(providerRoot);
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
@@ -614,8 +614,8 @@ test('resolveCrossRepoContracts scopes Feign mapping consumers to the Feign inte
 });
 
 test('resolveCrossRepoContracts ignores computed OpenAPI HTTP route constants', async () => {
-  const consumerRoot = await makeRepo('impact-trace-http-computed-consumer-');
-  const providerRoot = await makeRepo('impact-trace-http-computed-provider-');
+  const consumerRoot = await makeRepo('parallax-http-computed-consumer-');
+  const providerRoot = await makeRepo('parallax-http-computed-provider-');
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
 
   await writeFile(
@@ -672,8 +672,8 @@ test('resolveCrossRepoContracts ignores computed OpenAPI HTTP route constants', 
 });
 
 test('resolveCrossRepoContracts links GraphQL operation consumers to provider root fields', async () => {
-  const consumerRoot = await makeRepo('impact-trace-graphql-consumer-');
-  const providerRoot = await makeRepo('impact-trace-graphql-provider-');
+  const consumerRoot = await makeRepo('parallax-graphql-consumer-');
+  const providerRoot = await makeRepo('parallax-graphql-provider-');
   const consumerReal = realpathSync(consumerRoot);
   const providerReal = realpathSync(providerRoot);
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
@@ -775,8 +775,8 @@ test('resolveCrossRepoContracts links GraphQL operation consumers to provider ro
 });
 
 test('resolveCrossRepoContracts ignores GraphQL operation examples in non-consumer files', async () => {
-  const consumerRoot = await makeRepo('impact-trace-graphql-doc-consumer-');
-  const providerRoot = await makeRepo('impact-trace-graphql-doc-provider-');
+  const consumerRoot = await makeRepo('parallax-graphql-doc-consumer-');
+  const providerRoot = await makeRepo('parallax-graphql-doc-provider-');
   await mkdir(path.join(consumerRoot, 'docs'), { recursive: true });
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
 
@@ -838,8 +838,8 @@ test('resolveCrossRepoContracts ignores GraphQL operation examples in non-consum
 });
 
 test('resolveCrossRepoContracts does not treat ordinary TS blocks as anonymous GraphQL consumers', async () => {
-  const consumerRoot = await makeRepo('impact-trace-graphql-ts-false-consumer-');
-  const providerRoot = await makeRepo('impact-trace-graphql-ts-false-provider-');
+  const consumerRoot = await makeRepo('parallax-graphql-ts-false-consumer-');
+  const providerRoot = await makeRepo('parallax-graphql-ts-false-provider-');
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
 
   await writeFile(
@@ -883,8 +883,8 @@ test('resolveCrossRepoContracts does not treat ordinary TS blocks as anonymous G
 });
 
 test('resolveCrossRepoContracts does not treat TS functions named query as GraphQL operations', async () => {
-  const consumerRoot = await makeRepo('impact-trace-graphql-ts-query-function-consumer-');
-  const providerRoot = await makeRepo('impact-trace-graphql-ts-query-function-provider-');
+  const consumerRoot = await makeRepo('parallax-graphql-ts-query-function-consumer-');
+  const providerRoot = await makeRepo('parallax-graphql-ts-query-function-provider-');
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
 
   await writeFile(
@@ -928,8 +928,8 @@ test('resolveCrossRepoContracts does not treat TS functions named query as Graph
 });
 
 test('resolveCrossRepoContracts does not treat protobuf Query services as GraphQL providers', async () => {
-  const consumerRoot = await makeRepo('impact-trace-graphql-protobuf-consumer-');
-  const providerRoot = await makeRepo('impact-trace-graphql-protobuf-provider-');
+  const consumerRoot = await makeRepo('parallax-graphql-protobuf-consumer-');
+  const providerRoot = await makeRepo('parallax-graphql-protobuf-provider-');
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
 
   await writeFile(
@@ -980,8 +980,8 @@ test('resolveCrossRepoContracts does not treat protobuf Query services as GraphQ
 });
 
 test('resolveCrossRepoContracts ignores TS comment backticks when detecting GraphQL templates', async () => {
-  const consumerRoot = await makeRepo('impact-trace-graphql-ts-comment-backtick-consumer-');
-  const providerRoot = await makeRepo('impact-trace-graphql-ts-comment-backtick-provider-');
+  const consumerRoot = await makeRepo('parallax-graphql-ts-comment-backtick-consumer-');
+  const providerRoot = await makeRepo('parallax-graphql-ts-comment-backtick-provider-');
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
 
   await writeFile(
@@ -1026,8 +1026,8 @@ test('resolveCrossRepoContracts ignores TS comment backticks when detecting Grap
 });
 
 test('resolveCrossRepoContracts links Protobuf RPC consumers to provider service methods', async () => {
-  const consumerRoot = await makeRepo('impact-trace-protobuf-consumer-');
-  const providerRoot = await makeRepo('impact-trace-protobuf-provider-');
+  const consumerRoot = await makeRepo('parallax-protobuf-consumer-');
+  const providerRoot = await makeRepo('parallax-protobuf-provider-');
   const consumerReal = realpathSync(consumerRoot);
   const providerReal = realpathSync(providerRoot);
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
@@ -1133,8 +1133,8 @@ test('resolveCrossRepoContracts links Protobuf RPC consumers to provider service
 });
 
 test('resolveCrossRepoContracts does not link Protobuf RPC names without service context', async () => {
-  const consumerRoot = await makeRepo('impact-trace-protobuf-false-consumer-');
-  const providerRoot = await makeRepo('impact-trace-protobuf-false-provider-');
+  const consumerRoot = await makeRepo('parallax-protobuf-false-consumer-');
+  const providerRoot = await makeRepo('parallax-protobuf-false-provider-');
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
 
   await writeFile(
@@ -1179,8 +1179,8 @@ test('resolveCrossRepoContracts does not link Protobuf RPC names without service
 });
 
 test('resolveCrossRepoContracts does not link Protobuf helper declarations with service context', async () => {
-  const consumerRoot = await makeRepo('impact-trace-protobuf-helper-consumer-');
-  const providerRoot = await makeRepo('impact-trace-protobuf-helper-provider-');
+  const consumerRoot = await makeRepo('parallax-protobuf-helper-consumer-');
+  const providerRoot = await makeRepo('parallax-protobuf-helper-provider-');
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
 
   await writeFile(
@@ -1227,8 +1227,8 @@ test('resolveCrossRepoContracts does not link Protobuf helper declarations with 
 });
 
 test('resolveCrossRepoContracts ignores generated Protobuf client descriptors', async () => {
-  const consumerRoot = await makeRepo('impact-trace-protobuf-generated-consumer-');
-  const providerRoot = await makeRepo('impact-trace-protobuf-generated-provider-');
+  const consumerRoot = await makeRepo('parallax-protobuf-generated-consumer-');
+  const providerRoot = await makeRepo('parallax-protobuf-generated-provider-');
   await mkdir(path.join(consumerRoot, 'src/gen'), { recursive: true });
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
 
@@ -1292,8 +1292,8 @@ test('resolveCrossRepoContracts ignores generated Protobuf client descriptors', 
 });
 
 test('resolveCrossRepoContracts links Connect-ES createClient generated client calls', async () => {
-  const consumerRoot = await makeRepo('impact-trace-connect-es-consumer-');
-  const providerRoot = await makeRepo('impact-trace-connect-es-provider-');
+  const consumerRoot = await makeRepo('parallax-connect-es-consumer-');
+  const providerRoot = await makeRepo('parallax-connect-es-provider-');
   const consumerReal = realpathSync(consumerRoot);
   const providerReal = realpathSync(providerRoot);
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
@@ -1357,8 +1357,8 @@ test('resolveCrossRepoContracts links Connect-ES createClient generated client c
 });
 
 test('resolveCrossRepoContracts links Protobuf RPC full path strings without a leading slash', async () => {
-  const consumerRoot = await makeRepo('impact-trace-protobuf-fullpath-consumer-');
-  const providerRoot = await makeRepo('impact-trace-protobuf-fullpath-provider-');
+  const consumerRoot = await makeRepo('parallax-protobuf-fullpath-consumer-');
+  const providerRoot = await makeRepo('parallax-protobuf-fullpath-provider-');
   const consumerReal = realpathSync(consumerRoot);
   const providerReal = realpathSync(providerRoot);
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
@@ -1418,8 +1418,8 @@ test('resolveCrossRepoContracts links Protobuf RPC full path strings without a l
 });
 
 test('resolveCrossRepoContracts ignores Protobuf RPC full path strings in source comments', async () => {
-  const consumerRoot = await makeRepo('impact-trace-protobuf-comment-consumer-');
-  const providerRoot = await makeRepo('impact-trace-protobuf-comment-provider-');
+  const consumerRoot = await makeRepo('parallax-protobuf-comment-consumer-');
+  const providerRoot = await makeRepo('parallax-protobuf-comment-provider-');
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
 
   await writeFile(
@@ -1465,8 +1465,8 @@ test('resolveCrossRepoContracts ignores Protobuf RPC full path strings in source
 });
 
 test('resolveCrossRepoContracts ignores Protobuf RPC matches inside inline and block comments', async () => {
-  const consumerRoot = await makeRepo('impact-trace-protobuf-inline-comment-consumer-');
-  const providerRoot = await makeRepo('impact-trace-protobuf-inline-comment-provider-');
+  const consumerRoot = await makeRepo('parallax-protobuf-inline-comment-consumer-');
+  const providerRoot = await makeRepo('parallax-protobuf-inline-comment-provider-');
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
 
   await writeFile(
@@ -1516,8 +1516,8 @@ test('resolveCrossRepoContracts ignores Protobuf RPC matches inside inline and b
 });
 
 test('resolveCrossRepoContracts ignores Protobuf service context from comments', async () => {
-  const consumerRoot = await makeRepo('impact-trace-protobuf-comment-context-consumer-');
-  const providerRoot = await makeRepo('impact-trace-protobuf-comment-context-provider-');
+  const consumerRoot = await makeRepo('parallax-protobuf-comment-context-consumer-');
+  const providerRoot = await makeRepo('parallax-protobuf-comment-context-provider-');
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
 
   await writeFile(
@@ -1564,8 +1564,8 @@ test('resolveCrossRepoContracts ignores Protobuf service context from comments',
 });
 
 test('resolveCrossRepoContracts links AsyncAPI event consumers to provider operations', async () => {
-  const consumerRoot = await makeRepo('impact-trace-asyncapi-consumer-');
-  const providerRoot = await makeRepo('impact-trace-asyncapi-provider-');
+  const consumerRoot = await makeRepo('parallax-asyncapi-consumer-');
+  const providerRoot = await makeRepo('parallax-asyncapi-provider-');
   const consumerReal = realpathSync(consumerRoot);
   const providerReal = realpathSync(providerRoot);
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
@@ -1686,8 +1686,8 @@ test('resolveCrossRepoContracts links AsyncAPI event consumers to provider opera
 });
 
 test('resolveCrossRepoContracts ignores AsyncAPI examples and partial topic matches', async () => {
-  const consumerRoot = await makeRepo('impact-trace-asyncapi-false-consumer-');
-  const providerRoot = await makeRepo('impact-trace-asyncapi-false-provider-');
+  const consumerRoot = await makeRepo('parallax-asyncapi-false-consumer-');
+  const providerRoot = await makeRepo('parallax-asyncapi-false-provider-');
   await mkdir(path.join(consumerRoot, 'docs'), { recursive: true });
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
 
@@ -1746,8 +1746,8 @@ test('resolveCrossRepoContracts ignores AsyncAPI examples and partial topic matc
 });
 
 test('resolveCrossRepoContracts links AsyncAPI event consumers through same-file topic aliases', async () => {
-  const consumerRoot = await makeRepo('impact-trace-asyncapi-consumer-alias-');
-  const providerRoot = await makeRepo('impact-trace-asyncapi-provider-alias-');
+  const consumerRoot = await makeRepo('parallax-asyncapi-consumer-alias-');
+  const providerRoot = await makeRepo('parallax-asyncapi-provider-alias-');
   const consumerReal = realpathSync(consumerRoot);
   const providerReal = realpathSync(providerRoot);
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
@@ -1834,8 +1834,8 @@ test('resolveCrossRepoContracts links AsyncAPI event consumers through same-file
 });
 
 test('resolveCrossRepoContracts links AsyncAPI SEND operations to Spring Kafka listeners', async () => {
-  const consumerRoot = await makeRepo('impact-trace-asyncapi-spring-consumer-');
-  const providerRoot = await makeRepo('impact-trace-asyncapi-spring-provider-');
+  const consumerRoot = await makeRepo('parallax-asyncapi-spring-consumer-');
+  const providerRoot = await makeRepo('parallax-asyncapi-spring-provider-');
   const consumerReal = realpathSync(consumerRoot);
   const providerReal = realpathSync(providerRoot);
   await mkdir(path.join(consumerRoot, 'src/main/java/com/example/orders'), { recursive: true });
@@ -1912,8 +1912,8 @@ test('resolveCrossRepoContracts links AsyncAPI SEND operations to Spring Kafka l
 });
 
 test('resolveCrossRepoContracts links AsyncAPI SEND operations through Java topic constants', async () => {
-  const consumerRoot = await makeRepo('impact-trace-asyncapi-java-constant-consumer-');
-  const providerRoot = await makeRepo('impact-trace-asyncapi-java-constant-provider-');
+  const consumerRoot = await makeRepo('parallax-asyncapi-java-constant-consumer-');
+  const providerRoot = await makeRepo('parallax-asyncapi-java-constant-provider-');
   const consumerReal = realpathSync(consumerRoot);
   const providerReal = realpathSync(providerRoot);
   await mkdir(path.join(consumerRoot, 'src/main/java/com/example/orders'), { recursive: true });
@@ -1992,8 +1992,8 @@ test('resolveCrossRepoContracts links AsyncAPI SEND operations through Java topi
 });
 
 test('resolveCrossRepoContracts links AsyncAPI RECEIVE operations to event producers', async () => {
-  const consumerRoot = await makeRepo('impact-trace-asyncapi-receive-producer-');
-  const providerRoot = await makeRepo('impact-trace-asyncapi-receive-provider-');
+  const consumerRoot = await makeRepo('parallax-asyncapi-receive-producer-');
+  const providerRoot = await makeRepo('parallax-asyncapi-receive-provider-');
   const consumerReal = realpathSync(consumerRoot);
   const providerReal = realpathSync(providerRoot);
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
@@ -2066,8 +2066,8 @@ test('resolveCrossRepoContracts links AsyncAPI RECEIVE operations to event produ
 });
 
 test('resolveCrossRepoContracts links AsyncAPI RECEIVE operations through Kotlin topic constants', async () => {
-  const consumerRoot = await makeRepo('impact-trace-asyncapi-kotlin-constant-producer-');
-  const providerRoot = await makeRepo('impact-trace-asyncapi-kotlin-constant-provider-');
+  const consumerRoot = await makeRepo('parallax-asyncapi-kotlin-constant-producer-');
+  const providerRoot = await makeRepo('parallax-asyncapi-kotlin-constant-provider-');
   const consumerReal = realpathSync(consumerRoot);
   const providerReal = realpathSync(providerRoot);
   await mkdir(path.join(consumerRoot, 'src/main/kotlin/com/example/orders'), { recursive: true });
@@ -2147,8 +2147,8 @@ test('resolveCrossRepoContracts links AsyncAPI RECEIVE operations through Kotlin
 });
 
 test('resolveCrossRepoContracts links AsyncAPI RECEIVE operations through same-file producer aliases', async () => {
-  const consumerRoot = await makeRepo('impact-trace-asyncapi-receive-producer-alias-');
-  const providerRoot = await makeRepo('impact-trace-asyncapi-receive-provider-alias-');
+  const consumerRoot = await makeRepo('parallax-asyncapi-receive-producer-alias-');
+  const providerRoot = await makeRepo('parallax-asyncapi-receive-provider-alias-');
   const consumerReal = realpathSync(consumerRoot);
   const providerReal = realpathSync(providerRoot);
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
@@ -2222,8 +2222,8 @@ test('resolveCrossRepoContracts links AsyncAPI RECEIVE operations through same-f
 });
 
 test('resolveCrossRepoContracts links AsyncAPI event consumers through assignment aliases', async () => {
-  const consumerRoot = await makeRepo('impact-trace-asyncapi-assignment-alias-');
-  const providerRoot = await makeRepo('impact-trace-asyncapi-assignment-provider-');
+  const consumerRoot = await makeRepo('parallax-asyncapi-assignment-alias-');
+  const providerRoot = await makeRepo('parallax-asyncapi-assignment-provider-');
   const consumerReal = realpathSync(consumerRoot);
   const providerReal = realpathSync(providerRoot);
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
@@ -2298,8 +2298,8 @@ test('resolveCrossRepoContracts links AsyncAPI event consumers through assignmen
 });
 
 test('resolveCrossRepoContracts does not link AsyncAPI SEND operations to producer-only call sites', async () => {
-  const consumerRoot = await makeRepo('impact-trace-asyncapi-producer-false-');
-  const providerRoot = await makeRepo('impact-trace-asyncapi-producer-provider-');
+  const consumerRoot = await makeRepo('parallax-asyncapi-producer-false-');
+  const providerRoot = await makeRepo('parallax-asyncapi-producer-provider-');
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
 
   await writeFile(
@@ -2352,8 +2352,8 @@ test('resolveCrossRepoContracts does not link AsyncAPI SEND operations to produc
 });
 
 test('resolveCrossRepoContracts ignores AsyncAPI alias evidence in comments', async () => {
-  const consumerRoot = await makeRepo('impact-trace-asyncapi-alias-comment-false-');
-  const providerRoot = await makeRepo('impact-trace-asyncapi-alias-comment-provider-');
+  const consumerRoot = await makeRepo('parallax-asyncapi-alias-comment-false-');
+  const providerRoot = await makeRepo('parallax-asyncapi-alias-comment-provider-');
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
 
   await writeFile(
@@ -2406,8 +2406,8 @@ test('resolveCrossRepoContracts ignores AsyncAPI alias evidence in comments', as
 });
 
 test('resolveCrossRepoContracts ignores AsyncAPI partial literal aliases', async () => {
-  const consumerRoot = await makeRepo('impact-trace-asyncapi-partial-alias-false-');
-  const providerRoot = await makeRepo('impact-trace-asyncapi-partial-alias-provider-');
+  const consumerRoot = await makeRepo('parallax-asyncapi-partial-alias-false-');
+  const providerRoot = await makeRepo('parallax-asyncapi-partial-alias-provider-');
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
 
   await writeFile(
@@ -2461,8 +2461,8 @@ test('resolveCrossRepoContracts ignores AsyncAPI partial literal aliases', async
 });
 
 test('resolveCrossRepoContracts ignores AsyncAPI direct concatenated event literals', async () => {
-  const consumerRoot = await makeRepo('impact-trace-asyncapi-direct-concat-false-');
-  const providerRoot = await makeRepo('impact-trace-asyncapi-direct-concat-provider-');
+  const consumerRoot = await makeRepo('parallax-asyncapi-direct-concat-false-');
+  const providerRoot = await makeRepo('parallax-asyncapi-direct-concat-provider-');
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
 
   await writeFile(
@@ -2515,8 +2515,8 @@ test('resolveCrossRepoContracts ignores AsyncAPI direct concatenated event liter
 });
 
 test('resolveCrossRepoContracts ignores AsyncAPI source member and grouped computed literals', async () => {
-  const consumerRoot = await makeRepo('impact-trace-asyncapi-source-expression-false-');
-  const providerRoot = await makeRepo('impact-trace-asyncapi-source-expression-provider-');
+  const consumerRoot = await makeRepo('parallax-asyncapi-source-expression-false-');
+  const providerRoot = await makeRepo('parallax-asyncapi-source-expression-provider-');
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
 
   await writeFile(
@@ -2573,8 +2573,8 @@ test('resolveCrossRepoContracts ignores AsyncAPI source member and grouped compu
 });
 
 test('resolveCrossRepoContracts does not use AsyncAPI alias declarations as call-site evidence', async () => {
-  const consumerRoot = await makeRepo('impact-trace-asyncapi-alias-declaration-false-');
-  const providerRoot = await makeRepo('impact-trace-asyncapi-alias-declaration-provider-');
+  const consumerRoot = await makeRepo('parallax-asyncapi-alias-declaration-false-');
+  const providerRoot = await makeRepo('parallax-asyncapi-alias-declaration-provider-');
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
 
   await writeFile(
@@ -2625,8 +2625,8 @@ test('resolveCrossRepoContracts does not use AsyncAPI alias declarations as call
 });
 
 test('resolveCrossRepoContracts does not use AsyncAPI property alias declarations as exact evidence', async () => {
-  const consumerRoot = await makeRepo('impact-trace-asyncapi-property-alias-declaration-false-');
-  const providerRoot = await makeRepo('impact-trace-asyncapi-property-alias-declaration-provider-');
+  const consumerRoot = await makeRepo('parallax-asyncapi-property-alias-declaration-false-');
+  const providerRoot = await makeRepo('parallax-asyncapi-property-alias-declaration-provider-');
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
 
   await writeFile(
@@ -2677,8 +2677,8 @@ test('resolveCrossRepoContracts does not use AsyncAPI property alias declaration
 });
 
 test('resolveCrossRepoContracts does not treat AsyncAPI object property keys as bare aliases', async () => {
-  const consumerRoot = await makeRepo('impact-trace-asyncapi-property-bare-alias-false-');
-  const providerRoot = await makeRepo('impact-trace-asyncapi-property-bare-alias-provider-');
+  const consumerRoot = await makeRepo('parallax-asyncapi-property-bare-alias-false-');
+  const providerRoot = await makeRepo('parallax-asyncapi-property-bare-alias-provider-');
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
 
   await writeFile(
@@ -2733,8 +2733,8 @@ test('resolveCrossRepoContracts does not treat AsyncAPI object property keys as 
 });
 
 test('resolveCrossRepoContracts does not treat AsyncAPI member assignments as bare aliases', async () => {
-  const consumerRoot = await makeRepo('impact-trace-asyncapi-member-assignment-false-');
-  const providerRoot = await makeRepo('impact-trace-asyncapi-member-assignment-provider-');
+  const consumerRoot = await makeRepo('parallax-asyncapi-member-assignment-false-');
+  const providerRoot = await makeRepo('parallax-asyncapi-member-assignment-provider-');
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
 
   await writeFile(
@@ -2788,8 +2788,8 @@ test('resolveCrossRepoContracts does not treat AsyncAPI member assignments as ba
 });
 
 test('resolveCrossRepoContracts ignores AsyncAPI alias interpolation and placeholders', async () => {
-  const consumerRoot = await makeRepo('impact-trace-asyncapi-alias-placeholder-false-');
-  const providerRoot = await makeRepo('impact-trace-asyncapi-alias-placeholder-provider-');
+  const consumerRoot = await makeRepo('parallax-asyncapi-alias-placeholder-false-');
+  const providerRoot = await makeRepo('parallax-asyncapi-alias-placeholder-provider-');
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
 
   await writeFile(
@@ -2845,8 +2845,8 @@ test('resolveCrossRepoContracts ignores AsyncAPI alias interpolation and placeho
 });
 
 test('resolveCrossRepoContracts ignores AsyncAPI concatenated topic aliases', async () => {
-  const consumerRoot = await makeRepo('impact-trace-asyncapi-alias-concat-false-');
-  const providerRoot = await makeRepo('impact-trace-asyncapi-alias-concat-provider-');
+  const consumerRoot = await makeRepo('parallax-asyncapi-alias-concat-false-');
+  const providerRoot = await makeRepo('parallax-asyncapi-alias-concat-provider-');
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
 
   await writeFile(
@@ -2900,8 +2900,8 @@ test('resolveCrossRepoContracts ignores AsyncAPI concatenated topic aliases', as
 });
 
 test('resolveCrossRepoContracts ignores computed JVM AsyncAPI topic constants', async () => {
-  const consumerRoot = await makeRepo('impact-trace-asyncapi-jvm-computed-constant-false-');
-  const providerRoot = await makeRepo('impact-trace-asyncapi-jvm-computed-constant-provider-');
+  const consumerRoot = await makeRepo('parallax-asyncapi-jvm-computed-constant-false-');
+  const providerRoot = await makeRepo('parallax-asyncapi-jvm-computed-constant-provider-');
   await mkdir(path.join(consumerRoot, 'src/main/java/com/example/orders'), { recursive: true });
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
 
@@ -2960,8 +2960,8 @@ test('resolveCrossRepoContracts ignores computed JVM AsyncAPI topic constants', 
 });
 
 test('resolveCrossRepoContracts ignores AsyncAPI event addresses in source comments', async () => {
-  const consumerRoot = await makeRepo('impact-trace-asyncapi-comment-false-');
-  const providerRoot = await makeRepo('impact-trace-asyncapi-comment-provider-');
+  const consumerRoot = await makeRepo('parallax-asyncapi-comment-false-');
+  const providerRoot = await makeRepo('parallax-asyncapi-comment-provider-');
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
 
   await writeFile(
@@ -3013,8 +3013,8 @@ test('resolveCrossRepoContracts ignores AsyncAPI event addresses in source comme
 });
 
 test('resolveCrossRepoContracts ignores AsyncAPI event addresses inside inline and block comments', async () => {
-  const consumerRoot = await makeRepo('impact-trace-asyncapi-inline-comment-false-');
-  const providerRoot = await makeRepo('impact-trace-asyncapi-inline-comment-provider-');
+  const consumerRoot = await makeRepo('parallax-asyncapi-inline-comment-false-');
+  const providerRoot = await makeRepo('parallax-asyncapi-inline-comment-provider-');
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
 
   await writeFile(
@@ -3069,8 +3069,8 @@ test('resolveCrossRepoContracts ignores AsyncAPI event addresses inside inline a
 });
 
 test('resolveCrossRepoContracts ignores AsyncAPI exact addresses without direction-bearing code', async () => {
-  const consumerRoot = await makeRepo('impact-trace-asyncapi-unknown-direction-false-');
-  const providerRoot = await makeRepo('impact-trace-asyncapi-unknown-direction-provider-');
+  const consumerRoot = await makeRepo('parallax-asyncapi-unknown-direction-false-');
+  const providerRoot = await makeRepo('parallax-asyncapi-unknown-direction-provider-');
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
 
   await writeFile(
@@ -3123,8 +3123,8 @@ test('resolveCrossRepoContracts ignores AsyncAPI exact addresses without directi
 });
 
 test('resolveCrossRepoContracts skips stale consumer files instead of linking unindexed edits', async () => {
-  const consumerRoot = await makeRepo('impact-trace-consumer-stale-');
-  const providerRoot = await makeRepo('impact-trace-provider-stale-');
+  const consumerRoot = await makeRepo('parallax-consumer-stale-');
+  const providerRoot = await makeRepo('parallax-provider-stale-');
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
 
   await writeFile(
@@ -3196,8 +3196,8 @@ test('resolveCrossRepoContracts skips stale consumer files instead of linking un
 });
 
 test('resolveCrossRepoContracts skips stale provider contracts instead of linking old endpoints', async () => {
-  const consumerRoot = await makeRepo('impact-trace-consumer-provider-stale-');
-  const providerRoot = await makeRepo('impact-trace-provider-provider-stale-');
+  const consumerRoot = await makeRepo('parallax-consumer-provider-stale-');
+  const providerRoot = await makeRepo('parallax-provider-provider-stale-');
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
 
   await writeFile(
@@ -3269,8 +3269,8 @@ test('resolveCrossRepoContracts skips stale provider contracts instead of linkin
 });
 
 test('resolveCrossRepoContracts warns when an indexed consumer file was deleted', async () => {
-  const consumerRoot = await makeRepo('impact-trace-consumer-deleted-');
-  const providerRoot = await makeRepo('impact-trace-provider-deleted-');
+  const consumerRoot = await makeRepo('parallax-consumer-deleted-');
+  const providerRoot = await makeRepo('parallax-provider-deleted-');
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
 
   await writeFile(
@@ -3325,9 +3325,9 @@ test('resolveCrossRepoContracts warns when an indexed consumer file was deleted'
 });
 
 test('resolveCrossRepoContracts does not read post-index symlink consumer files outside repo root', async () => {
-  const consumerRoot = await makeRepo('impact-trace-consumer-symlink-');
-  const providerRoot = await makeRepo('impact-trace-provider-symlink-');
-  const outsideRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-outside-consumer-'));
+  const consumerRoot = await makeRepo('parallax-consumer-symlink-');
+  const providerRoot = await makeRepo('parallax-provider-symlink-');
+  const outsideRoot = await mkdtemp(path.join(tmpdir(), 'parallax-outside-consumer-'));
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
 
   const clientContent = [
@@ -3383,9 +3383,9 @@ test('resolveCrossRepoContracts does not read post-index symlink consumer files 
 });
 
 test('resolveCrossRepoContracts rejects tampered indexed file paths that escape repo root', async () => {
-  const consumerRoot = await makeRepo('impact-trace-consumer-path-escape-');
-  const providerRoot = await makeRepo('impact-trace-provider-path-escape-');
-  const outsideRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-outside-path-'));
+  const consumerRoot = await makeRepo('parallax-consumer-path-escape-');
+  const providerRoot = await makeRepo('parallax-provider-path-escape-');
+  const outsideRoot = await mkdtemp(path.join(tmpdir(), 'parallax-outside-path-'));
   await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
 
   const clientContent = [

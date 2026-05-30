@@ -2,6 +2,8 @@
 import { execFileSync } from 'node:child_process';
 import process from 'node:process';
 
+import { PACKAGE_NAME, PRODUCT_NAME, envValue } from './branding.js';
+
 async function main(): Promise<void> {
   const [command, ...args] = process.argv.slice(2);
   const repoRoot = process.cwd();
@@ -43,7 +45,7 @@ async function main(): Promise<void> {
       ...(reportId !== undefined ? { reportId } : {}),
       ...(port !== undefined ? { port } : {})
     });
-    console.log(`Impact Trace UI: ${ui.url}`);
+    console.log(`${PRODUCT_NAME} UI: ${ui.url}`);
     await waitForShutdown(ui.close);
     return;
   }
@@ -371,9 +373,9 @@ async function main(): Promise<void> {
     const agent = parseOptionalArg(args, '--agent');
     const model = parseOptionalArg(args, '--model');
     const dryRun = args.includes('--dry-run') ? true : undefined;
-    const previousEnv = process.env.IMPACT_TRACE_REFLECTION_MODEL;
+    const previousEnv = envValue('REFLECTION_MODEL');
     if (model !== undefined) {
-      process.env.IMPACT_TRACE_REFLECTION_MODEL = model;
+      process.env.PARALLAX_REFLECTION_MODEL = model;
     }
     try {
       const result = await reflectFacts(repoRoot, {
@@ -387,9 +389,9 @@ async function main(): Promise<void> {
     } finally {
       if (model !== undefined) {
         if (previousEnv === undefined) {
-          delete process.env.IMPACT_TRACE_REFLECTION_MODEL;
+          delete process.env.PARALLAX_REFLECTION_MODEL;
         } else {
-          process.env.IMPACT_TRACE_REFLECTION_MODEL = previousEnv;
+          process.env.PARALLAX_REFLECTION_MODEL = previousEnv;
         }
       }
     }
@@ -535,46 +537,46 @@ function parseGraphFormat(args: string[]): 'json' | 'mermaid' | 'dot' {
 }
 
 function printHelp(): void {
-  console.log(`impact-trace
+  console.log(`${PACKAGE_NAME}
 
 Commands:
-  impact-trace init
-  impact-trace index [--max-file-bytes 1000000]
-  impact-trace doctor
-  impact-trace ui [--report <id>] [--port <n>]
-  impact-trace import-session --file <path> --format codex|claude [--branch <name>]
-  impact-trace workspace init [--name <name>] [--service <service>] [--force]
-  impact-trace workspace add-repo <path> [--name <name>] [--service <service>] [--remote <url>]
-  impact-trace workspace list [--name <name>] [--json]
-  impact-trace workspace resolve-contracts [--name <name>] [--json]
-  impact-trace workspace contract-diff --contract <path> [--name <name>]
+  ${PACKAGE_NAME} init
+  ${PACKAGE_NAME} index [--max-file-bytes 1000000]
+  ${PACKAGE_NAME} doctor
+  ${PACKAGE_NAME} ui [--report <id>] [--port <n>]
+  ${PACKAGE_NAME} import-session --file <path> --format codex|claude [--branch <name>]
+  ${PACKAGE_NAME} workspace init [--name <name>] [--service <service>] [--force]
+  ${PACKAGE_NAME} workspace add-repo <path> [--name <name>] [--service <service>] [--remote <url>]
+  ${PACKAGE_NAME} workspace list [--name <name>] [--json]
+  ${PACKAGE_NAME} workspace resolve-contracts [--name <name>] [--json]
+  ${PACKAGE_NAME} workspace contract-diff --contract <path> [--name <name>]
                                       [--provider <service>] [--provider-path <path>] [--json]
-  impact-trace analyze --changed src/file.ts [--depth 2] [--json]
-  impact-trace analyze --base main [--head HEAD] [--depth 2] [--json]
-  impact-trace graph export --report <id> [--format mermaid|json|dot]
-  impact-trace mcp serve
+  ${PACKAGE_NAME} analyze --changed src/file.ts [--depth 2] [--json]
+  ${PACKAGE_NAME} analyze --base main [--head HEAD] [--depth 2] [--json]
+  ${PACKAGE_NAME} graph export --report <id> [--format mermaid|json|dot]
+  ${PACKAGE_NAME} mcp serve
 
 Agent memory:
-  impact-trace remember --entity <id> --attribute <name> --value <json|string>
+  ${PACKAGE_NAME} remember --entity <id> --attribute <name> --value <json|string>
                         [--branch <name>] [--agent <id>] [--op assert|retract]
                         [--evidence-fact-ids id1,id2] [--supersedes-fact-ids id1,id2]
-  impact-trace retract  --entity <id> --attribute <name> --value <json|string>
+  ${PACKAGE_NAME} retract  --entity <id> --attribute <name> --value <json|string>
                         [--branch <name>] [--agent <id>]
-  impact-trace recall   [--query <text>] [--semantic] [--entity <id>]
+  ${PACKAGE_NAME} recall   [--query <text>] [--semantic] [--entity <id>]
                         [--attribute <name>] [--branch <name>] [--k 20]
                         [--as-of-tx <tx-id>] [--current-only]
-  impact-trace branch   --name <name> [--from <name>]
-  impact-trace branch   --abandon <name>
-  impact-trace branch   --restore <name>
-  impact-trace merge    --target <branch> --source <branch> [--agent <id>]
-  impact-trace reembed  [--model <hf-model>] [--all]
-  impact-trace reflect  [--branch <name>] [--older-than-days 30] [--entity <id>]
+  ${PACKAGE_NAME} branch   --name <name> [--from <name>]
+  ${PACKAGE_NAME} branch   --abandon <name>
+  ${PACKAGE_NAME} branch   --restore <name>
+  ${PACKAGE_NAME} merge    --target <branch> --source <branch> [--agent <id>]
+  ${PACKAGE_NAME} reembed  [--model <hf-model>] [--all]
+  ${PACKAGE_NAME} reflect  [--branch <name>] [--older-than-days 30] [--entity <id>]
                         [--model <provider:id>] [--agent <id>] [--dry-run]
-  impact-trace reflect  --repair [--branch <name>] [--dry-run]
-  impact-trace gc-branches [--dry-run] [--max-age <days>]
-  impact-trace reindex-vec [--model <hf-model>]
-  impact-trace profile  --entity <id> [--branch <name>] [--k 50] [--as-of-tx <tx-id>]
-  impact-trace trace    --fact-id <id> [--depth 5]
+  ${PACKAGE_NAME} reflect  --repair [--branch <name>] [--dry-run]
+  ${PACKAGE_NAME} gc-branches [--dry-run] [--max-age <days>]
+  ${PACKAGE_NAME} reindex-vec [--model <hf-model>]
+  ${PACKAGE_NAME} profile  --entity <id> [--branch <name>] [--k 50] [--as-of-tx <tx-id>]
+  ${PACKAGE_NAME} trace    --fact-id <id> [--depth 5]
 `);
 }
 

@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import { analyzeDiff, indexProject, initProject, redactSecrets, resolveInsideRoot } from '../src/index.js';
 
 test('resolveInsideRoot rejects absolute path escapes', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-security-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-security-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   await writeFile(path.join(repoRoot, 'src/file.ts'), 'export const ok = true;\n');
 
@@ -17,7 +17,7 @@ test('resolveInsideRoot rejects absolute path escapes', async () => {
 });
 
 test('resolveInsideRoot rejects symlinks that escape the repo root', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-symlink-path-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-symlink-path-'));
   await mkdir(path.join(repoRoot, 'safe'), { recursive: true });
   await writeFile(path.join(repoRoot, 'safe/file.ts'), 'export const ok = true;\n');
   await symlink(path.join(repoRoot, 'safe/file.ts'), path.join(repoRoot, 'safe-link.ts'));
@@ -28,7 +28,7 @@ test('resolveInsideRoot rejects symlinks that escape the repo root', async () =>
 });
 
 test('analyzeDiff does not read post-index symlink evidence outside repo root', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-symlink-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-symlink-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   await writeFile(path.join(repoRoot, 'src/target.ts'), 'export const target = "safe";\n');
   await writeFile(path.join(repoRoot, 'src/importer.ts'), 'import { target } from "./target"; export const importer = target;\n');

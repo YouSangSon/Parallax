@@ -6,7 +6,7 @@
 
 ## I-1. Local-first, single SQLite DB
 
-모든 데이터는 `<repo>/.impact-trace/impact.db` 하나에 저장한다. 외부 서비스(graph DB, hosted vector store, cloud sync) 의존 없음. 첫 부팅 시 fresh DB 생성, schema migration은 DB 열 때 자동 수행.
+모든 데이터는 `<repo>/.parallax/impact.db` 하나에 저장한다. 외부 서비스(graph DB, hosted vector store, cloud sync) 의존 없음. 첫 부팅 시 fresh DB 생성, schema migration은 DB 열 때 자동 수행.
 
 **왜 깨면 안 되는가:**
 

@@ -1,5 +1,6 @@
 import { computeEmbedding, computeEmbeddingSync } from './embeddings.js';
 import type { EmbeddingResult } from './embeddings.js';
+import { envValue } from './branding.js';
 import {
   assertCurrentSchema,
   contentHash,
@@ -853,7 +854,7 @@ const DEFAULT_REEMBED_MODEL = 'Xenova/multilingual-e5-base';
  * if a row already exists (overwritten via INSERT OR REPLACE).
  *
  * Target model resolution order: explicit options.model →
- * IMPACT_TRACE_EMBEDDING_MODEL env → default Xenova/multilingual-e5-base.
+ * PARALLAX_EMBEDDING_MODEL env → default Xenova/multilingual-e5-base.
  *
  * Embeddings are computed sequentially (the in-process model is
  * single-threaded); large fact counts will take time proportional to
@@ -865,7 +866,7 @@ export async function reembedFacts(
   options: ReembedOptions = {}
 ): Promise<ReembedResult> {
   const targetModel =
-    options.model ?? process.env.IMPACT_TRACE_EMBEDDING_MODEL ?? DEFAULT_REEMBED_MODEL;
+    options.model ?? envValue('EMBEDDING_MODEL') ?? DEFAULT_REEMBED_MODEL;
 
   const candidates = withAgentMemoryDb(repoRoot, true, (db) => {
     const baseSql =
@@ -886,8 +887,8 @@ export async function reembedFacts(
   }
 
   // Force the requested model for this pass even if env points elsewhere.
-  const previousEnv = process.env.IMPACT_TRACE_EMBEDDING_MODEL;
-  process.env.IMPACT_TRACE_EMBEDDING_MODEL = targetModel;
+  const previousEnv = envValue('EMBEDDING_MODEL');
+  process.env.PARALLAX_EMBEDDING_MODEL = targetModel;
 
   const embeddings: Array<{ factId: string; result: EmbeddingResult }> = [];
   try {
@@ -898,9 +899,9 @@ export async function reembedFacts(
     }
   } finally {
     if (previousEnv === undefined) {
-      delete process.env.IMPACT_TRACE_EMBEDDING_MODEL;
+      delete process.env.PARALLAX_EMBEDDING_MODEL;
     } else {
-      process.env.IMPACT_TRACE_EMBEDDING_MODEL = previousEnv;
+      process.env.PARALLAX_EMBEDDING_MODEL = previousEnv;
     }
   }
 
@@ -1072,7 +1073,7 @@ export function mergeBranches(db: Db, input: MergeBranchInput): MergeBranchResul
 }
 
 export function trace(db: Db, input: TraceInput): TraceResult {
-  assertCurrentSchema(db, 'impact_trace_trace');
+  assertCurrentSchema(db, 'parallax_trace');
   const depth = Math.min(input.depth ?? 5, MAX_TRACE_DEPTH);
 
   // Archived transactions (gc-branches sweep) are excluded so trace mirrors

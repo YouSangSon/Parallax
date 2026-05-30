@@ -1564,7 +1564,7 @@ async function writeNonOpenApiJsonContract(repoRoot: string): Promise<void> {
 }
 
 async function removeConsumerFromWorkspaceCatalog(consumerRoot: string, providerRoot: string): Promise<void> {
-  const catalogPath = path.join(consumerRoot, '.impact-trace/workspace.json');
+  const catalogPath = path.join(consumerRoot, '.parallax/workspace.json');
   const providerRelativePath = path.relative(realpathSync(path.dirname(catalogPath)), realpathSync(providerRoot)).split(path.sep).join('/');
   await writeFile(
     catalogPath,
@@ -1616,8 +1616,8 @@ async function setupWorkspaceWithResolvedContract(): Promise<{
   consumerReal: string;
   providerReal: string;
 }> {
-  const consumerRoot = await makeRepo('impact-trace-diff-consumer-');
-  const providerRoot = await makeRepo('impact-trace-diff-provider-');
+  const consumerRoot = await makeRepo('parallax-diff-consumer-');
+  const providerRoot = await makeRepo('parallax-diff-provider-');
   await writeConsumerClient(consumerRoot, '/api/users');
   await writeOpenApiContract(providerRoot, ['/api/users', '/api/status']);
 
@@ -1649,8 +1649,8 @@ async function setupWorkspaceWithResolvedYamlSchemaContract(): Promise<{
   consumerReal: string;
   providerReal: string;
 }> {
-  const consumerRoot = await makeRepo('impact-trace-diff-yaml-schema-consumer-');
-  const providerRoot = await makeRepo('impact-trace-diff-yaml-schema-provider-');
+  const consumerRoot = await makeRepo('parallax-diff-yaml-schema-consumer-');
+  const providerRoot = await makeRepo('parallax-diff-yaml-schema-provider-');
   await writeConsumerClient(consumerRoot, '/api/users');
   await writeOpenApiYamlUserSchemaContract(providerRoot);
 
@@ -1680,8 +1680,8 @@ async function setupWorkspaceWithResolvedJsonContract(): Promise<{
   consumerRoot: string;
   providerRoot: string;
 }> {
-  const consumerRoot = await makeRepo('impact-trace-diff-json-consumer-');
-  const providerRoot = await makeRepo('impact-trace-diff-json-provider-');
+  const consumerRoot = await makeRepo('parallax-diff-json-consumer-');
+  const providerRoot = await makeRepo('parallax-diff-json-provider-');
   await writeConsumerClient(consumerRoot, '/api/users');
   await writeOpenApiJsonContract(providerRoot, ['/api/users']);
 
@@ -1709,8 +1709,8 @@ async function setupWorkspaceWithProtobufContract(): Promise<{
   consumerRoot: string;
   providerRoot: string;
 }> {
-  const consumerRoot = await makeRepo('impact-trace-diff-protobuf-consumer-');
-  const providerRoot = await makeRepo('impact-trace-diff-protobuf-provider-');
+  const consumerRoot = await makeRepo('parallax-diff-protobuf-consumer-');
+  const providerRoot = await makeRepo('parallax-diff-protobuf-provider-');
   await writeConsumerClient(consumerRoot, '/api/users');
   await writeProtobufContract(providerRoot);
 
@@ -1736,8 +1736,8 @@ async function setupWorkspaceWithGraphqlContract(options: Parameters<typeof writ
   consumerRoot: string;
   providerRoot: string;
 }> {
-  const consumerRoot = await makeRepo('impact-trace-diff-graphql-consumer-');
-  const providerRoot = await makeRepo('impact-trace-diff-graphql-provider-');
+  const consumerRoot = await makeRepo('parallax-diff-graphql-consumer-');
+  const providerRoot = await makeRepo('parallax-diff-graphql-provider-');
   await writeConsumerClient(consumerRoot, '/graphql');
   await writeGraphqlContract(providerRoot, options);
 
@@ -1763,8 +1763,8 @@ async function setupWorkspaceWithAsyncApiContract(options: Parameters<typeof wri
   consumerRoot: string;
   providerRoot: string;
 }> {
-  const consumerRoot = await makeRepo('impact-trace-diff-asyncapi-consumer-');
-  const providerRoot = await makeRepo('impact-trace-diff-asyncapi-provider-');
+  const consumerRoot = await makeRepo('parallax-diff-asyncapi-consumer-');
+  const providerRoot = await makeRepo('parallax-diff-asyncapi-provider-');
   await writeConsumerClient(consumerRoot, '/events/orders');
   await writeAsyncApiContract(providerRoot, options);
 
@@ -1790,8 +1790,8 @@ async function setupWorkspaceWithAsyncApiJsonContract(options: AsyncApiContractO
   consumerRoot: string;
   providerRoot: string;
 }> {
-  const consumerRoot = await makeRepo('impact-trace-diff-asyncapi-json-consumer-');
-  const providerRoot = await makeRepo('impact-trace-diff-asyncapi-json-provider-');
+  const consumerRoot = await makeRepo('parallax-diff-asyncapi-json-consumer-');
+  const providerRoot = await makeRepo('parallax-diff-asyncapi-json-provider-');
   await writeConsumerClient(consumerRoot, '/events/orders');
   await writeAsyncApiJsonContract(providerRoot, options);
 
@@ -1879,8 +1879,8 @@ async function setupWorkspaceWithResolvedJsonSchemaContract(): Promise<{
   consumerReal: string;
   providerReal: string;
 }> {
-  const consumerRoot = await makeRepo('impact-trace-diff-json-schema-consumer-');
-  const providerRoot = await makeRepo('impact-trace-diff-json-schema-provider-');
+  const consumerRoot = await makeRepo('parallax-diff-json-schema-consumer-');
+  const providerRoot = await makeRepo('parallax-diff-json-schema-provider-');
   await writeConsumerClient(consumerRoot, '/api/users');
   await writeOpenApiJsonUserSchemaContract(providerRoot);
 
@@ -1910,8 +1910,8 @@ async function setupWorkspaceWithResolvedJsonChainedRefContract(): Promise<{
   consumerRoot: string;
   providerRoot: string;
 }> {
-  const consumerRoot = await makeRepo('impact-trace-diff-json-chain-consumer-');
-  const providerRoot = await makeRepo('impact-trace-diff-json-chain-provider-');
+  const consumerRoot = await makeRepo('parallax-diff-json-chain-consumer-');
+  const providerRoot = await makeRepo('parallax-diff-json-chain-provider-');
   await writeConsumerClient(consumerRoot, '/api/users');
   await writeOpenApiJsonChainedRefContract(providerRoot, 'string');
 
@@ -1939,8 +1939,8 @@ async function setupWorkspaceWithResolvedJsonNestedSchemaContract(): Promise<{
   consumerRoot: string;
   providerRoot: string;
 }> {
-  const consumerRoot = await makeRepo('impact-trace-diff-json-nested-consumer-');
-  const providerRoot = await makeRepo('impact-trace-diff-json-nested-provider-');
+  const consumerRoot = await makeRepo('parallax-diff-json-nested-consumer-');
+  const providerRoot = await makeRepo('parallax-diff-json-nested-provider-');
   await writeConsumerClient(consumerRoot, '/api/users');
   await writeOpenApiJsonNestedSchemaContract(providerRoot);
 
@@ -1968,8 +1968,8 @@ async function setupWorkspaceWithResolvedYamlNestedSchemaContract(): Promise<{
   consumerRoot: string;
   providerRoot: string;
 }> {
-  const consumerRoot = await makeRepo('impact-trace-diff-yaml-nested-consumer-');
-  const providerRoot = await makeRepo('impact-trace-diff-yaml-nested-provider-');
+  const consumerRoot = await makeRepo('parallax-diff-yaml-nested-consumer-');
+  const providerRoot = await makeRepo('parallax-diff-yaml-nested-provider-');
   await writeConsumerClient(consumerRoot, '/api/users');
   await writeOpenApiYamlNestedSchemaContract(providerRoot);
 
@@ -1997,8 +1997,8 @@ async function setupWorkspaceWithResolvedJsonAllOfSchemaContract(): Promise<{
   consumerRoot: string;
   providerRoot: string;
 }> {
-  const consumerRoot = await makeRepo('impact-trace-diff-json-allof-consumer-');
-  const providerRoot = await makeRepo('impact-trace-diff-json-allof-provider-');
+  const consumerRoot = await makeRepo('parallax-diff-json-allof-consumer-');
+  const providerRoot = await makeRepo('parallax-diff-json-allof-provider-');
   await writeConsumerClient(consumerRoot, '/api/users');
   await writeOpenApiJsonAllOfSchemaContract(providerRoot, 'string');
 
@@ -2026,8 +2026,8 @@ async function setupWorkspaceWithResolvedJsonOneOfSchemaContract(): Promise<{
   consumerRoot: string;
   providerRoot: string;
 }> {
-  const consumerRoot = await makeRepo('impact-trace-diff-json-oneof-consumer-');
-  const providerRoot = await makeRepo('impact-trace-diff-json-oneof-provider-');
+  const consumerRoot = await makeRepo('parallax-diff-json-oneof-consumer-');
+  const providerRoot = await makeRepo('parallax-diff-json-oneof-provider-');
   await writeConsumerClient(consumerRoot, '/api/users');
   await writeOpenApiJsonOneOfSchemaContract(providerRoot, true);
 
@@ -2055,8 +2055,8 @@ async function setupWorkspaceWithResolvedJsonAnyOfSchemaContract(): Promise<{
   consumerRoot: string;
   providerRoot: string;
 }> {
-  const consumerRoot = await makeRepo('impact-trace-diff-json-anyof-consumer-');
-  const providerRoot = await makeRepo('impact-trace-diff-json-anyof-provider-');
+  const consumerRoot = await makeRepo('parallax-diff-json-anyof-consumer-');
+  const providerRoot = await makeRepo('parallax-diff-json-anyof-provider-');
   await writeConsumerClient(consumerRoot, '/api/users');
   await writeOpenApiJsonAnyOfSchemaContract(providerRoot, true);
 
@@ -2084,8 +2084,8 @@ async function setupWorkspaceWithResolvedJsonRootArraySchemaContract(): Promise<
   consumerRoot: string;
   providerRoot: string;
 }> {
-  const consumerRoot = await makeRepo('impact-trace-diff-json-root-array-consumer-');
-  const providerRoot = await makeRepo('impact-trace-diff-json-root-array-provider-');
+  const consumerRoot = await makeRepo('parallax-diff-json-root-array-consumer-');
+  const providerRoot = await makeRepo('parallax-diff-json-root-array-provider-');
   await writeConsumerClient(consumerRoot, '/api/users');
   await writeOpenApiJsonRootArraySchemaContract(providerRoot, 'string');
 
@@ -2113,8 +2113,8 @@ async function setupWorkspaceWithResolvedJsonRootOneOfSchemaContract(): Promise<
   consumerRoot: string;
   providerRoot: string;
 }> {
-  const consumerRoot = await makeRepo('impact-trace-diff-json-root-oneof-consumer-');
-  const providerRoot = await makeRepo('impact-trace-diff-json-root-oneof-provider-');
+  const consumerRoot = await makeRepo('parallax-diff-json-root-oneof-consumer-');
+  const providerRoot = await makeRepo('parallax-diff-json-root-oneof-provider-');
   await writeConsumerClient(consumerRoot, '/api/users');
   await writeOpenApiJsonRootOneOfSchemaContract(providerRoot, true);
 
@@ -2142,8 +2142,8 @@ async function setupWorkspaceWithResolvedJsonRootOneOfRequiredResponseContract()
   consumerRoot: string;
   providerRoot: string;
 }> {
-  const consumerRoot = await makeRepo('impact-trace-diff-json-root-oneof-required-consumer-');
-  const providerRoot = await makeRepo('impact-trace-diff-json-root-oneof-required-provider-');
+  const consumerRoot = await makeRepo('parallax-diff-json-root-oneof-required-consumer-');
+  const providerRoot = await makeRepo('parallax-diff-json-root-oneof-required-provider-');
   await writeConsumerClient(consumerRoot, '/api/users');
   await writeOpenApiJsonRootOneOfRequiredResponseContract(providerRoot, ['id', 'name']);
 
@@ -2171,8 +2171,8 @@ async function setupWorkspaceWithResolvedJsonRootOneOfRequiredOnlyResponseContra
   consumerRoot: string;
   providerRoot: string;
 }> {
-  const consumerRoot = await makeRepo('impact-trace-diff-json-root-oneof-required-only-consumer-');
-  const providerRoot = await makeRepo('impact-trace-diff-json-root-oneof-required-only-provider-');
+  const consumerRoot = await makeRepo('parallax-diff-json-root-oneof-required-only-consumer-');
+  const providerRoot = await makeRepo('parallax-diff-json-root-oneof-required-only-provider-');
   await writeConsumerClient(consumerRoot, '/api/users');
   await writeOpenApiJsonRootOneOfRequiredOnlyResponseContract(providerRoot, ['id', 'name']);
 
@@ -2200,8 +2200,8 @@ async function setupWorkspaceWithJsonRootAnyOfRequiredRequestContract(): Promise
   consumerRoot: string;
   providerRoot: string;
 }> {
-  const consumerRoot = await makeRepo('impact-trace-diff-json-root-anyof-required-consumer-');
-  const providerRoot = await makeRepo('impact-trace-diff-json-root-anyof-required-provider-');
+  const consumerRoot = await makeRepo('parallax-diff-json-root-anyof-required-consumer-');
+  const providerRoot = await makeRepo('parallax-diff-json-root-anyof-required-provider-');
   await writeConsumerClient(consumerRoot, '/api/users');
   await writeOpenApiJsonRootAnyOfRequiredRequestContract(providerRoot, ['id']);
 
@@ -2227,8 +2227,8 @@ async function setupWorkspaceWithJsonRootAnyOfRequiredOnlyRequestContract(): Pro
   consumerRoot: string;
   providerRoot: string;
 }> {
-  const consumerRoot = await makeRepo('impact-trace-diff-json-root-anyof-required-only-consumer-');
-  const providerRoot = await makeRepo('impact-trace-diff-json-root-anyof-required-only-provider-');
+  const consumerRoot = await makeRepo('parallax-diff-json-root-anyof-required-only-consumer-');
+  const providerRoot = await makeRepo('parallax-diff-json-root-anyof-required-only-provider-');
   await writeConsumerClient(consumerRoot, '/api/users');
   await writeOpenApiJsonRootAnyOfRequiredOnlyRequestContract(providerRoot, ['id']);
 
@@ -2254,8 +2254,8 @@ async function setupWorkspaceWithResolvedJsonArrayPointerRefContract(): Promise<
   consumerRoot: string;
   providerRoot: string;
 }> {
-  const consumerRoot = await makeRepo('impact-trace-diff-json-array-pointer-ref-consumer-');
-  const providerRoot = await makeRepo('impact-trace-diff-json-array-pointer-ref-provider-');
+  const consumerRoot = await makeRepo('parallax-diff-json-array-pointer-ref-consumer-');
+  const providerRoot = await makeRepo('parallax-diff-json-array-pointer-ref-provider-');
   await writeConsumerClient(consumerRoot, '/api/users');
   await writeOpenApiJsonArrayPointerRefContract(providerRoot, 'string');
 
@@ -2283,8 +2283,8 @@ async function setupWorkspaceWithResolvedJsonOverlappingAllOfContract(): Promise
   consumerRoot: string;
   providerRoot: string;
 }> {
-  const consumerRoot = await makeRepo('impact-trace-diff-json-overlap-allof-consumer-');
-  const providerRoot = await makeRepo('impact-trace-diff-json-overlap-allof-provider-');
+  const consumerRoot = await makeRepo('parallax-diff-json-overlap-allof-consumer-');
+  const providerRoot = await makeRepo('parallax-diff-json-overlap-allof-provider-');
   await writeConsumerClient(consumerRoot, '/api/users');
   await writeOpenApiJsonOverlappingAllOfContract(providerRoot, 'string-then-enum');
 
@@ -3622,8 +3622,8 @@ test('analyzeContractDiff classifies removed Protobuf RPCs as breaking', async (
 });
 
 test('analyzeContractDiff links removed Protobuf RPCs to resolved consumers', async () => {
-  const consumerRoot = await makeRepo('impact-trace-diff-protobuf-resolved-consumer-');
-  const providerRoot = await makeRepo('impact-trace-diff-protobuf-resolved-provider-');
+  const consumerRoot = await makeRepo('parallax-diff-protobuf-resolved-consumer-');
+  const providerRoot = await makeRepo('parallax-diff-protobuf-resolved-provider-');
   const consumerReal = realpathSync(consumerRoot);
   const providerReal = realpathSync(providerRoot);
   await writeFile(
@@ -4199,8 +4199,8 @@ test('analyzeContractDiff classifies removed AsyncAPI operations as breaking', a
 });
 
 test('analyzeContractDiff links removed AsyncAPI operations to resolved event consumers', async () => {
-  const consumerRoot = await makeRepo('impact-trace-diff-asyncapi-resolved-consumer-');
-  const providerRoot = await makeRepo('impact-trace-diff-asyncapi-resolved-provider-');
+  const consumerRoot = await makeRepo('parallax-diff-asyncapi-resolved-consumer-');
+  const providerRoot = await makeRepo('parallax-diff-asyncapi-resolved-provider-');
   const consumerReal = realpathSync(consumerRoot);
   const providerReal = realpathSync(providerRoot);
   await writeFile(
@@ -4685,7 +4685,7 @@ test('analyzeContractDiff treats non-OpenAPI JSON as unknown and preserves exist
 
 test('analyzeContractDiff does not read post-index symlinked contracts outside the provider repo root', async () => {
   const { consumerRoot, providerRoot } = await setupWorkspaceWithResolvedContract();
-  const outsideRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-diff-outside-contract-'));
+  const outsideRoot = await mkdtemp(path.join(tmpdir(), 'parallax-diff-outside-contract-'));
   await writeOpenApiContract(outsideRoot, ['/api/status']);
   await unlink(path.join(providerRoot, 'contracts/openapi.yaml'));
   await symlink(path.join(outsideRoot, 'contracts/openapi.yaml'), path.join(providerRoot, 'contracts/openapi.yaml'));
@@ -4709,7 +4709,7 @@ test('analyzeContractDiff does not read post-index symlinked contracts outside t
 });
 
 test('CLI help lists workspace contract-diff flags', async () => {
-  const repoRoot = await makeRepo('impact-trace-diff-help-');
+  const repoRoot = await makeRepo('parallax-diff-help-');
 
   const cliRun = runCli(repoRoot, ['--help']);
 

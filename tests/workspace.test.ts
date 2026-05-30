@@ -37,10 +37,10 @@ function runCli(repoRoot: string, args: string[]): { status: number | null; stdo
 }
 
 test('initWorkspace creates catalog and idempotent database rows', async () => {
-  const repoRoot = await makeRepo('impact-trace-workspace-init-');
+  const repoRoot = await makeRepo('parallax-workspace-init-');
   const repoReal = realpathSync(repoRoot);
 
-  const first = initWorkspace({ repoRoot, name: 'impact-trace', serviceName: 'api' });
+  const first = initWorkspace({ repoRoot, name: 'parallax', serviceName: 'api' });
 
   assert.equal(first.created, true);
   assert.equal(first.catalogPath, workspaceCatalogPath(repoRoot));
@@ -55,12 +55,12 @@ test('initWorkspace creates catalog and idempotent database rows', async () => {
     }>;
   };
   assert.equal(catalog.schemaVersion, 1);
-  assert.equal(catalog.name, 'impact-trace');
+  assert.equal(catalog.name, 'parallax');
   assert.equal(catalog.repos.length, 1);
   assert.equal(realpathSync(path.resolve(path.dirname(first.catalogPath), catalog.repos[0]!.localPath)), repoReal);
   assert.deepEqual(catalog.repos[0]!.trustPolicy, { readOnly: true });
 
-  const second = initWorkspace({ repoRoot, name: 'impact-trace', serviceName: 'api' });
+  const second = initWorkspace({ repoRoot, name: 'parallax', serviceName: 'api' });
   assert.equal(second.created, false);
 
   const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
@@ -82,7 +82,7 @@ test('initWorkspace creates catalog and idempotent database rows', async () => {
       remote_url: string | null;
       trust_policy_json: string;
     };
-    assert.equal(row.name, 'impact-trace');
+    assert.equal(row.name, 'parallax');
     assert.equal(row.local_path, repoReal);
     assert.equal(row.service_name, 'api');
     assert.equal(row.remote_url, null);
@@ -93,8 +93,8 @@ test('initWorkspace creates catalog and idempotent database rows', async () => {
 });
 
 test('workspace CLI adds sibling repos, lists deterministic JSON, and updates on re-add', async () => {
-  const repoRoot = await makeRepo('impact-trace-workspace-cli-');
-  const siblingRepo = await makeRepo('impact-trace-workspace-sibling-');
+  const repoRoot = await makeRepo('parallax-workspace-cli-');
+  const siblingRepo = await makeRepo('parallax-workspace-sibling-');
   const repoReal = realpathSync(repoRoot);
   const siblingReal = realpathSync(siblingRepo);
 
@@ -164,7 +164,7 @@ test('workspace CLI adds sibling repos, lists deterministic JSON, and updates on
 });
 
 test('workspace catalog rejects invalid local paths and duplicate resolved catalog paths', async () => {
-  const repoRoot = await makeRepo('impact-trace-workspace-validation-');
+  const repoRoot = await makeRepo('parallax-workspace-validation-');
   await initWorkspace({ repoRoot });
   const filePath = path.join(repoRoot, 'src/app.ts');
 
@@ -191,7 +191,7 @@ test('workspace catalog rejects invalid local paths and duplicate resolved catal
     `${JSON.stringify(
       {
         schemaVersion: 1,
-        name: 'impact-trace',
+        name: 'parallax',
         repos: [
           { localPath: '..', serviceName: 'api', remoteUrl: null, trustPolicy: { readOnly: true } },
           { localPath: '../.', serviceName: 'api-copy', remoteUrl: null, trustPolicy: { readOnly: true } }
@@ -210,9 +210,9 @@ test('workspace catalog rejects invalid local paths and duplicate resolved catal
 });
 
 test('workspace init --force refuses symlinked catalog without overwriting target', async () => {
-  const repoRoot = await makeRepo('impact-trace-workspace-symlink-');
-  await mkdir(path.join(repoRoot, '.impact-trace'), { recursive: true });
-  const targetPath = path.join(await mkdtemp(path.join(tmpdir(), 'impact-trace-workspace-target-')), 'target.json');
+  const repoRoot = await makeRepo('parallax-workspace-symlink-');
+  await mkdir(path.join(repoRoot, '.parallax'), { recursive: true });
+  const targetPath = path.join(await mkdtemp(path.join(tmpdir(), 'parallax-workspace-target-')), 'target.json');
   await writeFile(targetPath, 'do not overwrite\n', 'utf8');
   await symlink(targetPath, workspaceCatalogPath(repoRoot));
 
@@ -224,7 +224,7 @@ test('workspace init --force refuses symlinked catalog without overwriting targe
 });
 
 test('workspace catalog sync rejects non-default catalog file overrides', async () => {
-  const repoRoot = await makeRepo('impact-trace-workspace-file-override-');
+  const repoRoot = await makeRepo('parallax-workspace-file-override-');
   await initWorkspace({ repoRoot, name: 'default' });
   const altFile = path.join(repoRoot, 'alt-workspace.json');
   await writeFile(
@@ -235,12 +235,12 @@ test('workspace catalog sync rejects non-default catalog file overrides', async 
 
   assert.throws(
     () => syncWorkspaceCatalog({ repoRoot, file: altFile }),
-    /workspace catalog file must be \.impact-trace\/workspace\.json/
+    /workspace catalog file must be \.parallax\/workspace\.json/
   );
 });
 
 test('workspace catalog rename replaces the prior default workspace rows', async () => {
-  const repoRoot = await makeRepo('impact-trace-workspace-rename-');
+  const repoRoot = await makeRepo('parallax-workspace-rename-');
   const catalogPath = workspaceCatalogPath(repoRoot);
 
   initWorkspace({ repoRoot, name: 'one', serviceName: 'api' });
@@ -257,8 +257,8 @@ test('workspace catalog rename replaces the prior default workspace rows', async
 });
 
 test('workspace list syncs manual catalog edits before reading database rows', async () => {
-  const repoRoot = await makeRepo('impact-trace-workspace-manual-sync-');
-  const siblingRepo = await makeRepo('impact-trace-workspace-manual-sibling-');
+  const repoRoot = await makeRepo('parallax-workspace-manual-sync-');
+  const siblingRepo = await makeRepo('parallax-workspace-manual-sibling-');
   const repoReal = realpathSync(repoRoot);
 
   initWorkspace({ repoRoot, name: 'one', serviceName: 'api' });
@@ -318,7 +318,7 @@ test('workspace list syncs manual catalog edits before reading database rows', a
 });
 
 test('workspace CLI rejects missing flag values', async () => {
-  const repoRoot = await makeRepo('impact-trace-workspace-cli-flags-');
+  const repoRoot = await makeRepo('parallax-workspace-cli-flags-');
   const initRun = runCli(repoRoot, ['workspace', 'init', '--name', '--service', 'api']);
   assert.notEqual(initRun.status, 0);
   assert.match(initRun.stderr, /missing value for --name/);

@@ -21,10 +21,10 @@ import {
 import { computeEmbeddingSync, STUB_MODEL_NAME } from '../src/embeddings.js';
 import { initProject } from '../src/init.js';
 
-process.env.IMPACT_TRACE_EMBEDDING_MODEL = 'stub-sha256';
+process.env.PARALLAX_EMBEDDING_MODEL = 'stub-sha256';
 
 async function makeRepo(): Promise<string> {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-vec-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-vec-'));
   await initProject({ repoRoot });
   return repoRoot;
 }

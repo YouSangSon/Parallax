@@ -15,10 +15,10 @@ import {
 } from '../src/index.js';
 import { initProject } from '../src/init.js';
 
-process.env.IMPACT_TRACE_EMBEDDING_MODEL = 'stub-sha256';
+process.env.PARALLAX_EMBEDDING_MODEL = 'stub-sha256';
 
 async function makeRepo(): Promise<string> {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-profile-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-profile-'));
   await initProject({ repoRoot });
   return repoRoot;
 }

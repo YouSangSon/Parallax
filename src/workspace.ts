@@ -1,8 +1,9 @@
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
+import { DATA_DIR } from './branding.js';
 import { normalizeRepoRoot } from './security.js';
-import { ensureImpactDir, ensureRepo, openDatabase } from './store.js';
+import { ensureImpactDir, ensureRepo, impactDir, openDatabase } from './store.js';
 
 export type WorkspaceTrustPolicy = {
   readOnly: boolean;
@@ -86,7 +87,7 @@ const WORKSPACE_SCHEMA_VERSION = 1;
 const DEFAULT_TRUST_POLICY: WorkspaceTrustPolicy = { readOnly: true };
 
 export function workspaceCatalogPath(repoRoot: string): string {
-  return path.join(normalizeRepoRoot(repoRoot), '.impact-trace', 'workspace.json');
+  return path.join(impactDir(normalizeRepoRoot(repoRoot)), 'workspace.json');
 }
 
 export function initWorkspace(options: InitWorkspaceOptions): InitWorkspaceResult {
@@ -278,7 +279,7 @@ function resolveCatalogFile(repoRoot: string, inputPath: string): string {
     ? path.resolve(inputPath)
     : path.resolve(repoRoot, inputPath);
   if (candidate !== workspaceCatalogPath(repoRoot)) {
-    throw new Error('workspace catalog file must be .impact-trace/workspace.json');
+    throw new Error(`workspace catalog file must be ${DATA_DIR}/workspace.json`);
   }
   assertCatalogIsRegularPath(candidate);
   const resolved = realpathSync(candidate);

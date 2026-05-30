@@ -47,7 +47,7 @@ function relationRows(repoRoot: string, indexRunId: number): RelationRow[] {
 }
 
 test('indexProject attributes GitHub Actions Dockerfile and Terraform relations to config infra adapter', async () => {
-  const repoRoot = await makeRepo('impact-trace-config-infra-');
+  const repoRoot = await makeRepo('parallax-config-infra-');
   await mkdir(path.join(repoRoot, '.github/workflows'), { recursive: true });
   await mkdir(path.join(repoRoot, 'src/ts'), { recursive: true });
   await mkdir(path.join(repoRoot, 'infra'), { recursive: true });

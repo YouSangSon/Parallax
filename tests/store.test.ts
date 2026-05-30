@@ -8,7 +8,7 @@ import { contentHash, loadVectorExtension, openDatabase } from '../src/store.js'
 import type { Db } from '../src/store.js';
 
 function withTempDb<T>(callback: (db: Db) => T): T {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'impact-trace-store-'));
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'parallax-store-'));
   try {
     const db = openDatabase(dir);
     try {
@@ -307,7 +307,7 @@ test('migrate v11/v14 maintains persistent search FTS projections', () => {
 });
 
 test('migrate v11/v14 repairs persistent search FTS projection rows on re-run', () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'impact-trace-store-fts-repair-'));
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'parallax-store-fts-repair-'));
   try {
     const first = openDatabase(dir);
     try {
@@ -409,7 +409,7 @@ test('migrate v11/v14 repairs persistent search FTS projection rows on re-run', 
 });
 
 test('migrate v14 repairs stale entity FTS payload for existing entities on re-run', () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'impact-trace-store-entity-fts-stale-'));
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'parallax-store-entity-fts-stale-'));
   try {
     const first = openDatabase(dir);
     try {
@@ -468,7 +468,7 @@ test('migrate v14 repairs stale entity FTS payload for existing entities on re-r
 });
 
 test('openDatabase can skip projection repair for lightweight telemetry writes', () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'impact-trace-store-skip-fts-repair-'));
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'parallax-store-skip-fts-repair-'));
   try {
     const first = openDatabase(dir);
     try {
@@ -610,7 +610,7 @@ test('migrate allows multiple provenance kinds for the same fact pair', () => {
 });
 
 test('migrate is idempotent across re-runs', () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'impact-trace-store-idem-'));
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'parallax-store-idem-'));
   try {
     const first = openDatabase(dir);
     first.close();
@@ -636,7 +636,7 @@ test('migrate upgrades a synthetic v6 schema by adding v7/v8/v9 columns and tabl
   // will ADD), then re-open to trigger migrate(). This is the path that
   // executes tryAddColumn in the real upgrade scenario; the fresh-DB
   // tests above run against a single combined migration.
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'impact-trace-store-v6-'));
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'parallax-store-v6-'));
   try {
     const seed = openDatabase(dir);
     try {

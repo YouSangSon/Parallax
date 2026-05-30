@@ -4,6 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
 
 import * as sqliteVec from 'sqlite-vec';
+import { DATA_DIR, PACKAGE_NAME, PRODUCT_NAME } from './branding.js';
 
 export type Db = DatabaseSync;
 export const CURRENT_SCHEMA_VERSION = 15;
@@ -16,7 +17,7 @@ type OpenDatabaseOptions = {
 };
 
 export function impactDir(repoRoot: string): string {
-  return path.join(repoRoot, '.impact-trace');
+  return path.join(repoRoot, DATA_DIR);
 }
 
 export function databasePath(repoRoot: string): string {
@@ -27,7 +28,7 @@ export function ensureImpactDir(repoRoot: string): string {
   const rootReal = realpathSync(path.resolve(repoRoot));
   const dir = impactDir(rootReal);
   mkdirSync(dir, { recursive: true });
-  assertPathInside(rootReal, realpathSync(dir), '.impact-trace directory');
+  assertPathInside(rootReal, realpathSync(dir), `${PRODUCT_NAME} data directory`);
   return dir;
 }
 
@@ -36,13 +37,13 @@ export function openDatabase(repoRoot: string, options: OpenDatabaseOptions = {}
   const dbPath = databasePath(rootReal);
   if (options.readOnly) {
     if (!existsSync(dbPath)) {
-      throw new Error('impact trace database not found; run impact-trace init and impact-trace index first');
+      throw new Error(`${PACKAGE_NAME} database not found; run ${PACKAGE_NAME} init and ${PACKAGE_NAME} index first`);
     }
-    assertExistingPathInside(rootReal, dbPath, 'impact trace database');
+    assertExistingPathInside(rootReal, dbPath, `${PRODUCT_NAME} database`);
   } else {
     ensureImpactDir(rootReal);
     if (pathExists(dbPath)) {
-      assertExistingPathInside(rootReal, dbPath, 'impact trace database');
+      assertExistingPathInside(rootReal, dbPath, `${PRODUCT_NAME} database`);
     }
   }
 
@@ -1060,7 +1061,7 @@ export function assertCurrentSchema(db: Db, feature: string): void {
   const hasContextPackStore = tableExists(db, 'context_packs');
   if (version < CURRENT_SCHEMA_VERSION || !hasProvenanceTx || !hasCurrentSearchProjections || !hasContextPackStore) {
     throw new Error(
-      `${feature} requires Impact Trace schema v${CURRENT_SCHEMA_VERSION} with current search projections and context pack store; current database is v${version}. Run impact-trace init with the current build to apply additive migrations.`
+      `${feature} requires ${PRODUCT_NAME} schema v${CURRENT_SCHEMA_VERSION} with current search projections and context pack store; current database is v${version}. Run ${PACKAGE_NAME} init with the current build to apply additive migrations.`
     );
   }
 }
@@ -1079,7 +1080,7 @@ export function ensureRepo(db: Db, repoRoot: string): number {
 export function getRepoId(db: Db, repoRoot: string): number {
   const row = db.prepare('SELECT id FROM repos WHERE root = ?').get(repoRoot) as { id: number } | undefined;
   if (!row) {
-    throw new Error('repo is not indexed; run impact-trace init and impact-trace index first');
+    throw new Error(`repo is not indexed; run ${PACKAGE_NAME} init and ${PACKAGE_NAME} index first`);
   }
   return row.id;
 }
@@ -1089,7 +1090,7 @@ export function latestCompletedIndexRun(db: Db, repoId: number): number {
     .prepare('SELECT id FROM index_runs WHERE repo_id = ? AND status = ? ORDER BY id DESC LIMIT 1')
     .get(repoId, 'completed') as { id: number } | undefined;
   if (!row) {
-    throw new Error('no completed index found; run impact-trace index first');
+    throw new Error(`no completed index found; run ${PACKAGE_NAME} index first`);
   }
   return row.id;
 }

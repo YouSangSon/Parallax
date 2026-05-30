@@ -8,10 +8,10 @@ import { abandonBranch, gcBranches, restoreBranch } from '../src/branch_gc.js';
 import { createBranch, recall, remember, trace, withAgentMemoryDb } from '../src/agent_memory.js';
 import { initProject } from '../src/init.js';
 
-process.env.IMPACT_TRACE_EMBEDDING_MODEL = 'stub-sha256';
+process.env.PARALLAX_EMBEDDING_MODEL = 'stub-sha256';
 
 async function makeRepo(): Promise<string> {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-branchgc-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-branchgc-'));
   await initProject({ repoRoot });
   return repoRoot;
 }

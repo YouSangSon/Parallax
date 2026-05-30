@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 
+import { DATA_DIR, PACKAGE_NAME, PRODUCT_NAME } from './branding.js';
 import { normalizeRepoRoot } from './security.js';
 import {
   CURRENT_SCHEMA_VERSION,
@@ -110,8 +111,8 @@ export function doctorProject(options: DoctorOptions): DoctorReport {
     report.findings.push({
       severity: 'error',
       code: 'database_missing',
-      message: 'Impact Trace database is missing.',
-      fix: 'Run impact-trace init and impact-trace index from the repository root.'
+      message: `${PRODUCT_NAME} database is missing.`,
+      fix: `Run ${PACKAGE_NAME} init and ${PACKAGE_NAME} index from the repository root.`
     });
     return report;
   }
@@ -124,8 +125,8 @@ export function doctorProject(options: DoctorOptions): DoctorReport {
     report.findings.push({
       severity: 'error',
       code: 'database_unreadable',
-      message: 'Impact Trace database exists but could not be opened read-only.',
-      fix: 'Check that .impact-trace/impact.db is inside this repo and rerun impact-trace init.'
+      message: `${PRODUCT_NAME} database exists but could not be opened read-only.`,
+      fix: `Check that ${DATA_DIR}/impact.db is inside this repo and rerun ${PACKAGE_NAME} init.`
     });
     return report;
   }
@@ -150,7 +151,7 @@ export function doctorProject(options: DoctorOptions): DoctorReport {
         severity: 'error',
         code: 'index_tables_missing',
         message: 'Required index tables are missing from the database.',
-        fix: 'Back up .impact-trace, then rerun impact-trace init.'
+        fix: `Back up ${DATA_DIR}, then rerun ${PACKAGE_NAME} init.`
       });
       return report;
     }
@@ -161,7 +162,7 @@ export function doctorProject(options: DoctorOptions): DoctorReport {
         severity: 'warn',
         code: 'repo_missing',
         message: 'The database has no row for this repository root.',
-        fix: 'Run impact-trace init from this repository root.'
+        fix: `Run ${PACKAGE_NAME} init from this repository root.`
       });
       return report;
     }
@@ -186,7 +187,7 @@ export function doctorProject(options: DoctorOptions): DoctorReport {
           severity: 'warn',
           code: 'telemetry_schema_incomplete',
           message: 'Context telemetry tables exist but do not have the expected columns.',
-          fix: 'Run impact-trace init with the current build.'
+          fix: `Run ${PACKAGE_NAME} init with the current build.`
         });
       }
     }
@@ -195,8 +196,8 @@ export function doctorProject(options: DoctorOptions): DoctorReport {
     report.findings.push({
       severity: 'error',
       code: 'database_probe_failed',
-      message: 'Impact Trace database opened read-only but health probing failed.',
-      fix: 'Back up .impact-trace, then run impact-trace init with the current build or recreate the index.'
+      message: `${PRODUCT_NAME} database opened read-only but health probing failed.`,
+      fix: `Back up ${DATA_DIR}, then run ${PACKAGE_NAME} init with the current build or recreate the index.`
     });
   } finally {
     db.close();
@@ -298,7 +299,7 @@ function addSchemaFindings(report: DoctorReport): void {
       severity: 'error',
       code: 'schema_missing',
       message: 'Database schema version table is missing or empty.',
-      fix: 'Back up .impact-trace, then rerun impact-trace init.'
+      fix: `Back up ${DATA_DIR}, then rerun ${PACKAGE_NAME} init.`
     });
     return;
   }
@@ -307,7 +308,7 @@ function addSchemaFindings(report: DoctorReport): void {
       severity: 'error',
       code: 'schema_outdated',
       message: `Database schema is v${report.database.schemaVersion}; this build expects v${REQUIRED_SCHEMA_VERSION}.`,
-      fix: 'Run impact-trace init with the current build to apply additive migrations.'
+      fix: `Run ${PACKAGE_NAME} init with the current build to apply additive migrations.`
     });
   }
   if (!report.database.telemetryTables) {
@@ -315,7 +316,7 @@ function addSchemaFindings(report: DoctorReport): void {
       severity: report.database.schemaVersion >= REQUIRED_SCHEMA_VERSION ? 'error' : 'warn',
       code: 'telemetry_tables_missing',
       message: 'Context telemetry tables are not available.',
-      fix: 'Run impact-trace init with the current build.'
+      fix: `Run ${PACKAGE_NAME} init with the current build.`
     });
   }
 }
@@ -386,7 +387,7 @@ function addIndexFindings(report: DoctorReport): void {
       severity: 'warn',
       code: 'index_missing',
       message: 'No completed index run exists for this repository.',
-      fix: 'Run impact-trace index before asking agents for impact context.'
+      fix: `Run ${PACKAGE_NAME} index before asking agents for impact context.`
     });
   }
   if (report.index.latestRun && report.index.latestRun.status !== 'completed') {
@@ -394,7 +395,7 @@ function addIndexFindings(report: DoctorReport): void {
       severity: report.index.latestRun.status === 'failed' ? 'error' : 'warn',
       code: 'latest_index_not_completed',
       message: `Latest index run ${report.index.latestRun.id} ended with status '${report.index.latestRun.status}'.`,
-      fix: 'Inspect adapter diagnostics and rerun impact-trace index.'
+      fix: `Inspect adapter diagnostics and rerun ${PACKAGE_NAME} index.`
     });
   }
   if (report.index.latestCompletedRun?.gitIsDirty) {
@@ -402,7 +403,7 @@ function addIndexFindings(report: DoctorReport): void {
       severity: 'warn',
       code: 'index_created_from_dirty_tree',
       message: 'Latest completed index was created while the git working tree was dirty.',
-      fix: 'Re-run impact-trace index after committing or stashing unrelated changes.'
+      fix: `Re-run ${PACKAGE_NAME} index after committing or stashing unrelated changes.`
     });
   }
 }
@@ -440,7 +441,7 @@ function addCoverageFindings(report: DoctorReport): void {
       severity: 'warn',
       code: 'coverage_skipped_paths',
       message: `${skippedPaths} path(s) were skipped by the latest completed index.`,
-      fix: 'Inspect impact-trace://coverage/latest or rerun index with a higher --max-file-bytes limit if appropriate.'
+      fix: 'Inspect parallax://coverage/latest or rerun index with a higher --max-file-bytes limit if appropriate.'
     });
   }
 }
@@ -515,7 +516,7 @@ export function redactDoctorReportForMcp(report: DoctorReport): DoctorReport {
     repoRoot: '[REPO_ROOT]',
     database: {
       ...report.database,
-      path: '.impact-trace/impact.db'
+      path: `${DATA_DIR}/impact.db`
     }
   };
 }

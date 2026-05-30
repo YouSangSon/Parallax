@@ -1,10 +1,10 @@
-# Impact-Trace Architecture
+# Parallax Architecture
 
-Deep dive into how Impact-trace works under the hood. Read this when you need to extend the system, debug an unexpected query result, or understand the rationale behind an invariant.
+Deep dive into how Parallax works under the hood. Read this when you need to extend the system, debug an unexpected query result, or understand the rationale behind an invariant.
 
 ## Core concept: a code-aware fact graph on SQLite
 
-Impact-trace stores everything as content-addressable facts on a transaction DAG inside a single SQLite database (`<repo>/.impact-trace/impact.db`). The same database holds:
+Parallax stores everything as content-addressable facts on a transaction DAG inside a single SQLite database (`<repo>/.parallax/impact.db`). The same database holds:
 
 - **Code structure** (entities, relations, evidence) — produced by the indexer.
 - **Agent activity** (facts, transactions, fact_provenance, fact_embeddings) — written when MCP/CLI commands are invoked.
@@ -140,7 +140,7 @@ Soft-delete only. `gcBranches()` finds branches where `state='abandoned' AND nam
 
 ## LLM provider abstraction
 
-`src/llm.ts:summarize()` dispatches on the prefix of `IMPACT_TRACE_REFLECTION_MODEL`:
+`src/llm.ts:summarize()` dispatches on the prefix of `PARALLAX_REFLECTION_MODEL`:
 
 | Prefix | Provider | Endpoint default |
 |---|---|---|
@@ -149,7 +149,7 @@ Soft-delete only. `gcBranches()` finds branches where `state='abandoned' AND nam
 | `anthropic:<model>` | Anthropic Messages | `https://api.anthropic.com/v1/messages` |
 | `openai:<model>` | OpenAI Chat Completions | `https://api.openai.com/v1/chat/completions` |
 
-All providers use Node 24+ native `fetch` — no SDK dependencies (D-012). Anthropic/OpenAI base URLs are asserted to be `https://`. All three network providers wrap fetch in try/catch and apply a 30s `AbortSignal.timeout` (env override `IMPACT_TRACE_LLM_TIMEOUT_MS`).
+All providers use Node 24+ native `fetch` — no SDK dependencies (D-012). Anthropic/OpenAI base URLs are asserted to be `https://`. All three network providers wrap fetch in try/catch and apply a 30s `AbortSignal.timeout` (env override `PARALLAX_LLM_TIMEOUT_MS`).
 
 ## Decisions cheat-sheet
 

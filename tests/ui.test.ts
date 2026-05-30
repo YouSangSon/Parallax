@@ -23,7 +23,7 @@ const require = createRequire(import.meta.url);
 const tsxLoaderPath = require.resolve('tsx');
 
 async function makeUiRepo(): Promise<{ repoRoot: string; reportId: string }> {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-ui-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ui-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   await writeFile(path.join(repoRoot, 'src/a.ts'), 'import { b } from "./b";\nexport const a = b + 1;\n');
   await writeFile(path.join(repoRoot, 'src/b.ts'), 'export const b = 1;\n');
@@ -39,7 +39,7 @@ async function makeUiRepo(): Promise<{ repoRoot: string; reportId: string }> {
 }
 
 async function makeUiWorkArtifactRepo(): Promise<{ repoRoot: string; reportId: string }> {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-ui-artifacts-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ui-artifacts-'));
   await mkdir(path.join(repoRoot, 'src/auth'), { recursive: true });
   await mkdir(path.join(repoRoot, 'policies'), { recursive: true });
   await mkdir(path.join(repoRoot, 'docs/proposals'), { recursive: true });
@@ -109,8 +109,8 @@ async function makeUiWorkArtifactRepo(): Promise<{ repoRoot: string; reportId: s
 }
 
 async function makeUiWorkspaceRepo(): Promise<{ consumerRoot: string; providerRoot: string }> {
-  const consumerRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-ui-workspace-consumer-'));
-  const providerRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-ui-workspace-provider-'));
+  const consumerRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ui-workspace-consumer-'));
+  const providerRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ui-workspace-provider-'));
   await mkdir(path.join(consumerRoot, 'src'), { recursive: true });
   await writeFile(
     path.join(consumerRoot, 'src/orders-consumer.ts'),
@@ -262,7 +262,7 @@ test('UI snapshot and HTML expose work artifact impact', async () => {
     const proposal = snapshot.workArtifacts.find((item) => item.path === 'docs/proposals/payment-retry.md');
     assert.equal(proposal?.displayName, 'docs/proposals/payment-retry.md');
     assert.equal(proposal?.metadata, undefined);
-    assert.ok(snapshot.workArtifacts.every((item) => item.resourceUri.startsWith('impact-trace://entities/')));
+    assert.ok(snapshot.workArtifacts.every((item) => item.resourceUri.startsWith('parallax://entities/')));
     assert.ok(snapshot.selectedReport?.evidence.some((item) => item.snippetOmitted === true));
     assert.equal(JSON.stringify(snapshot).includes('PRIVATE BODY SENTENCE'), false);
     assert.equal(JSON.stringify(snapshot).includes('SECRET CUSTOMER INCIDENT NOTES'), false);
@@ -290,7 +290,7 @@ test('UI snapshot and HTML expose work artifact impact', async () => {
 });
 
 test('UI snapshot exposes typed empty states before reports exist', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-ui-empty-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ui-empty-'));
   try {
     const missingDb = await buildUiSnapshot({ repoRoot });
     assert.equal(missingDb.selectedReportId, null);
@@ -328,7 +328,7 @@ test('UI snapshot and API expose workspace contract topology', async () => {
     assert.match(html, /Workspace Contracts/);
     assert.match(html, /orders\.submitted/);
     assert.match(html, /subscriber-call/);
-    assert.match(html, /impact-trace:\/\/workspaces\/platform\/cross-repo-links/);
+    assert.match(html, /parallax:\/\/workspaces\/platform\/cross-repo-links/);
 
     ui = await startUiServer({ repoRoot: consumerRoot, port: 0 });
     const workspaceJson = await (await fetch(new URL('/api/workspaces/platform', ui.url))).json() as {
@@ -350,7 +350,7 @@ test('UI snapshot and API expose workspace contract topology', async () => {
 
 test('UI workspace snapshot tolerates legacy link provenance and unindexed repos', async () => {
   const { consumerRoot, providerRoot } = await makeUiWorkspaceRepo();
-  const unindexedRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-ui-workspace-unindexed-'));
+  const unindexedRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ui-workspace-unindexed-'));
   try {
     addWorkspaceRepo({
       repoRoot: consumerRoot,
@@ -370,7 +370,7 @@ test('UI workspace snapshot tolerates legacy link provenance and unindexed repos
     assert.ok(workspace);
     assert.equal(workspace.repoCount, 3);
     assert.ok(workspace.warnings.some((warning) =>
-      warning.includes('unindexed') && warning.includes('impact trace database not found')
+      warning.includes('unindexed') && warning.includes('parallax database not found')
     ));
     assert.ok(workspace.links.length > 0);
     assert.ok(workspace.links.every((link) => link.eventTopology === undefined));
@@ -523,7 +523,7 @@ function waitForUiUrl(child: ChildProcess): Promise<string> {
     }
     child.stdout.on('data', (chunk: Buffer) => {
       output += chunk.toString('utf8');
-      const match = /Impact Trace UI: (http:\/\/127\.0\.0\.1:\d+\/)/.exec(output);
+      const match = /Parallax UI: (http:\/\/127\.0\.0\.1:\d+\/)/.exec(output);
       if (match) {
         clearTimeout(timer);
         resolve(match[1]!);
@@ -537,7 +537,7 @@ function waitForUiUrl(child: ChildProcess): Promise<string> {
       reject(error);
     });
     child.once('exit', (code) => {
-      if (!/Impact Trace UI: /.test(output)) {
+      if (!/Parallax UI: /.test(output)) {
         clearTimeout(timer);
         reject(new Error(`UI process exited before URL; code=${code}; output=${output}`));
       }

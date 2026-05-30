@@ -21,7 +21,7 @@ import type { RelationKind, ScannedFile } from '../src/types.js';
 // Force the deterministic SHA-256 stub so embedding tests don't download a
 // real model (~278 MB) and stay fast/offline. Spawned CLI subprocesses
 // inherit this env automatically.
-process.env.IMPACT_TRACE_EMBEDDING_MODEL = 'stub-sha256';
+process.env.PARALLAX_EMBEDDING_MODEL = 'stub-sha256';
 
 const require = createRequire(import.meta.url);
 const tsxLoaderPath = require.resolve('tsx');
@@ -33,7 +33,7 @@ if (false) {
 }
 
 async function makeFixtureRepo(): Promise<string> {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-'));
   await mkdir(path.join(repoRoot, 'src/auth'), { recursive: true });
   await mkdir(path.join(repoRoot, 'src/routes'), { recursive: true });
   await mkdir(path.join(repoRoot, 'tests'), { recursive: true });
@@ -92,8 +92,8 @@ async function makeFixtureRepo(): Promise<string> {
 
 function initGitRepo(repoRoot: string): string {
   execFileSync('git', ['init', '-b', 'main'], { cwd: repoRoot, stdio: 'ignore' });
-  execFileSync('git', ['config', 'user.email', 'impact-trace@example.com'], { cwd: repoRoot });
-  execFileSync('git', ['config', 'user.name', 'Impact Trace Test'], { cwd: repoRoot });
+  execFileSync('git', ['config', 'user.email', 'parallax@example.com'], { cwd: repoRoot });
+  execFileSync('git', ['config', 'user.name', 'Parallax Test'], { cwd: repoRoot });
   execFileSync('git', ['add', '.'], { cwd: repoRoot });
   execFileSync('git', ['commit', '-m', 'base'], { cwd: repoRoot, stdio: 'ignore' });
   return gitHead(repoRoot);
@@ -210,8 +210,8 @@ test('initProject creates config and SQLite database tables', async () => {
   const result = await initProject({ repoRoot });
 
   assert.equal(result.created, true);
-  assert.equal(result.configPath.endsWith('.impact-trace/config.json'), true);
-  assert.equal(result.databasePath.endsWith('.impact-trace/impact.db'), true);
+  assert.equal(result.configPath.endsWith('.parallax/config.json'), true);
+  assert.equal(result.databasePath.endsWith('.parallax/impact.db'), true);
   const config = JSON.parse(await readFile(result.configPath, 'utf8')) as { schemaVersion: number };
   assert.equal(config.schemaVersion, 3);
   const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
@@ -256,12 +256,12 @@ test('indexProject and analyzeDiff report direct importers, tests, docs, runnabl
   assert.equal(report.evidence.some((item) => item.snippet.includes('sk-test-secret')), false);
   assert.ok(report.reportPath);
   const markdown = await readFile(path.join(repoRoot, report.reportPath), 'utf8');
-  assert.match(markdown, /Impact Trace Report/);
+  assert.match(markdown, /Parallax Report/);
   assert.doesNotMatch(markdown, /sk-test-secret/);
 });
 
 test('indexProject writes canonical entity graph and broad language file entities', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-entity-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-entity-'));
   await mkdir(path.join(repoRoot, 'src/native'), { recursive: true });
   await writeFile(path.join(repoRoot, 'src/util.py'), 'def helper():\n    return 1\n');
   await writeFile(path.join(repoRoot, 'src/app.py'), 'from util import helper\n\ndef run():\n    return helper()\n');
@@ -320,7 +320,7 @@ test('indexProject writes canonical entity graph and broad language file entitie
 });
 
 test('indexProject persists OpenAPI contracts and analyzeDiff reaches implementing code', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-contract-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-contract-'));
   await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
   await mkdir(path.join(repoRoot, 'src/main/java/com/example'), { recursive: true });
   await writeFile(
@@ -705,7 +705,7 @@ test('indexProject persists OpenAPI contracts and analyzeDiff reaches implementi
 });
 
 test('indexProject ignores nested OpenAPI YAML callback method keys as endpoint declarations', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-openapi-callback-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-openapi-callback-'));
   await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
   await writeFile(
     path.join(repoRoot, 'contracts/openapi.yaml'),
@@ -756,7 +756,7 @@ test('indexProject ignores nested OpenAPI YAML callback method keys as endpoint 
 });
 
 test('indexProject declares inline OpenAPI YAML operation objects', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-openapi-inline-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-openapi-inline-'));
   await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
   await writeFile(
     path.join(repoRoot, 'contracts/openapi.yaml'),
@@ -800,7 +800,7 @@ test('indexProject declares inline OpenAPI YAML operation objects', async () => 
 });
 
 test('indexProject skips invalid OpenAPI YAML operation shapes', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-openapi-invalid-shapes-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-openapi-invalid-shapes-'));
   await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
   await writeFile(
     path.join(repoRoot, 'contracts/openapi-empty.yaml'),
@@ -882,7 +882,7 @@ test('indexProject skips invalid OpenAPI YAML operation shapes', async () => {
 });
 
 test('indexProject skips tab-indented and nested-paths OpenAPI YAML surfaces', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-openapi-yaml-depth-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-openapi-yaml-depth-'));
   await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
   await writeFile(
     path.join(repoRoot, 'contracts/openapi-tabs.yaml'),
@@ -959,7 +959,7 @@ test('indexProject skips tab-indented and nested-paths OpenAPI YAML surfaces', a
 });
 
 test('indexProject skips invalid OpenAPI JSON operation shapes', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-openapi-json-invalid-shapes-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-openapi-json-invalid-shapes-'));
   await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
   await writeFile(
     path.join(repoRoot, 'contracts/openapi-array-operation.json'),
@@ -1035,7 +1035,7 @@ test('indexProject skips invalid OpenAPI JSON operation shapes', async () => {
 });
 
 test('indexProject does not persist contract baseline rows for relation-only placeholders', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-contract-placeholder-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-contract-placeholder-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   await writeFile(path.join(repoRoot, 'src/ref.ts'), 'export const ref = 1;\n');
   await initProject({ repoRoot });
@@ -1098,7 +1098,7 @@ test('indexProject does not persist contract baseline rows for relation-only pla
 });
 
 test('indexProject persists adapter symbol entities without displayName using a fallback', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-symbol-display-fallback-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-symbol-display-fallback-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   await writeFile(path.join(repoRoot, 'src/app.ts'), 'export function run() { return 1; }\n');
   await initProject({ repoRoot });
@@ -1151,7 +1151,7 @@ test('indexProject persists adapter symbol entities without displayName using a 
 });
 
 test('indexProject persists adapter module entities without collapsing them to file ids', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-module-entity-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-module-entity-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const app = 1;\n');
   await initProject({ repoRoot });
@@ -1220,7 +1220,7 @@ test('indexProject persists adapter module entities without collapsing them to f
 });
 
 test('indexProject gives adapter module entities distinct ids when paths share displayName', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-module-display-collision-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-module-display-collision-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   await writeFile(path.join(repoRoot, 'src/a.ts'), 'export const a = 1;\n');
   await writeFile(path.join(repoRoot, 'src/b.ts'), 'export const b = 1;\n');
@@ -1290,7 +1290,7 @@ test('indexProject gives adapter module entities distinct ids when paths share d
 });
 
 test('indexProject upserts relation endpoint entities before relation persistence', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-relation-endpoint-upsert-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-relation-endpoint-upsert-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   await writeFile(path.join(repoRoot, 'src/app.ts'), 'export function run() { return 1; }\n');
   await initProject({ repoRoot });
@@ -1390,7 +1390,7 @@ test('indexProject upserts relation endpoint entities before relation persistenc
 });
 
 test('indexProject promotes relation-only existing endpoint entities into rerun freshness', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-relation-rerun-freshness-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-relation-rerun-freshness-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   await writeFile(path.join(repoRoot, 'src/app.ts'), 'export function run() { return 1; }\n');
   await initProject({ repoRoot });
@@ -1481,7 +1481,7 @@ test('indexProject promotes relation-only existing endpoint entities into rerun 
 });
 
 test('indexProject uses relation endpoint metadata for external entity identity before explicit entity', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-external-endpoint-identity-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-external-endpoint-identity-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   await writeFile(path.join(repoRoot, 'src/app.ts'), 'import React from "react";\n');
   await initProject({ repoRoot });
@@ -1571,7 +1571,7 @@ test('indexProject uses relation endpoint metadata for external entity identity 
 });
 
 test('indexProject makes symbol entity version content hash track containing file changes', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-symbol-version-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-symbol-version-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   const sourcePath = path.join(repoRoot, 'src/calc.ts');
   await writeFile(
@@ -1628,7 +1628,7 @@ test('indexProject makes symbol entity version content hash track containing fil
 });
 
 test('indexProject attributes adapter runs, relations, coverage, and usage per classified adapter', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-adapters-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-adapters-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   await mkdir(path.join(repoRoot, 'scripts'), { recursive: true });
   await mkdir(path.join(repoRoot, 'docs'), { recursive: true });
@@ -1732,7 +1732,7 @@ test('indexProject attributes adapter runs, relations, coverage, and usage per c
 });
 
 test('indexProject preserves skipped-file adapter attribution for skipped-only adapters', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-skipped-only-adapter-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-skipped-only-adapter-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   await writeFile(path.join(repoRoot, 'src/big.ts'), `export const big = "${'x'.repeat(200)}";\n`);
   await initProject({ repoRoot });
@@ -1796,7 +1796,7 @@ test('indexProject preserves skipped-file adapter attribution for skipped-only a
 });
 
 test('indexProject uses readable skipped file content for skipped-file adapter attribution', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-skipped-content-router-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-skipped-content-router-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   await writeFile(
     path.join(repoRoot, 'src/generated.ts'),
@@ -1861,7 +1861,7 @@ test('indexProject uses readable skipped file content for skipped-file adapter a
 });
 
 test('indexProject lets adapter relation extraction resolve against all indexed files', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-global-file-view-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-global-file-view-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const app = 1;\n');
   await writeFile(path.join(repoRoot, 'README.md'), 'The public entrypoint lives in src/app.ts.\n');
@@ -1909,7 +1909,7 @@ test('indexProject lets adapter relation extraction resolve against all indexed 
 });
 
 test('indexProject resolves nested JSONC tsconfig path aliases relative to the owning package', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-nested-tsconfig-alias-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-nested-tsconfig-alias-'));
   await mkdir(path.join(repoRoot, 'packages/app/src'), { recursive: true });
   await writeFile(
     path.join(repoRoot, 'packages/app/tsconfig.json'),
@@ -1963,7 +1963,7 @@ test('indexProject resolves nested JSONC tsconfig path aliases relative to the o
 });
 
 test('indexProject records a diagnostic when tsconfig path alias parsing fails', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-invalid-tsconfig-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-invalid-tsconfig-'));
   await mkdir(path.join(repoRoot, 'packages/bad/src'), { recursive: true });
   await writeFile(path.join(repoRoot, 'packages/bad/tsconfig.json'), '{ "compilerOptions": ');
   await writeFile(path.join(repoRoot, 'packages/bad/src/app.ts'), 'export const app = 1;\n');
@@ -1991,7 +1991,7 @@ test('indexProject records a diagnostic when tsconfig path alias parsing fails',
 });
 
 test('indexProject surfaces markdown policy, proposal, PRD, and decision impact relations', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-work-artifacts-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-work-artifacts-'));
   await mkdir(path.join(repoRoot, 'src/auth'), { recursive: true });
   await mkdir(path.join(repoRoot, 'policies'), { recursive: true });
   await mkdir(path.join(repoRoot, 'docs/proposals'), { recursive: true });
@@ -2193,7 +2193,7 @@ test('indexProject surfaces markdown policy, proposal, PRD, and decision impact 
 });
 
 test('indexProject gives each adapter an immutable indexedFiles snapshot', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-indexed-files-snapshot-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-indexed-files-snapshot-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const app = 1;\n');
   await writeFile(path.join(repoRoot, 'README.md'), 'The public entrypoint lives in src/app.ts.\n');
@@ -2266,7 +2266,7 @@ test('indexProject gives each adapter an immutable indexedFiles snapshot', async
 });
 
 test('indexProject records a failed index run when adapter support routing throws', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-support-routing-fail-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-support-routing-fail-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const app = 1;\n');
   await initProject({ repoRoot });
@@ -2310,7 +2310,7 @@ test('indexProject records a failed index run when adapter support routing throw
 });
 
 test('indexProject routes oversized skipped files using a bounded content sample', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-skipped-bounded-router-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-skipped-bounded-router-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   const generatedPrefix = '// @generated\n';
   const fullReadSentinel = '__FULL_OVERSIZED_CONTENT_READ__';
@@ -2351,7 +2351,7 @@ test('indexProject routes oversized skipped files using a bounded content sample
 });
 
 test('indexProject exposes adapter diagnostics while completing the adapter run', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-adapter-diagnostics-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-adapter-diagnostics-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const app = 1;\n');
   await initProject({ repoRoot });
@@ -2482,7 +2482,7 @@ test('indexProject exposes adapter diagnostics while completing the adapter run'
 });
 
 test('indexProject preserves diagnostics when an adapter fails after emitting them', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-adapter-diagnostic-fail-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-adapter-diagnostic-fail-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const app = 1;\n');
   await initProject({ repoRoot });
@@ -2573,12 +2573,12 @@ test('indexProject preserves diagnostics when an adapter fails after emitting th
 });
 
 test('indexProject redacts adapter failure summaries before persisting adapter runs', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-adapter-fail-redaction-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-adapter-fail-redaction-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const app = 1;\n');
   await initProject({ repoRoot });
 
-  const rawSecret = 'sk_live_111111111111111111111111';
+  const rawSecret = ['sk', 'live', '111111111111111111111111'].join('_');
   const registry = new AdapterRegistry();
   registry.register({
     id: 'secret-failing-adapter',
@@ -2615,7 +2615,7 @@ test('indexProject redacts adapter failure summaries before persisting adapter r
 });
 
 test('indexProject persists adapter-provided relation evidence entries', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-relation-evidence-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-relation-evidence-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   const fullSource = [
     'export const source = "full file content should not be relation evidence";',
@@ -2767,13 +2767,13 @@ test('indexProject persists adapter-provided relation evidence entries', async (
 });
 
 test('indexProject keeps redacted no-span relation evidence identities distinct', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-relation-evidence-redacted-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-relation-evidence-redacted-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const target = 1;\n');
   await initProject({ repoRoot });
 
-  const firstSecret = 'sk_live_111111111111111111111111';
-  const secondSecret = 'sk_live_222222222222222222222222';
+  const firstSecret = ['sk', 'live', '111111111111111111111111'].join('_');
+  const secondSecret = ['sk', 'live', '222222222222222222222222'].join('_');
   const registry = new AdapterRegistry();
   registry.register({
     id: 'relation-evidence-redaction-test-adapter',
@@ -2858,7 +2858,7 @@ test('indexProject keeps redacted no-span relation evidence identities distinct'
 });
 
 test('indexProject keeps relation evidence identities distinct for different spans', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-relation-evidence-span-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-relation-evidence-span-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const target = 1;\n');
   await initProject({ repoRoot });
@@ -2963,7 +2963,7 @@ test('indexProject keeps relation evidence identities distinct for different spa
 });
 
 test('indexProject preserves per-adapter terminal status when a later adapter fails', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-adapter-fail-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-adapter-fail-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   await mkdir(path.join(repoRoot, 'scripts'), { recursive: true });
   await mkdir(path.join(repoRoot, 'docs'), { recursive: true });
@@ -3073,7 +3073,7 @@ test('indexProject preserves per-adapter terminal status when a later adapter fa
 });
 
 test('failed reruns preserve last completed current-state snapshot for analyzeDiff', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-failed-rerun-snapshot-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-failed-rerun-snapshot-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   await writeFile(
     path.join(repoRoot, 'src/a-importer.ts'),
@@ -3224,7 +3224,7 @@ test('failed reruns preserve last completed current-state snapshot for analyzeDi
 });
 
 test('indexProject preserves completed same-adapter file coverage after later file failure', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-adapter-partial-fail-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-adapter-partial-fail-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   await writeFile(path.join(repoRoot, 'src/a-ok.ts'), 'export const ok = 1;\n');
   await writeFile(path.join(repoRoot, 'src/z-fail.ts'), 'export const fail = 1;\n');
@@ -3367,14 +3367,14 @@ test('exportImpactGraph renders report graph from SQLite relations without graph
   assert.doesNotMatch(mermaidGraph.rendered, /sk-test-secret/);
 
   const dotGraph = await exportImpactGraph({ repoRoot, reportId: report.id, format: 'dot' });
-  assert.match(dotGraph.rendered, /^digraph impact_trace/);
+  assert.match(dotGraph.rendered, /^digraph parallax/);
   assert.match(dotGraph.rendered, /src\/auth\/session\.ts/);
   assert.match(dotGraph.rendered, /DEPENDS_ON/);
   assert.doesNotMatch(dotGraph.rendered, /sk-test-secret/);
 });
 
 test('analyzeDiff follows bounded multi-hop relations with cycle protection', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-depth-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-depth-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   await mkdir(path.join(repoRoot, 'tests'), { recursive: true });
   await writeFile(path.join(repoRoot, 'src/core.ts'), 'export function core() { return 1; }\n');
@@ -3405,7 +3405,7 @@ test('analyzeDiff follows bounded multi-hop relations with cycle protection', as
 });
 
 test('analyzeDiff report IDs include fanout options that change impact scope', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-fanout-id-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-fanout-id-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   await writeFile(path.join(repoRoot, 'src/core.ts'), 'export const core = 1;\n');
   await writeFile(path.join(repoRoot, 'src/a.ts'), 'import { core } from "./core"; export const a = core;\n');
@@ -3421,7 +3421,7 @@ test('analyzeDiff report IDs include fanout options that change impact scope', a
 });
 
 test('analyzeDiff fanout limits distinct relations rather than evidence rows', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-fanout-evidence-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-fanout-evidence-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   await writeFile(path.join(repoRoot, 'src/core.ts'), 'export const core = 1;\n');
   await writeFile(path.join(repoRoot, 'src/a.ts'), 'import { core } from "./core"; export const a = core;\n');
@@ -3500,7 +3500,7 @@ test('analyzeDiff fanout limits distinct relations rather than evidence rows', a
 });
 
 test('indexProject records skipped files when resource limits are exceeded', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-limits-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-limits-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   await writeFile(path.join(repoRoot, 'src/small.ts'), 'export const ok = 1;\n');
   await writeFile(path.join(repoRoot, 'src/large.ts'), `export const big = "${'x'.repeat(200)}";\n`);
@@ -3722,16 +3722,16 @@ test('analyzeDiff warns when latest index was created from a dirty working tree'
   );
 });
 
-test('indexProject treats renames from .impact-trace to source paths as dirty', async () => {
+test('indexProject treats renames from .parallax to source paths as dirty', async () => {
   const repoRoot = await makeFixtureRepo();
   initGitRepo(repoRoot);
   await initProject({ repoRoot });
 
-  await mkdir(path.join(repoRoot, '.impact-trace'), { recursive: true });
-  await writeFile(path.join(repoRoot, '.impact-trace/local-note.txt'), 'local note\n');
-  execFileSync('git', ['add', '-f', '.impact-trace/local-note.txt'], { cwd: repoRoot });
+  await mkdir(path.join(repoRoot, '.parallax'), { recursive: true });
+  await writeFile(path.join(repoRoot, '.parallax/local-note.txt'), 'local note\n');
+  execFileSync('git', ['add', '-f', '.parallax/local-note.txt'], { cwd: repoRoot });
   execFileSync('git', ['commit', '-m', 'track impact note'], { cwd: repoRoot, stdio: 'ignore' });
-  execFileSync('git', ['mv', '.impact-trace/local-note.txt', 'src/local-note.txt'], { cwd: repoRoot });
+  execFileSync('git', ['mv', '.parallax/local-note.txt', 'src/local-note.txt'], { cwd: repoRoot });
 
   const index = await indexProject({ repoRoot });
 
@@ -3746,16 +3746,16 @@ test('indexProject treats renames from .impact-trace to source paths as dirty', 
   }
 });
 
-test('indexProject ignores quoted renames that stay inside .impact-trace', async () => {
+test('indexProject ignores quoted renames that stay inside .parallax', async () => {
   const repoRoot = await makeFixtureRepo();
   initGitRepo(repoRoot);
   await initProject({ repoRoot });
 
-  await mkdir(path.join(repoRoot, '.impact-trace'), { recursive: true });
-  await writeFile(path.join(repoRoot, '.impact-trace/a -> b.txt'), 'local note\n');
-  execFileSync('git', ['add', '-f', '.impact-trace/a -> b.txt'], { cwd: repoRoot });
+  await mkdir(path.join(repoRoot, '.parallax'), { recursive: true });
+  await writeFile(path.join(repoRoot, '.parallax/a -> b.txt'), 'local note\n');
+  execFileSync('git', ['add', '-f', '.parallax/a -> b.txt'], { cwd: repoRoot });
   execFileSync('git', ['commit', '-m', 'track quoted impact note'], { cwd: repoRoot, stdio: 'ignore' });
-  execFileSync('git', ['mv', '.impact-trace/a -> b.txt', '.impact-trace/c -> d.txt'], { cwd: repoRoot });
+  execFileSync('git', ['mv', '.parallax/a -> b.txt', '.parallax/c -> d.txt'], { cwd: repoRoot });
 
   const index = await indexProject({ repoRoot });
 
@@ -3771,7 +3771,7 @@ test('indexProject ignores quoted renames that stay inside .impact-trace', async
 });
 
 test('analyzeDiff returns structured test commands for repo-controlled filenames', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-command-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-command-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   await mkdir(path.join(repoRoot, 'tests'), { recursive: true });
   await writeFile(path.join(repoRoot, 'src/a.ts'), 'export const a = 1;\n');
@@ -3790,8 +3790,8 @@ test('analyzeDiff returns structured test commands for repo-controlled filenames
 test('CLI analyze accepts --base and --head git merge-base diff input', async () => {
   const repoRoot = await makeFixtureRepo();
   execFileSync('git', ['init', '-b', 'main'], { cwd: repoRoot });
-  execFileSync('git', ['config', 'user.email', 'impact-trace@example.com'], { cwd: repoRoot });
-  execFileSync('git', ['config', 'user.name', 'Impact Trace Test'], { cwd: repoRoot });
+  execFileSync('git', ['config', 'user.email', 'parallax@example.com'], { cwd: repoRoot });
+  execFileSync('git', ['config', 'user.name', 'Parallax Test'], { cwd: repoRoot });
   execFileSync('git', ['add', '.'], { cwd: repoRoot });
   execFileSync('git', ['commit', '-m', 'base'], { cwd: repoRoot, stdio: 'ignore' });
   execFileSync('git', ['checkout', '-b', 'feature'], { cwd: repoRoot, stdio: 'ignore' });
@@ -4877,7 +4877,7 @@ test('indexProject dual-writes relations to facts/transactions and advances main
 });
 
 test('indexProject infers VERIFIES and tests fact from default TypeScript test imports', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-default-test-target-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-default-test-target-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   await mkdir(path.join(repoRoot, 'tests'), { recursive: true });
   await writeFile(path.join(repoRoot, 'src/core.ts'), 'export function core() { return 1; }\n');
@@ -4935,7 +4935,7 @@ test('indexProject infers VERIFIES and tests fact from default TypeScript test i
 });
 
 test('indexProject maps adapter relation kinds to static memory attributes', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-relation-kind-memory-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-relation-kind-memory-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
 
   const sourcePath = 'src/source.ts';
@@ -5097,7 +5097,7 @@ test('CLI reflect with stub provider summarizes older facts', async () => {
       '--model',
       'stub'
     ],
-    { cwd: repoRoot, encoding: 'utf8', env: { ...process.env, IMPACT_TRACE_REFLECTION_MODEL: 'stub' } }
+    { cwd: repoRoot, encoding: 'utf8', env: { ...process.env, PARALLAX_REFLECTION_MODEL: 'stub' } }
   );
   assert.equal(reflectRun.status, 0, `reflect failed: ${reflectRun.stderr}`);
   const payload = JSON.parse(reflectRun.stdout) as { summarized: number; model: string };

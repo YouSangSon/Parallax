@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Report a reproducible problem in Impact Trace
+about: Report a reproducible problem in Parallax
 title: "bug: "
 labels: bug
 assignees: ""
@@ -22,9 +22,8 @@ assignees: ""
 
 - OS:
 - Node version:
-- Impact Trace commit/version:
+- Parallax commit/version:
 
 ## Notes
 
 Do not include real secrets, private repository paths, or confidential source code.
-

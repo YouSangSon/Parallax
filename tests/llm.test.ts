@@ -6,17 +6,17 @@ import { AddressInfo } from 'node:net';
 import { summarize, STUB_LLM_MODEL } from '../src/llm.js';
 
 function withReflectionModel<T>(model: string | undefined, fn: () => Promise<T>): Promise<T> {
-  const previous = process.env.IMPACT_TRACE_REFLECTION_MODEL;
+  const previous = process.env.PARALLAX_REFLECTION_MODEL;
   if (model === undefined) {
-    delete process.env.IMPACT_TRACE_REFLECTION_MODEL;
+    delete process.env.PARALLAX_REFLECTION_MODEL;
   } else {
-    process.env.IMPACT_TRACE_REFLECTION_MODEL = model;
+    process.env.PARALLAX_REFLECTION_MODEL = model;
   }
   return fn().finally(() => {
     if (previous === undefined) {
-      delete process.env.IMPACT_TRACE_REFLECTION_MODEL;
+      delete process.env.PARALLAX_REFLECTION_MODEL;
     } else {
-      process.env.IMPACT_TRACE_REFLECTION_MODEL = previous;
+      process.env.PARALLAX_REFLECTION_MODEL = previous;
     }
   });
 }
@@ -133,8 +133,8 @@ test('ollama happy path returns summary text and model id', async () => {
       })
     );
   });
-  const previousBaseUrl = process.env.IMPACT_TRACE_OLLAMA_BASE_URL;
-  process.env.IMPACT_TRACE_OLLAMA_BASE_URL = server.url;
+  const previousBaseUrl = process.env.PARALLAX_OLLAMA_BASE_URL;
+  process.env.PARALLAX_OLLAMA_BASE_URL = server.url;
   try {
     await withReflectionModel('ollama:gemma2:2b', async () => {
       const result = await summarize({ systemPrompt: 'a', userPrompt: 'b' });
@@ -145,9 +145,9 @@ test('ollama happy path returns summary text and model id', async () => {
     });
   } finally {
     if (previousBaseUrl === undefined) {
-      delete process.env.IMPACT_TRACE_OLLAMA_BASE_URL;
+      delete process.env.PARALLAX_OLLAMA_BASE_URL;
     } else {
-      process.env.IMPACT_TRACE_OLLAMA_BASE_URL = previousBaseUrl;
+      process.env.PARALLAX_OLLAMA_BASE_URL = previousBaseUrl;
     }
     await server.close();
   }
@@ -158,8 +158,8 @@ test('ollama non-200 response surfaces status and body excerpt', async () => {
     res.writeHead(503, { 'content-type': 'text/plain' });
     res.end('model not ready');
   });
-  const previousBaseUrl = process.env.IMPACT_TRACE_OLLAMA_BASE_URL;
-  process.env.IMPACT_TRACE_OLLAMA_BASE_URL = server.url;
+  const previousBaseUrl = process.env.PARALLAX_OLLAMA_BASE_URL;
+  process.env.PARALLAX_OLLAMA_BASE_URL = server.url;
   try {
     await withReflectionModel('ollama:gemma2:2b', async () => {
       await assert.rejects(
@@ -169,9 +169,9 @@ test('ollama non-200 response surfaces status and body excerpt', async () => {
     });
   } finally {
     if (previousBaseUrl === undefined) {
-      delete process.env.IMPACT_TRACE_OLLAMA_BASE_URL;
+      delete process.env.PARALLAX_OLLAMA_BASE_URL;
     } else {
-      process.env.IMPACT_TRACE_OLLAMA_BASE_URL = previousBaseUrl;
+      process.env.PARALLAX_OLLAMA_BASE_URL = previousBaseUrl;
     }
     await server.close();
   }
@@ -198,8 +198,8 @@ test('anthropic happy path parses content blocks and usage', async () => {
   // the validation path triggers before any outbound fetch is attempted.
   // Full TLS-mocked happy-path coverage requires a self-signed HTTPS
   // server — out of scope here.
-  const previousAllow = process.env.IMPACT_TRACE_ANTHROPIC_BASE_URL;
-  process.env.IMPACT_TRACE_ANTHROPIC_BASE_URL = server.url;
+  const previousAllow = process.env.PARALLAX_ANTHROPIC_BASE_URL;
+  process.env.PARALLAX_ANTHROPIC_BASE_URL = server.url;
   const previousKey = process.env.ANTHROPIC_API_KEY;
   process.env.ANTHROPIC_API_KEY = 'test-key-anthropic';
   try {
@@ -211,9 +211,9 @@ test('anthropic happy path parses content blocks and usage', async () => {
     });
   } finally {
     if (previousAllow === undefined) {
-      delete process.env.IMPACT_TRACE_ANTHROPIC_BASE_URL;
+      delete process.env.PARALLAX_ANTHROPIC_BASE_URL;
     } else {
-      process.env.IMPACT_TRACE_ANTHROPIC_BASE_URL = previousAllow;
+      process.env.PARALLAX_ANTHROPIC_BASE_URL = previousAllow;
     }
     if (previousKey !== undefined) {
       process.env.ANTHROPIC_API_KEY = previousKey;

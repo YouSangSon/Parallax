@@ -15,6 +15,7 @@ import {
   isTestFile
 } from './adapters/multi-language-regex.js';
 import { entityKindForMarkdownPath } from './artifacts.js';
+import { DATA_DIR } from './branding.js';
 import { readGitSnapshot } from './git-snapshot.js';
 import type {
   EntityDescriptor,
@@ -36,7 +37,7 @@ import type {
 } from './types.js';
 
 const ignoredDirs = new Set([
-  '.git', '.impact-trace', 'node_modules', 'dist', 'coverage',
+  '.git', DATA_DIR, 'node_modules', 'dist', 'coverage',
   '.venv', 'venv', '__pycache__', 'site-packages',
   'target', 'vendor', 'build',
   '.tox', '.pytest_cache', '.mypy_cache', '.ruff_cache'

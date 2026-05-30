@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { RememberValue } from './agent_memory.js';
+import { DATA_DIR, PACKAGE_NAME } from './branding.js';
 import { normalizeRepoRoot, redactSecrets, resolveInsideRoot, toRelativePath } from './security.js';
 import { contentHash, databasePath, getRepoId, openDatabase } from './store.js';
 import type { Db } from './store.js';
@@ -58,7 +59,7 @@ export async function importSession(options: SessionImportOptions): Promise<Sess
   const repoRoot = normalizeRepoRoot(options.repoRoot);
   validateFormat(options.format);
   if (!existsSync(databasePath(repoRoot))) {
-    throw new Error('impact trace database not found; run impact-trace init first');
+    throw new Error(`parallax database not found; run ${PACKAGE_NAME} init first`);
   }
 
   const resolved = resolveSessionFile(repoRoot, options.file);
@@ -222,7 +223,10 @@ function extractReferencedRepoFiles(repoRoot: string, text: string): string[] {
     const candidate = match[1]?.replace(/[.,;:]+$/, '');
     if (!candidate || candidate.includes('\0')) continue;
     if (candidate.startsWith('../') || candidate.startsWith('/') || candidate.includes('://')) continue;
-    if (candidate.startsWith('.impact-trace/') || candidate.includes('/.impact-trace/')) continue;
+    if (
+      candidate.startsWith(`${DATA_DIR}/`) ||
+      candidate.includes(`/${DATA_DIR}/`)
+    ) continue;
     if (candidate.startsWith('node_modules/') || candidate.includes('/node_modules/')) continue;
     try {
       const absolute = resolveInsideRoot(repoRoot, candidate);

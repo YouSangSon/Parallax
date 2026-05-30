@@ -269,7 +269,7 @@ export type ContextPack = {
   evidence: ContextPackEvidence[];
   resources: {
     contextPack?: string;
-    coverage: 'impact-trace://coverage/latest';
+    coverage: 'parallax://coverage/latest';
     entities: string[];
     evidence: string[];
   };

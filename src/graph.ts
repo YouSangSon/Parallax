@@ -244,7 +244,7 @@ function renderGraph(format: 'json' | 'mermaid' | 'dot', nodes: GraphNode[], edg
 
 function renderDot(nodes: GraphNode[], edges: GraphEdge[]): string {
   const lines = [
-    'digraph impact_trace {',
+    'digraph parallax {',
     '  rankdir=LR;',
     '  node [shape=box, style="rounded,filled", fontname="Helvetica"];'
   ];

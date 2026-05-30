@@ -29,10 +29,10 @@ import type { Db } from '../src/store.js';
 
 // Force the deterministic SHA-256 stub so spawned MCP subprocesses don't
 // download a real embedding model (~278 MB) during the test run.
-process.env.IMPACT_TRACE_EMBEDDING_MODEL = 'stub-sha256';
+process.env.PARALLAX_EMBEDDING_MODEL = 'stub-sha256';
 // Stub reflection LLM so the MCP reflect round-trip never touches the
 // network and does not require ANTHROPIC_API_KEY / OPENAI_API_KEY / Ollama.
-process.env.IMPACT_TRACE_REFLECTION_MODEL = 'stub';
+process.env.PARALLAX_REFLECTION_MODEL = 'stub';
 
 const require = createRequire(import.meta.url);
 const tsxLoaderPath = require.resolve('tsx');
@@ -76,7 +76,7 @@ class McpProcessClient {
       protocolVersion: '2025-06-18',
       capabilities: {},
       clientInfo: {
-        name: 'impact-trace-test',
+        name: 'parallax-test',
         version: '0.0.0'
       }
     });
@@ -155,7 +155,7 @@ class McpProcessClient {
 }
 
 async function makeRepo(): Promise<string> {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-mcp-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-mcp-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   await writeFile(path.join(repoRoot, 'src/a.ts'), 'export const a = 1;\n');
   await writeFile(path.join(repoRoot, 'src/b.ts'), 'import { a } from "./a"; export const b = a;\n');
@@ -165,7 +165,7 @@ async function makeRepo(): Promise<string> {
 }
 
 async function makeMcpWorkArtifactRepo(): Promise<string> {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-mcp-artifacts-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-mcp-artifacts-'));
   await mkdir(path.join(repoRoot, 'src/auth'), { recursive: true });
   await mkdir(path.join(repoRoot, 'policies'), { recursive: true });
   await mkdir(path.join(repoRoot, 'docs/decisions'), { recursive: true });
@@ -208,8 +208,8 @@ async function makeMcpWorkArtifactRepo(): Promise<string> {
 }
 
 async function makeContractWorkspaceRepo(): Promise<{ consumerRoot: string; providerRoot: string }> {
-  const consumerRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-mcp-contract-consumer-'));
-  const providerRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-mcp-contract-provider-'));
+  const consumerRoot = await mkdtemp(path.join(tmpdir(), 'parallax-mcp-contract-consumer-'));
+  const providerRoot = await mkdtemp(path.join(tmpdir(), 'parallax-mcp-contract-provider-'));
   await mkdir(path.join(consumerRoot, 'src'), { recursive: true });
   await writeFile(
     path.join(consumerRoot, 'src/client.ts'),
@@ -325,7 +325,7 @@ function downgradeFactProvenanceWithoutTxId(repoRoot: string): void {
 }
 
 async function makeSecretPathRepo(): Promise<{ repoRoot: string; secretPath: string }> {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-mcp-secret-path-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-mcp-secret-path-'));
   const secretPath = 'src/sk-12345678901234567890.ts';
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   await writeFile(path.join(repoRoot, secretPath), 'export const secretNamedFile = 1;\n');
@@ -335,7 +335,7 @@ async function makeSecretPathRepo(): Promise<{ repoRoot: string; secretPath: str
 }
 
 async function makeWideContextRepo(): Promise<string> {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-mcp-wide-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-mcp-wide-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   await mkdir(path.join(repoRoot, 'tests'), { recursive: true });
   await mkdir(path.join(repoRoot, 'docs'), { recursive: true });
@@ -387,7 +387,7 @@ async function makeWideContextRepo(): Promise<string> {
 }
 
 async function makeSearchEscapingRepo(): Promise<string> {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-mcp-search-escaping-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-mcp-search-escaping-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   await writeFile(path.join(repoRoot, 'src/percent%literal.ts'), 'export const percentLiteral = 1;\n');
   await writeFile(path.join(repoRoot, 'src/under_score.ts'), 'export const underScore = 1;\n');
@@ -916,7 +916,7 @@ async function makeBoundaryBudgetRepo(): Promise<string> {
     const run = db
       .prepare('SELECT id FROM index_runs WHERE repo_id = ? AND status = ? ORDER BY id DESC LIMIT 1')
       .get(repo.id, 'completed') as { id: number };
-    const boundaryPath = `boundary/${'p'.repeat(3_880)}.ts`;
+    const boundaryPath = `boundary/${'p'.repeat(3_888)}.ts`;
     const boundaryDisplayName = `Boundary ${'d'.repeat(200)}`;
     db.prepare(`
       INSERT INTO entities (
@@ -1014,7 +1014,7 @@ function removeTelemetrySchema(repoRoot: string): void {
 
 function dbArtifacts(repoRoot: string): string[] {
   return ['impact.db', 'impact.db-wal', 'impact.db-shm']
-    .filter((file) => existsSync(path.join(repoRoot, '.impact-trace', file)));
+    .filter((file) => existsSync(path.join(repoRoot, '.parallax', file)));
 }
 
 test('MCP stdio server initializes and exposes the full agent memory tool surface', async () => {
@@ -1024,7 +1024,7 @@ test('MCP stdio server initializes and exposes the full agent memory tool surfac
     const initialize = await client.initialize();
     assert.equal(initialize.error, undefined);
     assert.equal(typeof initialize.result.protocolVersion, 'string');
-    assert.equal(initialize.result.serverInfo.name, 'impact-trace');
+    assert.equal(initialize.result.serverInfo.name, 'parallax');
 
     const response = await client.request('tools/list', {});
     assert.equal(response.error, undefined);
@@ -1045,24 +1045,24 @@ test('MCP stdio server initializes and exposes the full agent memory tool surfac
       tools.map((tool) => [tool.name, tool])
     );
     const expectedTools = [
-      'impact_trace_analyze_diff',
-      'impact_trace_context_for_change',
-      'impact_trace_search_context',
-      'impact_trace_remember',
-      'impact_trace_recall',
-      'impact_trace_branch',
-      'impact_trace_merge',
-      'impact_trace_trace',
-      'impact_trace_reflect',
-      'impact_trace_abandon_branch',
-      'impact_trace_gc_branches',
-      'impact_trace_profile',
-      'impact_trace_explain_entity',
-      'impact_trace_contract_diff',
-      'impact_trace_repair_reflections',
-      'impact_trace_restore_branch',
-      'impact_trace_context_telemetry',
-      'impact_trace_doctor'
+      'parallax_analyze_diff',
+      'parallax_context_for_change',
+      'parallax_search_context',
+      'parallax_remember',
+      'parallax_recall',
+      'parallax_branch',
+      'parallax_merge',
+      'parallax_trace',
+      'parallax_reflect',
+      'parallax_abandon_branch',
+      'parallax_gc_branches',
+      'parallax_profile',
+      'parallax_explain_entity',
+      'parallax_contract_diff',
+      'parallax_repair_reflections',
+      'parallax_restore_branch',
+      'parallax_context_telemetry',
+      'parallax_doctor'
     ];
     assert.deepEqual(
       tools.map((tool) => tool.name).sort(),
@@ -1071,55 +1071,55 @@ test('MCP stdio server initializes and exposes the full agent memory tool surfac
     for (const expected of expectedTools) {
       assert.ok(toolByName.has(expected), `expected MCP tool ${expected} to be advertised`);
     }
-    assert.equal(toolByName.get('impact_trace_analyze_diff')!.annotations?.readOnlyHint, false);
-    assert.equal(toolByName.get('impact_trace_context_for_change')!.annotations?.readOnlyHint, false);
-    assert.equal(toolByName.get('impact_trace_search_context')!.annotations?.readOnlyHint, false);
-    assert.equal(toolByName.get('impact_trace_analyze_diff')!.inputSchema?.properties?.changedFiles?.type, 'array');
-    assert.equal(toolByName.get('impact_trace_analyze_diff')!.inputSchema?.properties?.changedFiles?.items?.type, 'string');
-    assert.equal(toolByName.get('impact_trace_analyze_diff')!.inputSchema?.properties?.maxDepth?.maximum, 8);
-    assert.equal(toolByName.get('impact_trace_remember')!.inputSchema?.properties?.supersedesFactIds?.type, 'array');
-    assert.equal(toolByName.get('impact_trace_remember')!.inputSchema?.properties?.supersedesFactIds?.items?.type, 'string');
-    assert.deepEqual(toolByName.get('impact_trace_context_for_change')!.inputSchema?.properties?.budget?.enum, [
+    assert.equal(toolByName.get('parallax_analyze_diff')!.annotations?.readOnlyHint, false);
+    assert.equal(toolByName.get('parallax_context_for_change')!.annotations?.readOnlyHint, false);
+    assert.equal(toolByName.get('parallax_search_context')!.annotations?.readOnlyHint, false);
+    assert.equal(toolByName.get('parallax_analyze_diff')!.inputSchema?.properties?.changedFiles?.type, 'array');
+    assert.equal(toolByName.get('parallax_analyze_diff')!.inputSchema?.properties?.changedFiles?.items?.type, 'string');
+    assert.equal(toolByName.get('parallax_analyze_diff')!.inputSchema?.properties?.maxDepth?.maximum, 8);
+    assert.equal(toolByName.get('parallax_remember')!.inputSchema?.properties?.supersedesFactIds?.type, 'array');
+    assert.equal(toolByName.get('parallax_remember')!.inputSchema?.properties?.supersedesFactIds?.items?.type, 'string');
+    assert.deepEqual(toolByName.get('parallax_context_for_change')!.inputSchema?.properties?.budget?.enum, [
       'brief',
       'standard',
       'deep'
     ]);
-    assert.deepEqual(toolByName.get('impact_trace_context_for_change')!.inputSchema?.properties?.reusePolicy?.enum, [
+    assert.deepEqual(toolByName.get('parallax_context_for_change')!.inputSchema?.properties?.reusePolicy?.enum, [
       'auto',
       'full',
       'reference'
     ]);
-    assert.equal(toolByName.get('impact_trace_search_context')!.inputSchema?.properties?.query?.type, 'string');
-    assert.equal(toolByName.get('impact_trace_search_context')!.inputSchema?.properties?.k?.maximum, 50);
-    assert.equal(toolByName.get('impact_trace_explain_entity')!.inputSchema?.properties?.relationLimit?.maximum, 100);
-    assert.equal(toolByName.get('impact_trace_contract_diff')!.inputSchema?.properties?.contractPath?.type, 'string');
-    assert.equal(toolByName.get('impact_trace_contract_diff')!.inputSchema?.properties?.providerServiceName?.type, 'string');
-    assert.equal(toolByName.get('impact_trace_contract_diff')!.inputSchema?.properties?.persist?.type, 'boolean');
-    assert.equal(toolByName.get('impact_trace_analyze_diff')!.annotations?.idempotentHint, false);
-    assert.equal(toolByName.get('impact_trace_context_for_change')!.annotations?.idempotentHint, false);
-    assert.equal(toolByName.get('impact_trace_search_context')!.annotations?.idempotentHint, false);
-    assert.equal(toolByName.get('impact_trace_recall')!.annotations?.readOnlyHint, true);
-    assert.equal(toolByName.get('impact_trace_trace')!.annotations?.readOnlyHint, true);
-    assert.equal(toolByName.get('impact_trace_profile')!.annotations?.readOnlyHint, true);
-    assert.equal(toolByName.get('impact_trace_explain_entity')!.annotations?.readOnlyHint, false);
-    assert.equal(toolByName.get('impact_trace_explain_entity')!.annotations?.idempotentHint, false);
-    assert.equal(toolByName.get('impact_trace_contract_diff')!.annotations?.readOnlyHint, false);
-    assert.equal(toolByName.get('impact_trace_contract_diff')!.annotations?.idempotentHint, false);
-    assert.equal(toolByName.get('impact_trace_context_telemetry')!.annotations?.readOnlyHint, true);
-    assert.equal(toolByName.get('impact_trace_context_telemetry')!.annotations?.idempotentHint, true);
-    assert.equal(toolByName.get('impact_trace_doctor')!.annotations?.readOnlyHint, true);
-    assert.equal(toolByName.get('impact_trace_doctor')!.annotations?.idempotentHint, true);
-    assert.equal(toolByName.get('impact_trace_remember')!.annotations?.readOnlyHint, false);
-    assert.equal(toolByName.get('impact_trace_branch')!.annotations?.readOnlyHint, false);
-    assert.equal(toolByName.get('impact_trace_merge')!.annotations?.readOnlyHint, false);
-    assert.equal(toolByName.get('impact_trace_reflect')!.annotations?.readOnlyHint, false);
-    assert.equal(toolByName.get('impact_trace_abandon_branch')!.annotations?.readOnlyHint, false);
-    assert.equal(toolByName.get('impact_trace_gc_branches')!.annotations?.readOnlyHint, false);
-    assert.equal(toolByName.get('impact_trace_repair_reflections')!.annotations?.readOnlyHint, false);
-    assert.equal(toolByName.get('impact_trace_restore_branch')!.annotations?.readOnlyHint, false);
+    assert.equal(toolByName.get('parallax_search_context')!.inputSchema?.properties?.query?.type, 'string');
+    assert.equal(toolByName.get('parallax_search_context')!.inputSchema?.properties?.k?.maximum, 50);
+    assert.equal(toolByName.get('parallax_explain_entity')!.inputSchema?.properties?.relationLimit?.maximum, 100);
+    assert.equal(toolByName.get('parallax_contract_diff')!.inputSchema?.properties?.contractPath?.type, 'string');
+    assert.equal(toolByName.get('parallax_contract_diff')!.inputSchema?.properties?.providerServiceName?.type, 'string');
+    assert.equal(toolByName.get('parallax_contract_diff')!.inputSchema?.properties?.persist?.type, 'boolean');
+    assert.equal(toolByName.get('parallax_analyze_diff')!.annotations?.idempotentHint, false);
+    assert.equal(toolByName.get('parallax_context_for_change')!.annotations?.idempotentHint, false);
+    assert.equal(toolByName.get('parallax_search_context')!.annotations?.idempotentHint, false);
+    assert.equal(toolByName.get('parallax_recall')!.annotations?.readOnlyHint, true);
+    assert.equal(toolByName.get('parallax_trace')!.annotations?.readOnlyHint, true);
+    assert.equal(toolByName.get('parallax_profile')!.annotations?.readOnlyHint, true);
+    assert.equal(toolByName.get('parallax_explain_entity')!.annotations?.readOnlyHint, false);
+    assert.equal(toolByName.get('parallax_explain_entity')!.annotations?.idempotentHint, false);
+    assert.equal(toolByName.get('parallax_contract_diff')!.annotations?.readOnlyHint, false);
+    assert.equal(toolByName.get('parallax_contract_diff')!.annotations?.idempotentHint, false);
+    assert.equal(toolByName.get('parallax_context_telemetry')!.annotations?.readOnlyHint, true);
+    assert.equal(toolByName.get('parallax_context_telemetry')!.annotations?.idempotentHint, true);
+    assert.equal(toolByName.get('parallax_doctor')!.annotations?.readOnlyHint, true);
+    assert.equal(toolByName.get('parallax_doctor')!.annotations?.idempotentHint, true);
+    assert.equal(toolByName.get('parallax_remember')!.annotations?.readOnlyHint, false);
+    assert.equal(toolByName.get('parallax_branch')!.annotations?.readOnlyHint, false);
+    assert.equal(toolByName.get('parallax_merge')!.annotations?.readOnlyHint, false);
+    assert.equal(toolByName.get('parallax_reflect')!.annotations?.readOnlyHint, false);
+    assert.equal(toolByName.get('parallax_abandon_branch')!.annotations?.readOnlyHint, false);
+    assert.equal(toolByName.get('parallax_gc_branches')!.annotations?.readOnlyHint, false);
+    assert.equal(toolByName.get('parallax_repair_reflections')!.annotations?.readOnlyHint, false);
+    assert.equal(toolByName.get('parallax_restore_branch')!.annotations?.readOnlyHint, false);
     for (const tool of tools) {
       assert.equal(tool.annotations?.destructiveHint, false, `${tool.name} must not advertise destructive MCP access`);
-      if (tool.name !== 'impact_trace_reflect') {
+      if (tool.name !== 'parallax_reflect') {
         assert.equal(tool.annotations?.openWorldHint, false, `${tool.name} must not advertise open-world MCP access`);
       }
     }
@@ -1161,8 +1161,8 @@ test('MCP rejects forbidden agentmemory-style tool calls even when called direct
       'memory_obsidian_export',
       'memory_mesh_sync',
       'memory_write_file',
-      'impact_trace_export',
-      'impact_trace_import_session'
+      'parallax_export',
+      'parallax_import_session'
     ]) {
       const response = await client.request('tools/call', { name, arguments: {} });
       assert.ok(response.error || response.result?.isError, `forbidden tool call must fail: ${name}`);
@@ -1181,7 +1181,7 @@ test('MCP doctor returns the local health report without telemetry writes', asyn
     await client.initialize();
 
     const response = await client.request('tools/call', {
-      name: 'impact_trace_doctor',
+      name: 'parallax_doctor',
       arguments: {}
     });
 
@@ -1195,7 +1195,7 @@ test('MCP doctor returns the local health report without telemetry writes', asyn
     };
     assert.equal(report.version, 0);
     assert.equal(report.repoRoot, '[REPO_ROOT]');
-    assert.equal(report.database.path, '.impact-trace/impact.db');
+    assert.equal(report.database.path, '.parallax/impact.db');
     assert.equal(report.database.schemaVersion, 15);
     assert.equal(report.index.latestCompletedRun?.status, 'completed');
     assert.equal(report.telemetry.toolRuns, 0);
@@ -1211,7 +1211,7 @@ test('MCP analyze_diff validates paths and returns affected files', async () => 
     await client.initialize();
 
     const response = await client.request('tools/call', {
-      name: 'impact_trace_analyze_diff',
+      name: 'parallax_analyze_diff',
       arguments: { changedFiles: ['src/a.ts'] }
     });
 
@@ -1221,7 +1221,7 @@ test('MCP analyze_diff validates paths and returns affected files', async () => 
     assert.ok(report.affectedFiles.some((file) => file.path === 'src/b.ts'));
 
     const bad = await client.request('tools/call', {
-      name: 'impact_trace_analyze_diff',
+      name: 'parallax_analyze_diff',
       arguments: { changedFiles: ['../outside.ts'] }
     });
 
@@ -1249,7 +1249,7 @@ test('MCP analyze_diff does not persist reports', async () => {
   try {
     await client.initialize();
     const response = await client.request('tools/call', {
-      name: 'impact_trace_analyze_diff',
+      name: 'parallax_analyze_diff',
       arguments: { changedFiles: ['src/a.ts'] }
     });
 
@@ -1258,7 +1258,7 @@ test('MCP analyze_diff does not persist reports', async () => {
     const filterWalAux = (names: string[]): string[] =>
       names.filter((name) => !/\.db-(wal|shm)$/.test(name));
     assert.deepEqual(filterWalAux(dbArtifacts(repoRoot)), filterWalAux(artifactsBefore));
-    assert.equal(existsSync(path.join(repoRoot, '.impact-trace/reports')), false);
+    assert.equal(existsSync(path.join(repoRoot, '.parallax/reports')), false);
   } finally {
     await client.close();
   }
@@ -1275,7 +1275,7 @@ test('MCP contract_diff returns compact workspace resources and persists breakin
     await client.initialize();
 
     const diffResponse = await client.request('tools/call', {
-      name: 'impact_trace_contract_diff',
+      name: 'parallax_contract_diff',
       arguments: {
         workspaceName: 'platform',
         providerServiceName: 'users-api',
@@ -1342,9 +1342,9 @@ test('MCP contract_diff returns compact workspace resources and persists breakin
       counterpartyRole: 'consumer',
       pattern: 'subscriber-call'
     });
-    assert.equal(diff.resources.workspace, 'impact-trace://workspaces/platform');
-    assert.equal(diff.resources.contracts, 'impact-trace://workspaces/platform/contracts');
-    assert.equal(diff.resources.crossRepoLinks, 'impact-trace://workspaces/platform/cross-repo-links');
+    assert.equal(diff.resources.workspace, 'parallax://workspaces/platform');
+    assert.equal(diff.resources.contracts, 'parallax://workspaces/platform/contracts');
+    assert.equal(diff.resources.crossRepoLinks, 'parallax://workspaces/platform/cross-repo-links');
 
     const workspaceResource = await client.request('resources/read', { uri: diff.resources.workspace });
     assert.equal(workspaceResource.error, undefined);
@@ -1388,7 +1388,7 @@ test('MCP contract_diff returns compact workspace resources and persists breakin
     assert.equal(usersContract.schemaVersion, '3.0.0');
     assert.equal(usersContract.endpointCount, 2);
     assert.deepEqual(usersContract.contractDiffHint, {
-      tool: 'impact_trace_contract_diff',
+      tool: 'parallax_contract_diff',
       workspaceName: 'platform',
       contractPath: 'contracts/openapi.yaml',
       providerServiceName: 'users-api'
@@ -1472,16 +1472,16 @@ test('MCP contract_diff returns compact workspace resources and persists breakin
     const templates = await client.request('resources/templates/list', {});
     assert.equal(templates.error, undefined);
     const templateUris = templates.result.resourceTemplates.map((item: { uriTemplate: string }) => item.uriTemplate);
-    assert.ok(templateUris.includes('impact-trace://workspaces/{workspaceName}'));
-    assert.ok(templateUris.includes('impact-trace://workspaces/{workspaceName}/contracts'));
-    assert.ok(templateUris.includes('impact-trace://workspaces/{workspaceName}/cross-repo-links'));
+    assert.ok(templateUris.includes('parallax://workspaces/{workspaceName}'));
+    assert.ok(templateUris.includes('parallax://workspaces/{workspaceName}/contracts'));
+    assert.ok(templateUris.includes('parallax://workspaces/{workspaceName}/cross-repo-links'));
 
     const resources = await client.request('resources/list', {});
     assert.equal(resources.error, undefined);
     const resourceUris = resources.result.resources.map((item: { uri: string }) => item.uri);
-    assert.ok(resourceUris.includes('impact-trace://workspaces/platform'));
-    assert.ok(resourceUris.includes('impact-trace://workspaces/platform/contracts'));
-    assert.ok(resourceUris.includes('impact-trace://workspaces/platform/cross-repo-links'));
+    assert.ok(resourceUris.includes('parallax://workspaces/platform'));
+    assert.ok(resourceUris.includes('parallax://workspaces/platform/contracts'));
+    assert.ok(resourceUris.includes('parallax://workspaces/platform/cross-repo-links'));
   } finally {
     await client.close();
   }
@@ -1495,7 +1495,7 @@ test('MCP context_for_change returns budgeted compact context without persisting
   try {
     await client.initialize();
     const response = await client.request('tools/call', {
-      name: 'impact_trace_context_for_change',
+      name: 'parallax_context_for_change',
       arguments: { changedFiles: ['src/a.ts'], budget: 'brief' }
     });
 
@@ -1518,25 +1518,25 @@ test('MCP context_for_change returns budgeted compact context without persisting
     };
     assert.equal(pack.version, 0);
     assert.match(pack.contextPackId, /^ctxpack:/);
-    assert.equal(pack.resourceUri, `impact-trace://context-packs/${encodeURIComponent(pack.contextPackId)}`);
+    assert.equal(pack.resourceUri, `parallax://context-packs/${encodeURIComponent(pack.contextPackId)}`);
     assert.equal(pack.resources.contextPack, pack.resourceUri);
     assert.equal(pack.reused, false);
     assert.match(pack.contentHash, /^[0-9a-f]{64}$/);
     assert.equal(pack.budget, 'brief');
     assert.equal(pack.changed[0]?.entity.id, 'file:src/a.ts');
-    assert.equal(pack.changed[0]?.resourceUri, `impact-trace://entities/${encodeURIComponent('file:src/a.ts')}`);
+    assert.equal(pack.changed[0]?.resourceUri, `parallax://entities/${encodeURIComponent('file:src/a.ts')}`);
     assert.ok(pack.context.some((item) => item.path === 'src/b.ts'));
-    assert.ok(pack.context.every((item) => item.resourceUri.startsWith('impact-trace://entities/')));
+    assert.ok(pack.context.every((item) => item.resourceUri.startsWith('parallax://entities/')));
     assert.ok(pack.context.every((item) => item.relations.length > 0));
     assert.ok(pack.evidence.length > 0);
     assert.ok(pack.evidence.every((item) => item.snippet.length <= pack.limits.snippetChars));
     assert.ok(pack.resources.evidence.length > 0);
     assert.ok(pack.evidence.some((item) => item.resourceUri));
     assert.ok(pack.evidence.every((item) =>
-      item.resourceUri === undefined || item.resourceUri === `impact-trace://evidence/${encodeURIComponent(item.id)}`
+      item.resourceUri === undefined || item.resourceUri === `parallax://evidence/${encodeURIComponent(item.id)}`
     ));
-    assert.equal(pack.resources.coverage, 'impact-trace://coverage/latest');
-    assert.ok(pack.resources.entities.includes(`impact-trace://entities/${encodeURIComponent('file:src/a.ts')}`));
+    assert.equal(pack.resources.coverage, 'parallax://coverage/latest');
+    assert.ok(pack.resources.entities.includes(`parallax://entities/${encodeURIComponent('file:src/a.ts')}`));
     assert.ok(pack.resources.evidence.every((uri) =>
       pack.evidence.some((item) => item.resourceUri === uri)
     ));
@@ -1563,7 +1563,7 @@ test('MCP context_for_change returns budgeted compact context without persisting
     assert.equal(packRows[0]!.id, pack.contextPackId);
     const telemetryRuns = contextToolRuns(repoRoot);
     assert.equal(telemetryRuns.length, 1);
-    assert.equal(telemetryRuns[0]!.tool_name, 'impact_trace_context_for_change');
+    assert.equal(telemetryRuns[0]!.tool_name, 'parallax_context_for_change');
     assert.equal(telemetryRuns[0]!.budget, 'brief');
     assert.equal(telemetryRuns[0]!.query, null);
     assert.deepEqual(JSON.parse(telemetryRuns[0]!.changed_files_json), ['src/a.ts']);
@@ -1584,7 +1584,7 @@ test('MCP context_for_change returns budgeted compact context without persisting
     const filterWalAux = (names: string[]): string[] =>
       names.filter((name) => !/\.db-(wal|shm)$/.test(name));
     assert.deepEqual(filterWalAux(dbArtifacts(repoRoot)), filterWalAux(artifactsBefore));
-    assert.equal(existsSync(path.join(repoRoot, '.impact-trace/reports')), false);
+    assert.equal(existsSync(path.join(repoRoot, '.parallax/reports')), false);
   } finally {
     await client.close();
   }
@@ -1596,7 +1596,7 @@ test('MCP context_for_change includes body-free work artifact previews', async (
   try {
     await client.initialize();
     const response = await client.request('tools/call', {
-      name: 'impact_trace_context_for_change',
+      name: 'parallax_context_for_change',
       arguments: { changedFiles: ['src/auth/session.ts'], budget: 'brief' }
     });
 
@@ -1639,7 +1639,7 @@ test('MCP context_for_change includes body-free work artifact previews', async (
     assert.equal(policy?.freshness.state, 'stale');
     assert.equal(policy?.freshness.thresholdDays, 90);
     assert.ok((policy?.freshness.ageDays ?? 0) > 90);
-    assert.equal(policy?.resourceUri, `impact-trace://entities/${encodeURIComponent('file:policies/security-auth.md')}`);
+    assert.equal(policy?.resourceUri, `parallax://entities/${encodeURIComponent('file:policies/security-auth.md')}`);
 
     const decision = pack.workArtifacts.find((item) => item.path === 'docs/decisions/auth-session.md');
     assert.equal(decision?.metadata?.updatedAt, '2026-02-30');
@@ -1664,7 +1664,7 @@ test('MCP context_for_change reuses persisted context packs by reference', async
   try {
     await client.initialize();
     const firstResponse = await client.request('tools/call', {
-      name: 'impact_trace_context_for_change',
+      name: 'parallax_context_for_change',
       arguments: { changedFiles: ['src/a.ts'], budget: 'brief' }
     });
     assert.equal(firstResponse.error, undefined);
@@ -1682,7 +1682,7 @@ test('MCP context_for_change reuses persisted context packs by reference', async
     assert.equal(first.resources.contextPack, first.resourceUri);
 
     const secondResponse = await client.request('tools/call', {
-      name: 'impact_trace_context_for_change',
+      name: 'parallax_context_for_change',
       arguments: { changedFiles: ['src/a.ts'], budget: 'brief' }
     });
     assert.equal(secondResponse.error, undefined);
@@ -1726,7 +1726,7 @@ test('MCP context_for_change reuses persisted context packs by reference', async
     assert.equal(persisted.evidence.length, first.evidence.length);
 
     const deepResponse = await client.request('tools/call', {
-      name: 'impact_trace_context_for_change',
+      name: 'parallax_context_for_change',
       arguments: { changedFiles: ['src/a.ts'], budget: 'deep' }
     });
     const deep = JSON.parse(deepResponse.result.content[0].text) as { contextPackId: string; reused: boolean };
@@ -1735,7 +1735,7 @@ test('MCP context_for_change reuses persisted context packs by reference', async
 
     await writeFile(path.join(repoRoot, 'src/a.ts'), 'import { b } from "./b";\nexport const a = b + 2;\n');
     const dirtyResponse = await client.request('tools/call', {
-      name: 'impact_trace_context_for_change',
+      name: 'parallax_context_for_change',
       arguments: { changedFiles: ['src/a.ts'], budget: 'brief' }
     });
     const dirty = JSON.parse(dirtyResponse.result.content[0].text) as { contextPackId: string; reused: boolean };
@@ -1759,7 +1759,7 @@ test('MCP context_for_change honors explicit context pack reuse policies', async
   try {
     await client.initialize();
     const firstResponse = await client.request('tools/call', {
-      name: 'impact_trace_context_for_change',
+      name: 'parallax_context_for_change',
       arguments: { changedFiles: ['src/a.ts'], budget: 'brief' }
     });
     const first = JSON.parse(firstResponse.result.content[0].text) as {
@@ -1773,7 +1773,7 @@ test('MCP context_for_change honors explicit context pack reuse policies', async
     assert.ok(Array.isArray(first.context));
 
     const fullResponse = await client.request('tools/call', {
-      name: 'impact_trace_context_for_change',
+      name: 'parallax_context_for_change',
       arguments: { changedFiles: ['src/a.ts'], budget: 'brief', reusePolicy: 'full' }
     });
     const full = JSON.parse(fullResponse.result.content[0].text) as {
@@ -1796,7 +1796,7 @@ test('MCP context_for_change honors explicit context pack reuse policies', async
     try {
       await referenceClient.initialize();
       const referenceResponse = await referenceClient.request('tools/call', {
-        name: 'impact_trace_context_for_change',
+        name: 'parallax_context_for_change',
         arguments: { changedFiles: ['src/a.ts'], budget: 'brief', reusePolicy: 'reference' }
       });
       const reference = JSON.parse(referenceResponse.result.content[0].text) as {
@@ -1836,7 +1836,7 @@ test('MCP context_for_change cache key tracks normalized inputs and index freshn
   try {
     await client.initialize();
     const orderedResponse = await client.request('tools/call', {
-      name: 'impact_trace_context_for_change',
+      name: 'parallax_context_for_change',
       arguments: { changedFiles: ['src/a.ts', 'src/b.ts'], budget: 'brief' }
     });
     const ordered = JSON.parse(orderedResponse.result.content[0].text) as {
@@ -1846,7 +1846,7 @@ test('MCP context_for_change cache key tracks normalized inputs and index freshn
     assert.equal(ordered.reused, false);
 
     const reversedResponse = await client.request('tools/call', {
-      name: 'impact_trace_context_for_change',
+      name: 'parallax_context_for_change',
       arguments: { changedFiles: ['src/b.ts', 'src/a.ts'], budget: 'brief' }
     });
     const reversed = JSON.parse(reversedResponse.result.content[0].text) as {
@@ -1859,7 +1859,7 @@ test('MCP context_for_change cache key tracks normalized inputs and index freshn
     assert.equal(reversed.reused, true);
 
     const depthResponse = await client.request('tools/call', {
-      name: 'impact_trace_context_for_change',
+      name: 'parallax_context_for_change',
       arguments: { changedFiles: ['src/a.ts', 'src/b.ts'], budget: 'brief', maxDepth: 2, maxFanout: 50 }
     });
     const depth = JSON.parse(depthResponse.result.content[0].text) as {
@@ -1871,7 +1871,7 @@ test('MCP context_for_change cache key tracks normalized inputs and index freshn
 
     await indexProject({ repoRoot });
     const reindexedResponse = await client.request('tools/call', {
-      name: 'impact_trace_context_for_change',
+      name: 'parallax_context_for_change',
       arguments: { changedFiles: ['src/a.ts', 'src/b.ts'], budget: 'brief' }
     });
     const reindexed = JSON.parse(reindexedResponse.result.content[0].text) as {
@@ -1883,7 +1883,7 @@ test('MCP context_for_change cache key tracks normalized inputs and index freshn
 
     const rowsBeforeBadInput = contextPackRows(repoRoot).length;
     const bad = await client.request('tools/call', {
-      name: 'impact_trace_context_for_change',
+      name: 'parallax_context_for_change',
       arguments: { changedFiles: ['../outside.ts'], budget: 'brief' }
     });
     assert.equal(bad.error, undefined);
@@ -1902,7 +1902,7 @@ test('MCP context telemetry summarizes tool runs and resource reads', async () =
     await client.initialize();
 
     const searchResponse = await client.request('tools/call', {
-      name: 'impact_trace_search_context',
+      name: 'parallax_search_context',
       arguments: { query: 'DEPENDS_ON', k: 3 }
     });
     assert.equal(searchResponse.error, undefined);
@@ -1917,7 +1917,7 @@ test('MCP context telemetry summarizes tool runs and resource reads', async () =
     assert.equal(evidenceResponse.error, undefined);
 
     const telemetryResponse = await client.request('tools/call', {
-      name: 'impact_trace_context_telemetry',
+      name: 'parallax_context_telemetry',
       arguments: { limit: 10 }
     });
     assert.equal(telemetryResponse.error, undefined);
@@ -1952,7 +1952,7 @@ test('MCP context telemetry summarizes tool runs and resource reads', async () =
     assert.equal(telemetry.summary.resourceAccesses, 1);
     assert.ok(telemetry.summary.returnedBytes > 0);
     assert.equal(telemetry.summary.resourcesAdvertised, search.resources.entities.length + search.resources.evidence.length);
-    assert.equal(telemetry.toolRuns[0]!.toolName, 'impact_trace_search_context');
+    assert.equal(telemetry.toolRuns[0]!.toolName, 'parallax_search_context');
     assert.equal(telemetry.toolRuns[0]!.query, 'DEPENDS_ON');
     assert.deepEqual(telemetry.toolRuns[0]!.changedFiles, []);
     assert.equal(telemetry.toolRuns[0]!.indexRunId, search.indexRunId);
@@ -1974,35 +1974,35 @@ test('MCP context telemetry records analyze, explain, resource kinds, and redact
     await client.initialize();
 
     const analyzeResponse = await client.request('tools/call', {
-      name: 'impact_trace_analyze_diff',
+      name: 'parallax_analyze_diff',
       arguments: { changedFiles: ['src/a.ts'] }
     });
     assert.equal(analyzeResponse.error, undefined);
 
     const explainResponse = await client.request('tools/call', {
-      name: 'impact_trace_explain_entity',
+      name: 'parallax_explain_entity',
       arguments: { entity: 'file:src/a.ts', evidenceLimit: 1 }
     });
     assert.equal(explainResponse.error, undefined);
 
     const secretSearchResponse = await client.request('tools/call', {
-      name: 'impact_trace_search_context',
+      name: 'parallax_search_context',
       arguments: { query: 'sk-12345678901234567890', includeEvidence: false }
     });
     assert.equal(secretSearchResponse.error, undefined);
 
     const entityResource = await client.request('resources/read', {
-      uri: `impact-trace://entities/${encodeURIComponent('file:src/a.ts')}`
+      uri: `parallax://entities/${encodeURIComponent('file:src/a.ts')}`
     });
     assert.equal(entityResource.error, undefined);
 
     const coverageResource = await client.request('resources/read', {
-      uri: 'impact-trace://coverage/latest'
+      uri: 'parallax://coverage/latest'
     });
     assert.equal(coverageResource.error, undefined);
 
     const telemetryResponse = await client.request('tools/call', {
-      name: 'impact_trace_context_telemetry',
+      name: 'parallax_context_telemetry',
       arguments: { limit: 10 }
     });
     assert.equal(telemetryResponse.error, undefined);
@@ -2015,10 +2015,10 @@ test('MCP context telemetry records analyze, explain, resource kinds, and redact
     assert.equal(telemetry.summary.toolRuns, 3);
     assert.equal(telemetry.summary.resourceAccesses, 2);
     const toolByName = new Map(telemetry.toolRuns.map((item) => [item.toolName, item]));
-    assert.deepEqual(toolByName.get('impact_trace_analyze_diff')!.changedFiles, ['src/a.ts']);
-    assert.equal(toolByName.get('impact_trace_explain_entity')!.query, 'file:src/a.ts');
-    assert.ok(toolByName.get('impact_trace_explain_entity')!.resourceCount > 0);
-    assert.equal(toolByName.get('impact_trace_search_context')!.query, '[REDACTED_OPENAI_KEY]');
+    assert.deepEqual(toolByName.get('parallax_analyze_diff')!.changedFiles, ['src/a.ts']);
+    assert.equal(toolByName.get('parallax_explain_entity')!.query, 'file:src/a.ts');
+    assert.ok(toolByName.get('parallax_explain_entity')!.resourceCount > 0);
+    assert.equal(toolByName.get('parallax_search_context')!.query, '[REDACTED_OPENAI_KEY]');
     const resourceKinds = new Set(telemetry.resourceAccesses.map((item) => item.resourceKind));
     assert.ok(resourceKinds.has('entity'));
     assert.ok(resourceKinds.has('coverage'));
@@ -2036,7 +2036,7 @@ test('MCP context telemetry redacts changed file paths before storage', async ()
     await client.initialize();
 
     const response = await client.request('tools/call', {
-      name: 'impact_trace_analyze_diff',
+      name: 'parallax_analyze_diff',
       arguments: { changedFiles: [secretPath] }
     });
     assert.equal(response.error, undefined);
@@ -2058,7 +2058,7 @@ test('MCP context telemetry redacts resource uri and id before storage', async (
   try {
     await client.initialize();
 
-    const uri = `impact-trace://entities/${encodeURIComponent(`file:${secretPath}`)}`;
+    const uri = `parallax://entities/${encodeURIComponent(`file:${secretPath}`)}`;
     const response = await client.request('resources/read', { uri });
     assert.equal(response.error, undefined);
 
@@ -2082,7 +2082,7 @@ test('MCP context telemetry returns empty rows on pre-v10 databases', async () =
     await client.initialize();
 
     const response = await client.request('tools/call', {
-      name: 'impact_trace_context_telemetry',
+      name: 'parallax_context_telemetry',
       arguments: { limit: 5 }
     });
     assert.equal(response.error, undefined);
@@ -2107,19 +2107,19 @@ test('MCP context telemetry returns empty rows on pre-v10 databases', async () =
 
 test('MCP context telemetry failures do not fail primary tool or resource responses', async () => {
   const repoRoot = await makeRepo();
-  const previous = process.env.IMPACT_TRACE_TELEMETRY_FORCE_FAILURE;
-  process.env.IMPACT_TRACE_TELEMETRY_FORCE_FAILURE = '1';
+  const previous = process.env.PARALLAX_TELEMETRY_FORCE_FAILURE;
+  process.env.PARALLAX_TELEMETRY_FORCE_FAILURE = '1';
   const client = new McpProcessClient(repoRoot);
   if (previous === undefined) {
-    delete process.env.IMPACT_TRACE_TELEMETRY_FORCE_FAILURE;
+    delete process.env.PARALLAX_TELEMETRY_FORCE_FAILURE;
   } else {
-    process.env.IMPACT_TRACE_TELEMETRY_FORCE_FAILURE = previous;
+    process.env.PARALLAX_TELEMETRY_FORCE_FAILURE = previous;
   }
   try {
     await client.initialize();
 
     const searchResponse = await client.request('tools/call', {
-      name: 'impact_trace_search_context',
+      name: 'parallax_search_context',
       arguments: { query: 'src/a.ts', includeEvidence: false }
     });
     assert.equal(searchResponse.error, undefined);
@@ -2128,7 +2128,7 @@ test('MCP context telemetry failures do not fail primary tool or resource respon
     assert.ok(search.results.some((item) => item.entity.id === 'file:src/a.ts'));
 
     const entityResponse = await client.request('resources/read', {
-      uri: `impact-trace://entities/${encodeURIComponent('file:src/a.ts')}`
+      uri: `parallax://entities/${encodeURIComponent('file:src/a.ts')}`
     });
     assert.equal(entityResponse.error, undefined);
     const entity = JSON.parse(entityResponse.result.contents[0].text) as { entity: { id: string } };
@@ -2147,11 +2147,11 @@ test('MCP context_for_change applies budget presets and validates paths', async 
     await client.initialize();
 
     const briefResponse = await client.request('tools/call', {
-      name: 'impact_trace_context_for_change',
+      name: 'parallax_context_for_change',
       arguments: { changedFiles: ['src/a.ts'], budget: 'brief' }
     });
     const deepResponse = await client.request('tools/call', {
-      name: 'impact_trace_context_for_change',
+      name: 'parallax_context_for_change',
       arguments: { changedFiles: ['src/a.ts'], budget: 'deep' }
     });
     const brief = JSON.parse(briefResponse.result.content[0].text) as {
@@ -2194,7 +2194,7 @@ test('MCP context_for_change applies budget presets and validates paths', async 
     assert.equal(deep.omittedCounts.affected, 0);
 
     const bad = await client.request('tools/call', {
-      name: 'impact_trace_context_for_change',
+      name: 'parallax_context_for_change',
       arguments: { changedFiles: ['../outside.ts'] }
     });
     assert.equal(bad.error, undefined);
@@ -2214,7 +2214,7 @@ test('MCP search_context returns ranked entities with optional evidence links', 
     await client.initialize();
 
     const response = await client.request('tools/call', {
-      name: 'impact_trace_search_context',
+      name: 'parallax_search_context',
       arguments: { query: 'src/a.ts', k: 1 }
     });
 
@@ -2243,7 +2243,7 @@ test('MCP search_context returns ranked entities with optional evidence links', 
     assert.equal(search.query, 'src/a.ts');
     assert.equal(search.results.length, 1);
     assert.equal(search.results[0]!.entity.id, 'file:src/a.ts');
-    assert.equal(search.results[0]!.resourceUri, `impact-trace://entities/${encodeURIComponent('file:src/a.ts')}`);
+    assert.equal(search.results[0]!.resourceUri, `parallax://entities/${encodeURIComponent('file:src/a.ts')}`);
     assert.ok(search.results[0]!.score > 0);
     assert.equal(search.results[0]!.score, search.results[0]!.rankSignals.rrfScore);
     assert.equal(search.results[0]!.rankSignals.algorithm, 'rrf');
@@ -2269,7 +2269,7 @@ test('MCP search_context returns ranked entities with optional evidence links', 
     }
 
     const relationResponse = await client.request('tools/call', {
-      name: 'impact_trace_search_context',
+      name: 'parallax_search_context',
       arguments: { query: 'DEPENDS_ON', k: 3 }
     });
     assert.equal(relationResponse.error, undefined);
@@ -2301,7 +2301,7 @@ test('MCP search_context returns ranked entities with optional evidence links', 
     );
 
     const noEvidence = await client.request('tools/call', {
-      name: 'impact_trace_search_context',
+      name: 'parallax_search_context',
       arguments: { query: 'docs/a.md', k: 5, includeEvidence: false }
     });
     assert.equal(noEvidence.error, undefined);
@@ -2315,7 +2315,7 @@ test('MCP search_context returns ranked entities with optional evidence links', 
     assert.ok(noEvidenceSearch.results.every((item) => item.evidence.length === 0));
 
     const blank = await client.request('tools/call', {
-      name: 'impact_trace_search_context',
+      name: 'parallax_search_context',
       arguments: { query: '   ' }
     });
     assert.equal(blank.error, undefined);
@@ -2332,7 +2332,7 @@ test('MCP search_context returns ranked entities with optional evidence links', 
     const filterWalAux = (names: string[]): string[] =>
       names.filter((name) => !/\.db-(wal|shm)$/.test(name));
     assert.deepEqual(filterWalAux(dbArtifacts(repoRoot)), filterWalAux(artifactsBefore));
-    assert.equal(existsSync(path.join(repoRoot, '.impact-trace/reports')), false);
+    assert.equal(existsSync(path.join(repoRoot, '.parallax/reports')), false);
   } finally {
     await client.close();
   }
@@ -2350,7 +2350,7 @@ test('MCP search_context treats LIKE wildcard characters as literal query text',
       ['\\', '\\']
     ] as const) {
       const response = await client.request('tools/call', {
-        name: 'impact_trace_search_context',
+        name: 'parallax_search_context',
         arguments: { query, k: 20, includeEvidence: false }
       });
 
@@ -2384,7 +2384,7 @@ test('MCP search_context fuses beyond the first page of each RRF stream', async 
     await client.initialize();
 
     const response = await client.request('tools/call', {
-      name: 'impact_trace_search_context',
+      name: 'parallax_search_context',
       arguments: { query: 'FUSION_NEEDLE', k: 1, includeEvidence: false }
     });
 
@@ -2422,7 +2422,7 @@ test('MCP search_context orders equal RRF scores by display name then entity id'
     await client.initialize();
 
     const displayTieResponse = await client.request('tools/call', {
-      name: 'impact_trace_search_context',
+      name: 'parallax_search_context',
       arguments: { query: 'DISPLAY_TIE_MARKER', k: 2, includeEvidence: false }
     });
     assert.equal(displayTieResponse.error, undefined);
@@ -2439,7 +2439,7 @@ test('MCP search_context orders equal RRF scores by display name then entity id'
     assert.ok(displayTie.results[0]!.entity.id > displayTie.results[1]!.entity.id);
 
     const idTieResponse = await client.request('tools/call', {
-      name: 'impact_trace_search_context',
+      name: 'parallax_search_context',
       arguments: { query: 'ENTITY_ID_ONLY_MARKER', k: 2, includeEvidence: false }
     });
     assert.equal(idTieResponse.error, undefined);
@@ -2466,7 +2466,7 @@ test('MCP search_context orders by raw RRF before rounded presentation score', a
     await client.initialize();
 
     const response = await client.request('tools/call', {
-      name: 'impact_trace_search_context',
+      name: 'parallax_search_context',
       arguments: { query: 'RAW_RRF_NEEDLE', k: 2, includeEvidence: false }
     });
     assert.equal(response.error, undefined);
@@ -2521,7 +2521,7 @@ test('MCP search_context fuses FTS, semantic, and graph proximity rank signals',
     await client.initialize();
 
     const ftsResponse = await client.request('tools/call', {
-      name: 'impact_trace_search_context',
+      name: 'parallax_search_context',
       arguments: { query: 'token validator', k: 5, includeEvidence: false }
     });
     assert.equal(ftsResponse.error, undefined);
@@ -2549,7 +2549,7 @@ test('MCP search_context fuses FTS, semantic, and graph proximity rank signals',
     assert.ok(neighbor.reasons.includes('graph-proximity'));
 
     const semanticResponse = await client.request('tools/call', {
-      name: 'impact_trace_search_context',
+      name: 'parallax_search_context',
       arguments: { query: 'retry idempotent checkout signal', k: 5, includeEvidence: false }
     });
     assert.equal(semanticResponse.error, undefined);
@@ -2582,7 +2582,7 @@ test('MCP search_context searches persistent evidence and fact FTS projections',
     await client.initialize();
 
     const evidenceResponse = await client.request('tools/call', {
-      name: 'impact_trace_search_context',
+      name: 'parallax_search_context',
       arguments: { query: 'rotation policy', k: 3, includeEvidence: false }
     });
     assert.equal(evidenceResponse.error, undefined);
@@ -2601,7 +2601,7 @@ test('MCP search_context searches persistent evidence and fact FTS projections',
     assert.ok(evidenceMatch.reasons.includes('evidence:1'));
 
     const factResponse = await client.request('tools/call', {
-      name: 'impact_trace_search_context',
+      name: 'parallax_search_context',
       arguments: { query: 'operator retention', k: 3, includeEvidence: false }
     });
     assert.equal(factResponse.error, undefined);
@@ -2620,14 +2620,14 @@ test('MCP search_context searches persistent evidence and fact FTS projections',
     assert.ok(factMatch.reasons.includes('facts:1'));
 
     const branchResponse = await client.request('tools/call', {
-      name: 'impact_trace_branch',
+      name: 'parallax_branch',
       arguments: { name: 'experimental-search' }
     });
     assert.equal(branchResponse.error, undefined);
     assert.equal(branchResponse.result.isError, undefined);
 
     const branchSupersedingResponse = await client.request('tools/call', {
-      name: 'impact_trace_remember',
+      name: 'parallax_remember',
       arguments: {
         branch: 'experimental-search',
         entity: 'file:depth/fact.ts',
@@ -2640,7 +2640,7 @@ test('MCP search_context searches persistent evidence and fact FTS projections',
     assert.equal(branchSupersedingResponse.result.isError, undefined);
 
     const branchOnlyFactResponse = await client.request('tools/call', {
-      name: 'impact_trace_remember',
+      name: 'parallax_remember',
       arguments: {
         branch: 'experimental-search',
         entity: 'file:depth/root.ts',
@@ -2652,7 +2652,7 @@ test('MCP search_context searches persistent evidence and fact FTS projections',
     assert.equal(branchOnlyFactResponse.result.isError, undefined);
 
     const branchOnlySearchResponse = await client.request('tools/call', {
-      name: 'impact_trace_search_context',
+      name: 'parallax_search_context',
       arguments: { query: 'branch-only hidden sentinel', k: 3, includeEvidence: false }
     });
     const branchOnlySearch = JSON.parse(branchOnlySearchResponse.result.content[0].text) as {
@@ -2665,7 +2665,7 @@ test('MCP search_context searches persistent evidence and fact FTS projections',
     );
 
     const mainScopedFactResponse = await client.request('tools/call', {
-      name: 'impact_trace_search_context',
+      name: 'parallax_search_context',
       arguments: { query: 'operator retention', k: 3, includeEvidence: false }
     });
     const mainScopedFactSearch = JSON.parse(mainScopedFactResponse.result.content[0].text) as {
@@ -2681,7 +2681,7 @@ test('MCP search_context searches persistent evidence and fact FTS projections',
     );
 
     const supersedingFactResponse = await client.request('tools/call', {
-      name: 'impact_trace_remember',
+      name: 'parallax_remember',
       arguments: {
         entity: 'file:depth/fact.ts',
         attribute: 'session_summary',
@@ -2693,7 +2693,7 @@ test('MCP search_context searches persistent evidence and fact FTS projections',
     assert.equal(supersedingFactResponse.result.isError, undefined);
 
     const supersededFactResponse = await client.request('tools/call', {
-      name: 'impact_trace_search_context',
+      name: 'parallax_search_context',
       arguments: { query: 'retention', k: 3, includeEvidence: false }
     });
     const supersededFactSearch = JSON.parse(supersededFactResponse.result.content[0].text) as {
@@ -2767,7 +2767,7 @@ test('MCP search_context semantic lane sees replacements made visible by superse
   try {
     await client.initialize();
     const response = await client.request('tools/call', {
-      name: 'impact_trace_search_context',
+      name: 'parallax_search_context',
       arguments: {
         query: 'archived semantic replacement exact vector',
         k: 5,
@@ -2843,7 +2843,7 @@ test('MCP search_context semantic lane hides facts superseded by visible main ed
   try {
     await client.initialize();
     const response = await client.request('tools/call', {
-      name: 'impact_trace_search_context',
+      name: 'parallax_search_context',
       arguments: {
         query: 'semantic old hidden exact vector',
         k: 5,
@@ -2882,7 +2882,7 @@ test('MCP search_context returns schema_outdated for pre-v15 read-only databases
   try {
     await client.initialize();
     const response = await client.request('tools/call', {
-      name: 'impact_trace_search_context',
+      name: 'parallax_search_context',
       arguments: { query: 'anything', k: 3, includeEvidence: false }
     });
 
@@ -2893,7 +2893,7 @@ test('MCP search_context returns schema_outdated for pre-v15 read-only databases
     };
     assert.equal(envelope.error.code, 'schema_outdated');
     assert.match(envelope.error.problem, /schema v15/);
-    assert.match(envelope.error.fix, /impact-trace init/);
+    assert.match(envelope.error.fix, /parallax init/);
   } finally {
     await client.close();
   }
@@ -2906,7 +2906,7 @@ test('MCP search_context semantic lane scores beyond the stream cap before ranki
     await client.initialize();
 
     const response = await client.request('tools/call', {
-      name: 'impact_trace_search_context',
+      name: 'parallax_search_context',
       arguments: { query: 'late semantic target exact checkout vector', k: 1, includeEvidence: false }
     });
 
@@ -2942,7 +2942,7 @@ test('MCP search_context semantic lane falls back when the sqlite-vec table is a
     await client.initialize();
 
     const response = await client.request('tools/call', {
-      name: 'impact_trace_search_context',
+      name: 'parallax_search_context',
       arguments: { query: 'late semantic target exact checkout vector', k: 1, includeEvidence: false }
     });
 
@@ -2978,7 +2978,7 @@ test('MCP search_context semantic lane falls back when the sqlite-vec table is e
     await client.initialize();
 
     const response = await client.request('tools/call', {
-      name: 'impact_trace_search_context',
+      name: 'parallax_search_context',
       arguments: { query: 'late semantic target exact checkout vector', k: 1, includeEvidence: false }
     });
 
@@ -3005,7 +3005,7 @@ test('MCP search_context caps broad LIKE candidate streams before final RRF fusi
     await client.initialize();
 
     const response = await client.request('tools/call', {
-      name: 'impact_trace_search_context',
+      name: 'parallax_search_context',
       arguments: { query: 'BROAD_CAP', k: 1, includeEvidence: false }
     });
 
@@ -3029,7 +3029,7 @@ test('MCP search_context brief budget reports returned bytes and omitted entitie
     await client.initialize();
 
     const response = await client.request('tools/call', {
-      name: 'impact_trace_search_context',
+      name: 'parallax_search_context',
       arguments: { query: 'src/a.ts', k: 10, includeEvidence: true, budget: 'brief' }
     });
 
@@ -3070,7 +3070,7 @@ test('MCP search_context exposes all search budget presets', async () => {
       ['deep', 30_000, 7_500]
     ] as const) {
       const response = await client.request('tools/call', {
-        name: 'impact_trace_search_context',
+        name: 'parallax_search_context',
         arguments: { query: 'src/a.ts', k: 3, includeEvidence: true, budget }
       });
 
@@ -3103,7 +3103,7 @@ test('MCP search_context trims evidence before violating a single-result byte bu
     await client.initialize();
 
     const response = await client.request('tools/call', {
-      name: 'impact_trace_search_context',
+      name: 'parallax_search_context',
       arguments: { query: 'HUGE_EVIDENCE_MARKER', k: 1, includeEvidence: true, budget: 'brief' }
     });
 
@@ -3132,7 +3132,7 @@ test('MCP search_context reports final bytes when one entity cannot fit budget',
     await client.initialize();
 
     const response = await client.request('tools/call', {
-      name: 'impact_trace_search_context',
+      name: 'parallax_search_context',
       arguments: { query: 'unavoidable', k: 1, includeEvidence: false, budget: 'brief' }
     });
 
@@ -3159,7 +3159,7 @@ test('MCP search_context reports exact final bytes at the budgetExceeded boundar
     await client.initialize();
 
     const response = await client.request('tools/call', {
-      name: 'impact_trace_search_context',
+      name: 'parallax_search_context',
       arguments: { query: 'boundary', k: 1, includeEvidence: false, budget: 'brief' }
     });
 
@@ -3184,7 +3184,7 @@ test('MCP search_context diversifies ranked entities by path, entity kind, and r
     await client.initialize();
 
     const response = await client.request('tools/call', {
-      name: 'impact_trace_search_context',
+      name: 'parallax_search_context',
       arguments: { query: 'DIVERSIFY_MARKER', k: 5, includeEvidence: false, budget: 'deep' }
     });
 
@@ -3252,7 +3252,7 @@ test('MCP search_context ignores entities from newer failed index runs', async (
     await client.initialize();
 
     const failedOnly = await client.request('tools/call', {
-      name: 'impact_trace_search_context',
+      name: 'parallax_search_context',
       arguments: { query: 'failed-only', k: 10 }
     });
     assert.equal(failedOnly.error, undefined);
@@ -3265,7 +3265,7 @@ test('MCP search_context ignores entities from newer failed index runs', async (
     assert.deepEqual(failedOnlySearch.results, []);
 
     const completed = await client.request('tools/call', {
-      name: 'impact_trace_search_context',
+      name: 'parallax_search_context',
       arguments: { query: 'src/a.ts', k: 10 }
     });
     const completedSearch = JSON.parse(completed.result.content[0].text) as {
@@ -3291,29 +3291,29 @@ test('MCP exposes report, entity, evidence, graph, and coverage resources', asyn
     const templates = await client.request('resources/templates/list', {});
     assert.equal(templates.error, undefined);
     const templateUris = templates.result.resourceTemplates.map((item: { uriTemplate: string }) => item.uriTemplate);
-    assert.ok(templateUris.includes('impact-trace://reports/{reportId}'));
-    assert.ok(templateUris.includes('impact-trace://entities/{entityId}'));
-    assert.ok(templateUris.includes('impact-trace://evidence/{evidenceId}'));
-    assert.ok(templateUris.includes('impact-trace://context-packs/{contextPackId}'));
-    assert.ok(templateUris.includes('impact-trace://reports/{reportId}/graph/{format}'));
+    assert.ok(templateUris.includes('parallax://reports/{reportId}'));
+    assert.ok(templateUris.includes('parallax://entities/{entityId}'));
+    assert.ok(templateUris.includes('parallax://evidence/{evidenceId}'));
+    assert.ok(templateUris.includes('parallax://context-packs/{contextPackId}'));
+    assert.ok(templateUris.includes('parallax://reports/{reportId}/graph/{format}'));
 
     const resources = await client.request('resources/list', {});
     assert.equal(resources.error, undefined);
     const resourceUris = resources.result.resources.map((item: { uri: string }) => item.uri);
-    assert.ok(resourceUris.includes(`impact-trace://reports/${report.id}`));
-    assert.ok(resourceUris.includes(`impact-trace://evidence/${encodeURIComponent(evidence.id)}`));
-    assert.ok(resourceUris.includes(`impact-trace://reports/${report.id}/graph/dot`));
-    assert.ok(resourceUris.includes('impact-trace://coverage/latest'));
+    assert.ok(resourceUris.includes(`parallax://reports/${report.id}`));
+    assert.ok(resourceUris.includes(`parallax://evidence/${encodeURIComponent(evidence.id)}`));
+    assert.ok(resourceUris.includes(`parallax://reports/${report.id}/graph/dot`));
+    assert.ok(resourceUris.includes('parallax://coverage/latest'));
 
     const reportResource = await client.request('resources/read', {
-      uri: `impact-trace://reports/${report.id}`
+      uri: `parallax://reports/${report.id}`
     });
     assert.equal(reportResource.error, undefined);
     const reportJson = JSON.parse(reportResource.result.contents[0].text) as { id: string };
     assert.equal(reportJson.id, report.id);
 
     const entityResource = await client.request('resources/read', {
-      uri: `impact-trace://entities/${encodeURIComponent('file:src/a.ts')}`
+      uri: `parallax://entities/${encodeURIComponent('file:src/a.ts')}`
     });
     assert.equal(entityResource.error, undefined);
     const entityJson = JSON.parse(entityResource.result.contents[0].text) as {
@@ -3327,7 +3327,7 @@ test('MCP exposes report, entity, evidence, graph, and coverage resources', asyn
     assert.equal(entityJson.limits.outgoingTruncated, false);
 
     const evidenceResource = await client.request('resources/read', {
-      uri: `impact-trace://evidence/${encodeURIComponent(evidence.id)}`
+      uri: `parallax://evidence/${encodeURIComponent(evidence.id)}`
     });
     assert.equal(evidenceResource.error, undefined);
     const evidenceJson = JSON.parse(evidenceResource.result.contents[0].text) as {
@@ -3349,7 +3349,7 @@ test('MCP exposes report, entity, evidence, graph, and coverage resources', asyn
     assert.equal(evidenceJson.indexRunId, report.indexRunId);
 
     const missingEvidence = await client.request('resources/read', {
-      uri: 'impact-trace://evidence/not-found'
+      uri: 'parallax://evidence/not-found'
     });
     assert.ok(missingEvidence.error);
     assert.match(missingEvidence.error.message, /impact evidence not found/);
@@ -3361,7 +3361,7 @@ test('MCP exposes report, entity, evidence, graph, and coverage resources', asyn
     assert.ok(missingEvidenceEnvelope.error.fix.length > 0);
 
     const missingContextPack = await client.request('resources/read', {
-      uri: 'impact-trace://context-packs/not-found'
+      uri: 'parallax://context-packs/not-found'
     });
     assert.ok(missingContextPack.error);
     const missingContextPackEnvelope = JSON.parse(missingContextPack.error.message) as {
@@ -3372,13 +3372,13 @@ test('MCP exposes report, entity, evidence, graph, and coverage resources', asyn
     assert.ok(missingContextPackEnvelope.error.fix.length > 0);
 
     const graphResource = await client.request('resources/read', {
-      uri: `impact-trace://reports/${report.id}/graph/dot`
+      uri: `parallax://reports/${report.id}/graph/dot`
     });
     assert.equal(graphResource.error, undefined);
-    assert.match(graphResource.result.contents[0].text, /^digraph impact_trace/);
+    assert.match(graphResource.result.contents[0].text, /^digraph parallax/);
 
     const firstGraphPage = await client.request('resources/read', {
-      uri: `impact-trace://reports/${report.id}/graph/json?limit=1`
+      uri: `parallax://reports/${report.id}/graph/json?limit=1`
     });
     assert.equal(firstGraphPage.error, undefined);
     const firstGraphJson = JSON.parse(firstGraphPage.result.contents[0].text) as {
@@ -3399,7 +3399,7 @@ test('MCP exposes report, entity, evidence, graph, and coverage resources', asyn
     assert.ok(firstGraphJson.page.nextCursor);
 
     const secondGraphPage = await client.request('resources/read', {
-      uri: `impact-trace://reports/${report.id}/graph/json?limit=1&cursor=${encodeURIComponent(firstGraphJson.page.nextCursor!)}`
+      uri: `parallax://reports/${report.id}/graph/json?limit=1&cursor=${encodeURIComponent(firstGraphJson.page.nextCursor!)}`
     });
     assert.equal(secondGraphPage.error, undefined);
     const secondGraphJson = JSON.parse(secondGraphPage.result.contents[0].text) as {
@@ -3411,7 +3411,7 @@ test('MCP exposes report, entity, evidence, graph, and coverage resources', asyn
     assert.notEqual(secondGraphJson.nodes[0]?.id, (firstGraphJson.nodes[0] as { id: string }).id);
 
     const invalidCursor = await client.request('resources/read', {
-      uri: `impact-trace://reports/${report.id}/graph/json?limit=1&cursor=${'9'.repeat(400)}:${'9'.repeat(400)}`
+      uri: `parallax://reports/${report.id}/graph/json?limit=1&cursor=${'9'.repeat(400)}:${'9'.repeat(400)}`
     });
     assert.ok(invalidCursor.error);
     const invalidCursorEnvelope = JSON.parse(invalidCursor.error.message) as {
@@ -3422,7 +3422,7 @@ test('MCP exposes report, entity, evidence, graph, and coverage resources', asyn
     assert.ok(invalidCursorEnvelope.error.fix.length > 0);
 
     const coverageResource = await client.request('resources/read', {
-      uri: 'impact-trace://coverage/latest'
+      uri: 'parallax://coverage/latest'
     });
     assert.equal(coverageResource.error, undefined);
     const coverageJson = JSON.parse(coverageResource.result.contents[0].text) as { coverage: unknown[]; truncated: boolean };
@@ -3464,7 +3464,7 @@ test('MCP evidence resource rejects evidence outside the latest completed index'
   try {
     await client.initialize();
     const response = await client.request('resources/read', {
-      uri: `impact-trace://evidence/${encodeURIComponent(staleEvidenceId)}`
+      uri: `parallax://evidence/${encodeURIComponent(staleEvidenceId)}`
     });
 
     assert.ok(response.error);
@@ -3479,14 +3479,14 @@ test('MCP evidence resource rejects evidence outside the latest completed index'
 });
 
 test('MCP coverage resource returns a typed error before the first completed index', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-mcp-coverage-error-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-mcp-coverage-error-'));
   await initProject({ repoRoot });
   const client = new McpProcessClient(repoRoot);
   try {
     await client.initialize();
 
     const response = await client.request('resources/read', {
-      uri: 'impact-trace://coverage/latest'
+      uri: 'parallax://coverage/latest'
     });
     assert.ok(response.error);
     const envelope = JSON.parse(response.error.message) as {
@@ -3509,7 +3509,7 @@ test('MCP explain_entity returns capped relation context with resolvable evidenc
   try {
     await client.initialize();
     const response = await client.request('tools/call', {
-      name: 'impact_trace_explain_entity',
+      name: 'parallax_explain_entity',
       arguments: {
         entity: 'file:src/a.ts',
         relationLimit: 2,
@@ -3536,7 +3536,7 @@ test('MCP explain_entity returns capped relation context with resolvable evidenc
       counts: { incoming: number; evidence: number };
     };
     assert.equal(explanation.entity.id, 'file:src/a.ts');
-    assert.equal(explanation.resources.entity, `impact-trace://entities/${encodeURIComponent('file:src/a.ts')}`);
+    assert.equal(explanation.resources.entity, `parallax://entities/${encodeURIComponent('file:src/a.ts')}`);
     assert.equal(explanation.relations.incoming.length, 2);
     assert.equal(explanation.limits.relationLimit, 2);
     assert.equal(explanation.limits.evidenceLimit, 2);
@@ -3566,7 +3566,7 @@ test('MCP explain_entity returns capped relation context with resolvable evidenc
     assert.deepEqual(filterWalAux(dbArtifacts(repoRoot)), filterWalAux(artifactsBefore));
 
     const missing = await client.request('tools/call', {
-      name: 'impact_trace_explain_entity',
+      name: 'parallax_explain_entity',
       arguments: { entity: 'file:missing.ts' }
     });
     assert.equal(missing.error, undefined);
@@ -3578,21 +3578,21 @@ test('MCP explain_entity returns capped relation context with resolvable evidenc
 });
 
 test('MCP analyze_diff on uninitialized repo does not create workspace files', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-mcp-uninit-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-mcp-uninit-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   await writeFile(path.join(repoRoot, 'src/a.ts'), 'export const a = 1;\n');
   const client = new McpProcessClient(repoRoot);
   try {
     await client.initialize();
     const response = await client.request('tools/call', {
-      name: 'impact_trace_analyze_diff',
+      name: 'parallax_analyze_diff',
       arguments: { changedFiles: ['src/a.ts'] }
     });
 
     assert.equal(response.error, undefined);
     assert.equal(response.result.isError, true);
-    assert.match(response.result.content[0].text, /database not found|init and impact-trace index/);
-    assert.equal(existsSync(path.join(repoRoot, '.impact-trace')), false);
+    assert.match(response.result.content[0].text, /database not found|init and parallax index/);
+    assert.equal(existsSync(path.join(repoRoot, '.parallax')), false);
   } finally {
     await client.close();
   }
@@ -3605,7 +3605,7 @@ test('MCP remember persists a fact and recall returns it on the main branch', as
     await client.initialize();
 
     const remembered = await client.request('tools/call', {
-      name: 'impact_trace_remember',
+      name: 'parallax_remember',
       arguments: {
         entity: 'file:src/a.ts',
         attribute: 'observed',
@@ -3620,7 +3620,7 @@ test('MCP remember persists a fact and recall returns it on the main branch', as
     assert.match(rememberPayload.txId, /^[0-9a-f]{64}$/);
 
     const recalled = await client.request('tools/call', {
-      name: 'impact_trace_recall',
+      name: 'parallax_recall',
       arguments: { entity: 'file:src/a.ts', attribute: 'observed' }
     });
 
@@ -3647,7 +3647,7 @@ test('MCP branch forks a new branch from main without copying facts', async () =
     await client.initialize();
 
     const created = await client.request('tools/call', {
-      name: 'impact_trace_branch',
+      name: 'parallax_branch',
       arguments: { name: 'experiment-1' }
     });
 
@@ -3660,7 +3660,7 @@ test('MCP branch forks a new branch from main without copying facts', async () =
     assert.match(payload.headTxId ?? '', /^[0-9a-f]{64}$/);
 
     const duplicate = await client.request('tools/call', {
-      name: 'impact_trace_branch',
+      name: 'parallax_branch',
       arguments: { name: 'experiment-1' }
     });
     assert.equal(duplicate.result.isError, true);
@@ -3677,7 +3677,7 @@ test('MCP trace walks fact_provenance back through the causal chain', async () =
     await client.initialize();
 
     const sourceResp = await client.request('tools/call', {
-      name: 'impact_trace_remember',
+      name: 'parallax_remember',
       arguments: {
         entity: 'file:src/a.ts',
         attribute: 'observed',
@@ -3687,7 +3687,7 @@ test('MCP trace walks fact_provenance back through the causal chain', async () =
     const source = JSON.parse(sourceResp.result.content[0].text) as { factId: string };
 
     const derivedResp = await client.request('tools/call', {
-      name: 'impact_trace_remember',
+      name: 'parallax_remember',
       arguments: {
         entity: 'file:src/b.ts',
         attribute: 'observed',
@@ -3698,7 +3698,7 @@ test('MCP trace walks fact_provenance back through the causal chain', async () =
     const derived = JSON.parse(derivedResp.result.content[0].text) as { factId: string };
 
     const traced = await client.request('tools/call', {
-      name: 'impact_trace_trace',
+      name: 'parallax_trace',
       arguments: { factId: derived.factId }
     });
     assert.equal(traced.error, undefined);
@@ -3709,7 +3709,7 @@ test('MCP trace walks fact_provenance back through the causal chain', async () =
     assert.deepEqual(chainIds, [derived.factId, source.factId]);
 
     const missing = await client.request('tools/call', {
-      name: 'impact_trace_trace',
+      name: 'parallax_trace',
       arguments: { factId: '0000000000000000000000000000000000000000000000000000000000000000' }
     });
     assert.equal(missing.result.isError, true);
@@ -3726,7 +3726,7 @@ test('MCP trace reports schema_outdated for pre-v15 fact_provenance tables', asy
   try {
     await writer.initialize();
     const remembered = await writer.request('tools/call', {
-      name: 'impact_trace_remember',
+      name: 'parallax_remember',
       arguments: {
         entity: 'file:src/a.ts',
         attribute: 'observed',
@@ -3744,7 +3744,7 @@ test('MCP trace reports schema_outdated for pre-v15 fact_provenance tables', asy
   try {
     await client.initialize();
     const response = await client.request('tools/call', {
-      name: 'impact_trace_trace',
+      name: 'parallax_trace',
       arguments: { factId }
     });
 
@@ -3756,7 +3756,7 @@ test('MCP trace reports schema_outdated for pre-v15 fact_provenance tables', asy
     assert.equal(envelope.error.code, 'schema_outdated');
     assert.match(envelope.error.problem, /schema v15/);
     assert.doesNotMatch(envelope.error.problem, /no such column/);
-    assert.match(envelope.error.fix, /impact-trace init/);
+    assert.match(envelope.error.fix, /parallax init/);
   } finally {
     await client.close();
   }
@@ -3769,7 +3769,7 @@ test('MCP remember supports explicit supersession and trace exposes the edge kin
     await client.initialize();
 
     const oldResp = await client.request('tools/call', {
-      name: 'impact_trace_remember',
+      name: 'parallax_remember',
       arguments: {
         entity: 'policy:checkout',
         attribute: 'decision',
@@ -3779,7 +3779,7 @@ test('MCP remember supports explicit supersession and trace exposes the edge kin
     const oldFact = JSON.parse(oldResp.result.content[0].text) as { factId: string };
 
     const newResp = await client.request('tools/call', {
-      name: 'impact_trace_remember',
+      name: 'parallax_remember',
       arguments: {
         entity: 'policy:checkout',
         attribute: 'decision',
@@ -3790,7 +3790,7 @@ test('MCP remember supports explicit supersession and trace exposes the edge kin
     const newFact = JSON.parse(newResp.result.content[0].text) as { factId: string };
 
     const recalled = await client.request('tools/call', {
-      name: 'impact_trace_recall',
+      name: 'parallax_recall',
       arguments: { entity: 'policy:checkout', attribute: 'decision', currentOnly: true }
     });
     const recallPayload = JSON.parse(recalled.result.content[0].text) as {
@@ -3800,7 +3800,7 @@ test('MCP remember supports explicit supersession and trace exposes the edge kin
     assert.deepEqual(recallPayload.facts.map((fact) => fact.value), ['retry once before fallback']);
 
     const traced = await client.request('tools/call', {
-      name: 'impact_trace_trace',
+      name: 'parallax_trace',
       arguments: { factId: newFact.factId }
     });
     const tracePayload = JSON.parse(traced.result.content[0].text) as {
@@ -3821,7 +3821,7 @@ test('MCP remember rejects unknown branches', async () => {
     await client.initialize();
 
     const response = await client.request('tools/call', {
-      name: 'impact_trace_remember',
+      name: 'parallax_remember',
       arguments: {
         entity: 'file:src/a.ts',
         attribute: 'observed',
@@ -3844,20 +3844,20 @@ test('MCP abandon_branch + gc_branches round-trip', async () => {
     await client.initialize();
 
     const refuseMain = await client.request('tools/call', {
-      name: 'impact_trace_abandon_branch',
+      name: 'parallax_abandon_branch',
       arguments: { name: 'main' }
     });
     assert.equal(refuseMain.result.isError, true);
     assert.match(refuseMain.result.content[0].text, /cannot abandon protected branch/);
 
     const branchResp = await client.request('tools/call', {
-      name: 'impact_trace_branch',
+      name: 'parallax_branch',
       arguments: { name: 'mcp-spec' }
     });
     assert.equal(branchResp.result.isError, undefined);
 
     const rememberResp = await client.request('tools/call', {
-      name: 'impact_trace_remember',
+      name: 'parallax_remember',
       arguments: {
         branch: 'mcp-spec',
         entity: 'file:src/spec.ts',
@@ -3868,7 +3868,7 @@ test('MCP abandon_branch + gc_branches round-trip', async () => {
     assert.equal(rememberResp.result.isError, undefined);
 
     const abandonResp = await client.request('tools/call', {
-      name: 'impact_trace_abandon_branch',
+      name: 'parallax_abandon_branch',
       arguments: { name: 'mcp-spec' }
     });
     const abandonPayload = JSON.parse(abandonResp.result.content[0].text) as {
@@ -3879,7 +3879,7 @@ test('MCP abandon_branch + gc_branches round-trip', async () => {
     assert.equal(abandonPayload.alreadyAbandoned, false);
 
     const dryGcResp = await client.request('tools/call', {
-      name: 'impact_trace_gc_branches',
+      name: 'parallax_gc_branches',
       arguments: { dryRun: true }
     });
     const dryGcPayload = JSON.parse(dryGcResp.result.content[0].text) as {
@@ -3890,7 +3890,7 @@ test('MCP abandon_branch + gc_branches round-trip', async () => {
     assert.equal(dryGcPayload.archivedTransactions, 1);
 
     const gcResp = await client.request('tools/call', {
-      name: 'impact_trace_gc_branches',
+      name: 'parallax_gc_branches',
       arguments: {}
     });
     const gcPayload = JSON.parse(gcResp.result.content[0].text) as {
@@ -3910,7 +3910,7 @@ test('MCP reflect summarizes via stub provider', async () => {
 
     for (const value of ['"first"', '"second"']) {
       const remembered = await client.request('tools/call', {
-        name: 'impact_trace_remember',
+        name: 'parallax_remember',
         arguments: {
           entity: 'file:src/mcp-reflect.ts',
           attribute: 'observed',
@@ -3930,7 +3930,7 @@ test('MCP reflect summarizes via stub provider', async () => {
     }
 
     const reflectResp = await client.request('tools/call', {
-      name: 'impact_trace_reflect',
+      name: 'parallax_reflect',
       arguments: { olderThanDays: 1, entity: 'file:src/mcp-reflect.ts' }
     });
     assert.equal(reflectResp.result.isError, undefined);

@@ -1,3 +1,4 @@
+import { envValue } from './branding.js';
 import { redactSecrets } from './security.js';
 
 export interface SummarizeInput {
@@ -21,7 +22,7 @@ const DEFAULT_TEMPERATURE = 0.2;
 const DEFAULT_TIMEOUT_MS = 30_000;
 
 function timeoutSignal(): AbortSignal {
-  const overrideRaw = process.env.IMPACT_TRACE_LLM_TIMEOUT_MS;
+  const overrideRaw = envValue('LLM_TIMEOUT_MS');
   const ms = overrideRaw ? Number.parseInt(overrideRaw, 10) : DEFAULT_TIMEOUT_MS;
   return AbortSignal.timeout(Number.isFinite(ms) && ms > 0 ? ms : DEFAULT_TIMEOUT_MS);
 }
@@ -41,12 +42,12 @@ function assertHttps(baseUrl: string, providerLabel: string): void {
 }
 
 function selectedReflectionModel(): string {
-  return process.env.IMPACT_TRACE_REFLECTION_MODEL ?? DEFAULT_REFLECTION_MODEL;
+  return envValue('REFLECTION_MODEL') ?? DEFAULT_REFLECTION_MODEL;
 }
 
 /**
  * Multi-provider summarizer for reflective consolidation. Provider is
- * encoded as a prefix on the env var IMPACT_TRACE_REFLECTION_MODEL:
+ * encoded as a prefix on the env var PARALLAX_REFLECTION_MODEL:
  *   stub                  -> deterministic in-process summary
  *   ollama:<model>        -> POST http://localhost:11434/api/chat
  *   anthropic:<model>     -> POST https://api.anthropic.com/v1/messages
@@ -107,7 +108,7 @@ async function summarizeOllama(
   modelId: string,
   input: SummarizeInput
 ): Promise<ReflectionResult> {
-  const baseUrl = process.env.IMPACT_TRACE_OLLAMA_BASE_URL ?? 'http://localhost:11434';
+  const baseUrl = envValue('OLLAMA_BASE_URL') ?? 'http://localhost:11434';
   let response: Response;
   try {
     response = await fetch(`${baseUrl}/api/chat`, {
@@ -160,7 +161,7 @@ async function summarizeAnthropic(
   if (!apiKey) {
     throw new Error('ANTHROPIC_API_KEY not set for anthropic provider');
   }
-  const baseUrl = process.env.IMPACT_TRACE_ANTHROPIC_BASE_URL ?? 'https://api.anthropic.com';
+  const baseUrl = envValue('ANTHROPIC_BASE_URL') ?? 'https://api.anthropic.com';
   assertHttps(baseUrl, 'Anthropic');
   let response: Response;
   try {

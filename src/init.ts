@@ -1,6 +1,7 @@
 import { existsSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
+import { PACKAGE_NAME } from './branding.js';
 import { normalizeRepoRoot } from './security.js';
 import { databasePath, ensureImpactDir, ensureRepo, openDatabase } from './store.js';
 import type { InitOptions, InitResult } from './types.js';
@@ -16,7 +17,7 @@ export async function initProject(options: InitOptions): Promise<InitResult> {
       `${JSON.stringify(
         {
           schemaVersion: 3,
-          project: 'impact-trace',
+          project: PACKAGE_NAME,
           mcp: { readOnly: true },
           redaction: { enabled: true }
         },

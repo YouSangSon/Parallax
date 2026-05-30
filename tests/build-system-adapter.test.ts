@@ -72,7 +72,7 @@ function targetMetadata(row: RelationRow): Readonly<Record<string, unknown>> {
 }
 
 test('indexProject extracts npm workspace package graph', async () => {
-  const repoRoot = await makeRepo('impact-trace-build-npm-');
+  const repoRoot = await makeRepo('parallax-build-npm-');
   await mkdir(path.join(repoRoot, 'apps/web'), { recursive: true });
   await mkdir(path.join(repoRoot, 'packages/core'), { recursive: true });
   await mkdir(path.join(repoRoot, 'packages/core/src'), { recursive: true });
@@ -184,7 +184,7 @@ test('indexProject extracts npm workspace package graph', async () => {
 });
 
 test('indexProject extracts Maven Gradle Go Cargo and pyproject dependencies', async () => {
-  const repoRoot = await makeRepo('impact-trace-build-polyglot-');
+  const repoRoot = await makeRepo('parallax-build-polyglot-');
   await mkdir(path.join(repoRoot, 'service'), { recursive: true });
   await mkdir(path.join(repoRoot, 'app'), { recursive: true });
   await mkdir(path.join(repoRoot, 'core'), { recursive: true });
@@ -354,7 +354,7 @@ test('indexProject extracts Maven Gradle Go Cargo and pyproject dependencies', a
 });
 
 test('indexProject extracts pyproject optional and dependency group dependencies', async () => {
-  const repoRoot = await makeRepo('impact-trace-build-python-groups-');
+  const repoRoot = await makeRepo('parallax-build-python-groups-');
 
   await writeFile(
     path.join(repoRoot, 'pyproject.toml'),
@@ -437,7 +437,7 @@ test('indexProject extracts pyproject optional and dependency group dependencies
 });
 
 test('indexProject extracts Poetry group dependencies from tool.poetry projects', async () => {
-  const repoRoot = await makeRepo('impact-trace-build-poetry-groups-');
+  const repoRoot = await makeRepo('parallax-build-poetry-groups-');
 
   await writeFile(
     path.join(repoRoot, 'pyproject.toml'),
@@ -475,7 +475,7 @@ test('indexProject extracts Poetry group dependencies from tool.poetry projects'
 });
 
 test('indexProject resolves Cargo workspace members and local path dependencies', async () => {
-  const repoRoot = await makeRepo('impact-trace-build-cargo-workspace-');
+  const repoRoot = await makeRepo('parallax-build-cargo-workspace-');
   await mkdir(path.join(repoRoot, 'crates/api'), { recursive: true });
   await mkdir(path.join(repoRoot, 'crates/core'), { recursive: true });
   await mkdir(path.join(repoRoot, 'crates/support'), { recursive: true });
@@ -640,7 +640,7 @@ test('indexProject resolves Cargo workspace members and local path dependencies'
 });
 
 test('indexProject resolves Go workspace use directories and local replace modules', async () => {
-  const repoRoot = await makeRepo('impact-trace-build-go-work-replace-');
+  const repoRoot = await makeRepo('parallax-build-go-work-replace-');
   await mkdir(path.join(repoRoot, 'apps/api'), { recursive: true });
   await mkdir(path.join(repoRoot, 'apps/other'), { recursive: true });
   await mkdir(path.join(repoRoot, 'libs/shared'), { recursive: true });
@@ -752,7 +752,7 @@ test('indexProject resolves Go workspace use directories and local replace modul
 });
 
 test('indexProject resolves Maven POM properties in package and dependency coordinates', async () => {
-  const repoRoot = await makeRepo('impact-trace-build-maven-properties-');
+  const repoRoot = await makeRepo('parallax-build-maven-properties-');
   await mkdir(path.join(repoRoot, 'service'), { recursive: true });
 
   await writeFile(
@@ -893,7 +893,7 @@ test('indexProject resolves Maven POM properties in package and dependency coord
 });
 
 test('indexProject resolves Gradle version catalog library and bundle aliases', async () => {
-  const repoRoot = await makeRepo('impact-trace-build-gradle-catalog-');
+  const repoRoot = await makeRepo('parallax-build-gradle-catalog-');
   await mkdir(path.join(repoRoot, 'app'), { recursive: true });
   await mkdir(path.join(repoRoot, 'gradle'), { recursive: true });
   await mkdir(path.join(repoRoot, 'services/orders/gradle'), { recursive: true });
@@ -1072,7 +1072,7 @@ test('indexProject resolves Gradle version catalog library and bundle aliases', 
 });
 
 test('indexProject reports malformed build manifests without failing the index run', async () => {
-  const repoRoot = await makeRepo('impact-trace-build-malformed-');
+  const repoRoot = await makeRepo('parallax-build-malformed-');
   await mkdir(path.join(repoRoot, 'service'), { recursive: true });
   await mkdir(path.join(repoRoot, 'app'), { recursive: true });
   await mkdir(path.join(repoRoot, 'crates/api'), { recursive: true });

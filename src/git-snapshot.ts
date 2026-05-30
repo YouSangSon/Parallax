@@ -1,5 +1,7 @@
 import { execFileSync } from 'node:child_process';
 
+import { DATA_DIR } from './branding.js';
+
 export type GitSnapshot = {
   commitSha: string | null;
   branchName: string | null;
@@ -76,7 +78,10 @@ function statusRecords(status: string): string[][] {
 
 function isImpactTracePath(filePath: string): boolean {
   const normalized = filePath.replace(/^"|"$/g, '').replaceAll('\\', '/');
-  return normalized === '.impact-trace' || normalized.startsWith('.impact-trace/');
+  return (
+    normalized === DATA_DIR ||
+    normalized.startsWith(`${DATA_DIR}/`)
+  );
 }
 
 function git(repoRoot: string, args: string[]): string {

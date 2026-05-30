@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import { analyzeDiff, indexProject, initProject } from '../src/index.js';
 import { databasePath } from '../src/store.js';
 
-process.env.IMPACT_TRACE_EMBEDDING_MODEL = 'stub-sha256';
+process.env.PARALLAX_EMBEDDING_MODEL = 'stub-sha256';
 
 type EvidenceSpanRow = {
   snippet: string;
@@ -19,7 +19,7 @@ type EvidenceSpanRow = {
 };
 
 test('indexProject emits Spring Boot endpoints, component declarations, and JVM/Python/Go/Rust VERIFIES relations', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-spring-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-spring-'));
   await mkdir(path.join(repoRoot, 'src/main/java/com/example/orders'), { recursive: true });
   await mkdir(path.join(repoRoot, 'src/main/java/com/example/health'), { recursive: true });
   await mkdir(path.join(repoRoot, 'src/main/java/com/example/internal'), { recursive: true });
@@ -375,7 +375,7 @@ test('indexProject emits Spring Boot endpoints, component declarations, and JVM/
   await writeFile(path.join(repoRoot, 'rust/src/calculator.rs'), 'pub fn calculate() -> i32 { 1 }\n');
   await writeFile(
     path.join(repoRoot, 'rust/tests/calculator_spec.rs'),
-    'use impact_trace_fixture::calculator::calculate;\n\n#[test]\nfn verifies_calculator() {\n  assert_eq!(calculate(), 1);\n}\n'
+    'use parallax_fixture::calculator::calculate;\n\n#[test]\nfn verifies_calculator() {\n  assert_eq!(calculate(), 1);\n}\n'
   );
 
   await initProject({ repoRoot });

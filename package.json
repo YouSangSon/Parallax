@@ -1,17 +1,17 @@
 {
-  "name": "impact-trace",
+  "name": "parallax",
   "version": "0.1.0",
   "description": "Local-first code impact analysis for agentic coding workflows.",
   "license": "MIT",
   "author": "YouSangSon",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/YouSangSon/Impact-trace.git"
+    "url": "git+https://github.com/YouSangSon/Parallax.git"
   },
   "bugs": {
-    "url": "https://github.com/YouSangSon/Impact-trace/issues"
+    "url": "https://github.com/YouSangSon/Parallax/issues"
   },
-  "homepage": "https://github.com/YouSangSon/Impact-trace#readme",
+  "homepage": "https://github.com/YouSangSon/Parallax#readme",
   "keywords": [
     "agentic-coding",
     "code-analysis",
@@ -25,7 +25,7 @@
     "./package.json": "./package.json"
   },
   "bin": {
-    "impact-trace": "./dist/src/cli.js"
+    "parallax": "./dist/src/cli.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

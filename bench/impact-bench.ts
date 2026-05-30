@@ -19,7 +19,7 @@ import { CONFIG_INFRA_SEMANTIC_ADAPTER_ID } from '../src/adapters/config-infra.j
 
 const fixtureId = 'phase6b-multilanguage-v0';
 const schemaVersion = 2;
-const defaultOutputPath = '.impact-trace/bench/impact-bench-report.json';
+const defaultOutputPath = '.parallax/bench/impact-bench-report.json';
 const regexAdapterId = MULTI_LANG_REGEX_ADAPTER_ID;
 const retrievalFixtureId = 'search-context-retrieval-v0';
 
@@ -253,7 +253,7 @@ export async function runImpactBench(options: RunImpactBenchOptions = {}): Promi
       readOnly: true
     });
 
-    const db = new DatabaseSync(path.join(fixtureRoot, '.impact-trace/impact.db'), {
+    const db = new DatabaseSync(path.join(fixtureRoot, '.parallax/impact.db'), {
       readOnly: true
     });
     let actualRelations: ActualRelation[];
@@ -354,7 +354,7 @@ export async function runImpactBench(options: RunImpactBenchOptions = {}): Promi
 }
 
 function seedRetrievalFixture(repoRoot: string, indexRunId: number): void {
-  const db = new DatabaseSync(path.join(repoRoot, '.impact-trace/impact.db'));
+  const db = new DatabaseSync(path.join(repoRoot, '.parallax/impact.db'));
   try {
     db.exec('PRAGMA foreign_keys = ON;');
     const repo = db.prepare('SELECT id FROM repos LIMIT 1').get() as { id: number };

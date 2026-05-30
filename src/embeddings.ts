@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 
+import { envValue } from './branding.js';
+
 export interface EmbeddingResult {
   model: string;
   vector: Buffer;
@@ -21,7 +23,7 @@ let pipelinePromise: Promise<FeatureExtractionPipeline> | null = null;
 let cachedModelName: string | null = null;
 
 function selectedModel(): string {
-  return process.env.IMPACT_TRACE_EMBEDDING_MODEL ?? DEFAULT_REAL_MODEL;
+  return envValue('EMBEDDING_MODEL') ?? DEFAULT_REAL_MODEL;
 }
 
 export function selectedEmbeddingModel(): string {
@@ -56,9 +58,9 @@ function quantizeToInt8(values: Float32Array): Buffer {
  *
  * Default model: Xenova/multilingual-e5-base (~278 MB, 768-dim,
  * multilingual including Korean). Override via env:
- *   IMPACT_TRACE_EMBEDDING_MODEL=stub-sha256       # deterministic stub
- *   IMPACT_TRACE_EMBEDDING_MODEL=Xenova/bge-base-en-v1.5
- *   IMPACT_TRACE_EMBEDDING_MODEL=Xenova/all-mpnet-base-v2
+ *   PARALLAX_EMBEDDING_MODEL=stub-sha256       # deterministic stub
+ *   PARALLAX_EMBEDDING_MODEL=Xenova/bge-base-en-v1.5
+ *   PARALLAX_EMBEDDING_MODEL=Xenova/all-mpnet-base-v2
  *
  * The first call lazy-downloads the model into the user's HF cache.
  * Subsequent calls are warm (~50–150ms on M-series CPU).

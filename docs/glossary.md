@@ -1,4 +1,4 @@
-# Impact-trace 용어집
+# Parallax 용어집
 
 이 프로젝트는 두 축 (영향 분석 + 에이전트 메모리)이 같은 SQLite 위에 살면서 *겹치는 어휘*를 쓴다. 이 문서는 그 모호함을 해소한다. 빠른 답은 다음 표를 보고, 정확한 정의는 아래 섹션을 본다.
 
@@ -95,7 +95,7 @@ attribute의 binary 분류 — `'static'` (코드 관계, 영구적) vs `'dynami
 ## 자주 헷갈리는 쌍
 
 ### branch (git) vs branch (memory)
-같은 단어, *완전히 다른 개념*. git branch는 git 자체가 관리하고 impact-trace는 직접 접근 안 함. memory branch는 `branches` 테이블의 행이며 `branch --name foo` / `branch --abandon foo` / `branch --restore foo` / `merge` 명령으로 다룸.
+같은 단어, *완전히 다른 개념*. git branch는 git 자체가 관리하고 parallax는 직접 접근 안 함. memory branch는 `branches` 테이블의 행이며 `branch --name foo` / `branch --abandon foo` / `branch --restore foo` / `merge` 명령으로 다룸.
 
 ### entity (impact) vs entity_id (memory)
 - impact의 entity는 `entities` 테이블의 *struct* (id + kind + version + source span).

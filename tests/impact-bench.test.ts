@@ -6,11 +6,11 @@ import { test } from 'node:test';
 
 import { runImpactBench } from '../bench/impact-bench.js';
 
-process.env.IMPACT_TRACE_EMBEDDING_MODEL = 'stub-sha256';
+process.env.PARALLAX_EMBEDDING_MODEL = 'stub-sha256';
 
 test('ImpactBench runner writes deterministic report shape', async () => {
   const workspaceRoot = await mkdtemp(path.join(tmpdir(), 'impact-bench-workspace-'));
-  const outputPath = path.join(workspaceRoot, '.impact-trace/bench/impact-bench-report.json');
+  const outputPath = path.join(workspaceRoot, '.parallax/bench/impact-bench-report.json');
 
   try {
     const report = await runImpactBench({ workspaceRoot, outputPath });
@@ -27,7 +27,7 @@ test('ImpactBench runner writes deterministic report shape', async () => {
     assert.equal(serializedReport.includes('impact-bench-fixture-'), false);
     assert.equal(report.schemaVersion, 2);
     assert.equal(report.fixtureId, 'phase6b-multilanguage-v0');
-    assert.equal(report.outputPath, '.impact-trace/bench/impact-bench-report.json');
+    assert.equal(report.outputPath, '.parallax/bench/impact-bench-report.json');
     assert.equal(report.summary.passed, true);
     assert.equal(report.summary.expectedRelations, 69);
     assert.equal(report.summary.expectedRelations, report.summary.matchedRelations);
@@ -61,7 +61,7 @@ test('ImpactBench runner writes deterministic report shape', async () => {
     for (const query of report.retrieval.queries) {
       assert.equal(query.returnedBytes <= 5_000, true);
       for (const uri of query.resourceUris) {
-        assert.match(uri, /^impact-trace:\/\//);
+        assert.match(uri, /^parallax:\/\//);
       }
     }
     assert.deepEqual(report.missingRelations, []);

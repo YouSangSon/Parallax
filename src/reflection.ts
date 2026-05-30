@@ -1,3 +1,4 @@
+import { envValue } from './branding.js';
 import { computeEmbedding } from './embeddings.js';
 import type { EmbeddingResult } from './embeddings.js';
 import { remember, withAgentMemoryDb } from './agent_memory.js';
@@ -58,7 +59,7 @@ const SYSTEM_PROMPT =
   'If observations contradict each other, mention the contradiction.';
 
 function maxFactsPerEntity(): number {
-  const raw = process.env.IMPACT_TRACE_REFLECT_MAX_FACTS_PER_ENTITY;
+  const raw = envValue('REFLECT_MAX_FACTS_PER_ENTITY');
   if (!raw) return DEFAULT_MAX_FACTS_PER_ENTITY;
   const parsed = Number.parseInt(raw, 10);
   if (!Number.isFinite(parsed) || parsed < MIN_FACTS_PER_ENTITY) {

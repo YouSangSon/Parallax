@@ -1,7 +1,7 @@
 node_modules/
 dist/
 coverage/
-.impact-trace/
+.parallax/
 .DS_Store
 *.log
 *.tsbuildinfo

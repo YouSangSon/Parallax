@@ -11,12 +11,12 @@ import { test } from 'node:test';
 import { doctorProject, indexProject, initProject } from '../src/index.js';
 import { databasePath } from '../src/store.js';
 
-process.env.IMPACT_TRACE_EMBEDDING_MODEL = 'stub-sha256';
+process.env.PARALLAX_EMBEDDING_MODEL = 'stub-sha256';
 
 const require = createRequire(import.meta.url);
 const tsxLoaderPath = require.resolve('tsx');
 
-async function makeRepo(prefix = 'impact-trace-doctor-'): Promise<string> {
+async function makeRepo(prefix = 'parallax-doctor-'): Promise<string> {
   const repoRoot = await mkdtemp(path.join(tmpdir(), prefix));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   await writeFile(path.join(repoRoot, 'src/a.ts'), 'export const a = 1;\n');
@@ -29,7 +29,7 @@ function findingCodes(report: Awaited<ReturnType<typeof doctorProject>>): string
 }
 
 test('doctorProject reports a missing database without creating workspace files', async () => {
-  const repoRoot = await makeRepo('impact-trace-doctor-missing-');
+  const repoRoot = await makeRepo('parallax-doctor-missing-');
 
   const report = doctorProject({ repoRoot });
 
@@ -39,11 +39,11 @@ test('doctorProject reports a missing database without creating workspace files'
   assert.equal(report.index.latestCompletedRun, null);
   assert.equal(report.telemetry.toolRuns, null);
   assert.ok(findingCodes(report).includes('database_missing'));
-  assert.equal(existsSync(path.join(repoRoot, '.impact-trace')), false);
+  assert.equal(existsSync(path.join(repoRoot, '.parallax')), false);
 });
 
 test('doctorProject reports initialized repos before the first index', async () => {
-  const repoRoot = await makeRepo('impact-trace-doctor-init-');
+  const repoRoot = await makeRepo('parallax-doctor-init-');
   await initProject({ repoRoot });
 
   const report = doctorProject({ repoRoot });
@@ -62,7 +62,7 @@ test('doctorProject reports initialized repos before the first index', async () 
 });
 
 test('doctorProject reports latest completed index, coverage, adapters, and vector state', async () => {
-  const repoRoot = await makeRepo('impact-trace-doctor-indexed-');
+  const repoRoot = await makeRepo('parallax-doctor-indexed-');
   await initProject({ repoRoot });
   const index = await indexProject({ repoRoot });
 
@@ -80,7 +80,7 @@ test('doctorProject reports latest completed index, coverage, adapters, and vect
 });
 
 test('doctorProject handles pre-v10 databases without querying missing telemetry tables', async () => {
-  const repoRoot = await makeRepo('impact-trace-doctor-prev10-');
+  const repoRoot = await makeRepo('parallax-doctor-prev10-');
   await initProject({ repoRoot });
   const db = new DatabaseSync(databasePath(repoRoot));
   try {
@@ -103,7 +103,7 @@ test('doctorProject handles pre-v10 databases without querying missing telemetry
 });
 
 test('doctorProject handles legacy pre-git-snapshot index_runs columns', async () => {
-  const repoRoot = await makeRepo('impact-trace-doctor-legacy-index-');
+  const repoRoot = await makeRepo('parallax-doctor-legacy-index-');
   await initProject({ repoRoot });
   const db = new DatabaseSync(databasePath(repoRoot));
   try {
@@ -153,7 +153,7 @@ test('doctorProject handles legacy pre-git-snapshot index_runs columns', async (
 });
 
 test('doctorProject returns a diagnostic report for malformed required tables', async () => {
-  const repoRoot = await makeRepo('impact-trace-doctor-malformed-');
+  const repoRoot = await makeRepo('parallax-doctor-malformed-');
   await initProject({ repoRoot });
   const db = new DatabaseSync(databasePath(repoRoot));
   try {
@@ -177,7 +177,7 @@ test('doctorProject returns a diagnostic report for malformed required tables', 
 });
 
 test('doctorProject reports incomplete optional telemetry schema without throwing', async () => {
-  const repoRoot = await makeRepo('impact-trace-doctor-malformed-telemetry-');
+  const repoRoot = await makeRepo('parallax-doctor-malformed-telemetry-');
   await initProject({ repoRoot });
   const db = new DatabaseSync(databasePath(repoRoot));
   try {
@@ -199,7 +199,7 @@ test('doctorProject reports incomplete optional telemetry schema without throwin
 });
 
 test('CLI doctor prints the doctor report as JSON', async () => {
-  const repoRoot = await makeRepo('impact-trace-doctor-cli-');
+  const repoRoot = await makeRepo('parallax-doctor-cli-');
   await initProject({ repoRoot });
   await indexProject({ repoRoot });
 
@@ -216,7 +216,7 @@ test('CLI doctor prints the doctor report as JSON', async () => {
 });
 
 test('CLI doctor returns non-zero when the database is missing', async () => {
-  const repoRoot = await makeRepo('impact-trace-doctor-cli-missing-');
+  const repoRoot = await makeRepo('parallax-doctor-cli-missing-');
 
   const result = spawnSync(process.execPath, ['--import', tsxLoaderPath, path.resolve('src/cli.ts'), 'doctor'], {
     cwd: repoRoot,

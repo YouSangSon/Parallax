@@ -1,6 +1,6 @@
 ---
 name: Feature request
-about: Suggest a capability for Impact Trace
+about: Suggest a capability for Parallax
 title: "feat: "
 labels: enhancement
 assignees: ""
@@ -23,4 +23,3 @@ assignees: ""
 - [ ] MCP
 - [ ] Docs
 - [ ] Other
-

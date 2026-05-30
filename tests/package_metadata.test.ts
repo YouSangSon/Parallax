@@ -16,5 +16,5 @@ test('package exports only the public module entrypoint and metadata', async () 
     '.': './dist/src/index.js',
     './package.json': './package.json'
   });
-  assert.equal(packageJson.bin?.['impact-trace'], './dist/src/cli.js');
+  assert.equal(packageJson.bin?.['parallax'], './dist/src/cli.js');
 });

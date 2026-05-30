@@ -9,11 +9,11 @@ import { remember, withAgentMemoryDb } from '../src/agent_memory.js';
 import { initProject } from '../src/init.js';
 
 // Force deterministic stubs so tests stay offline and fast.
-process.env.IMPACT_TRACE_REFLECTION_MODEL = 'stub';
-process.env.IMPACT_TRACE_EMBEDDING_MODEL = 'stub-sha256';
+process.env.PARALLAX_REFLECTION_MODEL = 'stub';
+process.env.PARALLAX_EMBEDDING_MODEL = 'stub-sha256';
 
 async function makeRepo(): Promise<string> {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-reflect-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-reflect-'));
   await initProject({ repoRoot });
   return repoRoot;
 }
@@ -169,15 +169,15 @@ test('reflect propagates LLM error with entity name in the message', async () =>
     remember(db, { entity: 'file:src/err.ts', attribute: 'observed', value: 'b' });
     db.prepare("UPDATE transactions SET ts = '2020-01-01T00:00:00.000Z'").run();
   });
-  const previous = process.env.IMPACT_TRACE_REFLECTION_MODEL;
-  process.env.IMPACT_TRACE_REFLECTION_MODEL = 'martianbrand:wat';
+  const previous = process.env.PARALLAX_REFLECTION_MODEL;
+  process.env.PARALLAX_REFLECTION_MODEL = 'martianbrand:wat';
   try {
     await assert.rejects(
       () => reflectFacts(repoRoot, { olderThanDays: 1 }),
       /summarize failed for file:src\/err\.ts/
     );
   } finally {
-    process.env.IMPACT_TRACE_REFLECTION_MODEL = previous;
+    process.env.PARALLAX_REFLECTION_MODEL = previous;
   }
 });
 
@@ -196,8 +196,8 @@ test('reflect caps per-entity facts and links exactly cap many provenance edges'
   // disclosed in the prompt footer; provenance and audit row record the
   // bounded count, not the total.
   const repoRoot = await makeRepo();
-  const previousCap = process.env.IMPACT_TRACE_REFLECT_MAX_FACTS_PER_ENTITY;
-  process.env.IMPACT_TRACE_REFLECT_MAX_FACTS_PER_ENTITY = '5';
+  const previousCap = process.env.PARALLAX_REFLECT_MAX_FACTS_PER_ENTITY;
+  process.env.PARALLAX_REFLECT_MAX_FACTS_PER_ENTITY = '5';
   try {
     withAgentMemoryDb(repoRoot, false, (db) => {
       for (let i = 0; i < 12; i += 1) {
@@ -238,9 +238,9 @@ test('reflect caps per-entity facts and links exactly cap many provenance edges'
     });
   } finally {
     if (previousCap === undefined) {
-      delete process.env.IMPACT_TRACE_REFLECT_MAX_FACTS_PER_ENTITY;
+      delete process.env.PARALLAX_REFLECT_MAX_FACTS_PER_ENTITY;
     } else {
-      process.env.IMPACT_TRACE_REFLECT_MAX_FACTS_PER_ENTITY = previousCap;
+      process.env.PARALLAX_REFLECT_MAX_FACTS_PER_ENTITY = previousCap;
     }
   }
 });
@@ -251,8 +251,8 @@ test('reflect cap window keeps the OLDEST facts (ts ASC), not the newest', async
   // ts DESC (or any other ordering), this test fails by checking which
   // specific iterations got linked into fact_provenance kind='summary'.
   const repoRoot = await makeRepo();
-  const previousCap = process.env.IMPACT_TRACE_REFLECT_MAX_FACTS_PER_ENTITY;
-  process.env.IMPACT_TRACE_REFLECT_MAX_FACTS_PER_ENTITY = '5';
+  const previousCap = process.env.PARALLAX_REFLECT_MAX_FACTS_PER_ENTITY;
+  process.env.PARALLAX_REFLECT_MAX_FACTS_PER_ENTITY = '5';
   try {
     withAgentMemoryDb(repoRoot, false, (db) => {
       const stampTx = db.prepare(
@@ -294,17 +294,17 @@ test('reflect cap window keeps the OLDEST facts (ts ASC), not the newest', async
     });
   } finally {
     if (previousCap === undefined) {
-      delete process.env.IMPACT_TRACE_REFLECT_MAX_FACTS_PER_ENTITY;
+      delete process.env.PARALLAX_REFLECT_MAX_FACTS_PER_ENTITY;
     } else {
-      process.env.IMPACT_TRACE_REFLECT_MAX_FACTS_PER_ENTITY = previousCap;
+      process.env.PARALLAX_REFLECT_MAX_FACTS_PER_ENTITY = previousCap;
     }
   }
 });
 
 test('reflect cap env var falls back to default when invalid', async () => {
   const repoRoot = await makeRepo();
-  const previous = process.env.IMPACT_TRACE_REFLECT_MAX_FACTS_PER_ENTITY;
-  process.env.IMPACT_TRACE_REFLECT_MAX_FACTS_PER_ENTITY = 'not-a-number';
+  const previous = process.env.PARALLAX_REFLECT_MAX_FACTS_PER_ENTITY;
+  process.env.PARALLAX_REFLECT_MAX_FACTS_PER_ENTITY = 'not-a-number';
   try {
     withAgentMemoryDb(repoRoot, false, (db) => {
       remember(db, { entity: 'file:src/cap.ts', attribute: 'observed', value: 'a' });
@@ -316,9 +316,9 @@ test('reflect cap env var falls back to default when invalid', async () => {
     assert.equal(result.reflections[0]!.sourceCount, 2);
   } finally {
     if (previous === undefined) {
-      delete process.env.IMPACT_TRACE_REFLECT_MAX_FACTS_PER_ENTITY;
+      delete process.env.PARALLAX_REFLECT_MAX_FACTS_PER_ENTITY;
     } else {
-      process.env.IMPACT_TRACE_REFLECT_MAX_FACTS_PER_ENTITY = previous;
+      process.env.PARALLAX_REFLECT_MAX_FACTS_PER_ENTITY = previous;
     }
   }
 });

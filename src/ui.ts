@@ -3,6 +3,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
 import { markdownArtifactMetadataFromContent, type MarkdownArtifactMetadata } from './artifacts.js';
+import { PACKAGE_NAME } from './branding.js';
 import { doctorProject, type DoctorReport } from './doctor.js';
 import { exportImpactGraph } from './graph.js';
 import { databasePath, getRepoId, latestCompletedIndexRun, openDatabase } from './store.js';
@@ -228,7 +229,7 @@ export async function buildUiSnapshot(options: UiOptions): Promise<UiSnapshot> {
       errors: [{
         code: 'database_missing',
         message: 'Impact database not found for this repository.',
-        fix: 'Run impact-trace init and impact-trace index before opening the UI.'
+        fix: `Run ${PACKAGE_NAME} init and ${PACKAGE_NAME} index before opening the UI.`
       }],
       reports: [],
       selectedReport: null,
@@ -263,13 +264,13 @@ export async function buildUiSnapshot(options: UiOptions): Promise<UiSnapshot> {
       errors.push({
         code: 'report_not_found',
         message: `Impact report not found: ${options.reportId}`,
-        fix: 'Choose a report from the selector or run impact-trace analyze to create a current report.'
+        fix: `Choose a report from the selector or run ${PACKAGE_NAME} analyze to create a current report.`
       });
     } else if (!options.reportId && reportRows.length === 0) {
       errors.push({
         code: 'report_missing',
         message: 'No persisted impact reports were found.',
-        fix: 'Run impact-trace analyze --changed <path> to create a report.'
+        fix: `Run ${PACKAGE_NAME} analyze --changed <path> to create a report.`
       });
     }
     const selectedRow = requestedReport ?? (options.reportId ? null : reportRows[0] ?? null);
@@ -597,7 +598,7 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
     <section class="workbench" aria-label="Impact report workbench">
       <section class="panel">
         <h2>Change Set</h2>
-        <ul class="list filterable">${changedRows || '<li class="empty">Run impact-trace analyze to create a report.</li>'}</ul>
+        <ul class="list filterable">${changedRows || `<li class="empty">Run ${PACKAGE_NAME} analyze to create a report.</li>`}</ul>
       </section>
       <section class="panel">
         <h2>Impact Paths</h2>
@@ -890,7 +891,7 @@ function workArtifactEvidenceResourceUri(
     return entityResourceUri(evidence.subject);
   }
   if (workArtifactPaths.has(evidence.file)) {
-    return `impact-trace://entities/${encodeURIComponent(`file:${evidence.file}`)}`;
+    return `parallax://entities/${encodeURIComponent(`file:${evidence.file}`)}`;
   }
   return undefined;
 }
@@ -1286,11 +1287,11 @@ function readWorkspaceLinksForUi(
 }
 
 function workspaceResourceUri(workspaceName: string): string {
-  return `impact-trace://workspaces/${encodeURIComponent(workspaceName)}`;
+  return `parallax://workspaces/${encodeURIComponent(workspaceName)}`;
 }
 
 function entityResourceUri(entity: ImpactReport['changed'][number]): string {
-  return `impact-trace://entities/${encodeURIComponent(entity.id)}`;
+  return `parallax://entities/${encodeURIComponent(entity.id)}`;
 }
 
 function workspaceResources(workspaceName: string): UiWorkspaceSnapshot['resources'] {

@@ -9,7 +9,7 @@ import { indexProject, initProject } from '../src/index.js';
 import { databasePath } from '../src/store.js';
 import { TS_JS_SEMANTIC_ADAPTER_ID } from '../src/adapters/multi-language-regex.js';
 
-process.env.IMPACT_TRACE_EMBEDDING_MODEL = 'stub-sha256';
+process.env.PARALLAX_EMBEDDING_MODEL = 'stub-sha256';
 
 type EvidenceRow = {
   kind: string;
@@ -24,7 +24,7 @@ type EvidenceRow = {
 };
 
 test('TypeScript JavaScript adapter records parser-backed import evidence spans', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-ts-spans-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-spans-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   await mkdir(path.join(repoRoot, 'tests'), { recursive: true });
 

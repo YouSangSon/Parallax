@@ -11,13 +11,13 @@ import { test } from 'node:test';
 import { createBranch, importSession, initProject, recallOnRepo, withAgentMemoryDb } from '../src/index.js';
 import { databasePath } from '../src/store.js';
 
-process.env.IMPACT_TRACE_EMBEDDING_MODEL = 'stub-sha256';
+process.env.PARALLAX_EMBEDDING_MODEL = 'stub-sha256';
 
 const require = createRequire(import.meta.url);
 const tsxLoaderPath = require.resolve('tsx');
 
 async function makeRepo(): Promise<string> {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'impact-trace-session-'));
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-session-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   await mkdir(path.join(repoRoot, 'docs'), { recursive: true });
   await mkdir(path.join(repoRoot, 'sessions'), { recursive: true });
@@ -181,7 +181,7 @@ test('importSession idempotency is scoped to the requested branch visibility', a
 
 test('importSession allows an explicitly named external file but redacts its persisted source path', async () => {
   const repoRoot = await makeRepo();
-  const externalDir = await mkdtemp(path.join(tmpdir(), 'impact-trace-external-session-'));
+  const externalDir = await mkdtemp(path.join(tmpdir(), 'parallax-external-session-'));
   const externalFile = path.join(externalDir, 'claude.jsonl');
   await writeFile(externalFile, JSON.stringify({ message: 'Claude touched src/a.ts' }));
 
@@ -223,13 +223,13 @@ test('importSession rejects directories and missing databases without creating w
     /outside repo root/
   );
 
-  const uninitializedRepo = await mkdtemp(path.join(tmpdir(), 'impact-trace-session-uninit-'));
+  const uninitializedRepo = await mkdtemp(path.join(tmpdir(), 'parallax-session-uninit-'));
   await writeFile(path.join(uninitializedRepo, 'session.jsonl'), JSON.stringify({ message: 'src/a.ts' }));
   await assert.rejects(
     importSession({ repoRoot: uninitializedRepo, file: 'session.jsonl', format: 'codex' }),
-    /impact trace database not found/
+    /parallax database not found/
   );
-  assert.equal(existsSync(path.join(uninitializedRepo, '.impact-trace')), false);
+  assert.equal(existsSync(path.join(uninitializedRepo, '.parallax')), false);
 });
 
 test('CLI import-session imports a claude transcript', async () => {

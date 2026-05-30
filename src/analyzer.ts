@@ -3,8 +3,9 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { entityKindForMarkdownPath } from './artifacts.js';
+import { PRODUCT_NAME } from './branding.js';
 import { readGitSnapshot } from './git-snapshot.js';
-import { ensureRepo, getRepoId, latestCompletedIndexRun, openDatabase } from './store.js';
+import { ensureRepo, getRepoId, impactDir, latestCompletedIndexRun, openDatabase } from './store.js';
 import { normalizeRepoRoot, redactSecrets, resolveInsideRoot, toRelativePath } from './security.js';
 import type { AnalyzeOptions, Confidence, EntityKind, EntityRef, Evidence, ImpactAction, ImpactReport, ImpactTarget } from './types.js';
 
@@ -229,9 +230,9 @@ export async function analyzeDiff(options: AnalyzeOptions): Promise<ImpactReport
   };
 
   if (options.writeReport) {
-    const reportDir = path.join(repoRoot, '.impact-trace', 'reports');
+    const reportDir = path.join(impactDir(repoRoot), 'reports');
     mkdirSync(reportDir, { recursive: true });
-    const reportPath = path.join('.impact-trace', 'reports', `${id}.md`);
+    const reportPath = path.relative(repoRoot, path.join(reportDir, `${id}.md`));
     writeFileSync(path.join(repoRoot, reportPath), renderMarkdown(report), 'utf8');
     report.reportPath = reportPath.split(path.sep).join('/');
   }
@@ -748,7 +749,7 @@ function renderMarkdown(report: ImpactReport): string {
     .map((item) => `### ${item.id}\n\nFile: \`${item.file}\`\n\nKind: ${item.kind}\n\nConfidence: ${item.confidence}\n\n\`\`\`text\n${item.snippet}\n\`\`\``)
     .join('\n\n');
 
-  return `# Impact Trace Report
+  return `# ${PRODUCT_NAME} Report
 
 Report ID: ${report.id}
 

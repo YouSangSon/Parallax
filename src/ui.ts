@@ -239,6 +239,15 @@ type ImpactMapEdge = {
   confidence: string;
 };
 
+type ImpactLane = {
+  id: 'code' | 'tests' | 'knowledge' | 'contracts' | 'config';
+  label: string;
+  count: number;
+  summary: string;
+  tone: 'green' | 'amber' | 'teal' | 'blue' | 'red';
+  topPath?: string;
+};
+
 export async function buildUiSnapshot(options: UiOptions): Promise<UiSnapshot> {
   const repoRoot = normalizeRepoRoot(options.repoRoot);
   const doctor = doctorProject({ repoRoot });
@@ -335,9 +344,22 @@ function renderImpactSummaryPanel(snapshot: UiSnapshot): string {
   const primaryChange = report.changed[0] ? entityLabel(report.changed[0]) : report.changedFiles[0] ?? 'unknown change';
   const blast = blastRadiusLabel(report.affectedCount);
   const graphEdges = snapshot.graph?.totalEdges ?? snapshot.graph?.edges.length ?? 0;
+  const impactLanes = buildImpactLanes(report, snapshot.workArtifacts);
   const confidenceRows = ['proven', 'inferred', 'heuristic', 'unknown'].map((confidence) => {
     const count = report.affectedFiles.filter((item) => item.confidence === confidence).length;
     return `<span class="confidence-meter confidence-${escapeHtml(confidence)}"><b>${count}</b>${escapeHtml(confidence)}</span>`;
+  }).join('');
+  const laneRows = impactLanes.map((lane) => {
+    const selectableAttrs = lane.topPath
+      ? ` tabindex="0" role="button" data-impact-path="${escapeHtml(lane.topPath)}" data-filter-text="${escapeHtml(`${lane.label} ${lane.summary} ${lane.topPath}`)}"`
+      : ` data-filter-text="${escapeHtml(`${lane.label} ${lane.summary}`)}"`;
+    return `
+      <li class="impact-lane impact-lane-${escapeHtml(lane.tone)}${lane.topPath ? ' selectable-impact' : ''}"${selectableAttrs}>
+        <span>${escapeHtml(lane.label)}</span>
+        <b>${escapeHtml(String(lane.count))}</b>
+        <small>${escapeHtml(lane.summary)}</small>
+      </li>
+    `;
   }).join('');
   const changedPreview = report.changed.slice(0, 4).map((entity) => `
     <li>
@@ -366,6 +388,7 @@ function renderImpactSummaryPanel(snapshot: UiSnapshot): string {
         <small>${escapeHtml(primaryChange)} touches ${report.affectedCount} targets through ${graphEdges} graph links.</small>
       </div>
       <div class="confidence-strip" aria-label="Affected files by confidence">${confidenceRows}</div>
+      <ul class="impact-lanes filterable" aria-label="Affected targets by product lane">${laneRows}</ul>
       <div class="summary-columns">
         <div>
           <h3>Changed</h3>
@@ -378,6 +401,83 @@ function renderImpactSummaryPanel(snapshot: UiSnapshot): string {
       </div>
     </section>
   `;
+}
+
+function buildImpactLanes(report: UiReportPreview, workArtifacts: readonly UiWorkArtifactImpact[]): ImpactLane[] {
+  const lanes: ImpactLane[] = [
+    { id: 'code', label: 'Runtime code', count: 0, summary: 'No source files affected', tone: 'green' },
+    { id: 'tests', label: 'Tests to verify', count: 0, summary: 'No test target detected', tone: 'amber' },
+    { id: 'knowledge', label: 'Docs & policy', count: 0, summary: 'No knowledge artifact affected', tone: 'teal' },
+    { id: 'contracts', label: 'Contracts', count: 0, summary: 'No API contract affected', tone: 'red' },
+    { id: 'config', label: 'Config & infra', count: 0, summary: 'No config surface affected', tone: 'blue' }
+  ];
+  const laneById = new Map(lanes.map((lane) => [lane.id, lane]));
+  const pathsByLane = new Map<ImpactLane['id'], UiReportPreview['affectedFiles']>();
+  for (const lane of lanes) pathsByLane.set(lane.id, []);
+
+  const actionTargets = new Set(report.actions.map((action) => action.target.path).filter((value): value is string => Boolean(value)));
+  for (const item of report.affectedFiles) {
+    pathsByLane.get(classifyImpactLane(item.path, item.reason, actionTargets))?.push(item);
+  }
+
+  for (const lane of lanes) {
+    const items = [...(pathsByLane.get(lane.id) ?? [])].sort(compareAffectedFilesForUi);
+    lane.count = items.length;
+    const topPath = items[0]?.path;
+    if (topPath) lane.topPath = topPath;
+    if (lane.count > 0) {
+      lane.summary = lane.topPath
+        ? `${lane.topPath}${lane.count > 1 ? ` +${lane.count - 1} more` : ''}`
+        : `${lane.count} affected target${lane.count === 1 ? '' : 's'}`;
+    }
+  }
+
+  const knowledgeLane = laneById.get('knowledge');
+  if (knowledgeLane && workArtifacts.length > 0) {
+    const affectedKnowledgePaths = new Set((pathsByLane.get('knowledge') ?? []).map((item) => item.path));
+    const extraArtifactCount = workArtifacts.filter((item) => !affectedKnowledgePaths.has(item.path)).length;
+    knowledgeLane.count += extraArtifactCount;
+    if (!knowledgeLane.topPath) {
+      knowledgeLane.summary = `${workArtifacts[0]?.displayName ?? workArtifacts[0]?.path}${knowledgeLane.count > 1 ? ` +${knowledgeLane.count - 1} more` : ''}`;
+    } else if (extraArtifactCount > 0) {
+      knowledgeLane.summary = `${knowledgeLane.topPath} +${knowledgeLane.count - 1} more`;
+    }
+  }
+
+  return lanes;
+}
+
+function classifyImpactLane(pathValue: string, reason: string, actionTargets: ReadonlySet<string>): ImpactLane['id'] {
+  const pathLower = pathValue.toLowerCase();
+  const reasonLower = reason.toLowerCase();
+  if (actionTargets.has(pathValue) || isUiTestPath(pathLower)) return 'tests';
+  if (isUiKnowledgePath(pathLower) || /\b(governs|documents|requires|proposes)\b/.test(reasonLower)) return 'knowledge';
+  if (isUiContractPath(pathLower) || /\bcontract|endpoint|asyncapi|openapi|graphql|protobuf\b/.test(reasonLower)) return 'contracts';
+  if (isUiConfigPath(pathLower) || /\bconfigures|workflow|infra\b/.test(reasonLower)) return 'config';
+  return 'code';
+}
+
+function isUiTestPath(pathLower: string): boolean {
+  return /(^|\/)(tests?|__tests__)\/|(^|\/)src\/test\//.test(pathLower)
+    || /(\.|-)(test|spec)\.[cm]?[tj]sx?$/.test(pathLower);
+}
+
+function isUiKnowledgePath(pathLower: string): boolean {
+  return pathLower.endsWith('.md')
+    || /(^|\/)(docs|doc|policies|policy|proposals|prd|requirements|decisions|adr)\//.test(pathLower);
+}
+
+function isUiContractPath(pathLower: string): boolean {
+  return /(^|\/)(contracts?|apis?)\//.test(pathLower)
+    || /(^|[-_.])(openapi|asyncapi)([-_.]|$)/.test(pathLower)
+    || /\.(proto|graphql|gql|avsc)$/.test(pathLower);
+}
+
+function isUiConfigPath(pathLower: string): boolean {
+  return /(^|\/)(\.github\/workflows|terraform|infra|deploy|k8s|helm)\//.test(pathLower)
+    || /(^|\/)(dockerfile|makefile|compose\.ya?ml)$/.test(pathLower)
+    || /\.(ya?ml|toml|json|jsonc|env|tf|tfvars|hcl|ini)$/.test(pathLower)
+    || /(^|\/)(package\.json|pom\.xml|build\.gradle(?:\.kts)?|go\.mod|cargo\.toml|pyproject\.toml)$/.test(pathLower);
 }
 
 function renderImpactMapPanel(graph: UiGraphPreview | null, report: UiReportPreview | null): string {
@@ -968,7 +1068,7 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       display: grid;
       grid-template-columns: minmax(320px, 0.72fr) minmax(620px, 1.55fr);
       gap: 14px;
-      align-items: start;
+      align-items: stretch;
       margin-bottom: 14px;
     }
     .workbench {
@@ -1167,7 +1267,7 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
     code { font-size: 12px; overflow-wrap: anywhere; color: var(--graph); }
     .impact-summary-panel {
       display: grid;
-      grid-template-rows: auto auto auto minmax(0, 1fr);
+      grid-template-rows: auto auto auto auto minmax(0, 1fr);
     }
     .blast-card {
       margin: 14px;
@@ -1214,6 +1314,52 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       line-height: 1;
       font-variant-numeric: tabular-nums;
     }
+    .impact-lanes {
+      list-style: none;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin: 0;
+      padding: 0 14px 14px;
+    }
+    .impact-lane {
+      min-width: 0;
+      min-height: 76px;
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
+      gap: 4px;
+      border: 1px solid var(--line);
+      border-left: 4px solid var(--line-strong);
+      border-radius: 8px;
+      padding: 9px 10px;
+      background: #fbfaf5;
+    }
+    .impact-lane:hover {
+      background: #f8fbf7;
+    }
+    .impact-lane span {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+    .impact-lane b {
+      color: var(--ink);
+      font-size: 21px;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+    .impact-lane small {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.25;
+      overflow-wrap: anywhere;
+    }
+    .impact-lane-green { border-left-color: var(--green); }
+    .impact-lane-amber { border-left-color: var(--amber); }
+    .impact-lane-teal { border-left-color: var(--teal); }
+    .impact-lane-blue { border-left-color: var(--blue); }
+    .impact-lane-red { border-left-color: var(--red); }
     .summary-columns {
       display: grid;
       grid-template-columns: 1fr;
@@ -1274,12 +1420,13 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       min-height: 0;
       display: grid;
       grid-template-rows: auto minmax(0, 1fr);
+      height: 100%;
     }
     .map-content {
       display: grid;
       grid-template-columns: minmax(0, 1fr) 250px;
-      height: 480px;
-      min-height: 0;
+      height: 100%;
+      min-height: 480px;
     }
     .map-frame {
       min-width: 0;

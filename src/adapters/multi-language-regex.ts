@@ -30,7 +30,7 @@ export const PYTHON_SEMANTIC_ADAPTER_ID = 'python-semantic-v0';
 export const GO_SEMANTIC_ADAPTER_ID = 'go-semantic-v0';
 export const RUST_SEMANTIC_ADAPTER_ID = 'rust-semantic-v0';
 
-const capabilities: readonly AdapterCapability[] = ['imports', 'symbols', 'docrefs', 'tests'];
+const capabilities: readonly AdapterCapability[] = ['imports', 'symbols', 'calls', 'docrefs', 'tests'];
 
 type ExtractedSymbol = {
   name: string;
@@ -57,9 +57,16 @@ type InferredTestTarget = {
 };
 
 type ExtractedCall = EvidenceSpan & {
-  targetPath: string;
+  source?: EntityDescriptor;
+  target: EntityDescriptor;
   callee: string;
   provenance: string;
+};
+
+type TsLocalCallable = {
+  name: string;
+  symbolKind: string;
+  descriptor: EntityDescriptor;
 };
 
 type SpringClass = {
@@ -105,7 +112,7 @@ abstract class RegexBackedSemanticAdapter implements SemanticAdapter {
   readonly confidence = 'heuristic';
   readonly knownGaps = [
     'regex/lightweight parser extraction can miss dynamic references, generated code, and complex call graphs',
-    'source spans are partial outside the parser-backed TypeScript/JavaScript import lane'
+    'source spans are partial outside the parser-backed TypeScript/JavaScript lanes'
   ];
 
   constructor(
@@ -130,7 +137,7 @@ abstract class RegexBackedSemanticAdapter implements SemanticAdapter {
 
 export class TypeScriptJavaScriptSemanticAdapter extends RegexBackedSemanticAdapter {
   override readonly knownGaps = [
-    'TypeScript/JavaScript import, declaration, and imported call-site spans are parser-backed, but full local call graph and type relation resolution are not yet complete',
+    'TypeScript/JavaScript import, declaration, imported call-site, and local identifier call spans are parser-backed, but method dispatch and type relation resolution are not yet complete',
     'dynamic dispatch, generated code, and framework-specific routing may require deeper adapters'
   ];
 
@@ -341,8 +348,8 @@ async function* extractEvents(
     yield {
       kind: 'relation',
       relation: makeRelation({
-        source: fileDescriptor,
-        target: { kind: 'file', path: call.targetPath, languageId: file.language },
+        source: call.source ?? fileDescriptor,
+        target: call.target,
         kind: 'CALLS',
         confidence: 'inferred',
         provenance: call.provenance,
@@ -1691,6 +1698,7 @@ function extractCalls(
     filePathSet,
     importResolver
   );
+  const localCallables = collectTypeScriptJavaScriptLocalCallables(file, sourceFile);
   const calls: ExtractedCall[] = [];
 
   const visit = (node: ts.Node): void => {
@@ -1700,10 +1708,25 @@ function extractCalls(
         const evidence = nodeExactEvidence(file.content, sourceFile, node);
         calls.push({
           ...evidence,
-          targetPath: target.targetPath,
+          target: { kind: 'file', path: target.targetPath, languageId: file.language },
           callee: target.callee,
           provenance: `call:${target.callee}:${evidence.startLine}:${evidence.startCol}`
         });
+      } else {
+        const localTarget = localCallTargetForExpression(node.expression, localCallables);
+        const localSource = localTarget
+          ? enclosingLocalCaller(node, localCallables)
+          : undefined;
+        if (localSource && localTarget) {
+          const evidence = nodeExactEvidence(file.content, sourceFile, node);
+          calls.push({
+            ...evidence,
+            source: localSource.descriptor,
+            target: localTarget.descriptor,
+            callee: localTarget.name,
+            provenance: `local-call:${localSource.name}->${localTarget.name}:${evidence.startLine}:${evidence.startCol}`
+          });
+        }
       }
     }
     ts.forEachChild(node, visit);
@@ -1711,6 +1734,50 @@ function extractCalls(
 
   visit(sourceFile);
   return dedupeCalls(calls);
+}
+
+function collectTypeScriptJavaScriptLocalCallables(
+  file: ScannedFile,
+  sourceFile: ts.SourceFile
+): Map<string, TsLocalCallable> {
+  const callables = new Map<string, TsLocalCallable>();
+
+  const addCallable = (name: string | undefined, symbolKind: string): void => {
+    if (!name) return;
+    callables.set(name, {
+      name,
+      symbolKind,
+      descriptor: {
+        kind: 'symbol',
+        path: file.relativePath,
+        symbol: name,
+        symbolKind,
+        languageId: file.language,
+        displayName: `${name} (${file.relativePath})`
+      }
+    });
+  };
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isFunctionDeclaration(node) && node.name) {
+      addCallable(node.name.text, 'function');
+    } else if (ts.isVariableStatement(node)) {
+      const symbolKind = variableKind(node.declarationList);
+      for (const declaration of node.declarationList.declarations) {
+        if (!ts.isIdentifier(declaration.name)) continue;
+        if (!isCallableInitializer(declaration.initializer)) continue;
+        addCallable(declaration.name.text, symbolKind);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+
+  visit(sourceFile);
+  return callables;
+}
+
+function isCallableInitializer(node: ts.Expression | undefined): boolean {
+  return Boolean(node && (ts.isArrowFunction(node) || ts.isFunctionExpression(node)));
 }
 
 type TsImportBinding = {
@@ -1836,16 +1903,55 @@ function callTargetForExpression(
   return undefined;
 }
 
+function localCallTargetForExpression(
+  expression: ts.Expression,
+  localCallables: ReadonlyMap<string, TsLocalCallable>
+): TsLocalCallable | undefined {
+  if (!ts.isIdentifier(expression)) return undefined;
+  return localCallables.get(expression.text);
+}
+
+function enclosingLocalCaller(
+  node: ts.Node,
+  localCallables: ReadonlyMap<string, TsLocalCallable>
+): TsLocalCallable | undefined {
+  let current: ts.Node | undefined = node.parent;
+  while (current) {
+    if (ts.isFunctionDeclaration(current) && current.name) {
+      const callable = localCallables.get(current.name.text);
+      if (callable) return callable;
+    }
+    if (ts.isVariableDeclaration(current) && ts.isIdentifier(current.name)) {
+      const callable = localCallables.get(current.name.text);
+      if (callable) return callable;
+    }
+    current = current.parent;
+  }
+  return undefined;
+}
+
 function dedupeCalls(calls: readonly ExtractedCall[]): ExtractedCall[] {
   return [...new Map(calls.map((call) => [
-    `${call.targetPath}:${call.callee}:${call.startLine}:${call.startCol}`,
+    `${entityDescriptorKey(call.source)}:${entityDescriptorKey(call.target)}:${call.callee}:${call.startLine}:${call.startCol}`,
     call
   ])).values()]
     .sort((a, b) =>
-      a.targetPath.localeCompare(b.targetPath) ||
+      entityDescriptorKey(a.target).localeCompare(entityDescriptorKey(b.target)) ||
       a.startLine - b.startLine ||
       a.startCol - b.startCol
     );
+}
+
+function entityDescriptorKey(entity: EntityDescriptor | undefined): string {
+  if (!entity) return 'file';
+  return [
+    entity.kind,
+    entity.languageId ?? '',
+    entity.path ?? '',
+    entity.symbolKind ?? '',
+    entity.symbol ?? '',
+    entity.displayName ?? ''
+  ].join(':');
 }
 
 function moduleSpecifierText(node: ts.Node | undefined): string | undefined {

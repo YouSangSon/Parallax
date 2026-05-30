@@ -1755,6 +1755,10 @@ function extractCalls(
   const localCallables = collectTypeScriptJavaScriptLocalCallables(file, sourceFile);
   const interfaceExtends = collectTypeScriptJavaScriptInterfaceExtends(sourceFile);
   const typeReferenceAliases = collectTypeScriptJavaScriptTypeReferenceAliases(sourceFile);
+  const typeIntersectionAliases = collectTypeScriptJavaScriptTypeIntersectionAliases(
+    sourceFile,
+    typeReferenceAliases
+  );
   const factoryReturnTypes = collectTypeScriptJavaScriptFactoryReturnTypes(
     sourceFile,
     typeReferenceAliases
@@ -1764,6 +1768,7 @@ function extractCalls(
     localCallables,
     factoryReturnTypes,
     interfaceExtends,
+    typeIntersectionAliases,
     typeReferenceAliases
   );
   const classInstanceBindings = collectTypeScriptJavaScriptClassInstanceBindings(
@@ -1771,6 +1776,7 @@ function extractCalls(
     localCallables,
     factoryReturnTypes,
     interfaceExtends,
+    typeIntersectionAliases,
     typeReferenceAliases
   );
   const staticClassCallables = collectTypeScriptJavaScriptStaticClassCallables(sourceFile);
@@ -1797,6 +1803,7 @@ function extractCalls(
             classInstanceBindings,
             staticClassCallables,
             interfaceExtends,
+            typeIntersectionAliases,
             localSource.name
           )
           : undefined;
@@ -1956,17 +1963,51 @@ function collectTypeScriptJavaScriptTypeReferenceAliases(sourceFile: ts.SourceFi
   return aliases;
 }
 
+function collectTypeScriptJavaScriptTypeIntersectionAliases(
+  sourceFile: ts.SourceFile,
+  typeReferenceAliases: ReadonlyMap<string, string>
+): Map<string, string[]> {
+  const aliases = new Map<string, string[]>();
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isTypeAliasDeclaration(node) && ts.isIntersectionTypeNode(node.type)) {
+      const typeNames: string[] = [];
+      for (const type of node.type.types) {
+        const typeName = classNameFromTypeReference(type, typeReferenceAliases);
+        if (!typeName) {
+          typeNames.length = 0;
+          break;
+        }
+        typeNames.push(typeName);
+      }
+      if (typeNames.length > 0) aliases.set(node.name.text, typeNames);
+    }
+    ts.forEachChild(node, visit);
+  };
+
+  visit(sourceFile);
+  return aliases;
+}
+
 function collectTypeScriptJavaScriptLocalInstanceBindings(
   sourceFile: ts.SourceFile,
   localCallables: ReadonlyMap<string, TsLocalCallable>,
   factoryReturnTypes: ReadonlyMap<string, string>,
   interfaceExtends: ReadonlyMap<string, readonly string[]>,
+  typeIntersectionAliases: ReadonlyMap<string, readonly string[]>,
   typeReferenceAliases: ReadonlyMap<string, string>
 ): Map<string, TsLocalInstanceBinding> {
   const bindings = new Map<string, TsLocalInstanceBinding>();
 
   const addBinding = (scopeName: string, localName: string, className: string): void => {
-    if (!hasLocalTypeMemberMethod(localCallables, className, interfaceExtends)) return;
+    if (!hasLocalTypeMemberMethod(
+      localCallables,
+      className,
+      interfaceExtends,
+      typeIntersectionAliases
+    )) {
+      return;
+    }
     bindings.set(scopedLocalName(scopeName, localName), { className });
   };
 
@@ -1993,12 +2034,20 @@ function collectTypeScriptJavaScriptClassInstanceBindings(
   localCallables: ReadonlyMap<string, TsLocalCallable>,
   factoryReturnTypes: ReadonlyMap<string, string>,
   interfaceExtends: ReadonlyMap<string, readonly string[]>,
+  typeIntersectionAliases: ReadonlyMap<string, readonly string[]>,
   typeReferenceAliases: ReadonlyMap<string, string>
 ): Map<string, TsLocalInstanceBinding> {
   const bindings = new Map<string, TsLocalInstanceBinding>();
 
   const addBinding = (ownerClassName: string, propertyName: string, className: string): void => {
-    if (!hasLocalTypeMemberMethod(localCallables, className, interfaceExtends)) return;
+    if (!hasLocalTypeMemberMethod(
+      localCallables,
+      className,
+      interfaceExtends,
+      typeIntersectionAliases
+    )) {
+      return;
+    }
     bindings.set(scopedLocalName(ownerClassName, propertyName), { className });
   };
 
@@ -2052,6 +2101,7 @@ function hasLocalTypeMemberMethod(
   localCallables: ReadonlyMap<string, TsLocalCallable>,
   typeName: string,
   interfaceExtends: ReadonlyMap<string, readonly string[]>,
+  typeIntersectionAliases: ReadonlyMap<string, readonly string[]> = new Map(),
   seen = new Set<string>()
 ): boolean {
   if (seen.has(typeName)) return false;
@@ -2060,7 +2110,26 @@ function hasLocalTypeMemberMethod(
     if (name.startsWith(`${typeName}.`)) return true;
   }
   for (const baseName of interfaceExtends.get(typeName) ?? []) {
-    if (hasLocalTypeMemberMethod(localCallables, baseName, interfaceExtends, seen)) return true;
+    if (hasLocalTypeMemberMethod(
+      localCallables,
+      baseName,
+      interfaceExtends,
+      typeIntersectionAliases,
+      seen
+    )) {
+      return true;
+    }
+  }
+  for (const constituentName of typeIntersectionAliases.get(typeName) ?? []) {
+    if (hasLocalTypeMemberMethod(
+      localCallables,
+      constituentName,
+      interfaceExtends,
+      typeIntersectionAliases,
+      seen
+    )) {
+      return true;
+    }
   }
   return false;
 }
@@ -2326,6 +2395,7 @@ function localCallTargetForExpression(
   classInstanceBindings: ReadonlyMap<string, TsLocalInstanceBinding>,
   staticClassCallables: ReadonlySet<string>,
   interfaceExtends: ReadonlyMap<string, readonly string[]>,
+  typeIntersectionAliases: ReadonlyMap<string, readonly string[]>,
   sourceScopeName: string
 ): TsLocalCallable | undefined {
   if (ts.isIdentifier(expression)) {
@@ -2338,7 +2408,8 @@ function localCallTargetForExpression(
         localCallables,
         instance.className,
         expression.name.text,
-        interfaceExtends
+        interfaceExtends,
+        typeIntersectionAliases
       );
     }
     const staticName = `${expression.expression.text}.${expression.name.text}`;
@@ -2355,7 +2426,8 @@ function localCallTargetForExpression(
         localCallables,
         instance.className,
         expression.name.text,
-        interfaceExtends
+        interfaceExtends,
+        typeIntersectionAliases
       );
     }
   }
@@ -2378,6 +2450,7 @@ function localTypeMemberCallable(
   typeName: string,
   memberName: string,
   interfaceExtends: ReadonlyMap<string, readonly string[]>,
+  typeIntersectionAliases: ReadonlyMap<string, readonly string[]> = new Map(),
   seen = new Set<string>()
 ): TsLocalCallable | undefined {
   const direct = localCallables.get(`${typeName}.${memberName}`);
@@ -2390,6 +2463,18 @@ function localTypeMemberCallable(
       baseName,
       memberName,
       interfaceExtends,
+      typeIntersectionAliases,
+      seen
+    );
+    if (inherited) return inherited;
+  }
+  for (const constituentName of typeIntersectionAliases.get(typeName) ?? []) {
+    const inherited = localTypeMemberCallable(
+      localCallables,
+      constituentName,
+      memberName,
+      interfaceExtends,
+      typeIntersectionAliases,
       seen
     );
     if (inherited) return inherited;

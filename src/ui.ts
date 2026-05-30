@@ -1657,7 +1657,7 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       font-variant-numeric: tabular-nums;
     }
     .report-delta-panel {
-      margin-bottom: 14px;
+      margin: 0 0 14px;
     }
     .delta-content {
       display: grid;
@@ -1905,7 +1905,7 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
     .delta-neutral strong, .delta-neutral b, .delta-neutral em { color: var(--teal); }
     .impact-overview {
       display: grid;
-      grid-template-columns: minmax(320px, 0.72fr) minmax(620px, 1.55fr);
+      grid-template-columns: minmax(680px, 1.65fr) minmax(320px, 0.72fr);
       gap: 14px;
       align-items: stretch;
       margin-bottom: 14px;
@@ -2309,9 +2309,9 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
     }
     .map-content {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 250px;
+      grid-template-columns: minmax(0, 1fr) minmax(260px, 0.34fr);
       height: 100%;
-      min-height: 520px;
+      min-height: 560px;
       align-items: stretch;
     }
     .map-frame {
@@ -2363,7 +2363,7 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
     .impact-svg {
       display: block;
       width: 100%;
-      height: 430px;
+      height: 470px;
       filter: drop-shadow(0 16px 30px rgba(0, 0, 0, 0.18));
     }
     .map-stage {
@@ -2643,11 +2643,19 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       .impact-overview, .workbench, .bottom, .map-content, .summary-columns { grid-template-columns: 1fr; }
       .summary-columns > div:first-child, .map-legend { border-right: 0; border-left: 0; }
       .map-content { height: auto; }
-      .impact-svg { height: 360px; }
+      .impact-svg { height: 380px; }
     }
     @media (max-width: 560px) {
       .shell { padding: 10px; }
-      .metrics { grid-template-columns: 1fr; }
+      .metrics {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
+      .metric {
+        min-height: 58px;
+        padding: 8px 10px;
+      }
+      .metric strong { font-size: 20px; }
       .impact-row, .workspace-link-row, .action-row { grid-template-columns: 1fr; }
       .action-controls { grid-column: auto; justify-content: flex-start; }
       .impact-path-meta { justify-content: flex-start; max-width: none; }
@@ -2680,11 +2688,11 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       <div class="metric"><span>Work artifacts</span><strong>${escapeHtml(String(snapshot.workArtifacts.length))}</strong></div>
       <div class="metric"><span>Workspaces</span><strong>${escapeHtml(String(snapshot.workspaces.length))}</strong></div>
     </section>
-    ${reportDeltaPanel}
     <section class="impact-overview" aria-label="Impact overview">
-      ${impactSummaryPanel}
       ${impactMapPanel}
+      ${impactSummaryPanel}
     </section>
+    ${reportDeltaPanel}
     <section class="workbench" aria-label="Impact report workbench">
       <div class="stacked-pane">
         <section class="panel">

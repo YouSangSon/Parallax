@@ -221,6 +221,7 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(html, /Evidence/);
     assert.match(html, /Impact Summary/);
     assert.match(html, /aria-label="Affected targets by product lane"/);
+    assert.match(html, /@media \(max-width: 560px\)[\s\S]*\.metrics \{\s*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
     assert.match(html, /impact-lane-green[\s\S]*Runtime code[\s\S]*<b>1<\/b>[\s\S]*src\/a\.ts/);
     assert.match(html, /impact-lane-amber[\s\S]*Tests to verify[\s\S]*<b>1<\/b>[\s\S]*tests\/b\.test\.ts/);
     assert.match(html, /impact-lane-teal[\s\S]*Docs &amp; policy[\s\S]*<b>1<\/b>[\s\S]*README\.md/);
@@ -230,6 +231,7 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(html, /marker-end="url\(#impactArrow\)"/);
     assert.match(html, /class="impact-svg"/);
     assert.match(html, /Impact Inspector/);
+    assert.ok(html.indexOf('Impact Map') < html.indexOf('Impact Summary'));
     assert.match(html, /Next verification/);
     assert.match(html, /id="inspectorAction"[\s\S]*No verification action recorded/);
     assert.match(html, /Top evidence/);
@@ -288,6 +290,7 @@ test('UI snapshot and HTML compare the selected report to the previous saved rep
 
     const html = renderUiHtml(snapshot);
     assert.match(html, /Report Delta/);
+    assert.ok(html.indexOf('aria-label="Impact overview"') < html.indexOf('class="panel report-delta-panel"'));
     assert.match(html, /Impact widened/);
     assert.match(html, /Saved report comparison/);
     assert.match(html, /policy default/);

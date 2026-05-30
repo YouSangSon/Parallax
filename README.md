@@ -15,7 +15,7 @@ Claude Code, Codex, Cursor 같은 에이전트가 코드를 고치기 전에<br/
 
 [🚀 빠른 시작](#-빠른-시작) · [✨ 주요 기능](#-주요-기능) · [🧱 핵심 개념](#-핵심-개념) · [🤖 MCP](#-mcp--agents) · [🔒 안전 모델](#-안전-모델) · [🗺️ Roadmap](#%EF%B8%8F-roadmap) · [📚 더 읽기](#-더-읽기)
 
-<img src="docs/assets/parallax-ui-demo.png" alt="Parallax Impact Workbench UI showing report delta, impact summary, visual impact map, verification queue, affected paths, and evidence" width="100%">
+<img src="docs/assets/parallax-ui-demo.png" alt="Parallax Impact Workbench UI showing a graph-first impact map, impact summary, report delta, verification queue, affected paths, and evidence" width="100%">
 
 </div>
 
@@ -143,18 +143,18 @@ parallax profile --entity file:src/auth.ts
 
 ### 🖥️ Local UI
 
-`parallax ui`는 최신 report를 기준으로 바로 작업 화면을 띄운다. landing page가 아니라 Report Delta, Impact Summary, Impact Map, Change Set, Impact Paths, Evidence, Coverage Gaps, Doctor Findings를 한 화면에서 본다.
+`parallax ui`는 최신 report를 기준으로 바로 작업 화면을 띄운다. landing page가 아니라 Impact Map, Impact Summary, Report Delta, Change Set, Impact Paths, Evidence, Coverage Gaps, Doctor Findings를 한 화면에서 본다.
 
 | 화면 | 기능 |
 | :--- | :--- |
-| **Change Set** | 분석된 변경 파일과 entity 요약 |
-| **Report Delta** | 선택한 report를 직전 saved report와 비교해 영향 범위, evidence, action, lane 변화량과 policy preset별 판정을 표시하고 added path를 source/inspector로 연결 |
+| **Impact Map** | changed root에서 affected target까지 primary flow, 방향 화살표, 실제 graph link를 첫 화면 우선순위로 보여주고 target 선택 시 관련 경로와 evidence를 강조 |
 | **Impact Summary** | 변경 수, 영향 범위, confidence 분포, 우선 확인 대상을 첫 화면에 요약 |
 | **Impact Lanes** | runtime code, tests, docs/policy, contracts, config/infra 영향 범주를 한눈에 분리 |
+| **Report Delta** | 선택한 report를 직전 saved report와 비교해 영향 범위, evidence, action, lane 변화량과 policy preset별 판정을 표시하고 added path를 source/inspector로 연결 |
+| **Change Set** | 분석된 변경 파일과 entity 요약 |
 | **Impact Paths** | 변경 → 영향 대상까지의 relation trail, evidence count, source/action control |
 | **Verification Queue** | 영향받는 테스트/리뷰 action을 복사 가능한 command와 target source link로 표시 |
 | **Evidence** | redacted snippet, source span, relation provenance |
-| **Impact Map** | changed root에서 affected target까지 primary flow, 방향 화살표, 실제 graph link를 보여주고 target 선택 시 관련 경로와 evidence를 강조 |
 | **Impact Inspector** | 선택한 target의 relation, evidence preview, source, verification action을 즉시 확인 |
 | **Source Viewer** | evidence의 `Open source` 링크로 repo-local 파일의 해당 line 주변을 바로 확인 |
 | **Coverage Gaps** | adapter confidence와 known-gap 확인 |

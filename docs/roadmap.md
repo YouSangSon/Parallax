@@ -55,6 +55,7 @@ MCP는 read-only로 안정화됐다. 다음은 agent 사용성을 깊게 보는 
 - [x] report delta policy preset을 UI에서 비교할 수 있게 만들기
 - [x] impact map에 primary flow summary, 방향 화살표, stage band를 추가해 first glance 강화
 - [x] report delta preset에서 선택한 policy를 config patch로 내보내기
+- [x] impact map을 첫 viewport의 primary surface로 올려 변경 → 영향 흐름을 바로 보이게 만들기
 
 ## 6. 회고와 측정
 

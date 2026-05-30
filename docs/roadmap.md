@@ -58,6 +58,7 @@ MCP는 read-only로 안정화됐다. 다음은 agent 사용성을 깊게 보는 
 - [x] impact map을 첫 viewport의 primary surface로 올려 변경 → 영향 흐름을 바로 보이게 만들기
 - [x] impact map의 fallback edge도 displayed path로 표시해 "0 graph links"처럼 오해되는 상태 제거
 - [x] impact summary도 displayed path 기준으로 맞춰 summary와 map의 용어 불일치 제거
+- [x] 첫 화면에 changed root → affected targets → next verification triage strip 추가
 
 ## 6. 회고와 측정
 

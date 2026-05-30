@@ -473,6 +473,73 @@ function renderImpactSummaryPanel(snapshot: UiSnapshot): string {
   `;
 }
 
+function renderImpactTriageStrip(snapshot: UiSnapshot): string {
+  const report = snapshot.selectedReport;
+  if (!report) {
+    return `
+      <section class="impact-triage impact-triage-empty" aria-label="Impact triage">
+        <div class="triage-head">
+          <h2>Impact Triage</h2>
+          <p>No selected report.</p>
+        </div>
+        <ol class="triage-flow">
+          <li class="triage-step"><span>Changed root</span><strong>None</strong><small>Run ${PACKAGE_NAME} analyze.</small></li>
+          <li class="triage-step"><span>Affected targets</span><strong>0 targets</strong><small>No displayed paths.</small></li>
+          <li class="triage-step"><span>Next verification</span><strong>None</strong><small>No verification action recorded.</small></li>
+        </ol>
+      </section>
+    `;
+  }
+
+  const map = buildImpactMap(snapshot.graph, report);
+  const affectedFiles = [...report.affectedFiles].sort(compareAffectedFilesForUi);
+  const primaryChange = report.changed[0] ? entityLabel(report.changed[0]) : report.changedFiles[0] ?? 'unknown change';
+  const topTarget = affectedFiles[0]?.path ?? 'No affected target';
+  const actionsByPath = actionByTargetPath(report.actions);
+  const actionableTarget = affectedFiles.find((item) => actionsByPath.has(item.path));
+  const nextAction = (actionableTarget ? actionsByPath.get(actionableTarget.path) : undefined) ?? report.actions[0];
+  const nextActionLabel = nextAction
+    ? nextAction.target.path ?? nextAction.target.displayName ?? nextAction.target.symbol ?? nextAction.target.id
+    : 'No verification target';
+  const nextCommand = nextAction ? actionCommandText(nextAction) : undefined;
+  const blast = blastRadiusLabel(report.affectedCount);
+  const provenCount = report.affectedFiles.filter((item) => item.confidence === 'proven').length;
+  const heuristicCount = report.affectedFiles.filter((item) => item.confidence === 'heuristic').length;
+  const riskDetail = [
+    `${report.affectedCount} affected`,
+    `${map.edges.length} displayed paths`,
+    `${provenCount} proven`,
+    heuristicCount > 0 ? `${heuristicCount} heuristic` : undefined
+  ].filter((item): item is string => Boolean(item)).join(' · ');
+
+  return `
+    <section class="impact-triage impact-triage-${escapeHtml(blast)}" aria-label="Impact triage">
+      <div class="triage-head">
+        <h2>Impact Triage</h2>
+        <strong>${escapeHtml(blast)}</strong>
+        <p>${escapeHtml(riskDetail)}</p>
+      </div>
+      <ol class="triage-flow">
+        <li class="triage-step triage-step-changed">
+          <span>Changed root</span>
+          <strong title="${escapeHtml(primaryChange)}">${escapeHtml(shortenMiddle(primaryChange, 44))}</strong>
+          <small>${escapeHtml(String(report.changedCount))} changed input</small>
+        </li>
+        <li class="triage-step triage-step-affected">
+          <span>Affected targets</span>
+          <strong>${escapeHtml(String(report.affectedCount))} targets</strong>
+          <small title="${escapeHtml(topTarget)}">${escapeHtml(shortenMiddle(topTarget, 58))}</small>
+        </li>
+        <li class="triage-step triage-step-action">
+          <span>Next verification</span>
+          <strong title="${escapeHtml(nextActionLabel)}">${escapeHtml(shortenMiddle(nextActionLabel, 44))}</strong>
+          <small title="${escapeHtml(nextCommand ?? '')}">${escapeHtml(nextCommand ? shortenMiddle(nextCommand, 64) : 'No verification action recorded.')}</small>
+        </li>
+      </ol>
+    </section>
+  `;
+}
+
 function renderReportDeltaPanel(comparison: UiReportComparison | null): string {
   if (!comparison) return '';
   const headline = comparison.summary === 'wider'
@@ -1540,6 +1607,7 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
     `)
   ]).join('');
   const impactSummaryPanel = renderImpactSummaryPanel(snapshot);
+  const impactTriageStrip = renderImpactTriageStrip(snapshot);
   const impactMapPanel = renderImpactMapPanel(snapshot.graph, report);
   const reportDeltaPanel = renderReportDeltaPanel(snapshot.comparison);
   const dataJson = JSON.stringify(snapshot).replaceAll('<', '\\u003c');
@@ -1657,6 +1725,110 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       line-height: 1;
       font-variant-numeric: tabular-nums;
     }
+    .impact-triage {
+      display: grid;
+      grid-template-columns: minmax(220px, 0.42fr) minmax(0, 1fr);
+      margin: 0 0 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+    .triage-head {
+      display: grid;
+      align-content: center;
+      gap: 6px;
+      min-width: 0;
+      padding: 14px 16px;
+      border-right: 1px solid rgba(248, 244, 232, 0.14);
+      background: #18211b;
+      color: var(--ink-inverse);
+    }
+    .triage-head h2 {
+      margin: 0;
+      color: #9ed3c4;
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+    .triage-head strong {
+      font-size: 25px;
+      line-height: 1;
+      text-transform: capitalize;
+    }
+    .triage-head p {
+      margin: 0;
+      color: #bfd1c6;
+      font-size: 12px;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+    }
+    .triage-flow {
+      list-style: none;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin: 0;
+      padding: 12px;
+      background: #fbfaf5;
+    }
+    .triage-step {
+      position: relative;
+      min-width: 0;
+      min-height: 78px;
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
+      gap: 5px;
+      border: 1px solid var(--line);
+      border-left: 4px solid var(--line-strong);
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: #fffefa;
+    }
+    .triage-step:not(:last-child)::after {
+      content: "→";
+      position: absolute;
+      right: -12px;
+      top: 50%;
+      z-index: 1;
+      width: 18px;
+      height: 18px;
+      display: grid;
+      place-items: center;
+      transform: translateY(-50%);
+      border: 1px solid #d7d2c4;
+      border-radius: 999px;
+      background: #fbfaf5;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 900;
+    }
+    .triage-step span {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+    .triage-step strong {
+      color: var(--ink);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 15px;
+      line-height: 1.25;
+      overflow-wrap: anywhere;
+    }
+    .triage-step small {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.3;
+      overflow-wrap: anywhere;
+    }
+    .triage-step-changed { border-left-color: var(--green); }
+    .triage-step-affected { border-left-color: var(--teal); }
+    .triage-step-action { border-left-color: var(--amber); }
+    .impact-triage-wide .triage-head { box-shadow: inset 4px 0 0 var(--red); }
+    .impact-triage-expanding .triage-head { box-shadow: inset 4px 0 0 var(--amber); }
+    .impact-triage-contained .triage-head, .impact-triage-clear .triage-head { box-shadow: inset 4px 0 0 var(--green); }
     .report-delta-panel {
       margin: 0 0 14px;
     }
@@ -2638,6 +2810,9 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       .toolbar { justify-content: stretch; }
       .toolbar input, .toolbar select { width: 100%; }
       .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .impact-triage, .triage-flow { grid-template-columns: 1fr; }
+      .triage-head { border-right: 0; border-bottom: 1px solid var(--line); }
+      .triage-step::after { display: none !important; }
       .delta-content, .delta-paths { grid-template-columns: 1fr; }
       .delta-hero, .delta-metrics { border-right: 0; border-bottom: 1px solid var(--line); }
       .delta-lanes, .delta-presets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -2689,6 +2864,7 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       <div class="metric"><span>Work artifacts</span><strong>${escapeHtml(String(snapshot.workArtifacts.length))}</strong></div>
       <div class="metric"><span>Workspaces</span><strong>${escapeHtml(String(snapshot.workspaces.length))}</strong></div>
     </section>
+    ${impactTriageStrip}
     <section class="impact-overview" aria-label="Impact overview">
       ${impactMapPanel}
       ${impactSummaryPanel}

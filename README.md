@@ -143,10 +143,11 @@ parallax profile --entity file:src/auth.ts
 
 ### 🖥️ Local UI
 
-`parallax ui`는 최신 report를 기준으로 바로 작업 화면을 띄운다. landing page가 아니라 Impact Map, Impact Summary, Report Delta, Change Set, Impact Paths, Evidence, Coverage Gaps, Doctor Findings를 한 화면에서 본다.
+`parallax ui`는 최신 report를 기준으로 바로 작업 화면을 띄운다. landing page가 아니라 Impact Triage, Impact Map, Impact Summary, Report Delta, Change Set, Impact Paths, Evidence, Coverage Gaps, Doctor Findings를 한 화면에서 본다.
 
 | 화면 | 기능 |
 | :--- | :--- |
+| **Impact Triage** | changed root, affected target 수, 다음 verification target을 첫 화면에서 한 줄 흐름으로 요약 |
 | **Impact Map** | changed root에서 affected target까지 primary flow, 방향 화살표, 실제 graph link를 첫 화면 우선순위로 보여주고 target 선택 시 관련 경로와 evidence를 강조 |
 | **Impact Summary** | 변경 수, 영향 범위, confidence 분포, 우선 확인 대상을 첫 화면에 요약 |
 | **Impact Lanes** | runtime code, tests, docs/policy, contracts, config/infra 영향 범주를 한눈에 분리 |

@@ -118,6 +118,8 @@ type TsLocalInstanceBinding = {
   resolution: 'first' | 'all';
 };
 
+type TsMemberAccessExpression = ts.PropertyAccessExpression | ts.ElementAccessExpression;
+
 type SpringClass = {
   name: string;
   kind: string;
@@ -187,7 +189,7 @@ abstract class RegexBackedSemanticAdapter implements SemanticAdapter {
 
 export class TypeScriptJavaScriptSemanticAdapter extends RegexBackedSemanticAdapter {
   override readonly knownGaps = [
-    'TypeScript/JavaScript import, declaration, same-file/named-imported/direct-named-re-exported/star-re-exported/namespace-re-exported/default-imported/direct-default-re-exported/namespace-imported class/interface heritage type relation, imported call-site, local identifier call, same-class this.method, same-file/direct-new-or-const-alias-inferred/namespace-constructor-inferred/factory-wrapper-inferred/direct-factory-call-receiver/named-imported/direct-named-re-exported/star-re-exported/namespace-imported/namespace-re-exported/default-imported/direct-default-re-exported factory return type instance method call, interface/type-literal method/function-property/function-type-alias signature, same-file/named-imported/direct-named-re-exported/star-re-exported/namespace-re-exported/default-imported/direct-default-re-exported/namespace-imported interface/type-literal typed receiver method call, same-file interface extends typed receiver method call, same-file alias-backed interface extends typed receiver method call, same-file type reference alias typed receiver method call, same-file simple generic type reference typed receiver method call, same-file generic constraint typed receiver method call, same-file intersection type alias typed receiver method call, direct intersection typed receiver method call, same-file simple union typed receiver method call, declared typed local/class field receiver method call, typed local variable instance method call, typed parameter instance method call, assertion-wrapped/non-null/parenthesized typed receiver method call, constructor parameter property instance method call, constructor assignment instance method call, class field arrow method caller/target, typed class field instance method call, class field instance method call, same-file new ClassName instance call, and direct new ClassName().method call spans are parser-backed, but broader dynamic dispatch and advanced type relation resolution are not yet complete',
+    'TypeScript/JavaScript import, declaration, same-file/named-imported/direct-named-re-exported/star-re-exported/namespace-re-exported/default-imported/direct-default-re-exported/namespace-imported class/interface heritage type relation, imported call-site, local identifier call, same-class this.method, same-file/direct-new-or-const-alias-inferred/namespace-constructor-inferred/factory-wrapper-inferred/direct-factory-call-receiver/named-imported/direct-named-re-exported/star-re-exported/namespace-imported/namespace-re-exported/default-imported/direct-default-re-exported factory return type instance method call, interface/type-literal method/function-property/function-type-alias signature, same-file/named-imported/direct-named-re-exported/star-re-exported/namespace-re-exported/default-imported/direct-default-re-exported/namespace-imported interface/type-literal typed receiver method call, same-file interface extends typed receiver method call, same-file alias-backed interface extends typed receiver method call, same-file type reference alias typed receiver method call, same-file simple generic type reference typed receiver method call, same-file generic constraint typed receiver method call, same-file intersection type alias typed receiver method call, direct intersection typed receiver method call, same-file simple union typed receiver method call, declared typed local/class field receiver method call, typed local variable instance method call, typed parameter instance method call, assertion-wrapped/non-null/parenthesized typed receiver method call, string-literal element access method call, constructor parameter property instance method call, constructor assignment instance method call, class field arrow method caller/target, typed class field instance method call, class field instance method call, same-file new ClassName instance call, and direct new ClassName().method call spans are parser-backed, but broader dynamic dispatch and advanced type relation resolution are not yet complete',
     'polymorphism, alias-heavy object flows, generated code, and framework-specific routing may require deeper adapters'
   ];
 
@@ -2224,6 +2226,11 @@ function expressionNameText(node: ts.Expression): string | undefined {
     const left = expressionNameText(expression.expression);
     return left ? `${left}.${expression.name.text}` : undefined;
   }
+  if (ts.isElementAccessExpression(expression)) {
+    const left = expressionNameText(expression.expression);
+    const memberName = elementAccessMemberName(expression);
+    return left && memberName ? `${left}.${memberName}` : undefined;
+  }
   return undefined;
 }
 
@@ -2239,6 +2246,27 @@ function unwrapTypeScriptJavaScriptReceiverExpression(node: ts.Expression): ts.E
     current = current.expression;
   }
   return current;
+}
+
+function memberAccessExpression(expression: ts.Expression): TsMemberAccessExpression | undefined {
+  const unwrapped = unwrapTypeScriptJavaScriptReceiverExpression(expression);
+  if (ts.isPropertyAccessExpression(unwrapped)) return unwrapped;
+  if (ts.isElementAccessExpression(unwrapped) && elementAccessMemberName(unwrapped)) return unwrapped;
+  return undefined;
+}
+
+function memberNameFromAccessExpression(expression: TsMemberAccessExpression): string | undefined {
+  return ts.isPropertyAccessExpression(expression)
+    ? expression.name.text
+    : elementAccessMemberName(expression);
+}
+
+function elementAccessMemberName(expression: ts.ElementAccessExpression): string | undefined {
+  const argument = expression.argumentExpression;
+  if (!argument) return undefined;
+  return ts.isStringLiteral(argument) || ts.isNoSubstitutionTemplateLiteral(argument)
+    ? argument.text
+    : undefined;
 }
 
 function typeScriptJavaScriptSymbolDescriptor(
@@ -2545,6 +2573,7 @@ function extractCalls(
           : [];
         if (localSource && localTargets.length > 0) {
           const evidence = nodeExactEvidence(file.content, sourceFile, node);
+          const access = memberAccessExpression(node.expression);
           const provenanceKind = isThisFieldInstanceCallExpression(node.expression)
             ? 'field-instance-call'
             : isDirectNewInstanceCallExpression(node.expression)
@@ -2553,13 +2582,13 @@ function extractCalls(
             ? 'direct-factory-instance-call'
             : isStaticClassCallExpression(node.expression, staticClassCallables, classExtends)
             ? 'static-call'
-            : ts.isPropertyAccessExpression(node.expression)
-            && ts.isIdentifier(node.expression.expression)
+            : access
+            && expressionIdentifierName(access.expression)
             ? 'instance-call'
-            : ts.isPropertyAccessExpression(node.expression)
-            && node.expression.expression.kind === ts.SyntaxKind.ThisKeyword
+            : access
+            && unwrapTypeScriptJavaScriptReceiverExpression(access.expression).kind === ts.SyntaxKind.ThisKeyword
             ? 'method-call'
-            : ts.isPropertyAccessExpression(node.expression)
+            : access
             ? 'instance-call'
             : 'local-call';
           for (const localTarget of localTargets) {
@@ -3915,12 +3944,15 @@ function callTargetForExpression(
         : expression.text
     };
   }
-  if (ts.isPropertyAccessExpression(expression) && ts.isIdentifier(expression.expression)) {
-    const binding = importBindings.get(expression.expression.text);
+  const access = memberAccessExpression(expression);
+  const receiverName = access ? expressionIdentifierName(access.expression) : undefined;
+  const memberName = access ? memberNameFromAccessExpression(access) : undefined;
+  if (receiverName && memberName) {
+    const binding = importBindings.get(receiverName);
     if (!binding || !binding.namespace) return undefined;
     return {
       targetPath: binding.targetPath,
-      callee: `${expression.expression.text}.${expression.name.text}`
+      callee: `${receiverName}.${memberName}`
     };
   }
   return undefined;
@@ -3944,10 +3976,14 @@ function localCallTargetsForExpression(
     const callable = localCallables.get(expression.text);
     return callable ? [callable] : [];
   }
-  if (ts.isPropertyAccessExpression(expression)) {
-    const receiverName = expressionIdentifierName(expression.expression);
+  const access = memberAccessExpression(expression);
+  const memberName = access ? memberNameFromAccessExpression(access) : undefined;
+  if (!access || !memberName) return [];
+
+  {
+    const receiverName = expressionIdentifierName(access.expression);
     const instance = receiverTypeBindingFromExpression(
-      expression.expression,
+      access.expression,
       typeReferenceAliases,
       typeUnionAliases
     ) ?? (receiverName
@@ -3957,7 +3993,7 @@ function localCallTargetsForExpression(
       return localTypeMemberCallablesForBinding(
         localCallables,
         instance,
-        expression.name.text,
+        memberName,
         interfaceExtends,
         typeIntersectionAliases
       );
@@ -3967,15 +4003,15 @@ function localCallTargetsForExpression(
         localCallables,
         staticClassCallables,
         receiverName,
-        expression.name.text,
+        memberName,
         classExtends
       );
       if (staticCallables.length > 0) return staticCallables;
     }
   }
-  if (ts.isPropertyAccessExpression(expression)) {
-    const propertyName = thisPropertyName(expression.expression);
-    const className = enclosingTypeScriptJavaScriptClassName(expression);
+  {
+    const propertyName = thisPropertyName(access.expression);
+    const className = enclosingTypeScriptJavaScriptClassName(access);
     const instance = className && propertyName
       ? classInstanceBindings.get(scopedLocalName(className, propertyName))
       : undefined;
@@ -3983,48 +4019,45 @@ function localCallTargetsForExpression(
       return localTypeMemberCallablesForBinding(
         localCallables,
         instance,
-        expression.name.text,
+        memberName,
         interfaceExtends,
         typeIntersectionAliases
       );
     }
   }
-  if (ts.isPropertyAccessExpression(expression)) {
-    const className = classNameFromFactoryCall(expression.expression, factoryReturnTypes);
+  {
+    const className = classNameFromFactoryCall(access.expression, factoryReturnTypes);
     if (className) {
       const callable = localTypeMemberCallable(
         localCallables,
         className,
-        expression.name.text,
+        memberName,
         interfaceExtends,
         typeIntersectionAliases
       );
       return callable ? [callable] : [];
     }
   }
-  if (ts.isPropertyAccessExpression(expression)) {
-    const className = classNameFromNewExpression(expression.expression);
+  {
+    const className = classNameFromNewExpression(access.expression);
     if (className) {
       const callable = localTypeMemberCallable(
         localCallables,
         className,
-        expression.name.text,
+        memberName,
         interfaceExtends,
         typeIntersectionAliases
       );
       return callable ? [callable] : [];
     }
   }
-  if (
-    ts.isPropertyAccessExpression(expression) &&
-    expression.expression.kind === ts.SyntaxKind.ThisKeyword
-  ) {
-    const className = enclosingTypeScriptJavaScriptClassName(expression);
+  if (unwrapTypeScriptJavaScriptReceiverExpression(access.expression).kind === ts.SyntaxKind.ThisKeyword) {
+    const className = enclosingTypeScriptJavaScriptClassName(access);
     const callable = className
       ? localTypeMemberCallable(
         localCallables,
         className,
-        expression.name.text,
+        memberName,
         interfaceExtends,
         typeIntersectionAliases
       )
@@ -4128,20 +4161,21 @@ function localTypeMemberCallable(
 }
 
 function isThisFieldInstanceCallExpression(expression: ts.Expression): boolean {
-  return ts.isPropertyAccessExpression(expression) && thisPropertyName(expression.expression) !== undefined;
+  const access = memberAccessExpression(expression);
+  return Boolean(access && thisPropertyName(access.expression) !== undefined);
 }
 
 function isDirectNewInstanceCallExpression(expression: ts.Expression): boolean {
-  return ts.isPropertyAccessExpression(expression)
-    && classNameFromNewExpression(expression.expression) !== undefined;
+  const access = memberAccessExpression(expression);
+  return Boolean(access && classNameFromNewExpression(access.expression) !== undefined);
 }
 
 function isDirectFactoryInstanceCallExpression(
   expression: ts.Expression,
   factoryReturnTypes: ReadonlyMap<string, string>
 ): boolean {
-  return ts.isPropertyAccessExpression(expression)
-    && classNameFromFactoryCall(expression.expression, factoryReturnTypes) !== undefined;
+  const access = memberAccessExpression(expression);
+  return Boolean(access && classNameFromFactoryCall(access.expression, factoryReturnTypes) !== undefined);
 }
 
 function isStaticClassCallExpression(
@@ -4149,14 +4183,16 @@ function isStaticClassCallExpression(
   staticClassCallables: ReadonlySet<string>,
   classExtends: ReadonlyMap<string, readonly string[]> = new Map()
 ): boolean {
-  return ts.isPropertyAccessExpression(expression)
-    && ts.isIdentifier(expression.expression)
-    && hasStaticClassCallable(
-      staticClassCallables,
-      expression.expression.text,
-      expression.name.text,
-      classExtends
-    );
+  const access = memberAccessExpression(expression);
+  const receiverName = access ? expressionIdentifierName(access.expression) : undefined;
+  const memberName = access ? memberNameFromAccessExpression(access) : undefined;
+  if (!receiverName || !memberName) return false;
+  return hasStaticClassCallable(
+    staticClassCallables,
+    receiverName,
+    memberName,
+    classExtends
+  );
 }
 
 function hasStaticClassCallable(
@@ -4179,9 +4215,12 @@ function hasStaticClassCallable(
 
 function thisPropertyName(expression: ts.Expression): string | undefined {
   const unwrapped = unwrapTypeScriptJavaScriptReceiverExpression(expression);
-  if (!ts.isPropertyAccessExpression(unwrapped)) return undefined;
-  if (unwrapped.expression.kind !== ts.SyntaxKind.ThisKeyword) return undefined;
-  return ts.isIdentifier(unwrapped.name) ? unwrapped.name.text : undefined;
+  const access = memberAccessExpression(unwrapped);
+  if (!access) return undefined;
+  if (unwrapTypeScriptJavaScriptReceiverExpression(access.expression).kind !== ts.SyntaxKind.ThisKeyword) {
+    return undefined;
+  }
+  return memberNameFromAccessExpression(access);
 }
 
 function scopedLocalName(scopeName: string, localName: string): string {

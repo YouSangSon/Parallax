@@ -297,6 +297,9 @@ test('UI snapshot and HTML compare the selected report to the previous saved rep
     assert.match(html, /Strict[\s\S]*wider/);
     assert.match(html, /Relaxed[\s\S]*unchanged/);
     assert.match(html, /Action-heavy[\s\S]*wider/);
+    assert.match(html, /Copy Strict report delta policy config/);
+    assert.match(html, /&quot;reportDeltaPolicy&quot;[\s\S]*&quot;actions&quot;: 7/);
+    assert.match(html, /Copy config/);
     assert.match(html, /Affected paths[\s\S]*\+2/);
     assert.match(html, /Tests to verify[\s\S]*\+1[\s\S]*tests\/b\.test\.ts/);
     assert.match(html, /Added impact[\s\S]*README\.md/);
@@ -342,6 +345,8 @@ test('UI report delta honors configured team policy thresholds', async () => {
     assert.match(html, /Affected weight 3/);
     assert.match(html, /Action weight 5/);
     assert.match(html, /Evidence weight 1/);
+    assert.match(html, /Copy Active report delta policy config/);
+    assert.match(html, /&quot;widenThreshold&quot;: 20/);
   } finally {
     await rm(repoRoot, { recursive: true, force: true });
   }

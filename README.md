@@ -160,7 +160,7 @@ parallax profile --entity file:src/auth.ts
 | **Coverage Gaps** | adapter confidence와 known-gap 확인 |
 | **Doctor Findings** | schema/index/vector/telemetry 상태 점검 |
 
-Report Delta의 wider/narrower 판정은 기본적으로 `affected * 3 + actions * 5 + evidence` review load로 계산한다. 팀 기준이 다르면 `.parallax/config.json`에 policy를 추가한다. UI는 active, strict, relaxed, action-heavy preset 결과를 같이 보여준다.
+Report Delta의 wider/narrower 판정은 기본적으로 `affected * 3 + actions * 5 + evidence` review load로 계산한다. 팀 기준이 다르면 `.parallax/config.json`에 policy를 추가한다. UI는 active, strict, relaxed, action-heavy preset 결과와 `Copy config` 버튼을 같이 보여줘 preset을 바로 설정 patch로 옮길 수 있다.
 
 ```json
 {

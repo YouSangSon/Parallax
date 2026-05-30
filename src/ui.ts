@@ -518,6 +518,7 @@ function renderReportDeltaPanel(comparison: UiReportComparison | null): string {
       <span>${escapeHtml(preset.summary)}</span>
       <b>${escapeHtml(formatSignedDelta(preset.reviewLoadDelta))}</b>
       <small>+${escapeHtml(String(preset.widenThreshold))}/-${escapeHtml(String(preset.narrowThreshold))} · ${escapeHtml(policyWeightsLabel(preset.weights))}</small>
+      <button class="copy-command" type="button" ${copyCommandAttribute(reportDeltaPolicyConfigPatch(preset))} aria-label="Copy ${escapeHtml(preset.label)} report delta policy config">Copy config</button>
     </li>
   `).join('');
 
@@ -573,6 +574,26 @@ function deltaClass(delta: number): string {
 
 function policyWeightsLabel(weights: UiReportDeltaPolicy['weights']): string {
   return `aff${weights.affected}/act${weights.actions}/ev${weights.evidence}`;
+}
+
+function reportDeltaPolicyConfigPatch(policy: Pick<UiReportDeltaPolicyPreset, 'widenThreshold' | 'narrowThreshold' | 'weights'>): string {
+  return JSON.stringify(
+    {
+      ui: {
+        reportDeltaPolicy: {
+          widenThreshold: policy.widenThreshold,
+          narrowThreshold: policy.narrowThreshold,
+          weights: policy.weights
+        }
+      }
+    },
+    null,
+    2
+  );
+}
+
+function copyCommandAttribute(value: string): string {
+  return `data-command="${escapeHtml(value).replaceAll('\n', '&#10;')}"`;
 }
 
 function renderDeltaPathRows(paths: readonly string[], mode: 'added' | 'removed'): string {
@@ -1787,6 +1808,13 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       font-size: 11px;
       line-height: 1.25;
       overflow-wrap: anywhere;
+    }
+    .delta-preset .copy-command {
+      justify-self: start;
+      margin-top: 2px;
+      min-height: 24px;
+      padding: 2px 7px;
+      font-size: 11px;
     }
     .delta-preset-wider { border-color: #d7b477; box-shadow: inset 3px 0 0 var(--amber); }
     .delta-preset-narrower { border-color: #89b6a5; box-shadow: inset 3px 0 0 var(--green); }

@@ -526,7 +526,7 @@ function renderImpactMapPanel(graph: UiGraphPreview | null, report: UiReportPrev
           <div><span class="legend-swatch affected"></span>Affected target</div>
           <div><span class="legend-swatch context"></span>Context node</div>
           <ol>${edgeRows || '<li>No visible graph links.</li>'}</ol>
-          ${renderImpactInspector(firstImpact)}
+          ${renderImpactInspector(firstImpact, report)}
         </aside>
       </div>
     </section>
@@ -726,7 +726,12 @@ function entityLabel(entity: ImpactReport['changed'][number]): string {
   return entity.displayName ?? entity.path ?? entity.symbol ?? entity.id;
 }
 
-function renderImpactInspector(item: UiReportPreview['affectedFiles'][number] | undefined): string {
+function renderImpactInspector(
+  item: UiReportPreview['affectedFiles'][number] | undefined,
+  report: UiReportPreview | null
+): string {
+  const evidence = item && report ? impactEvidenceForPath(report.evidence, item.path) : [];
+  const action = item && report ? actionByTargetPath(report.actions).get(item.path) : undefined;
   return `
     <section class="impact-inspector" aria-live="polite">
       <h3>Impact Inspector</h3>
@@ -750,8 +755,49 @@ function renderImpactInspector(item: UiReportPreview['affectedFiles'][number] | 
           <dd id="inspectorSource">Select evidence to open a local source view</dd>
         </div>
       </dl>
+      <section class="inspector-action">
+        <h4>Next verification</h4>
+        <div id="inspectorAction">${renderInspectorAction(action)}</div>
+      </section>
+      <section class="inspector-evidence">
+        <h4>Top evidence</h4>
+        <ul id="inspectorEvidenceList">${renderInspectorEvidenceList(evidence)}</ul>
+      </section>
     </section>
   `;
+}
+
+function renderInspectorAction(action: ImpactAction | undefined): string {
+  if (!action) return '<span class="inspector-empty">No verification action recorded.</span>';
+  const command = actionCommandText(action);
+  if (!command) return '<span class="inspector-empty">No command recorded for this action.</span>';
+  return `
+    <code>${escapeHtml(command)}</code>
+    <button class="copy-command" type="button" data-command="${escapeHtml(command)}" aria-label="Copy inspector verification command">Copy</button>
+  `;
+}
+
+function renderInspectorEvidenceList(evidence: readonly UiEvidencePreview[]): string {
+  if (evidence.length === 0) return '<li class="inspector-empty">No matching evidence recorded.</li>';
+  return evidence.slice(0, 3).map((item) => {
+    const source = evidenceSourceLocation(item);
+    return `
+      <li>
+        <strong>${escapeHtml(item.file)}</strong>
+        <span>${escapeHtml(item.kind)} · ${escapeHtml(item.confidence)}</span>
+        ${source ? `<a class="source-link" href="${escapeHtml(source.href)}" target="_blank" rel="noreferrer">${escapeHtml(source.label)}</a>` : ''}
+        <pre>${escapeHtml(shortenMiddle(item.snippet, 120))}</pre>
+      </li>
+    `;
+  }).join('');
+}
+
+function impactEvidenceForPath(evidence: readonly UiEvidencePreview[], pathValue: string): UiEvidencePreview[] {
+  return evidence.filter((item) => impactEvidenceMatchesPath(item, pathValue));
+}
+
+function impactEvidenceMatchesPath(item: UiEvidencePreview, pathValue: string): boolean {
+  return item.file === pathValue || item.subject?.path === pathValue || item.snippet.includes(pathValue);
 }
 
 function evidenceSourceLocation(item: UiEvidencePreview): SourceLocation | undefined {
@@ -862,7 +908,7 @@ function evidenceCountByImpactPath(
   for (const pathValue of paths) counts.set(pathValue, 0);
   for (const item of evidence) {
     for (const pathValue of paths) {
-      if (item.file === pathValue || item.subject?.path === pathValue || item.snippet.includes(pathValue)) {
+      if (impactEvidenceMatchesPath(item, pathValue)) {
         counts.set(pathValue, (counts.get(pathValue) ?? 0) + 1);
       }
     }
@@ -1718,6 +1764,68 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       font-size: 12px;
       overflow-wrap: anywhere;
     }
+    .inspector-action, .inspector-evidence {
+      display: grid;
+      gap: 6px;
+      padding-top: 10px;
+      border-top: 1px solid var(--line);
+    }
+    .inspector-action h4, .inspector-evidence h4 {
+      margin: 0;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+    #inspectorAction {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+    #inspectorAction code {
+      max-width: 100%;
+      border: 1px solid #d9ded5;
+      border-radius: 6px;
+      padding: 4px 6px;
+      background: #f3f7f4;
+      white-space: pre-wrap;
+    }
+    .inspector-evidence ul, #inspectorEvidenceList {
+      list-style: none;
+      display: grid;
+      gap: 8px;
+      margin: 0;
+      padding: 0;
+    }
+    #inspectorEvidenceList li {
+      display: grid;
+      gap: 4px;
+      padding: 8px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fffefa;
+    }
+    #inspectorEvidenceList strong {
+      color: var(--ink);
+      overflow-wrap: anywhere;
+      font-size: 12px;
+    }
+    #inspectorEvidenceList span {
+      color: var(--muted);
+      font-size: 11px;
+    }
+    #inspectorEvidenceList pre {
+      margin: 0;
+      padding: 7px;
+      font-size: 11px;
+      line-height: 1.35;
+    }
+    .inspector-empty {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
     .bottom {
       display: grid;
       grid-template-columns: minmax(0, 1fr) minmax(280px, 0.8fr);
@@ -1863,26 +1971,127 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
     const snapshot = JSON.parse(document.getElementById('impact-data')?.textContent || '{}');
     const affectedFiles = snapshot.selectedReport?.affectedFiles || [];
     const evidenceItems = snapshot.selectedReport?.evidence || [];
+    const actionItems = snapshot.selectedReport?.actions || [];
     const input = document.getElementById('filterInput');
     function evidenceMatchesPath(evidence, path) {
       return evidence.file === path || evidence.subject?.path === path || (evidence.snippet || '').includes(path);
     }
+    function evidenceForPath(path) {
+      return evidenceItems.filter((item) => evidenceMatchesPath(item, path));
+    }
     function evidenceHitCount(path) {
-      return evidenceItems.filter((item) => evidenceMatchesPath(item, path)).length;
+      return evidenceForPath(path).length;
     }
     function setText(id, value) {
       const element = document.getElementById(id);
       if (element) element.textContent = value;
     }
+    function sourceHrefFor(file, line) {
+      return '/source?path=' + encodeURIComponent(file) + '&line=' + line;
+    }
+    function evidenceSourceLabel(evidence) {
+      const line = Number.isInteger(evidence.startLine) && evidence.startLine > 0 ? evidence.startLine : 1;
+      const endLine = Number.isInteger(evidence.endLine) && evidence.endLine > line ? evidence.endLine : undefined;
+      return endLine ? 'L' + line + '-L' + endLine : 'L' + line;
+    }
+    function actionCommandText(action) {
+      if (!action?.command) return '';
+      return [action.command, ...(action.args || [])].map(shellQuoteForUi).join(' ');
+    }
+    function shellQuoteForUi(value) {
+      const displayValue = String(value)
+        .replace(/\\n/g, '\\\\n')
+        .replace(/\\r/g, '\\\\r')
+        .replace(/\\t/g, '\\\\t');
+      if (displayValue === '--') return displayValue;
+      if (/^[A-Za-z0-9_./:=@%+,-]+$/.test(displayValue) && !displayValue.startsWith('-')) return displayValue;
+      return "'" + displayValue.replaceAll("'", "'\\\\''") + "'";
+    }
+    function renderInspectorAction(path) {
+      const target = document.getElementById('inspectorAction');
+      if (!target) return;
+      target.replaceChildren();
+      const action = actionItems.find((candidate) => candidate.target?.path === path);
+      const command = actionCommandText(action);
+      if (!action || !command) {
+        const empty = document.createElement('span');
+        empty.className = 'inspector-empty';
+        empty.textContent = 'No verification action recorded.';
+        target.append(empty);
+        return;
+      }
+      const code = document.createElement('code');
+      code.textContent = command;
+      const button = document.createElement('button');
+      button.className = 'copy-command';
+      button.type = 'button';
+      button.dataset.command = command;
+      button.setAttribute('aria-label', 'Copy inspector verification command');
+      button.textContent = 'Copy';
+      target.append(code, button);
+      wireCopyButton(button);
+    }
+    function renderInspectorEvidence(evidence) {
+      const target = document.getElementById('inspectorEvidenceList');
+      if (!target) return;
+      target.replaceChildren();
+      if (evidence.length === 0) {
+        const empty = document.createElement('li');
+        empty.className = 'inspector-empty';
+        empty.textContent = 'No matching evidence recorded.';
+        target.append(empty);
+        return;
+      }
+      for (const item of evidence.slice(0, 3)) {
+        const row = document.createElement('li');
+        const file = document.createElement('strong');
+        file.textContent = item.file;
+        const meta = document.createElement('span');
+        meta.textContent = item.kind + ' · ' + item.confidence;
+        const line = Number.isInteger(item.startLine) && item.startLine > 0 ? item.startLine : 1;
+        const link = document.createElement('a');
+        link.className = 'source-link';
+        link.href = sourceHrefFor(item.file, line);
+        link.target = '_blank';
+        link.rel = 'noreferrer';
+        link.textContent = evidenceSourceLabel(item);
+        const snippet = document.createElement('pre');
+        snippet.textContent = String(item.snippet || '').length > 120
+          ? String(item.snippet || '').slice(0, 117) + '...'
+          : String(item.snippet || '');
+        row.append(file, meta, link, snippet);
+        target.append(row);
+      }
+    }
+    function confidenceRank(confidence) {
+      if (confidence === 'proven') return 0;
+      if (confidence === 'inferred') return 1;
+      if (confidence === 'heuristic') return 2;
+      return 3;
+    }
+    function compareImpactForUi(left, right) {
+      return confidenceRank(left.confidence) - confidenceRank(right.confidence)
+        || (left.depth ?? 99) - (right.depth ?? 99)
+        || String(left.path).localeCompare(String(right.path));
+    }
+    function initialImpactPath() {
+      const actionTargets = new Set(actionItems.map((action) => action.target?.path).filter(Boolean));
+      const actionable = affectedFiles.filter((item) => actionTargets.has(item.path)).sort(compareImpactForUi);
+      if (actionable[0]) return actionable[0].path;
+      return [...affectedFiles].sort(compareImpactForUi)[0]?.path;
+    }
     function selectImpact(path, options = {}) {
       const item = affectedFiles.find((candidate) => candidate.path === path);
       if (!item) return;
+      const matchingEvidence = evidenceForPath(path);
       document.body.dataset.selectedImpactPath = path;
       setText('inspectorPath', item.path);
       setText('inspectorReason', item.reason);
       setText('inspectorConfidence', item.confidence);
       setText('inspectorRelation', item.relationPath?.join(' -> ') || 'direct or not recorded');
-      setText('inspectorEvidence', String(evidenceHitCount(path)));
+      setText('inspectorEvidence', String(matchingEvidence.length));
+      renderInspectorAction(path);
+      renderInspectorEvidence(matchingEvidence);
       const firstEvidence = Array.from(document.querySelectorAll('.evidence-row'))
         .find((row) => row.getAttribute('data-impact-path') === path);
       const sourceHref = firstEvidence?.getAttribute('data-source-href') || '';
@@ -1956,7 +2165,9 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
         textarea.remove();
       }
     }
-    for (const button of document.querySelectorAll('.copy-command[data-command]')) {
+    function wireCopyButton(button) {
+      if (!button || button.dataset.copyWired === 'true') return;
+      button.dataset.copyWired = 'true';
       button.addEventListener('click', async () => {
         const command = button.getAttribute('data-command') || '';
         const original = button.textContent || 'Copy';
@@ -1976,7 +2187,11 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
         }, 1200);
       });
     }
-    if (affectedFiles[0]) selectImpact(affectedFiles[0].path);
+    for (const button of document.querySelectorAll('.copy-command[data-command]')) {
+      wireCopyButton(button);
+    }
+    const firstImpactPath = initialImpactPath();
+    if (firstImpactPath) selectImpact(firstImpactPath);
   </script>
 </body>
 </html>`;

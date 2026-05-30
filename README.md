@@ -148,7 +148,7 @@ parallax profile --entity file:src/auth.ts
 | 화면 | 기능 |
 | :--- | :--- |
 | **Change Set** | 분석된 변경 파일과 entity 요약 |
-| **Report Delta** | 선택한 report를 직전 saved report와 비교해 영향 범위, evidence, action, lane 변화량을 표시하고 added path를 source/inspector로 연결 |
+| **Report Delta** | 선택한 report를 직전 saved report와 비교해 영향 범위, evidence, action, lane 변화량과 policy preset별 판정을 표시하고 added path를 source/inspector로 연결 |
 | **Impact Summary** | 변경 수, 영향 범위, confidence 분포, 우선 확인 대상을 첫 화면에 요약 |
 | **Impact Lanes** | runtime code, tests, docs/policy, contracts, config/infra 영향 범주를 한눈에 분리 |
 | **Impact Paths** | 변경 → 영향 대상까지의 relation trail, evidence count, source/action control |
@@ -160,7 +160,7 @@ parallax profile --entity file:src/auth.ts
 | **Coverage Gaps** | adapter confidence와 known-gap 확인 |
 | **Doctor Findings** | schema/index/vector/telemetry 상태 점검 |
 
-Report Delta의 wider/narrower 판정은 기본적으로 `affected * 3 + actions * 5 + evidence` review load로 계산한다. 팀 기준이 다르면 `.parallax/config.json`에 policy를 추가한다.
+Report Delta의 wider/narrower 판정은 기본적으로 `affected * 3 + actions * 5 + evidence` review load로 계산한다. 팀 기준이 다르면 `.parallax/config.json`에 policy를 추가한다. UI는 active, strict, relaxed, action-heavy preset 결과를 같이 보여준다.
 
 ```json
 {

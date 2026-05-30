@@ -78,6 +78,7 @@ export type UiReportComparison = {
   reviewLoadDelta: number;
   policy: UiReportDeltaPolicy;
   policyReason: string;
+  policyPresets: UiReportDeltaPolicyPreset[];
   changedDelta: number;
   affectedDelta: number;
   evidenceDelta: number;
@@ -116,6 +117,16 @@ export type UiReportDeltaPolicy = {
     actions: number;
     evidence: number;
   };
+};
+
+export type UiReportDeltaPolicyPreset = {
+  id: string;
+  label: string;
+  summary: ReportDeltaSummary;
+  reviewLoadDelta: number;
+  widenThreshold: number;
+  narrowThreshold: number;
+  weights: UiReportDeltaPolicy['weights'];
 };
 
 export type UiEvidencePreview = ImpactReport['evidence'][number] & {
@@ -501,6 +512,14 @@ function renderReportDeltaPanel(comparison: UiReportComparison | null): string {
     `).join('');
   const addedRows = renderDeltaPathRows(comparison.addedAffectedPaths, 'added');
   const removedRows = renderDeltaPathRows(comparison.removedAffectedPaths, 'removed');
+  const presetRows = comparison.policyPresets.map((preset) => `
+    <li class="delta-preset delta-preset-${escapeHtml(preset.summary)}">
+      <strong>${escapeHtml(preset.label)}</strong>
+      <span>${escapeHtml(preset.summary)}</span>
+      <b>${escapeHtml(formatSignedDelta(preset.reviewLoadDelta))}</b>
+      <small>+${escapeHtml(String(preset.widenThreshold))}/-${escapeHtml(String(preset.narrowThreshold))} · ${escapeHtml(policyWeightsLabel(preset.weights))}</small>
+    </li>
+  `).join('');
 
   return `
     <section class="panel report-delta-panel" aria-label="Saved report comparison">
@@ -529,6 +548,7 @@ function renderReportDeltaPanel(comparison: UiReportComparison | null): string {
             <span>Action weight ${escapeHtml(String(comparison.policy.weights.actions))}</span>
             <span>Evidence weight ${escapeHtml(String(comparison.policy.weights.evidence))}</span>
           </div>
+          <ul class="delta-presets" aria-label="Report delta policy preset comparison">${presetRows}</ul>
           <div class="delta-paths">
             <section>
               <h3>Added impact</h3>
@@ -549,6 +569,10 @@ function deltaClass(delta: number): string {
   if (delta > 0) return 'delta-positive';
   if (delta < 0) return 'delta-negative';
   return 'delta-neutral';
+}
+
+function policyWeightsLabel(weights: UiReportDeltaPolicy['weights']): string {
+  return `aff${weights.affected}/act${weights.actions}/ev${weights.evidence}`;
 }
 
 function renderDeltaPathRows(paths: readonly string[], mode: 'added' | 'removed'): string {
@@ -720,6 +744,7 @@ function reportComparisonFromRows(
     reviewLoadDelta,
     policy,
     policyReason: reportDeltaPolicyReason(summary, reviewLoadDelta, policy),
+    policyPresets: reportDeltaPolicyPresets(current, previous, policy),
     changedDelta: current.changedCount - previous.changedCount,
     affectedDelta: current.affectedCount - previous.affectedCount,
     evidenceDelta: current.evidenceCount - previous.evidenceCount,
@@ -747,6 +772,72 @@ function reportComparisonFromRows(
         ...(lane.topPath ? { topPath: lane.topPath } : {})
       };
     })
+  };
+}
+
+function reportDeltaPolicyPresets(
+  current: UiReportPreview,
+  previous: UiReportPreview,
+  activePolicy: UiReportDeltaPolicy
+): UiReportDeltaPolicyPreset[] {
+  const presets: Array<{ id: string; label: string; policy: UiReportDeltaPolicy }> = [
+    { id: 'active', label: 'Active', policy: activePolicy },
+    { id: 'strict', label: 'Strict', policy: strictReportDeltaPolicy() },
+    { id: 'relaxed', label: 'Relaxed', policy: relaxedReportDeltaPolicy() },
+    { id: 'action-heavy', label: 'Action-heavy', policy: actionHeavyReportDeltaPolicy() }
+  ];
+  return presets.map((item) => {
+    const currentLoad = reportReviewLoad(current, item.policy);
+    const previousLoad = reportReviewLoad(previous, item.policy);
+    const reviewLoadDelta = currentLoad - previousLoad;
+    return {
+      id: item.id,
+      label: item.label,
+      summary: reportDeltaSummary(reviewLoadDelta, item.policy),
+      reviewLoadDelta,
+      widenThreshold: item.policy.widenThreshold,
+      narrowThreshold: item.policy.narrowThreshold,
+      weights: item.policy.weights
+    };
+  });
+}
+
+function strictReportDeltaPolicy(): UiReportDeltaPolicy {
+  return {
+    source: 'default',
+    widenThreshold: 6,
+    narrowThreshold: 6,
+    weights: {
+      affected: 4,
+      actions: 7,
+      evidence: 1
+    }
+  };
+}
+
+function relaxedReportDeltaPolicy(): UiReportDeltaPolicy {
+  return {
+    source: 'default',
+    widenThreshold: 24,
+    narrowThreshold: 12,
+    weights: {
+      affected: 2,
+      actions: 3,
+      evidence: 1
+    }
+  };
+}
+
+function actionHeavyReportDeltaPolicy(): UiReportDeltaPolicy {
+  return {
+    source: 'default',
+    widenThreshold: 10,
+    narrowThreshold: 8,
+    weights: {
+      affected: 2,
+      actions: 8,
+      evidence: 1
+    }
   };
 }
 
@@ -1624,6 +1715,54 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       font-size: 11px;
       font-weight: 800;
     }
+    .delta-presets {
+      list-style: none;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 7px;
+      margin: 0;
+      padding: 0;
+    }
+    .delta-preset {
+      min-width: 0;
+      display: grid;
+      gap: 3px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px;
+      background: #fffefa;
+    }
+    .delta-preset strong {
+      color: var(--ink);
+      overflow-wrap: anywhere;
+      font-size: 12px;
+    }
+    .delta-preset span {
+      width: fit-content;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 2px 6px;
+      color: var(--muted);
+      background: #f5f3eb;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+    .delta-preset b {
+      color: var(--ink);
+      font-size: 17px;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+    .delta-preset small {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.25;
+      overflow-wrap: anywhere;
+    }
+    .delta-preset-wider { border-color: #d7b477; box-shadow: inset 3px 0 0 var(--amber); }
+    .delta-preset-narrower { border-color: #89b6a5; box-shadow: inset 3px 0 0 var(--green); }
+    .delta-preset-unchanged { border-color: #8bb8bc; box-shadow: inset 3px 0 0 var(--teal); }
     .delta-lanes {
       list-style: none;
       display: grid;
@@ -2390,7 +2529,7 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .delta-content, .delta-paths { grid-template-columns: 1fr; }
       .delta-hero, .delta-metrics { border-right: 0; border-bottom: 1px solid var(--line); }
-      .delta-lanes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .delta-lanes, .delta-presets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .impact-overview, .workbench, .bottom, .map-content, .summary-columns { grid-template-columns: 1fr; }
       .summary-columns > div:first-child, .map-legend { border-right: 0; border-left: 0; }
       .map-content { height: auto; }
@@ -2403,7 +2542,7 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       .action-controls { grid-column: auto; justify-content: flex-start; }
       .impact-path-meta { justify-content: flex-start; max-width: none; }
       .confidence-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .delta-metrics, .delta-lanes { grid-template-columns: 1fr; }
+      .delta-metrics, .delta-lanes, .delta-presets { grid-template-columns: 1fr; }
       .panel-heading { align-items: flex-start; flex-direction: column; }
     }
   </style>

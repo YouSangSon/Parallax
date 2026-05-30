@@ -271,6 +271,12 @@ test('UI snapshot and HTML compare the selected report to the previous saved rep
     assert.equal(snapshot.comparison?.actionDelta, 1);
     assert.equal(snapshot.comparison?.policy.source, 'default');
     assert.equal(snapshot.comparison?.reviewLoadDelta, 16);
+    assert.ok(snapshot.comparison?.policyPresets.some((item) =>
+      item.id === 'active' && item.summary === 'wider' && item.reviewLoadDelta === 16
+    ));
+    assert.ok(snapshot.comparison?.policyPresets.some((item) =>
+      item.id === 'relaxed' && item.summary === 'unchanged'
+    ));
     assert.ok(snapshot.comparison?.addedAffectedPaths.includes('README.md'));
     assert.ok(snapshot.comparison?.addedAffectedPaths.includes('tests/b.test.ts'));
     assert.ok(snapshot.comparison?.laneDeltas.some((item) =>
@@ -284,6 +290,10 @@ test('UI snapshot and HTML compare the selected report to the previous saved rep
     assert.match(html, /policy default/);
     assert.match(html, /widen \+1/);
     assert.match(html, /Review load changed by \+16/);
+    assert.match(html, /Report delta policy preset comparison/);
+    assert.match(html, /Strict[\s\S]*wider/);
+    assert.match(html, /Relaxed[\s\S]*unchanged/);
+    assert.match(html, /Action-heavy[\s\S]*wider/);
     assert.match(html, /Affected paths[\s\S]*\+2/);
     assert.match(html, /Tests to verify[\s\S]*\+1[\s\S]*tests\/b\.test\.ts/);
     assert.match(html, /Added impact[\s\S]*README\.md/);
@@ -313,6 +323,12 @@ test('UI report delta honors configured team policy thresholds', async () => {
     assert.equal(snapshot.comparison?.policy.widenThreshold, 20);
     assert.equal(snapshot.comparison?.policy.narrowThreshold, 8);
     assert.equal(snapshot.comparison?.reviewLoadDelta, 16);
+    assert.ok(snapshot.comparison?.policyPresets.some((item) =>
+      item.id === 'active' && item.summary === 'unchanged' && item.widenThreshold === 20
+    ));
+    assert.ok(snapshot.comparison?.policyPresets.some((item) =>
+      item.id === 'strict' && item.summary === 'wider'
+    ));
 
     const html = renderUiHtml(snapshot);
     assert.match(html, /Impact unchanged/);

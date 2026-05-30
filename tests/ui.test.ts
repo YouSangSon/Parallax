@@ -247,9 +247,14 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(html, /class="impact-svg"/);
     assert.match(html, /class="map-legend-edge selectable-impact selected-impact" tabindex="0" role="button" data-impact-path="tests\/b\.test\.ts"/);
     assert.match(html, /Impact Inspector/);
+    assert.ok(html.indexOf('Impact Inspector') < html.indexOf('aria-label="Impact map symbols"'));
+    assert.match(html, /class="map-legend-key" aria-label="Impact map symbols"/);
+    assert.match(html, /class="map-route-list" aria-label="Visible impact routes"/);
     assert.ok(html.indexOf('Impact Map') < html.indexOf('Impact Summary'));
     assert.match(html, /Next verification/);
     assert.match(html, /id="inspectorAction"[\s\S]*<code>npm test -- tests\/b\.test\.ts<\/code>/);
+    assert.match(html, /id="inspectorEvidence">2<\/dd>/);
+    assert.match(html, /id="inspectorSource"[\s\S]*Open source L1/);
     assert.match(html, /Top evidence/);
     assert.match(html, /id="inspectorEvidenceList"[\s\S]*tests\/b\.test\.ts/);
     assert.match(html, /function renderInspectorAction/);

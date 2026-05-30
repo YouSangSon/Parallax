@@ -1065,11 +1065,13 @@ function renderImpactMapPanel(graph: UiGraphPreview | null, report: UiReportPrev
           ${svg}
         </div>
         <aside class="map-legend" aria-label="Impact map legend">
-          <div><span class="legend-swatch changed"></span>Changed root</div>
-          <div><span class="legend-swatch affected"></span>Affected target</div>
-          <div><span class="legend-swatch context"></span>Context node</div>
-          <ol>${edgeRows || '<li>No visible impact paths.</li>'}</ol>
           ${renderImpactInspector(firstImpact, report)}
+          <div class="map-legend-key" aria-label="Impact map symbols">
+            <span><b class="legend-swatch changed"></b>Changed root</span>
+            <span><b class="legend-swatch affected"></b>Affected target</span>
+            <span><b class="legend-swatch context"></b>Context node</span>
+          </div>
+          <ol class="map-route-list" aria-label="Visible impact routes">${edgeRows || '<li>No visible impact paths.</li>'}</ol>
         </aside>
       </div>
     </section>
@@ -1327,6 +1329,10 @@ function renderImpactInspector(
       <h3>Impact Inspector</h3>
       <strong id="inspectorPath">${escapeHtml(item?.path ?? 'No affected target selected')}</strong>
       <span id="inspectorReason">${escapeHtml(item?.reason ?? 'Select an affected target in the map or impact list.')}</span>
+      <section class="inspector-action">
+        <h4>Next verification</h4>
+        <div id="inspectorAction">${renderInspectorAction(action)}</div>
+      </section>
       <dl>
         <div>
           <dt>Confidence</dt>
@@ -1338,17 +1344,13 @@ function renderImpactInspector(
         </div>
         <div>
           <dt>Evidence hits</dt>
-          <dd id="inspectorEvidence">0</dd>
+          <dd id="inspectorEvidence">${escapeHtml(String(evidence.length))}</dd>
         </div>
         <div>
           <dt>Source</dt>
-          <dd id="inspectorSource">Select evidence to open a local source view</dd>
+          <dd id="inspectorSource">${renderInspectorSource(evidence[0])}</dd>
         </div>
       </dl>
-      <section class="inspector-action">
-        <h4>Next verification</h4>
-        <div id="inspectorAction">${renderInspectorAction(action)}</div>
-      </section>
       <section class="inspector-evidence">
         <h4>Top evidence</h4>
         <ul id="inspectorEvidenceList">${renderInspectorEvidenceList(evidence)}</ul>
@@ -1365,6 +1367,13 @@ function renderInspectorAction(action: ImpactAction | undefined): string {
     <code>${escapeHtml(command)}</code>
     <button class="copy-command" type="button" data-command="${escapeHtml(command)}" aria-label="Copy inspector verification command">Copy</button>
   `;
+}
+
+function renderInspectorSource(evidence: UiEvidencePreview | undefined): string {
+  if (!evidence) return 'No source span recorded';
+  const source = evidenceSourceLocation(evidence);
+  if (!source) return 'No source span recorded';
+  return `<a class="source-link" href="${escapeHtml(source.href)}" target="_blank" rel="noreferrer">Open source ${escapeHtml(source.label)}</a>`;
 }
 
 function renderInspectorEvidenceList(evidence: readonly UiEvidencePreview[]): string {
@@ -2699,7 +2708,7 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
     .map-legend {
       display: grid;
       align-content: start;
-      gap: 10px;
+      gap: 12px;
       padding: 14px;
       border-left: 1px solid var(--line);
       background: #fbfaf5;
@@ -2708,26 +2717,38 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       line-height: 1.4;
       overflow: auto;
     }
-    .map-legend div {
+    .map-legend-key {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+      gap: 6px;
+      padding: 8px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fffefa;
+    }
+    .map-legend-key span {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
+      min-width: 0;
       font-weight: 800;
       color: #27312a;
+      white-space: nowrap;
     }
     .legend-swatch {
       width: 12px;
       height: 12px;
+      flex: 0 0 12px;
       border-radius: 50%;
       background: var(--blue);
     }
     .legend-swatch.changed { background: var(--green); }
     .legend-swatch.affected { background: var(--amber); }
     .legend-swatch.context { background: var(--teal); }
-    .map-legend ol {
+    .map-route-list {
       display: grid;
       gap: 8px;
-      margin: 8px 0 0;
+      margin: 0;
       padding: 10px 0 0 18px;
       border-top: 1px solid var(--line);
     }
@@ -2761,21 +2782,24 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
     .impact-inspector {
       display: grid;
       gap: 8px;
-      margin-top: 2px;
-      padding-top: 12px;
-      border-top: 1px solid var(--line);
+      margin: 0;
+      padding: 10px;
+      border: 1px solid #9fcdbd;
+      border-radius: 8px;
+      background: #eef8f3;
+      box-shadow: inset 4px 0 0 var(--green);
     }
     .impact-inspector h3 {
       margin: 0;
-      color: var(--muted);
+      color: var(--green);
       font-size: 11px;
-      font-weight: 800;
+      font-weight: 900;
       text-transform: uppercase;
     }
     .impact-inspector > strong {
       color: var(--ink);
       overflow-wrap: anywhere;
-      font-size: 13px;
+      font-size: 15px;
     }
     .impact-inspector > span {
       color: var(--muted);
@@ -2784,7 +2808,8 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
     }
     .impact-inspector dl {
       display: grid;
-      gap: 8px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px 10px;
       margin: 0;
     }
     .impact-inspector dl div {
@@ -2808,6 +2833,12 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       gap: 6px;
       padding-top: 10px;
       border-top: 1px solid var(--line);
+    }
+    .inspector-action {
+      padding: 8px;
+      border: 1px solid #b8d5c9;
+      border-radius: 8px;
+      background: #fbfffc;
     }
     .inspector-action h4, .inspector-evidence h4 {
       margin: 0;
@@ -2851,8 +2882,14 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       font-size: 12px;
     }
     #inspectorEvidenceList span {
+      display: block;
+      margin: 0;
+      padding: 0;
+      border: 0;
+      background: transparent;
       color: var(--muted);
       font-size: 11px;
+      font-weight: 500;
     }
     #inspectorEvidenceList pre {
       margin: 0;

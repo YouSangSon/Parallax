@@ -1035,7 +1035,8 @@ function renderImpactMapPanel(graph: UiGraphPreview | null, report: UiReportPrev
 
   const selectedPath = firstImpact?.path;
   const svg = renderImpactMapSvg(map, selectedPath);
-  const insight = renderImpactMapInsight(map, displayedPathCount, firstImpact?.path);
+  const selectedAction = selectedPath && report ? actionByTargetPath(report.actions).get(selectedPath) : undefined;
+  const insight = renderImpactMapInsight(map, displayedPathCount, firstImpact?.path, selectedAction);
   const edgeRows = map.edges.slice(0, 6).map((edge) => {
     const from = map.nodeById.get(edge.from);
     const to = map.nodeById.get(edge.to);
@@ -1081,7 +1082,8 @@ function renderImpactMapPanel(graph: UiGraphPreview | null, report: UiReportPrev
 function renderImpactMapInsight(
   map: ReturnType<typeof buildImpactMap>,
   displayedPathCount: number,
-  selectedPath?: string
+  selectedPath?: string,
+  action?: ImpactAction
 ): string {
   const primaryChange = map.changedNodes[0]?.label ?? 'Changed root';
   const primaryTarget = selectedPath
@@ -1091,11 +1093,24 @@ function renderImpactMapInsight(
   const primaryEdge = map.edges.find((edge) => edge.from === map.changedNodes[0]?.id && edge.to === primaryTarget?.id) ?? map.edges[0];
   const relation = primaryEdge?.label ?? 'IMPACTS';
   const confidence = primaryTarget?.confidence ?? primaryEdge?.confidence ?? 'unknown';
+  const command = action ? actionCommandText(action) : undefined;
+  const actionHtml = command
+    ? `
+      <div class="map-next-action" aria-label="Next verification command">
+        <span>Next verification</span>
+        <code>${escapeHtml(command)}</code>
+        <button class="copy-command" type="button" data-command="${escapeHtml(command)}" aria-label="Copy map verification command">Copy</button>
+      </div>
+    `
+    : '';
   return `
     <div class="map-insight" aria-label="Primary impact flow">
-      <span>Primary impact flow</span>
-      <strong>${escapeHtml(shortenMiddle(primaryChange, 34))} <em>&rarr;</em> ${escapeHtml(shortenMiddle(primaryTargetLabel, 34))}</strong>
-      <small>${escapeHtml(relation)} · ${escapeHtml(String(map.affectedNodes.length))} targets · ${escapeHtml(String(displayedPathCount))} displayed paths · ${escapeHtml(confidence)} confidence</small>
+      <div class="map-flow-text">
+        <span>Primary impact flow</span>
+        <strong>${escapeHtml(shortenMiddle(primaryChange, 34))} <em>&rarr;</em> ${escapeHtml(shortenMiddle(primaryTargetLabel, 34))}</strong>
+        <small>${escapeHtml(relation)} · ${escapeHtml(String(map.affectedNodes.length))} targets · ${escapeHtml(String(displayedPathCount))} displayed paths · ${escapeHtml(confidence)} confidence</small>
+      </div>
+      ${actionHtml}
     </div>
   `;
 }
@@ -2565,7 +2580,9 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
     }
     .map-insight {
       display: grid;
-      gap: 3px;
+      grid-template-columns: minmax(0, 1fr) minmax(180px, 0.42fr);
+      align-items: center;
+      gap: 12px;
       max-width: 760px;
       padding: 10px 12px;
       border: 1px solid rgba(168, 202, 186, 0.26);
@@ -2573,28 +2590,63 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       background: rgba(15, 29, 22, 0.82);
       color: #e8f2eb;
     }
-    .map-insight span {
+    .map-flow-text {
+      display: grid;
+      gap: 3px;
+      min-width: 0;
+    }
+    .map-flow-text span {
       color: #a8caba;
       font-size: 11px;
       font-weight: 900;
       text-transform: uppercase;
     }
-    .map-insight strong {
+    .map-flow-text strong {
       min-width: 0;
       color: #fffdf4;
       font-size: 17px;
       line-height: 1.2;
       overflow-wrap: anywhere;
     }
-    .map-insight em {
+    .map-flow-text em {
       color: #73c2ac;
       font-style: normal;
     }
-    .map-insight small {
+    .map-flow-text small {
       color: #c9d8cf;
       font-size: 12px;
       line-height: 1.35;
       overflow-wrap: anywhere;
+    }
+    .map-next-action {
+      min-width: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 5px 6px;
+      align-items: center;
+      padding: 8px;
+      border: 1px solid rgba(115, 194, 172, 0.32);
+      border-radius: 8px;
+      background: rgba(234, 249, 241, 0.08);
+    }
+    .map-next-action span {
+      grid-column: 1 / -1;
+      color: #a8caba;
+      font-size: 10px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+    .map-next-action code {
+      min-width: 0;
+      overflow-wrap: anywhere;
+      color: #f8fff9;
+      font-size: 11px;
+    }
+    .map-next-action .copy-command {
+      min-height: 24px;
+      padding: 2px 7px;
+      border-color: #73c2ac;
+      background: #e6f7ef;
     }
     .impact-svg {
       display: block;
@@ -3057,11 +3109,16 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
         padding: 10px;
       }
       .map-insight {
+        grid-template-columns: 1fr;
         gap: 2px;
         padding: 8px 9px;
       }
-      .map-insight strong { font-size: 14px; }
-      .map-insight small { font-size: 11px; }
+      .map-flow-text strong { font-size: 14px; }
+      .map-flow-text small { font-size: 11px; }
+      .map-next-action {
+        grid-template-columns: minmax(0, 1fr) auto;
+        padding: 6px 7px;
+      }
       .impact-svg { height: 320px; }
       .map-legend { max-height: 300px; padding: 10px; }
       .impact-row, .workspace-link-row, .action-row { grid-template-columns: 1fr; }

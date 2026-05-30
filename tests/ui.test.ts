@@ -241,6 +241,8 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(html, /Impact Map/);
     assert.match(html, /Primary impact flow/);
     assert.match(html, /Primary impact flow[\s\S]*src\/b\.ts <em>&rarr;<\/em> tests\/b\.test\.ts/);
+    assert.match(html, /class="map-next-action" aria-label="Next verification command"[\s\S]*<code>npm test -- tests\/b\.test\.ts<\/code>/);
+    assert.match(html, /aria-label="Copy map verification command"/);
     assert.match(html, /map-stage-changed/);
     assert.match(html, /class="map-edge-group selectable-impact selected-impact"[\s\S]*data-impact-path="tests\/b\.test\.ts"[\s\S]*class="map-edge confidence-proven"/);
     assert.match(html, /marker-end="url\(#impactArrow\)"/);

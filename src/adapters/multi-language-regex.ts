@@ -141,7 +141,7 @@ abstract class RegexBackedSemanticAdapter implements SemanticAdapter {
 
 export class TypeScriptJavaScriptSemanticAdapter extends RegexBackedSemanticAdapter {
   override readonly knownGaps = [
-    'TypeScript/JavaScript import, declaration, imported call-site, local identifier call, same-class this.method, static ClassName.method, same-file factory return type instance method call, interface method/function-property signature and typed receiver method call, typed local variable instance method call, typed parameter instance method call, constructor parameter property instance method call, constructor assignment instance method call, class field arrow method caller/target, typed class field instance method call, class field instance method call, same-file new ClassName instance call, and direct new ClassName().method call spans are parser-backed, but broader dynamic dispatch and type relation resolution are not yet complete',
+    'TypeScript/JavaScript import, declaration, imported call-site, local identifier call, same-class this.method, static ClassName.method, same-file factory return type instance method call, interface/type-literal method/function-property signature and typed receiver method call, typed local variable instance method call, typed parameter instance method call, constructor parameter property instance method call, constructor assignment instance method call, class field arrow method caller/target, typed class field instance method call, class field instance method call, same-file new ClassName instance call, and direct new ClassName().method call spans are parser-backed, but broader dynamic dispatch and type relation resolution are not yet complete',
     'polymorphism, alias-heavy object flows, generated code, and framework-specific routing may require deeper adapters'
   ];
 
@@ -1553,14 +1553,14 @@ function extractTypeScriptJavaScriptSymbols(file: ScannedFile): ExtractedSymbol[
         addSymbol(`${className}.${node.name.text}`, 'method', node, classHasExportModifier(node));
       }
     } else if (ts.isMethodSignature(node) && ts.isIdentifier(node.name)) {
-      const interfaceName = enclosingTypeScriptJavaScriptInterfaceName(node);
-      if (interfaceName) {
-        addSymbol(`${interfaceName}.${node.name.text}`, 'method', node, interfaceHasExportModifier(node));
+      const typeName = enclosingTypeScriptJavaScriptTypeMemberOwnerName(node);
+      if (typeName) {
+        addSymbol(`${typeName}.${node.name.text}`, 'method', node, typeMemberOwnerHasExportModifier(node));
       }
-    } else if (isCallableInterfacePropertySignature(node)) {
-      const interfaceName = enclosingTypeScriptJavaScriptInterfaceName(node);
-      if (interfaceName && ts.isIdentifier(node.name)) {
-        addSymbol(`${interfaceName}.${node.name.text}`, 'method', node, interfaceHasExportModifier(node));
+    } else if (isCallableTypePropertySignature(node)) {
+      const typeName = enclosingTypeScriptJavaScriptTypeMemberOwnerName(node);
+      if (typeName && ts.isIdentifier(node.name)) {
+        addSymbol(`${typeName}.${node.name.text}`, 'method', node, typeMemberOwnerHasExportModifier(node));
       }
     } else if (isCallableClassProperty(node)) {
       const className = enclosingTypeScriptJavaScriptClassName(node);
@@ -1850,12 +1850,12 @@ function collectTypeScriptJavaScriptLocalCallables(
       const className = enclosingTypeScriptJavaScriptClassName(node);
       if (className) addCallable(`${className}.${node.name.text}`, 'method');
     } else if (ts.isMethodSignature(node) && ts.isIdentifier(node.name)) {
-      const interfaceName = enclosingTypeScriptJavaScriptInterfaceName(node);
-      if (interfaceName) addCallable(`${interfaceName}.${node.name.text}`, 'method');
-    } else if (isCallableInterfacePropertySignature(node)) {
-      const interfaceName = enclosingTypeScriptJavaScriptInterfaceName(node);
-      if (interfaceName && ts.isIdentifier(node.name)) {
-        addCallable(`${interfaceName}.${node.name.text}`, 'method');
+      const typeName = enclosingTypeScriptJavaScriptTypeMemberOwnerName(node);
+      if (typeName) addCallable(`${typeName}.${node.name.text}`, 'method');
+    } else if (isCallableTypePropertySignature(node)) {
+      const typeName = enclosingTypeScriptJavaScriptTypeMemberOwnerName(node);
+      if (typeName && ts.isIdentifier(node.name)) {
+        addCallable(`${typeName}.${node.name.text}`, 'method');
       }
     } else if (isCallableClassProperty(node)) {
       const className = enclosingTypeScriptJavaScriptClassName(node);
@@ -2066,7 +2066,7 @@ function isCallableClassProperty(node: ts.Node): node is ts.PropertyDeclaration 
     && isCallableInitializer(node.initializer);
 }
 
-function isCallableInterfacePropertySignature(node: ts.Node): node is ts.PropertySignature {
+function isCallableTypePropertySignature(node: ts.Node): node is ts.PropertySignature {
   return ts.isPropertySignature(node)
     && ts.isIdentifier(node.name)
     && Boolean(node.type && ts.isFunctionTypeNode(node.type));
@@ -2327,6 +2327,18 @@ function enclosingTypeScriptJavaScriptInterfaceName(node: ts.Node): string | und
   return undefined;
 }
 
+function enclosingTypeScriptJavaScriptTypeMemberOwnerName(node: ts.Node): string | undefined {
+  return enclosingTypeScriptJavaScriptInterfaceName(node)
+    ?? enclosingTypeScriptJavaScriptTypeLiteralAliasName(node);
+}
+
+function enclosingTypeScriptJavaScriptTypeLiteralAliasName(node: ts.Node): string | undefined {
+  const parent = node.parent;
+  if (!parent || !ts.isTypeLiteralNode(parent)) return undefined;
+  const typeAlias = parent.parent;
+  return ts.isTypeAliasDeclaration(typeAlias) ? typeAlias.name.text : undefined;
+}
+
 function classHasExportModifier(node: ts.Node): boolean {
   let current: ts.Node | undefined = node.parent;
   while (current) {
@@ -2336,11 +2348,11 @@ function classHasExportModifier(node: ts.Node): boolean {
   return false;
 }
 
-function interfaceHasExportModifier(node: ts.Node): boolean {
-  let current: ts.Node | undefined = node.parent;
-  while (current) {
-    if (ts.isInterfaceDeclaration(current)) return hasExportModifier(current);
-    current = current.parent;
+function typeMemberOwnerHasExportModifier(node: ts.Node): boolean {
+  const parent = node.parent;
+  if (parent && ts.isInterfaceDeclaration(parent)) return hasExportModifier(parent);
+  if (parent && ts.isTypeLiteralNode(parent) && ts.isTypeAliasDeclaration(parent.parent)) {
+    return hasExportModifier(parent.parent);
   }
   return false;
 }

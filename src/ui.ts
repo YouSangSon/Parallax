@@ -21,6 +21,9 @@ export type UiServerOptions = UiOptions & {
   port?: number;
 };
 
+type ImpactLaneId = 'code' | 'tests' | 'knowledge' | 'contracts' | 'config';
+type ImpactLaneTone = 'green' | 'amber' | 'teal' | 'blue' | 'red';
+
 export type UiSnapshot = {
   version: 0;
   generatedAt: string;
@@ -35,6 +38,7 @@ export type UiSnapshot = {
   contextPacks: UiContextPackSummary[];
   workArtifacts: UiWorkArtifactImpact[];
   workspaces: UiWorkspaceSnapshot[];
+  comparison: UiReportComparison | null;
 };
 
 export type UiError = {
@@ -61,6 +65,42 @@ export type UiReportPreview = UiReportSummary & {
   adapterInsights: NonNullable<ImpactReport['adapterInsights']>;
   actions: ImpactAction[];
   warnings: string[];
+};
+
+export type UiReportComparison = {
+  baseReportId: string;
+  baseCreatedAt: string;
+  summary: 'wider' | 'narrower' | 'unchanged';
+  reviewLoadCurrent: number;
+  reviewLoadPrevious: number;
+  reviewLoadDelta: number;
+  changedDelta: number;
+  affectedDelta: number;
+  evidenceDelta: number;
+  actionDelta: number;
+  addedAffectedPaths: string[];
+  removedAffectedPaths: string[];
+  addedActionTargets: string[];
+  removedActionTargets: string[];
+  confidenceDeltas: UiReportComparisonBucket[];
+  laneDeltas: UiReportComparisonLane[];
+};
+
+export type UiReportComparisonBucket = {
+  label: string;
+  current: number;
+  previous: number;
+  delta: number;
+};
+
+export type UiReportComparisonLane = {
+  id: ImpactLaneId;
+  label: string;
+  tone: ImpactLaneTone;
+  current: number;
+  previous: number;
+  delta: number;
+  topPath?: string;
 };
 
 export type UiEvidencePreview = ImpactReport['evidence'][number] & {
@@ -240,11 +280,11 @@ type ImpactMapEdge = {
 };
 
 type ImpactLane = {
-  id: 'code' | 'tests' | 'knowledge' | 'contracts' | 'config';
+  id: ImpactLaneId;
   label: string;
   count: number;
   summary: string;
-  tone: 'green' | 'amber' | 'teal' | 'blue' | 'red';
+  tone: ImpactLaneTone;
   topPath?: string;
 };
 
@@ -270,7 +310,8 @@ export async function buildUiSnapshot(options: UiOptions): Promise<UiSnapshot> {
       coverage: null,
       contextPacks: [],
       workArtifacts: [],
-      workspaces: []
+      workspaces: [],
+      comparison: null
     };
   }
 
@@ -309,6 +350,7 @@ export async function buildUiSnapshot(options: UiOptions): Promise<UiSnapshot> {
     const selectedRow = requestedReport ?? (options.reportId ? null : reportRows[0] ?? null);
     const selectedReport = selectedRow ? reportPreviewFromRow(selectedRow) : null;
     const graph = selectedRow ? await graphPreview(repoRoot, selectedRow.id) : null;
+    const comparison = selectedRow ? readReportComparison(db, repoId, selectedRow) : null;
     return {
       version: 0,
       generatedAt,
@@ -322,7 +364,8 @@ export async function buildUiSnapshot(options: UiOptions): Promise<UiSnapshot> {
       coverage: readLatestCoverage(db, repoId),
       contextPacks: readContextPacks(db, repoId),
       workArtifacts: selectedRow ? workArtifactsFromReportRow(selectedRow) : [],
-      workspaces: readWorkspaceSnapshots(db)
+      workspaces: readWorkspaceSnapshots(db),
+      comparison
     };
   } finally {
     db.close();
@@ -403,6 +446,96 @@ function renderImpactSummaryPanel(snapshot: UiSnapshot): string {
   `;
 }
 
+function renderReportDeltaPanel(comparison: UiReportComparison | null): string {
+  if (!comparison) return '';
+  const headline = comparison.summary === 'wider'
+    ? 'Impact widened'
+    : comparison.summary === 'narrower'
+      ? 'Impact narrowed'
+      : 'Impact unchanged';
+  const headlineDetail = comparison.summary === 'wider'
+    ? 'More review surface than the previous saved report.'
+    : comparison.summary === 'narrower'
+      ? 'Less review surface than the previous saved report.'
+      : 'Review surface is stable against the previous saved report.';
+  const metricRows = [
+    { label: 'Review load', value: String(comparison.reviewLoadCurrent), meta: formatSignedDelta(comparison.reviewLoadDelta), delta: comparison.reviewLoadDelta },
+    { label: 'Affected paths', value: formatSignedDelta(comparison.affectedDelta), meta: 'delta', delta: comparison.affectedDelta },
+    { label: 'Evidence', value: formatSignedDelta(comparison.evidenceDelta), meta: 'delta', delta: comparison.evidenceDelta },
+    { label: 'Actions', value: formatSignedDelta(comparison.actionDelta), meta: 'delta', delta: comparison.actionDelta }
+  ].map((item) => `
+    <li class="${escapeHtml(deltaClass(item.delta))}">
+      <span>${escapeHtml(item.label)}</span>
+      <strong>${escapeHtml(item.value)}</strong>
+      <em>${escapeHtml(item.meta)}</em>
+    </li>
+  `).join('');
+  const laneRows = comparison.laneDeltas.map((lane) => {
+    const detail = lane.delta === 0 ? `${lane.current} current` : lane.topPath ?? `${lane.current} current`;
+    return `
+      <li class="delta-lane delta-lane-${escapeHtml(lane.tone)} ${escapeHtml(deltaClass(lane.delta))}">
+        <span>${escapeHtml(lane.label)}</span>
+        <b>${escapeHtml(formatSignedDelta(lane.delta))}</b>
+        <small>${escapeHtml(detail)}</small>
+      </li>
+    `;
+  }).join('');
+  const confidenceRows = comparison.confidenceDeltas
+    .filter((item) => item.current > 0 || item.previous > 0 || item.delta !== 0)
+    .map((item) => `
+      <span class="${escapeHtml(deltaClass(item.delta))}">
+        <b>${escapeHtml(formatSignedDelta(item.delta))}</b>${escapeHtml(item.label)}
+      </span>
+    `).join('');
+  const addedRows = comparison.addedAffectedPaths.slice(0, 4).map((item) => `<li>${escapeHtml(item)}</li>`).join('');
+  const removedRows = comparison.removedAffectedPaths.slice(0, 4).map((item) => `<li>${escapeHtml(item)}</li>`).join('');
+
+  return `
+    <section class="panel report-delta-panel" aria-label="Saved report comparison">
+      <div class="panel-heading">
+        <h2>Report Delta</h2>
+        <div class="panel-chips">
+          <span>vs ${escapeHtml(comparison.baseReportId)}</span>
+          <span>${escapeHtml(comparison.baseCreatedAt)}</span>
+        </div>
+      </div>
+      <div class="delta-content">
+        <div class="delta-hero delta-hero-${escapeHtml(comparison.summary)}">
+          <span>Saved report comparison</span>
+          <strong>${escapeHtml(headline)}</strong>
+          <small>${escapeHtml(headlineDetail)}</small>
+        </div>
+        <ul class="delta-metrics">${metricRows}</ul>
+        <div class="delta-detail">
+          <div class="delta-confidence" aria-label="Confidence delta">${confidenceRows || '<span><b>0</b>stable confidence</span>'}</div>
+          <ul class="delta-lanes">${laneRows}</ul>
+          <div class="delta-paths">
+            <section>
+              <h3>Added impact</h3>
+              <ul>${addedRows || '<li>None</li>'}</ul>
+            </section>
+            <section>
+              <h3>Removed impact</h3>
+              <ul>${removedRows || '<li>None</li>'}</ul>
+            </section>
+          </div>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function deltaClass(delta: number): string {
+  if (delta > 0) return 'delta-positive';
+  if (delta < 0) return 'delta-negative';
+  return 'delta-neutral';
+}
+
+function formatSignedDelta(delta: number): string {
+  if (delta > 0) return `+${delta}`;
+  return String(delta);
+}
+
 function buildImpactLanes(report: UiReportPreview, workArtifacts: readonly UiWorkArtifactImpact[]): ImpactLane[] {
   const lanes: ImpactLane[] = [
     { id: 'code', label: 'Runtime code', count: 0, summary: 'No source files affected', tone: 'green' },
@@ -445,6 +578,94 @@ function buildImpactLanes(report: UiReportPreview, workArtifacts: readonly UiWor
   }
 
   return lanes;
+}
+
+function readReportComparison(
+  db: ReturnType<typeof openDatabase>,
+  repoId: number,
+  selectedRow: ReportRow
+): UiReportComparison | null {
+  const previousRow = db
+    .prepare(`
+      SELECT id, index_run_id, json, created_at
+      FROM reports
+      WHERE repo_id = ?
+        AND (created_at < ? OR (created_at = ? AND id < ?))
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1
+    `)
+    .get(repoId, selectedRow.created_at, selectedRow.created_at, selectedRow.id) as ReportRow | undefined;
+  return previousRow ? reportComparisonFromRows(selectedRow, previousRow) : null;
+}
+
+function reportComparisonFromRows(currentRow: ReportRow, previousRow: ReportRow): UiReportComparison {
+  const current = reportPreviewFromRow(currentRow);
+  const previous = reportPreviewFromRow(previousRow);
+  const currentAffectedPaths = new Set(current.affectedFiles.map((item) => item.path));
+  const previousAffectedPaths = new Set(previous.affectedFiles.map((item) => item.path));
+  const currentActionTargets = actionTargetLabels(current.actions);
+  const previousActionTargets = actionTargetLabels(previous.actions);
+  const currentLoad = reportReviewLoad(current);
+  const previousLoad = reportReviewLoad(previous);
+  const reviewLoadDelta = currentLoad - previousLoad;
+  const currentLanes = buildImpactLanes(current, workArtifactsFromReportRow(currentRow));
+  const previousLanesById = new Map(
+    buildImpactLanes(previous, workArtifactsFromReportRow(previousRow)).map((lane) => [lane.id, lane])
+  );
+
+  return {
+    baseReportId: previous.id,
+    baseCreatedAt: previous.createdAt,
+    summary: reviewLoadDelta > 0 ? 'wider' : reviewLoadDelta < 0 ? 'narrower' : 'unchanged',
+    reviewLoadCurrent: currentLoad,
+    reviewLoadPrevious: previousLoad,
+    reviewLoadDelta,
+    changedDelta: current.changedCount - previous.changedCount,
+    affectedDelta: current.affectedCount - previous.affectedCount,
+    evidenceDelta: current.evidenceCount - previous.evidenceCount,
+    actionDelta: current.actionCount - previous.actionCount,
+    addedAffectedPaths: sortedSetDifference(currentAffectedPaths, previousAffectedPaths),
+    removedAffectedPaths: sortedSetDifference(previousAffectedPaths, currentAffectedPaths),
+    addedActionTargets: sortedSetDifference(currentActionTargets, previousActionTargets),
+    removedActionTargets: sortedSetDifference(previousActionTargets, currentActionTargets),
+    confidenceDeltas: ['proven', 'inferred', 'heuristic', 'unknown'].map((label) =>
+      comparisonBucket(
+        label,
+        current.affectedFiles.filter((item) => item.confidence === label).length,
+        previous.affectedFiles.filter((item) => item.confidence === label).length
+      )
+    ),
+    laneDeltas: currentLanes.map((lane) => {
+      const previousLane = previousLanesById.get(lane.id);
+      return {
+        id: lane.id,
+        label: lane.label,
+        tone: lane.tone,
+        current: lane.count,
+        previous: previousLane?.count ?? 0,
+        delta: lane.count - (previousLane?.count ?? 0),
+        ...(lane.topPath ? { topPath: lane.topPath } : {})
+      };
+    })
+  };
+}
+
+function reportReviewLoad(report: UiReportPreview): number {
+  return report.affectedCount * 3 + report.actionCount * 5 + report.evidenceCount;
+}
+
+function actionTargetLabels(actions: readonly ImpactAction[]): Set<string> {
+  return new Set(actions.map((action) =>
+    action.target.path ?? action.target.displayName ?? action.target.symbol ?? action.target.id
+  ));
+}
+
+function sortedSetDifference(left: ReadonlySet<string>, right: ReadonlySet<string>): string[] {
+  return [...left].filter((item) => !right.has(item)).sort((a, b) => a.localeCompare(b));
+}
+
+function comparisonBucket(label: string, current: number, previous: number): UiReportComparisonBucket {
+  return { label, current, previous, delta: current - previous };
 }
 
 function classifyImpactLane(pathValue: string, reason: string, actionTargets: ReadonlySet<string>): ImpactLane['id'] {
@@ -1056,6 +1277,7 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
   ]).join('');
   const impactSummaryPanel = renderImpactSummaryPanel(snapshot);
   const impactMapPanel = renderImpactMapPanel(snapshot.graph, report);
+  const reportDeltaPanel = renderReportDeltaPanel(snapshot.comparison);
   const dataJson = JSON.stringify(snapshot).replaceAll('<', '\\u003c');
 
   return `<!doctype html>
@@ -1171,6 +1393,163 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       line-height: 1;
       font-variant-numeric: tabular-nums;
     }
+    .report-delta-panel {
+      margin-bottom: 14px;
+    }
+    .delta-content {
+      display: grid;
+      grid-template-columns: minmax(220px, 0.58fr) minmax(320px, 0.9fr) minmax(460px, 1.35fr);
+      min-height: 150px;
+    }
+    .delta-hero {
+      display: grid;
+      align-content: center;
+      gap: 6px;
+      padding: 16px;
+      border-right: 1px solid var(--line);
+      background: #18211b;
+      color: var(--ink-inverse);
+    }
+    .delta-hero span, .delta-hero small {
+      color: #bfd1c6;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    .delta-hero strong {
+      font-size: 27px;
+      line-height: 1.05;
+    }
+    .delta-hero-wider { box-shadow: inset 4px 0 0 var(--amber); }
+    .delta-hero-narrower { box-shadow: inset 4px 0 0 var(--green); }
+    .delta-hero-unchanged { box-shadow: inset 4px 0 0 var(--teal); }
+    .delta-metrics {
+      list-style: none;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin: 0;
+      padding: 14px;
+      border-right: 1px solid var(--line);
+      background: #fffefa;
+    }
+    .delta-metrics li {
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 9px;
+      background: #fbfaf5;
+    }
+    .delta-metrics span, .delta-lane span, .delta-paths h3 {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+    .delta-metrics strong {
+      color: var(--ink);
+      font-size: 22px;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+    .delta-metrics em {
+      font-size: 11px;
+      font-style: normal;
+      font-weight: 800;
+    }
+    .delta-detail {
+      display: grid;
+      gap: 10px;
+      padding: 14px;
+      background: #fbfaf5;
+      min-width: 0;
+    }
+    .delta-confidence {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .delta-confidence span {
+      width: fit-content;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 3px 7px;
+      background: #f5f3eb;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+    .delta-confidence b {
+      margin-right: 4px;
+      color: var(--ink);
+      font-variant-numeric: tabular-nums;
+    }
+    .delta-lanes {
+      list-style: none;
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 7px;
+      margin: 0;
+      padding: 0;
+    }
+    .delta-lane {
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+      min-height: 68px;
+      border: 1px solid var(--line);
+      border-left: 4px solid var(--line-strong);
+      border-radius: 8px;
+      padding: 8px;
+      background: #fffefa;
+    }
+    .delta-lane b {
+      color: var(--ink);
+      font-size: 17px;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+    .delta-lane small {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.25;
+      overflow-wrap: anywhere;
+    }
+    .delta-lane-green { border-left-color: var(--green); }
+    .delta-lane-amber { border-left-color: var(--amber); }
+    .delta-lane-teal { border-left-color: var(--teal); }
+    .delta-lane-blue { border-left-color: var(--blue); }
+    .delta-lane-red { border-left-color: var(--red); }
+    .delta-paths {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .delta-paths section {
+      min-width: 0;
+    }
+    .delta-paths h3 {
+      margin: 0 0 6px;
+    }
+    .delta-paths ul {
+      list-style: none;
+      display: grid;
+      gap: 4px;
+      margin: 0;
+      padding: 0;
+    }
+    .delta-paths li {
+      min-width: 0;
+      overflow-wrap: anywhere;
+      color: var(--ink);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+    }
+    .delta-positive strong, .delta-positive b, .delta-positive em { color: var(--amber); }
+    .delta-negative strong, .delta-negative b, .delta-negative em { color: var(--green); }
+    .delta-neutral strong, .delta-neutral b, .delta-neutral em { color: var(--teal); }
     .impact-overview {
       display: grid;
       grid-template-columns: minmax(320px, 0.72fr) minmax(620px, 1.55fr);
@@ -1580,10 +1959,14 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       grid-template-columns: minmax(0, 1fr) 250px;
       height: 100%;
       min-height: 480px;
+      align-items: start;
     }
     .map-frame {
       min-width: 0;
       min-height: 0;
+      display: grid;
+      align-content: start;
+      align-items: start;
       padding: 14px;
       background:
         linear-gradient(180deg, rgba(24, 33, 27, 0.97), rgba(24, 33, 27, 0.94)),
@@ -1592,7 +1975,7 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
     .impact-svg {
       display: block;
       width: 100%;
-      height: 100%;
+      height: 320px;
       filter: drop-shadow(0 16px 30px rgba(0, 0, 0, 0.18));
     }
     .map-column-label {
@@ -1847,6 +2230,9 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       .toolbar { justify-content: stretch; }
       .toolbar input, .toolbar select { width: 100%; }
       .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .delta-content, .delta-paths { grid-template-columns: 1fr; }
+      .delta-hero, .delta-metrics { border-right: 0; border-bottom: 1px solid var(--line); }
+      .delta-lanes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .impact-overview, .workbench, .bottom, .map-content, .summary-columns { grid-template-columns: 1fr; }
       .summary-columns > div:first-child, .map-legend { border-right: 0; border-left: 0; }
       .map-content { height: auto; }
@@ -1859,6 +2245,7 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       .action-controls { grid-column: auto; justify-content: flex-start; }
       .impact-path-meta { justify-content: flex-start; max-width: none; }
       .confidence-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .delta-metrics, .delta-lanes { grid-template-columns: 1fr; }
       .panel-heading { align-items: flex-start; flex-direction: column; }
     }
   </style>
@@ -1886,6 +2273,7 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       <div class="metric"><span>Work artifacts</span><strong>${escapeHtml(String(snapshot.workArtifacts.length))}</strong></div>
       <div class="metric"><span>Workspaces</span><strong>${escapeHtml(String(snapshot.workspaces.length))}</strong></div>
     </section>
+    ${reportDeltaPanel}
     <section class="impact-overview" aria-label="Impact overview">
       ${impactSummaryPanel}
       ${impactMapPanel}
@@ -1960,6 +2348,7 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
           <li class="pack-row"><strong>/api/reports/{id}/graph/json</strong><span>GraphExport JSON shape with limit/cursor pagination</span></li>
           <li class="pack-row"><strong>/api/coverage/latest</strong><span>Coverage resource shape</span></li>
           <li class="pack-row"><strong>/api/context-packs/{id}</strong><span>Persisted context pack resource shape</span></li>
+          <li class="pack-row"><strong>bootstrap.comparison</strong><span>Selected report versus previous saved report deltas</span></li>
           <li class="pack-row"><strong>bootstrap.workArtifacts</strong><span>Policy, decision, PRD, requirement, and proposal impact preview shape</span></li>
           <li class="pack-row"><strong>/api/workspaces/{name}</strong><span>Workspace contracts and cross-repo link preview shape</span></li>
         </ul>

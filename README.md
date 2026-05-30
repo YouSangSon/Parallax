@@ -15,7 +15,7 @@ Claude Code, Codex, Cursor 같은 에이전트가 코드를 고치기 전에<br/
 
 [🚀 빠른 시작](#-빠른-시작) · [✨ 주요 기능](#-주요-기능) · [🧱 핵심 개념](#-핵심-개념) · [🤖 MCP](#-mcp--agents) · [🔒 안전 모델](#-안전-모델) · [🗺️ Roadmap](#%EF%B8%8F-roadmap) · [📚 더 읽기](#-더-읽기)
 
-<img src="docs/assets/parallax-ui-demo.png" alt="Parallax Impact Workbench UI showing impact summary, visual impact map, verification queue, affected paths, and evidence" width="100%">
+<img src="docs/assets/parallax-ui-demo.png" alt="Parallax Impact Workbench UI showing report delta, impact summary, visual impact map, verification queue, affected paths, and evidence" width="100%">
 
 </div>
 
@@ -143,11 +143,12 @@ parallax profile --entity file:src/auth.ts
 
 ### 🖥️ Local UI
 
-`parallax ui`는 최신 report를 기준으로 바로 작업 화면을 띄운다. landing page가 아니라 Impact Summary, Impact Map, Change Set, Impact Paths, Evidence, Coverage Gaps, Doctor Findings를 한 화면에서 본다.
+`parallax ui`는 최신 report를 기준으로 바로 작업 화면을 띄운다. landing page가 아니라 Report Delta, Impact Summary, Impact Map, Change Set, Impact Paths, Evidence, Coverage Gaps, Doctor Findings를 한 화면에서 본다.
 
 | 화면 | 기능 |
 | :--- | :--- |
 | **Change Set** | 분석된 변경 파일과 entity 요약 |
+| **Report Delta** | 선택한 report를 직전 saved report와 비교해 영향 범위, evidence, action, lane 변화량을 즉시 표시 |
 | **Impact Summary** | 변경 수, 영향 범위, confidence 분포, 우선 확인 대상을 첫 화면에 요약 |
 | **Impact Lanes** | runtime code, tests, docs/policy, contracts, config/infra 영향 범주를 한눈에 분리 |
 | **Impact Paths** | 변경 → 영향 대상까지의 relation trail, evidence count, source/action control |

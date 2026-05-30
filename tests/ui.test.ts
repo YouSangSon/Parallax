@@ -18,6 +18,7 @@ import {
 import { normalizeRepoRoot } from '../src/security.js';
 import { getRepoId, openDatabase } from '../src/store.js';
 import { buildUiSnapshot, renderUiHtml, startUiServer } from '../src/ui.js';
+import type { ImpactReport } from '../src/types.js';
 
 const require = createRequire(import.meta.url);
 const tsxLoaderPath = require.resolve('tsx');
@@ -252,6 +253,36 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(html, /Workspace Contracts/);
     assert.match(html, /overflow-wrap: anywhere/);
     assert.doesNotMatch(html, /landing/i);
+  } finally {
+    await rm(repoRoot, { recursive: true, force: true });
+  }
+});
+
+test('UI snapshot and HTML compare the selected report to the previous saved report', async () => {
+  const { repoRoot, reportId } = await makeUiRepo();
+  try {
+    const baselineId = seedPreviousReportBaseline(repoRoot, reportId);
+
+    const snapshot = await buildUiSnapshot({ repoRoot });
+    assert.equal(snapshot.selectedReportId, reportId);
+    assert.equal(snapshot.comparison?.baseReportId, baselineId);
+    assert.equal(snapshot.comparison?.summary, 'wider');
+    assert.equal(snapshot.comparison?.affectedDelta, 2);
+    assert.equal(snapshot.comparison?.actionDelta, 1);
+    assert.ok(snapshot.comparison?.addedAffectedPaths.includes('README.md'));
+    assert.ok(snapshot.comparison?.addedAffectedPaths.includes('tests/b.test.ts'));
+    assert.ok(snapshot.comparison?.laneDeltas.some((item) =>
+      item.label === 'Tests to verify' && item.current === 1 && item.previous === 0 && item.delta === 1
+    ));
+
+    const html = renderUiHtml(snapshot);
+    assert.match(html, /Report Delta/);
+    assert.match(html, /Impact widened/);
+    assert.match(html, /Saved report comparison/);
+    assert.match(html, /Affected paths[\s\S]*\+2/);
+    assert.match(html, /Tests to verify[\s\S]*\+1[\s\S]*tests\/b\.test\.ts/);
+    assert.match(html, /Added impact[\s\S]*README\.md/);
+    assert.match(html, /bootstrap\.comparison/);
   } finally {
     await rm(repoRoot, { recursive: true, force: true });
   }
@@ -531,6 +562,37 @@ test('CLI ui prints a localhost URL and shuts down cleanly', async () => {
     await rm(repoRoot, { recursive: true, force: true });
   }
 });
+
+function seedPreviousReportBaseline(repoRoot: string, currentReportId: string): string {
+  const normalizedRepoRoot = normalizeRepoRoot(repoRoot);
+  const db = openDatabase(normalizedRepoRoot);
+  try {
+    const repoId = getRepoId(db, normalizedRepoRoot);
+    const currentRow = db
+      .prepare('SELECT index_run_id, json FROM reports WHERE repo_id = ? AND id = ?')
+      .get(repoId, currentReportId) as { index_run_id: number; json: string } | undefined;
+    assert.ok(currentRow);
+    const current = JSON.parse(currentRow.json) as ImpactReport;
+    const baselineId = `${currentReportId}-baseline`;
+    const baseline: ImpactReport = {
+      ...current,
+      id: baselineId,
+      affectedFiles: current.affectedFiles.filter((item) => item.path === 'src/a.ts'),
+      affected: current.affected.filter((item) => item.target.path === 'src/a.ts'),
+      actions: [],
+      testCommands: [],
+      evidence: current.evidence.filter((item) =>
+        item.file === 'src/a.ts' || item.subject?.path === 'src/a.ts'
+      ),
+      warnings: []
+    };
+    db.prepare('INSERT OR REPLACE INTO reports (id, repo_id, index_run_id, json, created_at) VALUES (?, ?, ?, ?, ?)')
+      .run(baselineId, repoId, currentRow.index_run_id, JSON.stringify(baseline), '1999-01-01 00:00:00');
+    return baselineId;
+  } finally {
+    db.close();
+  }
+}
 
 function seedRecentReportRows(repoRoot: string, oldReportId: string, count: number): void {
   const normalizedRepoRoot = normalizeRepoRoot(repoRoot);

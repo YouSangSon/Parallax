@@ -1014,7 +1014,7 @@ function isUiConfigPath(pathLower: string): boolean {
 
 function renderImpactMapPanel(graph: UiGraphPreview | null, report: UiReportPreview | null): string {
   const map = buildImpactMap(graph, report);
-  const firstImpact = [...(report?.affectedFiles ?? [])].sort(compareAffectedFilesForUi)[0];
+  const firstImpact = report ? initialImpactForUi(report) : undefined;
   const displayedPathCount = map.edges.length;
   const chips = `
     <span>${map.changedNodes.length} changed</span>
@@ -1034,7 +1034,7 @@ function renderImpactMapPanel(graph: UiGraphPreview | null, report: UiReportPrev
   }
 
   const svg = renderImpactMapSvg(map);
-  const insight = renderImpactMapInsight(map, displayedPathCount);
+  const insight = renderImpactMapInsight(map, displayedPathCount, firstImpact?.path);
   const edgeRows = map.edges.slice(0, 6).map((edge) => {
     const from = map.nodeById.get(edge.from);
     const to = map.nodeById.get(edge.to);
@@ -1070,9 +1070,15 @@ function renderImpactMapPanel(graph: UiGraphPreview | null, report: UiReportPrev
   `;
 }
 
-function renderImpactMapInsight(map: ReturnType<typeof buildImpactMap>, displayedPathCount: number): string {
+function renderImpactMapInsight(
+  map: ReturnType<typeof buildImpactMap>,
+  displayedPathCount: number,
+  selectedPath?: string
+): string {
   const primaryChange = map.changedNodes[0]?.label ?? 'Changed root';
-  const primaryTarget = map.affectedNodes[0];
+  const primaryTarget = selectedPath
+    ? map.affectedNodes.find((node) => node.path === selectedPath) ?? map.affectedNodes[0]
+    : map.affectedNodes[0];
   const primaryTargetLabel = primaryTarget?.label ?? 'No affected target';
   const primaryEdge = map.edges.find((edge) => edge.from === map.changedNodes[0]?.id && edge.to === primaryTarget?.id) ?? map.edges[0];
   const relation = primaryEdge?.label ?? 'IMPACTS';
@@ -1271,6 +1277,12 @@ function compareAffectedFilesForUi(left: UiReportPreview['affectedFiles'][number
   return confidenceSortRank(left.confidence) - confidenceSortRank(right.confidence)
     || (left.depth ?? 99) - (right.depth ?? 99)
     || left.path.localeCompare(right.path);
+}
+
+function initialImpactForUi(report: UiReportPreview): UiReportPreview['affectedFiles'][number] | undefined {
+  const affectedFiles = [...report.affectedFiles].sort(compareAffectedFilesForUi);
+  const actionTargets = new Set(report.actions.map((action) => action.target.path).filter((pathValue): pathValue is string => Boolean(pathValue)));
+  return affectedFiles.find((item) => actionTargets.has(item.path)) ?? affectedFiles[0];
 }
 
 function confidenceSortRank(confidence: string): number {

@@ -233,6 +233,7 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(html, /impact-lane-teal[\s\S]*Docs &amp; policy[\s\S]*<b>1<\/b>[\s\S]*README\.md/);
     assert.match(html, /Impact Map/);
     assert.match(html, /Primary impact flow/);
+    assert.match(html, /Primary impact flow[\s\S]*src\/b\.ts <em>&rarr;<\/em> tests\/b\.test\.ts/);
     assert.match(html, /map-stage-changed/);
     assert.match(html, /class="map-edge-group selectable-impact"[\s\S]*data-impact-path="tests\/b\.test\.ts"[\s\S]*class="map-edge confidence-proven"/);
     assert.match(html, /marker-end="url\(#impactArrow\)"/);
@@ -242,9 +243,9 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(html, /Impact Inspector/);
     assert.ok(html.indexOf('Impact Map') < html.indexOf('Impact Summary'));
     assert.match(html, /Next verification/);
-    assert.match(html, /id="inspectorAction"[\s\S]*No verification action recorded/);
+    assert.match(html, /id="inspectorAction"[\s\S]*<code>npm test -- tests\/b\.test\.ts<\/code>/);
     assert.match(html, /Top evidence/);
-    assert.match(html, /id="inspectorEvidenceList"[\s\S]*src\/a\.ts/);
+    assert.match(html, /id="inspectorEvidenceList"[\s\S]*tests\/b\.test\.ts/);
     assert.match(html, /function renderInspectorAction/);
     assert.match(html, /function renderInspectorEvidence/);
     assert.match(html, /function initialImpactPath/);

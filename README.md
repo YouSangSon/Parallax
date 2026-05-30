@@ -96,7 +96,7 @@ parallax ui --report <report-id> --port 3717
 
 | 영역 | 현재 상태 |
 | :--- | :--- |
-| **TypeScript / JavaScript** | parser-backed import, declaration, class/interface heritage, call-site, typed/destructured receiver, factory-return, constructor/field call span 확대 중 |
+| **TypeScript / JavaScript** | parser-backed import, declaration, class/interface heritage, call-site, typed/destructured/named-object receiver, factory-return, constructor/field call span 확대 중 |
 | **JVM / Spring Boot** | endpoint, declaration, config, test evidence span v0 |
 | **Python / Go / Rust** | declaration/test relation 중심 lightweight adapter |
 | **Markdown / work artifacts** | policy, proposal, PRD, decision 문서를 first-class artifact로 분류하고 코드와 연결 |

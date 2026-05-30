@@ -23,7 +23,7 @@ import type {
 } from './types.js';
 
 export const MULTI_LANG_REGEX_ADAPTER_ID = 'multi-language-regex-mvp';
-export const MULTI_LANG_REGEX_ADAPTER_VERSION = '31';
+export const MULTI_LANG_REGEX_ADAPTER_VERSION = '32';
 export const TS_JS_SEMANTIC_ADAPTER_ID = 'typescript-javascript-semantic-v0';
 export const JVM_SPRING_SEMANTIC_ADAPTER_ID = 'jvm-spring-semantic-v0';
 export const PYTHON_SEMANTIC_ADAPTER_ID = 'python-semantic-v0';
@@ -118,6 +118,8 @@ type TsLocalInstanceBinding = {
   resolution: 'first' | 'all';
 };
 
+type TsObjectPropertyTypes = Map<string, Map<string, ts.TypeNode>>;
+
 type TsMemberAccessExpression = ts.PropertyAccessExpression | ts.ElementAccessExpression;
 
 type SpringClass = {
@@ -189,7 +191,7 @@ abstract class RegexBackedSemanticAdapter implements SemanticAdapter {
 
 export class TypeScriptJavaScriptSemanticAdapter extends RegexBackedSemanticAdapter {
   override readonly knownGaps = [
-    'TypeScript/JavaScript import, declaration, same-file/named-imported/direct-named-re-exported/star-re-exported/namespace-re-exported/default-imported/direct-default-re-exported/namespace-imported class/interface heritage type relation, imported call-site, local identifier call, same-class this.method, same-file class super.method, same-file/direct-new-or-const-alias-inferred/namespace-constructor-inferred/factory-wrapper-inferred/direct-factory-call-receiver/named-imported/direct-named-re-exported/star-re-exported/namespace-imported/namespace-re-exported/default-imported/direct-default-re-exported factory return type instance method call, interface/type-literal method/function-property/function-type-alias signature, same-file/named-imported/direct-named-re-exported/star-re-exported/namespace-re-exported/default-imported/direct-default-re-exported/namespace-imported interface/type-literal typed receiver method call, same-file interface extends typed receiver method call, same-file alias-backed interface extends typed receiver method call, same-file type reference alias typed receiver method call, same-file simple generic type reference typed receiver method call, same-file generic constraint typed receiver method call, same-file intersection type alias typed receiver method call, direct intersection typed receiver method call, same-file simple union typed receiver method call, declared typed local/class field receiver method call, typed local variable instance method call, typed/destructured parameter instance method call, assertion-wrapped/non-null/parenthesized typed receiver method call, string-literal element access method call, private member receiver method call, constructor parameter property instance method call, constructor assignment instance method call, class field arrow method caller/target, static class field arrow method call, typed class field instance method call, class field instance method call, same-file new ClassName instance call, and direct new ClassName().method call spans are parser-backed, but broader dynamic dispatch and advanced type relation resolution are not yet complete',
+    'TypeScript/JavaScript import, declaration, same-file/named-imported/direct-named-re-exported/star-re-exported/namespace-re-exported/default-imported/direct-default-re-exported/namespace-imported class/interface heritage type relation, imported call-site, local identifier call, same-class this.method, same-file class super.method, same-file/direct-new-or-const-alias-inferred/namespace-constructor-inferred/factory-wrapper-inferred/direct-factory-call-receiver/named-imported/direct-named-re-exported/star-re-exported/namespace-imported/namespace-re-exported/default-imported/direct-default-re-exported factory return type instance method call, interface/type-literal method/function-property/function-type-alias signature, same-file/named-imported/direct-named-re-exported/star-re-exported/namespace-re-exported/default-imported/direct-default-re-exported/namespace-imported interface/type-literal typed receiver method call, same-file interface extends typed receiver method call, same-file alias-backed interface extends typed receiver method call, same-file type reference alias typed receiver method call, same-file simple generic type reference typed receiver method call, same-file generic constraint typed receiver method call, same-file intersection type alias typed receiver method call, direct intersection typed receiver method call, same-file simple union typed receiver method call, declared typed local/class field receiver method call, typed local variable instance method call, typed/destructured/named-object parameter instance method call, assertion-wrapped/non-null/parenthesized typed receiver method call, string-literal element access method call, private member receiver method call, constructor parameter property instance method call, constructor assignment instance method call, class field arrow method caller/target, static class field arrow method call, typed class field instance method call, class field instance method call, same-file new ClassName instance call, and direct new ClassName().method call spans are parser-backed, but broader dynamic dispatch and advanced type relation resolution are not yet complete',
     'polymorphism, alias-heavy object flows, generated code, and framework-specific routing may require deeper adapters'
   ];
 
@@ -2510,6 +2512,7 @@ function extractCalls(
     sourceFile,
     typeReferenceAliases
   );
+  const objectPropertyTypes = collectTypeScriptJavaScriptObjectPropertyTypes(sourceFile);
   const interfaceExtends = collectTypeScriptJavaScriptInterfaceExtends(
     sourceFile,
     typeReferenceAliases,
@@ -2535,7 +2538,8 @@ function extractCalls(
     typeExtends,
     typeIntersectionAliases,
     typeUnionAliases,
-    typeReferenceAliases
+    typeReferenceAliases,
+    objectPropertyTypes
   );
   const classInstanceBindings = collectTypeScriptJavaScriptClassInstanceBindings(
     sourceFile,
@@ -3374,6 +3378,32 @@ function collectTypeScriptJavaScriptTypeUnionAliases(
   return aliases;
 }
 
+function collectTypeScriptJavaScriptObjectPropertyTypes(sourceFile: ts.SourceFile): TsObjectPropertyTypes {
+  const propertyTypes: TsObjectPropertyTypes = new Map();
+
+  const addMembers = (typeName: string, members: ts.NodeArray<ts.TypeElement>): void => {
+    const properties = propertyTypes.get(typeName) ?? new Map<string, ts.TypeNode>();
+    for (const member of members) {
+      if (!ts.isPropertySignature(member) || !member.type) continue;
+      const propertyName = propertyNameText(member.name);
+      if (propertyName) properties.set(propertyName, member.type);
+    }
+    if (properties.size > 0) propertyTypes.set(typeName, properties);
+  };
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isInterfaceDeclaration(node)) {
+      addMembers(node.name.text, node.members);
+    } else if (ts.isTypeAliasDeclaration(node) && ts.isTypeLiteralNode(node.type)) {
+      addMembers(node.name.text, node.type.members);
+    }
+    ts.forEachChild(node, visit);
+  };
+
+  visit(sourceFile);
+  return propertyTypes;
+}
+
 function collectTypeScriptJavaScriptLocalInstanceBindings(
   sourceFile: ts.SourceFile,
   localCallables: ReadonlyMap<string, TsLocalCallable>,
@@ -3381,7 +3411,8 @@ function collectTypeScriptJavaScriptLocalInstanceBindings(
   interfaceExtends: ReadonlyMap<string, readonly string[]>,
   typeIntersectionAliases: ReadonlyMap<string, readonly string[]>,
   typeUnionAliases: ReadonlyMap<string, readonly string[]>,
-  typeReferenceAliases: ReadonlyMap<string, string>
+  typeReferenceAliases: ReadonlyMap<string, string>,
+  objectPropertyTypes: Readonly<TsObjectPropertyTypes> = new Map()
 ): Map<string, TsLocalInstanceBinding> {
   const bindings = new Map<string, TsLocalInstanceBinding>();
 
@@ -3411,7 +3442,9 @@ function collectTypeScriptJavaScriptLocalInstanceBindings(
     for (const element of pattern.elements) {
       if (!ts.isIdentifier(element.name)) continue;
       const propertyName = objectBindingElementPropertyName(element);
-      const propertyType = propertyName ? objectTypePropertyTypeNode(typeNode, propertyName) : undefined;
+      const propertyType = propertyName
+        ? objectTypePropertyTypeNode(typeNode, propertyName, objectPropertyTypes, typeReferenceAliases)
+        : undefined;
       const binding = typeBindingFromTypeNode(
         propertyType,
         typeReferenceAliases,
@@ -3480,7 +3513,13 @@ function objectBindingElementPropertyName(element: ts.BindingElement): string | 
   return ts.isIdentifier(element.name) ? element.name.text : undefined;
 }
 
-function objectTypePropertyTypeNode(typeNode: ts.TypeNode | undefined, propertyName: string): ts.TypeNode | undefined {
+function objectTypePropertyTypeNode(
+  typeNode: ts.TypeNode | undefined,
+  propertyName: string,
+  objectPropertyTypes: Readonly<TsObjectPropertyTypes>,
+  typeReferenceAliases: ReadonlyMap<string, string>,
+  seen = new Set<string>()
+): ts.TypeNode | undefined {
   if (!typeNode) return undefined;
   if (ts.isTypeLiteralNode(typeNode)) {
     for (const member of typeNode.members) {
@@ -3489,9 +3528,21 @@ function objectTypePropertyTypeNode(typeNode: ts.TypeNode | undefined, propertyN
     }
     return undefined;
   }
+  if (ts.isTypeReferenceNode(typeNode)) {
+    const typeName = classNameFromTypeReference(typeNode, typeReferenceAliases);
+    if (!typeName || seen.has(typeName)) return undefined;
+    seen.add(typeName);
+    return objectPropertyTypes.get(typeName)?.get(propertyName);
+  }
   if (ts.isIntersectionTypeNode(typeNode)) {
     for (const childType of typeNode.types) {
-      const propertyType = objectTypePropertyTypeNode(childType, propertyName);
+      const propertyType = objectTypePropertyTypeNode(
+        childType,
+        propertyName,
+        objectPropertyTypes,
+        typeReferenceAliases,
+        seen
+      );
       if (propertyType) return propertyType;
     }
   }

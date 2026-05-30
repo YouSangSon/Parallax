@@ -487,8 +487,8 @@ function renderReportDeltaPanel(comparison: UiReportComparison | null): string {
         <b>${escapeHtml(formatSignedDelta(item.delta))}</b>${escapeHtml(item.label)}
       </span>
     `).join('');
-  const addedRows = comparison.addedAffectedPaths.slice(0, 4).map((item) => `<li>${escapeHtml(item)}</li>`).join('');
-  const removedRows = comparison.removedAffectedPaths.slice(0, 4).map((item) => `<li>${escapeHtml(item)}</li>`).join('');
+  const addedRows = renderDeltaPathRows(comparison.addedAffectedPaths, 'added');
+  const removedRows = renderDeltaPathRows(comparison.removedAffectedPaths, 'removed');
 
   return `
     <section class="panel report-delta-panel" aria-label="Saved report comparison">
@@ -529,6 +529,28 @@ function deltaClass(delta: number): string {
   if (delta > 0) return 'delta-positive';
   if (delta < 0) return 'delta-negative';
   return 'delta-neutral';
+}
+
+function renderDeltaPathRows(paths: readonly string[], mode: 'added' | 'removed'): string {
+  return paths.slice(0, 4).map((pathValue) => {
+    const sourceLink = `<a class="source-link" href="${escapeHtml(sourceHref(pathValue, 1))}" target="_blank" rel="noreferrer">Source</a>`;
+    if (mode === 'added') {
+      return `
+        <li class="delta-path-row selectable-impact" tabindex="0" role="button" data-impact-path="${escapeHtml(pathValue)}" data-filter-text="${escapeHtml(`added impact ${pathValue}`)}">
+          <span>${escapeHtml(pathValue)}</span>
+          <small>Inspect impact</small>
+          ${sourceLink}
+        </li>
+      `;
+    }
+    return `
+      <li class="delta-path-row" data-filter-text="${escapeHtml(`removed impact ${pathValue}`)}">
+        <span>${escapeHtml(pathValue)}</span>
+        <small>No longer affected</small>
+        ${sourceLink}
+      </li>
+    `;
+  }).join('');
 }
 
 function formatSignedDelta(delta: number): string {
@@ -1542,10 +1564,30 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
     }
     .delta-paths li {
       min-width: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 5px 8px;
+      align-items: center;
       overflow-wrap: anywhere;
       color: var(--ink);
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
       font-size: 12px;
+    }
+    .delta-paths li > span {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+    .delta-paths li > small {
+      grid-column: 1;
+      color: var(--muted);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 11px;
+      line-height: 1.25;
+    }
+    .delta-paths li > .source-link {
+      grid-column: 2;
+      grid-row: 1 / span 2;
+      align-self: center;
     }
     .delta-positive strong, .delta-positive b, .delta-positive em { color: var(--amber); }
     .delta-negative strong, .delta-negative b, .delta-negative em { color: var(--green); }
@@ -1959,7 +2001,7 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       grid-template-columns: minmax(0, 1fr) 250px;
       height: 100%;
       min-height: 480px;
-      align-items: start;
+      align-items: stretch;
     }
     .map-frame {
       min-width: 0;
@@ -2522,7 +2564,7 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
         selectImpact(element.getAttribute('data-impact-path'), { scroll: true });
       });
     }
-    for (const element of document.querySelectorAll('.impact-path-row a, .impact-path-row button')) {
+    for (const element of document.querySelectorAll('.selectable-impact a, .selectable-impact button')) {
       element.addEventListener('click', (event) => event.stopPropagation());
     }
     input?.addEventListener('input', () => {

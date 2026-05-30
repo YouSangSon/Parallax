@@ -282,6 +282,10 @@ test('UI snapshot and HTML compare the selected report to the previous saved rep
     assert.match(html, /Affected paths[\s\S]*\+2/);
     assert.match(html, /Tests to verify[\s\S]*\+1[\s\S]*tests\/b\.test\.ts/);
     assert.match(html, /Added impact[\s\S]*README\.md/);
+    assert.match(html, /class="delta-path-row selectable-impact"[\s\S]*data-impact-path="README\.md"/);
+    assert.match(html, /Inspect impact/);
+    assert.match(html, /\/source\?path=README\.md&amp;line=1/);
+    assert.match(html, /document\.querySelectorAll\('\.selectable-impact a, \.selectable-impact button'\)/);
     assert.match(html, /bootstrap\.comparison/);
   } finally {
     await rm(repoRoot, { recursive: true, force: true });

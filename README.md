@@ -154,7 +154,7 @@ parallax profile --entity file:src/auth.ts
 | **Impact Paths** | 변경 → 영향 대상까지의 relation trail, evidence count, source/action control |
 | **Verification Queue** | 영향받는 테스트/리뷰 action을 복사 가능한 command와 target source link로 표시 |
 | **Evidence** | redacted snippet, source span, relation provenance |
-| **Impact Map** | changed root와 affected target을 실제 graph link로 연결하고, target 선택 시 관련 경로와 evidence를 강조 |
+| **Impact Map** | changed root에서 affected target까지 primary flow, 방향 화살표, 실제 graph link를 보여주고 target 선택 시 관련 경로와 evidence를 강조 |
 | **Impact Inspector** | 선택한 target의 relation, evidence preview, source, verification action을 즉시 확인 |
 | **Source Viewer** | evidence의 `Open source` 링크로 repo-local 파일의 해당 line 주변을 바로 확인 |
 | **Coverage Gaps** | adapter confidence와 known-gap 확인 |

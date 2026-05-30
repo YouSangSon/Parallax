@@ -936,6 +936,7 @@ function renderImpactMapPanel(graph: UiGraphPreview | null, report: UiReportPrev
   }
 
   const svg = renderImpactMapSvg(map);
+  const insight = renderImpactMapInsight(map, graph?.totalEdges ?? graph?.edges.length ?? map.edges.length);
   const edgeRows = map.edges.slice(0, 6).map((edge) => {
     const from = map.nodeById.get(edge.from);
     const to = map.nodeById.get(edge.to);
@@ -955,7 +956,10 @@ function renderImpactMapPanel(graph: UiGraphPreview | null, report: UiReportPrev
         <div class="panel-chips">${chips}</div>
       </div>
       <div class="map-content">
-        <div class="map-frame">${svg}</div>
+        <div class="map-frame">
+          ${insight}
+          ${svg}
+        </div>
         <aside class="map-legend" aria-label="Impact map legend">
           <div><span class="legend-swatch changed"></span>Changed root</div>
           <div><span class="legend-swatch affected"></span>Affected target</div>
@@ -965,6 +969,22 @@ function renderImpactMapPanel(graph: UiGraphPreview | null, report: UiReportPrev
         </aside>
       </div>
     </section>
+  `;
+}
+
+function renderImpactMapInsight(map: ReturnType<typeof buildImpactMap>, totalLinks: number): string {
+  const primaryChange = map.changedNodes[0]?.label ?? 'Changed root';
+  const primaryTarget = map.affectedNodes[0];
+  const primaryTargetLabel = primaryTarget?.label ?? 'No affected target';
+  const primaryEdge = map.edges.find((edge) => edge.from === map.changedNodes[0]?.id && edge.to === primaryTarget?.id) ?? map.edges[0];
+  const relation = primaryEdge?.label ?? 'IMPACTS';
+  const confidence = primaryTarget?.confidence ?? primaryEdge?.confidence ?? 'unknown';
+  return `
+    <div class="map-insight" aria-label="Primary impact flow">
+      <span>Primary impact flow</span>
+      <strong>${escapeHtml(shortenMiddle(primaryChange, 34))} <em>&rarr;</em> ${escapeHtml(shortenMiddle(primaryTargetLabel, 34))}</strong>
+      <small>${escapeHtml(relation)} · ${escapeHtml(String(map.affectedNodes.length))} targets · ${escapeHtml(String(totalLinks))} graph links · ${escapeHtml(confidence)} confidence</small>
+    </div>
   `;
 }
 
@@ -1027,13 +1047,13 @@ function buildImpactMap(
 }
 
 function renderImpactMapSvg(map: ReturnType<typeof buildImpactMap>): string {
-  const width = 920;
-  const leftX = 36;
-  const rightX = 616;
-  const nodeWidth = 264;
-  const nodeHeight = 46;
+  const width = 960;
+  const leftX = 46;
+  const rightX = 598;
+  const nodeWidth = 306;
+  const nodeHeight = 54;
   const rowCount = Math.max(map.changedNodes.length, map.affectedNodes.length, 1);
-  const height = Math.max(300, 138 + rowCount * 58);
+  const height = Math.max(420, 150 + rowCount * 70);
   const changedPositions = impactNodePositions(map.changedNodes, height);
   const affectedPositions = impactNodePositions(map.affectedNodes, height);
   const yByNode = new Map<string, number>([
@@ -1047,9 +1067,9 @@ function renderImpactMapSvg(map: ReturnType<typeof buildImpactMap>): string {
     const startX = leftX + nodeWidth;
     const endX = rightX;
     const controlX = (startX + endX) / 2;
-    const labelY = Math.min(height - 28, Math.max(62, (fromY + toY) / 2 - 8));
+    const labelY = Math.min(height - 32, Math.max(78, (fromY + toY) / 2 - 8));
     return `
-      <path class="map-edge confidence-${escapeHtml(edge.confidence)}" d="M ${startX} ${fromY} C ${controlX} ${fromY}, ${controlX} ${toY}, ${endX} ${toY}" />
+      <path class="map-edge confidence-${escapeHtml(edge.confidence)}" d="M ${startX} ${fromY} C ${controlX} ${fromY}, ${controlX} ${toY}, ${endX} ${toY}" marker-end="url(#impactArrow)" />
       <text class="map-edge-label" x="${controlX}" y="${labelY}" text-anchor="middle">${escapeHtml(shortenMiddle(edge.label, 18))}</text>
     `;
   }).join('');
@@ -1061,9 +1081,17 @@ function renderImpactMapSvg(map: ReturnType<typeof buildImpactMap>): string {
   ).join('');
 
   return `
-    <svg class="impact-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Changed entities connected to affected targets">
-      <text class="map-column-label" x="${leftX}" y="34">Changed</text>
-      <text class="map-column-label" x="${rightX}" y="34">Affected</text>
+    <svg class="impact-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMin meet" role="img" aria-label="Changed entities connected to affected targets">
+      <defs>
+        <marker id="impactArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+          <path class="map-arrow" d="M 0 0 L 10 5 L 0 10 z" />
+        </marker>
+      </defs>
+      <rect class="map-stage map-stage-changed" x="24" y="58" width="350" height="${height - 86}" rx="16" />
+      <rect class="map-stage map-stage-affected" x="576" y="58" width="350" height="${height - 86}" rx="16" />
+      <text class="map-column-label" x="${leftX}" y="36">Changed root</text>
+      <text class="map-route-label" x="${(leftX + nodeWidth + rightX) / 2}" y="36" text-anchor="middle">Impact path</text>
+      <text class="map-column-label" x="${rightX}" y="36">Affected targets</text>
       <g>${edges}</g>
       <g>${changedNodes}</g>
       <g>${affectedNodes}</g>
@@ -1072,7 +1100,7 @@ function renderImpactMapSvg(map: ReturnType<typeof buildImpactMap>): string {
 }
 
 function renderImpactMapNode(node: ImpactMapNode, x: number, y: number, width: number, height: number): string {
-  const label = compactMapLabel(node.label, 38);
+  const label = compactMapLabel(node.label, 42);
   const impactAttrs = node.group === 'affected' && node.path
     ? ` data-impact-path="${escapeHtml(node.path)}" tabindex="0" role="button" aria-label="Inspect ${escapeHtml(node.path)}"`
     : '';
@@ -1081,17 +1109,17 @@ function renderImpactMapNode(node: ImpactMapNode, x: number, y: number, width: n
     <g class="map-node${selectableClass} map-node-${escapeHtml(node.group)} confidence-node-${escapeHtml(node.confidence ?? 'unknown')}" transform="translate(${x} ${y})"${impactAttrs}>
       <title>${escapeHtml(node.label)}</title>
       <rect width="${width}" height="${height}" rx="8" />
-      <circle cx="18" cy="20" r="5" />
-      <text class="map-node-label" x="32" y="20">${escapeHtml(label)}</text>
-      <text class="map-node-kind" x="32" y="36">${escapeHtml(node.kind)}</text>
+      <circle cx="20" cy="24" r="5" />
+      <text class="map-node-label" x="36" y="23">${escapeHtml(label)}</text>
+      <text class="map-node-kind" x="36" y="41">${escapeHtml(node.kind)}</text>
     </g>
   `;
 }
 
 function impactNodePositions(nodes: ImpactMapNode[], height: number): number[] {
   if (nodes.length === 0) return [];
-  const top = 86;
-  const bottom = height - 48;
+  const top = 110;
+  const bottom = height - 64;
   if (nodes.length === 1) return [(top + bottom) / 2];
   const step = (bottom - top) / (nodes.length - 1);
   return nodes.map((_, index) => top + step * index);
@@ -2255,25 +2283,69 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       display: grid;
       grid-template-columns: minmax(0, 1fr) 250px;
       height: 100%;
-      min-height: 480px;
+      min-height: 520px;
       align-items: stretch;
     }
     .map-frame {
       min-width: 0;
       min-height: 0;
       display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
       align-content: start;
       align-items: start;
+      gap: 12px;
       padding: 14px;
       background:
         linear-gradient(180deg, rgba(24, 33, 27, 0.97), rgba(24, 33, 27, 0.94)),
         #18211b;
     }
+    .map-insight {
+      display: grid;
+      gap: 3px;
+      max-width: 760px;
+      padding: 10px 12px;
+      border: 1px solid rgba(168, 202, 186, 0.26);
+      border-radius: 8px;
+      background: rgba(15, 29, 22, 0.82);
+      color: #e8f2eb;
+    }
+    .map-insight span {
+      color: #a8caba;
+      font-size: 11px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+    .map-insight strong {
+      min-width: 0;
+      color: #fffdf4;
+      font-size: 17px;
+      line-height: 1.2;
+      overflow-wrap: anywhere;
+    }
+    .map-insight em {
+      color: #73c2ac;
+      font-style: normal;
+    }
+    .map-insight small {
+      color: #c9d8cf;
+      font-size: 12px;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+    }
     .impact-svg {
       display: block;
       width: 100%;
-      height: 320px;
+      height: 430px;
       filter: drop-shadow(0 16px 30px rgba(0, 0, 0, 0.18));
+    }
+    .map-stage {
+      fill: rgba(255, 253, 244, 0.035);
+      stroke: rgba(168, 202, 186, 0.16);
+      stroke-width: 1;
+    }
+    .map-stage-affected {
+      fill: rgba(255, 246, 231, 0.045);
+      stroke: rgba(215, 180, 119, 0.22);
     }
     .map-column-label {
       fill: #a8caba;
@@ -2282,11 +2354,21 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       text-transform: uppercase;
       letter-spacing: 0;
     }
+    .map-route-label {
+      fill: #d2e1d7;
+      font-size: 11px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }
     .map-edge {
       fill: none;
       stroke: #73c2ac;
       stroke-width: 3;
       opacity: 0.88;
+    }
+    .map-arrow {
+      fill: #73c2ac;
     }
     .map-edge.confidence-heuristic {
       stroke: #d59a45;

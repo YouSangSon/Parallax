@@ -225,6 +225,9 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(html, /impact-lane-amber[\s\S]*Tests to verify[\s\S]*<b>1<\/b>[\s\S]*tests\/b\.test\.ts/);
     assert.match(html, /impact-lane-teal[\s\S]*Docs &amp; policy[\s\S]*<b>1<\/b>[\s\S]*README\.md/);
     assert.match(html, /Impact Map/);
+    assert.match(html, /Primary impact flow/);
+    assert.match(html, /map-stage-changed/);
+    assert.match(html, /marker-end="url\(#impactArrow\)"/);
     assert.match(html, /class="impact-svg"/);
     assert.match(html, /Impact Inspector/);
     assert.match(html, /Next verification/);

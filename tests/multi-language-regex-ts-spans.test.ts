@@ -1446,6 +1446,97 @@ test('TypeScript JavaScript adapter records parser-backed class extends inherite
   }
 });
 
+test('TypeScript JavaScript adapter records parser-backed super receiver method dispatch spans', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-super-receiver-spans-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+
+  await writeFile(path.join(repoRoot, 'src/guard.ts'), [
+    'class BaseGuard {',
+    '  validateSession(token: string): boolean {',
+    '    return this.normalizeToken(token).length > 0;',
+    '  }',
+    '',
+    '  protected normalizeToken(token: string): string {',
+    '    return token.trim();',
+    '  }',
+    '}',
+    '',
+    'class SessionGuard extends BaseGuard {',
+    '  authorize(token: string): boolean {',
+    '    return super.validateSession(token);',
+    '  }',
+    '',
+    '  audit(token: string): boolean {',
+    '    return super["normalizeToken"](token).length > 0;',
+    '  }',
+    '}',
+    ''
+  ].join('\n'));
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const calls = db
+      .prepare(`
+        SELECT
+          source.symbol AS source_symbol,
+          target.symbol AS target_symbol,
+          r.provenance,
+          ev.snippet,
+          ev.start_line,
+          ev.end_line,
+          ev.start_col,
+          ev.end_col,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities source ON source.id = r.source_entity_id
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind = 'CALLS'
+          AND source.kind = 'symbol'
+          AND target.kind = 'symbol'
+          AND source.path = 'src/guard.ts'
+          AND target.path = 'src/guard.ts'
+        ORDER BY ev.start_line, ev.start_col
+      `)
+      .all(index.indexRunId) as Array<{
+        source_symbol: string;
+        target_symbol: string;
+        provenance: string;
+        snippet: string;
+        start_line: number | null;
+        end_line: number | null;
+        start_col: number | null;
+        end_col: number | null;
+        adapter_id: string | null;
+      }>;
+
+    assert.deepEqual(
+      calls.map((row) => [row.source_symbol, row.target_symbol, row.snippet]),
+      [
+        ['BaseGuard.validateSession', 'BaseGuard.normalizeToken', 'this.normalizeToken(token)'],
+        ['SessionGuard.authorize', 'BaseGuard.validateSession', 'super.validateSession(token)'],
+        ['SessionGuard.audit', 'BaseGuard.normalizeToken', 'super["normalizeToken"](token)']
+      ]
+    );
+    assert.deepEqual(calls.map((row) => row.start_line), [3, 13, 17]);
+    assert.ok(calls.every((row) => row.end_line !== null));
+    assert.ok(calls.every((row) => row.start_col !== null));
+    assert.ok(calls.every((row) => row.end_col !== null));
+    assert.ok(calls.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
+    assert.deepEqual(
+      calls.map((row) => row.provenance.split(':')[0]),
+      ['method-call', 'super-call', 'super-call']
+    );
+  } finally {
+    db.close();
+  }
+});
+
 test('TypeScript JavaScript adapter records parser-backed local instance method dispatch spans', async () => {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-instance-call-spans-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });

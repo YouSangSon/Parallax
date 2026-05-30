@@ -23,7 +23,7 @@ import type {
 } from './types.js';
 
 export const MULTI_LANG_REGEX_ADAPTER_ID = 'multi-language-regex-mvp';
-export const MULTI_LANG_REGEX_ADAPTER_VERSION = '28';
+export const MULTI_LANG_REGEX_ADAPTER_VERSION = '29';
 export const TS_JS_SEMANTIC_ADAPTER_ID = 'typescript-javascript-semantic-v0';
 export const JVM_SPRING_SEMANTIC_ADAPTER_ID = 'jvm-spring-semantic-v0';
 export const PYTHON_SEMANTIC_ADAPTER_ID = 'python-semantic-v0';
@@ -189,7 +189,7 @@ abstract class RegexBackedSemanticAdapter implements SemanticAdapter {
 
 export class TypeScriptJavaScriptSemanticAdapter extends RegexBackedSemanticAdapter {
   override readonly knownGaps = [
-    'TypeScript/JavaScript import, declaration, same-file/named-imported/direct-named-re-exported/star-re-exported/namespace-re-exported/default-imported/direct-default-re-exported/namespace-imported class/interface heritage type relation, imported call-site, local identifier call, same-class this.method, same-file/direct-new-or-const-alias-inferred/namespace-constructor-inferred/factory-wrapper-inferred/direct-factory-call-receiver/named-imported/direct-named-re-exported/star-re-exported/namespace-imported/namespace-re-exported/default-imported/direct-default-re-exported factory return type instance method call, interface/type-literal method/function-property/function-type-alias signature, same-file/named-imported/direct-named-re-exported/star-re-exported/namespace-re-exported/default-imported/direct-default-re-exported/namespace-imported interface/type-literal typed receiver method call, same-file interface extends typed receiver method call, same-file alias-backed interface extends typed receiver method call, same-file type reference alias typed receiver method call, same-file simple generic type reference typed receiver method call, same-file generic constraint typed receiver method call, same-file intersection type alias typed receiver method call, direct intersection typed receiver method call, same-file simple union typed receiver method call, declared typed local/class field receiver method call, typed local variable instance method call, typed parameter instance method call, assertion-wrapped/non-null/parenthesized typed receiver method call, string-literal element access method call, private member receiver method call, constructor parameter property instance method call, constructor assignment instance method call, class field arrow method caller/target, typed class field instance method call, class field instance method call, same-file new ClassName instance call, and direct new ClassName().method call spans are parser-backed, but broader dynamic dispatch and advanced type relation resolution are not yet complete',
+    'TypeScript/JavaScript import, declaration, same-file/named-imported/direct-named-re-exported/star-re-exported/namespace-re-exported/default-imported/direct-default-re-exported/namespace-imported class/interface heritage type relation, imported call-site, local identifier call, same-class this.method, same-file class super.method, same-file/direct-new-or-const-alias-inferred/namespace-constructor-inferred/factory-wrapper-inferred/direct-factory-call-receiver/named-imported/direct-named-re-exported/star-re-exported/namespace-imported/namespace-re-exported/default-imported/direct-default-re-exported factory return type instance method call, interface/type-literal method/function-property/function-type-alias signature, same-file/named-imported/direct-named-re-exported/star-re-exported/namespace-re-exported/default-imported/direct-default-re-exported/namespace-imported interface/type-literal typed receiver method call, same-file interface extends typed receiver method call, same-file alias-backed interface extends typed receiver method call, same-file type reference alias typed receiver method call, same-file simple generic type reference typed receiver method call, same-file generic constraint typed receiver method call, same-file intersection type alias typed receiver method call, direct intersection typed receiver method call, same-file simple union typed receiver method call, declared typed local/class field receiver method call, typed local variable instance method call, typed parameter instance method call, assertion-wrapped/non-null/parenthesized typed receiver method call, string-literal element access method call, private member receiver method call, constructor parameter property instance method call, constructor assignment instance method call, class field arrow method caller/target, typed class field instance method call, class field instance method call, same-file new ClassName instance call, and direct new ClassName().method call spans are parser-backed, but broader dynamic dispatch and advanced type relation resolution are not yet complete',
     'polymorphism, alias-heavy object flows, generated code, and framework-specific routing may require deeper adapters'
   ];
 
@@ -2581,7 +2581,9 @@ function extractCalls(
         if (localSource && localTargets.length > 0) {
           const evidence = nodeExactEvidence(file.content, sourceFile, node);
           const access = memberAccessExpression(node.expression);
-          const provenanceKind = isThisFieldInstanceCallExpression(node.expression)
+          const provenanceKind = isSuperInstanceCallExpression(node.expression)
+            ? 'super-call'
+            : isThisFieldInstanceCallExpression(node.expression)
             ? 'field-instance-call'
             : isDirectNewInstanceCallExpression(node.expression)
             ? 'direct-instance-call'
@@ -4061,6 +4063,19 @@ function localCallTargetsForExpression(
       return callable ? [callable] : [];
     }
   }
+  if (isSuperReceiverExpression(access.expression)) {
+    const className = enclosingTypeScriptJavaScriptClassName(access);
+    return className
+      ? localSuperTypeMemberCallables(
+        localCallables,
+        className,
+        memberName,
+        interfaceExtends,
+        classExtends,
+        typeIntersectionAliases
+      )
+      : [];
+  }
   if (unwrapTypeScriptJavaScriptReceiverExpression(access.expression).kind === ts.SyntaxKind.ThisKeyword) {
     const className = enclosingTypeScriptJavaScriptClassName(access);
     const callable = className
@@ -4095,6 +4110,28 @@ function localTypeMemberCallablesForBinding(
     );
     if (binding.resolution === 'first' && callable) return [callable];
     if (binding.resolution === 'all' && !callable) return [];
+    if (callable) callables.push(callable);
+  }
+  return dedupeLocalCallables(callables);
+}
+
+function localSuperTypeMemberCallables(
+  localCallables: ReadonlyMap<string, TsLocalCallable>,
+  className: string,
+  memberName: string,
+  interfaceExtends: ReadonlyMap<string, readonly string[]>,
+  classExtends: ReadonlyMap<string, readonly string[]>,
+  typeIntersectionAliases: ReadonlyMap<string, readonly string[]> = new Map()
+): TsLocalCallable[] {
+  const callables: TsLocalCallable[] = [];
+  for (const baseName of classExtends.get(className) ?? []) {
+    const callable = localTypeMemberCallable(
+      localCallables,
+      baseName,
+      memberName,
+      interfaceExtends,
+      typeIntersectionAliases
+    );
     if (callable) callables.push(callable);
   }
   return dedupeLocalCallables(callables);
@@ -4173,6 +4210,15 @@ function localTypeMemberCallable(
 function isThisFieldInstanceCallExpression(expression: ts.Expression): boolean {
   const access = memberAccessExpression(expression);
   return Boolean(access && thisPropertyName(access.expression) !== undefined);
+}
+
+function isSuperInstanceCallExpression(expression: ts.Expression): boolean {
+  const access = memberAccessExpression(expression);
+  return Boolean(access && isSuperReceiverExpression(access.expression));
+}
+
+function isSuperReceiverExpression(expression: ts.Expression): boolean {
+  return unwrapTypeScriptJavaScriptReceiverExpression(expression).kind === ts.SyntaxKind.SuperKeyword;
 }
 
 function isDirectNewInstanceCallExpression(expression: ts.Expression): boolean {

@@ -1904,6 +1904,11 @@ function collectTypeScriptJavaScriptClassInstanceBindings(
       const ownerClassName = enclosingTypeScriptJavaScriptClassName(node);
       const className = classNameFromTypeReference(node.type);
       if (ownerClassName && className) addBinding(ownerClassName, node.name.text, className);
+    } else if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+      const ownerClassName = enclosingTypeScriptJavaScriptClassName(node);
+      const propertyName = thisPropertyName(node.left);
+      const className = classNameFromConstructorAssignment(node);
+      if (ownerClassName && propertyName && className) addBinding(ownerClassName, propertyName, className);
     }
     ts.forEachChild(node, visit);
   };
@@ -1949,6 +1954,26 @@ function classNameFromNewExpression(node: ts.Expression | undefined): string | u
 function classNameFromTypeReference(node: ts.TypeNode | undefined): string | undefined {
   if (!node || !ts.isTypeReferenceNode(node)) return undefined;
   return ts.isIdentifier(node.typeName) ? node.typeName.text : undefined;
+}
+
+function classNameFromConstructorAssignment(node: ts.BinaryExpression): string | undefined {
+  const constructorNode = enclosingConstructorDeclaration(node);
+  if (!constructorNode) return undefined;
+  const directClassName = classNameFromNewExpression(node.right);
+  if (directClassName) return directClassName;
+  if (!ts.isIdentifier(node.right)) return undefined;
+  return classNameFromConstructorParameter(constructorNode, node.right.text);
+}
+
+function classNameFromConstructorParameter(
+  node: ts.ConstructorDeclaration,
+  parameterName: string
+): string | undefined {
+  for (const parameter of node.parameters) {
+    if (!ts.isIdentifier(parameter.name) || parameter.name.text !== parameterName) continue;
+    return classNameFromTypeReference(parameter.type);
+  }
+  return undefined;
 }
 
 function isCallableInitializer(node: ts.Expression | undefined): boolean {
@@ -2174,6 +2199,24 @@ function enclosingLocalCaller(
       const className = enclosingTypeScriptJavaScriptClassName(current);
       const callable = className ? localCallables.get(`${className}.${current.name.text}`) : undefined;
       if (callable) return callable;
+    }
+    current = current.parent;
+  }
+  return undefined;
+}
+
+function enclosingConstructorDeclaration(node: ts.Node): ts.ConstructorDeclaration | undefined {
+  let current: ts.Node | undefined = node.parent;
+  while (current) {
+    if (ts.isConstructorDeclaration(current)) return current;
+    if (
+      ts.isFunctionDeclaration(current)
+      || ts.isFunctionExpression(current)
+      || ts.isArrowFunction(current)
+      || ts.isMethodDeclaration(current)
+      || isCallableClassProperty(current)
+    ) {
+      return undefined;
     }
     current = current.parent;
   }

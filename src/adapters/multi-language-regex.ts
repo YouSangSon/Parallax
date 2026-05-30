@@ -141,7 +141,7 @@ abstract class RegexBackedSemanticAdapter implements SemanticAdapter {
 
 export class TypeScriptJavaScriptSemanticAdapter extends RegexBackedSemanticAdapter {
   override readonly knownGaps = [
-    'TypeScript/JavaScript import, declaration, imported call-site, local identifier call, same-class this.method, and same-file new ClassName instance call spans are parser-backed, but broader dynamic dispatch and type relation resolution are not yet complete',
+    'TypeScript/JavaScript import, declaration, imported call-site, local identifier call, same-class this.method, class field arrow method, and same-file new ClassName instance call spans are parser-backed, but broader dynamic dispatch and type relation resolution are not yet complete',
     'polymorphism, alias-heavy object flows, generated code, and framework-specific routing may require deeper adapters'
   ];
 
@@ -1552,6 +1552,11 @@ function extractTypeScriptJavaScriptSymbols(file: ScannedFile): ExtractedSymbol[
       if (className) {
         addSymbol(`${className}.${node.name.text}`, 'method', node, classHasExportModifier(node));
       }
+    } else if (isCallableClassProperty(node)) {
+      const className = enclosingTypeScriptJavaScriptClassName(node);
+      if (className && ts.isIdentifier(node.name)) {
+        addSymbol(`${className}.${node.name.text}`, 'method', node, classHasExportModifier(node));
+      }
     } else if (ts.isVariableStatement(node)) {
       const exported = hasExportModifier(node);
       const kind = variableKind(node.declarationList);
@@ -1798,6 +1803,11 @@ function collectTypeScriptJavaScriptLocalCallables(
     } else if (ts.isMethodDeclaration(node) && ts.isIdentifier(node.name)) {
       const className = enclosingTypeScriptJavaScriptClassName(node);
       if (className) addCallable(`${className}.${node.name.text}`, 'method');
+    } else if (isCallableClassProperty(node)) {
+      const className = enclosingTypeScriptJavaScriptClassName(node);
+      if (className && ts.isIdentifier(node.name)) {
+        addCallable(`${className}.${node.name.text}`, 'method');
+      }
     } else if (ts.isVariableStatement(node)) {
       const symbolKind = variableKind(node.declarationList);
       for (const declaration of node.declarationList.declarations) {
@@ -1854,6 +1864,12 @@ function classNameFromNewExpression(node: ts.Expression | undefined): string | u
 
 function isCallableInitializer(node: ts.Expression | undefined): boolean {
   return Boolean(node && (ts.isArrowFunction(node) || ts.isFunctionExpression(node)));
+}
+
+function isCallableClassProperty(node: ts.Node): node is ts.PropertyDeclaration {
+  return ts.isPropertyDeclaration(node)
+    && ts.isIdentifier(node.name)
+    && isCallableInitializer(node.initializer);
 }
 
 type TsImportBinding = {

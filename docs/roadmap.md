@@ -11,7 +11,7 @@
 지금 가장 큰 빈칸은 regex/declaration-line 기반 evidence가 *언제 틀리는지*를 사람이 알 수 없다는 것이다.
 
 - [ ] TS/JS Tree-sitter 또는 TypeScript parser 기반 full symbol/call span
-  - 진행: TypeScript parser 기반 import, declaration, imported call-site, local identifier call, same-class `this.method()`, same-file `new ClassName()` instance call span은 landed. 더 넓은 dynamic dispatch와 type relation은 남음.
+  - 진행: TypeScript parser 기반 import, declaration, imported call-site, local identifier call, same-class `this.method()`, class field arrow method, same-file `new ClassName()` instance call span은 landed. 더 넓은 dynamic dispatch와 type relation은 남음.
 - [ ] JVM/Spring Boot endpoint·DI·persistence relation을 parser 기반으로 승격
 - [ ] Python/Go/Rust call/import resolution을 declaration-only에서 parser-backed로 확장
 - [x] adapter run마다 confidence label과 known-gap을 report에 명시

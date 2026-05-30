@@ -411,7 +411,7 @@ function renderImpactSummaryPanel(snapshot: UiSnapshot): string {
     `;
   }
 
-  const affectedFiles = [...report.affectedFiles].sort(compareAffectedFilesForUi).slice(0, 4);
+  const affectedFiles = topAffectedFilesForSummary(report).slice(0, 4);
   const primaryChange = report.changed[0] ? entityLabel(report.changed[0]) : report.changedFiles[0] ?? 'unknown change';
   const blast = blastRadiusLabel(report.affectedCount);
   const displayedPathCount = buildImpactMap(snapshot.graph, report).edges.length;
@@ -461,13 +461,13 @@ function renderImpactSummaryPanel(snapshot: UiSnapshot): string {
       <div class="confidence-strip" aria-label="Affected files by confidence">${confidenceRows}</div>
       <ul class="impact-lanes filterable" aria-label="Affected targets by product lane">${laneRows}</ul>
       <div class="summary-columns">
-        <div>
-          <h3>Changed</h3>
-          <ul class="summary-list">${changedPreview || '<li class="empty">No changed entities.</li>'}</ul>
-        </div>
-        <div>
+        <div class="summary-section summary-section-top-impact">
           <h3>Top Impact</h3>
           <ul class="summary-list filterable">${affectedPreview || '<li class="empty">No affected targets.</li>'}</ul>
+        </div>
+        <div class="summary-section summary-section-changed">
+          <h3>Changed</h3>
+          <ul class="summary-list">${changedPreview || '<li class="empty">No changed entities.</li>'}</ul>
         </div>
       </div>
     </section>
@@ -1292,6 +1292,15 @@ function initialImpactForUi(report: UiReportPreview): UiReportPreview['affectedF
   const affectedFiles = [...report.affectedFiles].sort(compareAffectedFilesForUi);
   const actionTargets = new Set(report.actions.map((action) => action.target.path).filter((pathValue): pathValue is string => Boolean(pathValue)));
   return affectedFiles.find((item) => actionTargets.has(item.path)) ?? affectedFiles[0];
+}
+
+function topAffectedFilesForSummary(report: UiReportPreview): UiReportPreview['affectedFiles'] {
+  const actionTargets = new Set(report.actions.map((action) => action.target.path).filter((pathValue): pathValue is string => Boolean(pathValue)));
+  return [...report.affectedFiles].sort((left, right) => {
+    const leftActionable = actionTargets.has(left.path) ? 0 : 1;
+    const rightActionable = actionTargets.has(right.path) ? 0 : 1;
+    return leftActionable - rightActionable || compareAffectedFilesForUi(left, right);
+  });
 }
 
 function confidenceSortRank(confidence: string): number {
@@ -2472,10 +2481,13 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
     .summary-columns {
       display: grid;
       grid-template-columns: 1fr;
+      grid-auto-rows: max-content;
+      align-content: start;
       min-height: 0;
       border-top: 1px solid var(--line);
     }
-    .summary-columns > div:first-child { border-bottom: 1px solid var(--line); }
+    .summary-section { min-width: 0; }
+    .summary-section + .summary-section { border-top: 1px solid var(--line); }
     .summary-columns h3 {
       margin: 0;
       padding: 10px 14px;

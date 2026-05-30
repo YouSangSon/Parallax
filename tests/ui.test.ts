@@ -236,6 +236,8 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(html, /impact-lane-green[\s\S]*Runtime code[\s\S]*<b>1<\/b>[\s\S]*src\/a\.ts/);
     assert.match(html, /impact-lane-amber[\s\S]*Tests to verify[\s\S]*<b>1<\/b>[\s\S]*tests\/b\.test\.ts/);
     assert.match(html, /impact-lane-teal[\s\S]*Docs &amp; policy[\s\S]*<b>1<\/b>[\s\S]*README\.md/);
+    assert.match(html, /summary-section-top-impact[\s\S]*Top Impact[\s\S]*<b>1<\/b>[\s\S]*tests\/b\.test\.ts[\s\S]*summary-section-changed[\s\S]*Changed[\s\S]*src\/b\.ts/);
+    assert.match(html, /\.summary-columns \{[\s\S]*grid-auto-rows: max-content;[\s\S]*align-content: start;/);
     assert.match(html, /Impact Map/);
     assert.match(html, /Primary impact flow/);
     assert.match(html, /Primary impact flow[\s\S]*src\/b\.ts <em>&rarr;<\/em> tests\/b\.test\.ts/);

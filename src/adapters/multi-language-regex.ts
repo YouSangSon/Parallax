@@ -1869,7 +1869,8 @@ function collectTypeScriptJavaScriptLocalInstanceBindings(
 
   const visit = (node: ts.Node): void => {
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
-      const className = classNameFromNewExpression(node.initializer);
+      const className = classNameFromNewExpression(node.initializer)
+        ?? classNameFromInitializedTypeReference(node);
       const scope = enclosingLocalCaller(node, localCallables);
       if (className && scope) addBinding(scope.name, node.name.text, className);
     } else if (ts.isParameter(node) && ts.isIdentifier(node.name)) {
@@ -1954,6 +1955,11 @@ function classNameFromNewExpression(node: ts.Expression | undefined): string | u
 function classNameFromTypeReference(node: ts.TypeNode | undefined): string | undefined {
   if (!node || !ts.isTypeReferenceNode(node)) return undefined;
   return ts.isIdentifier(node.typeName) ? node.typeName.text : undefined;
+}
+
+function classNameFromInitializedTypeReference(node: ts.VariableDeclaration): string | undefined {
+  if (!node.initializer) return undefined;
+  return classNameFromTypeReference(node.type);
 }
 
 function classNameFromConstructorAssignment(node: ts.BinaryExpression): string | undefined {

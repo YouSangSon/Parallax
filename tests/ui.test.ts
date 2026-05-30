@@ -218,6 +218,9 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(html, /Impact Summary/);
     assert.match(html, /Impact Map/);
     assert.match(html, /class="impact-svg"/);
+    assert.match(html, /Impact Inspector/);
+    assert.match(html, /data-impact-path="src\/a\.ts"/);
+    assert.match(html, /selectedImpactPath/);
     assert.match(html, /Coverage Gaps/);
     assert.match(html, /Workspace Contracts/);
     assert.match(html, /overflow-wrap: anywhere/);

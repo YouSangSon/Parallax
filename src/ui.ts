@@ -222,6 +222,7 @@ type ImpactMapNode = {
   kind: string;
   group: 'changed' | 'affected' | 'context';
   confidence?: string;
+  path?: string;
 };
 
 type ImpactMapEdge = {
@@ -339,7 +340,7 @@ function renderImpactSummaryPanel(snapshot: UiSnapshot): string {
     </li>
   `).join('');
   const affectedPreview = affectedFiles.map((item, index) => `
-    <li class="priority-row" data-filter-text="${escapeHtml(`${item.path} ${item.reason} ${item.confidence}`)}">
+    <li class="priority-row selectable-impact" tabindex="0" role="button" data-impact-path="${escapeHtml(item.path)}" data-filter-text="${escapeHtml(`${item.path} ${item.reason} ${item.confidence}`)}">
       <b>${index + 1}</b>
       <span>
         <strong>${escapeHtml(item.path)}</strong>
@@ -374,6 +375,7 @@ function renderImpactSummaryPanel(snapshot: UiSnapshot): string {
 
 function renderImpactMapPanel(graph: UiGraphPreview | null, report: UiReportPreview | null): string {
   const map = buildImpactMap(graph, report);
+  const firstImpact = [...(report?.affectedFiles ?? [])].sort(compareAffectedFilesForUi)[0];
   const chips = `
     <span>${map.changedNodes.length} changed</span>
     <span>${map.affectedNodes.length} affected</span>
@@ -417,6 +419,7 @@ function renderImpactMapPanel(graph: UiGraphPreview | null, report: UiReportPrev
           <div><span class="legend-swatch affected"></span>Affected target</div>
           <div><span class="legend-swatch context"></span>Context node</div>
           <ol>${edgeRows || '<li>No visible graph links.</li>'}</ol>
+          ${renderImpactInspector(firstImpact)}
         </aside>
       </div>
     </section>
@@ -447,7 +450,8 @@ function buildImpactMap(
       label: item.path,
       kind: 'file',
       group: 'affected',
-      confidence: item.confidence
+      confidence: item.confidence,
+      path: item.path
     })),
     ...(graph?.nodes ?? []).filter((node) => node.group !== 'changed').map(graphNodeForImpactMap)
   ]).slice(0, 8);
@@ -527,8 +531,12 @@ function renderImpactMapSvg(map: ReturnType<typeof buildImpactMap>): string {
 
 function renderImpactMapNode(node: ImpactMapNode, x: number, y: number, width: number, height: number): string {
   const label = compactMapLabel(node.label, 38);
+  const impactAttrs = node.group === 'affected' && node.path
+    ? ` data-impact-path="${escapeHtml(node.path)}" tabindex="0" role="button" aria-label="Inspect ${escapeHtml(node.path)}"`
+    : '';
+  const selectableClass = impactAttrs ? ' selectable-impact' : '';
   return `
-    <g class="map-node map-node-${escapeHtml(node.group)} confidence-node-${escapeHtml(node.confidence ?? 'unknown')}" transform="translate(${x} ${y})">
+    <g class="map-node${selectableClass} map-node-${escapeHtml(node.group)} confidence-node-${escapeHtml(node.confidence ?? 'unknown')}" transform="translate(${x} ${y})"${impactAttrs}>
       <title>${escapeHtml(node.label)}</title>
       <rect width="${width}" height="${height}" rx="8" />
       <circle cx="18" cy="20" r="5" />
@@ -553,6 +561,7 @@ function graphNodeForImpactMap(node: UiGraphPreview['nodes'][number]): ImpactMap
     label: node.label,
     kind: node.kind,
     group: node.group,
+    ...(node.path ? { path: node.path } : {}),
     ...(node.confidence ? { confidence: node.confidence } : {})
   };
 }
@@ -610,6 +619,30 @@ function entityLabel(entity: ImpactReport['changed'][number]): string {
   return entity.displayName ?? entity.path ?? entity.symbol ?? entity.id;
 }
 
+function renderImpactInspector(item: UiReportPreview['affectedFiles'][number] | undefined): string {
+  return `
+    <section class="impact-inspector" aria-live="polite">
+      <h3>Impact Inspector</h3>
+      <strong id="inspectorPath">${escapeHtml(item?.path ?? 'No affected target selected')}</strong>
+      <span id="inspectorReason">${escapeHtml(item?.reason ?? 'Select an affected target in the map or impact list.')}</span>
+      <dl>
+        <div>
+          <dt>Confidence</dt>
+          <dd id="inspectorConfidence">${escapeHtml(item?.confidence ?? 'unknown')}</dd>
+        </div>
+        <div>
+          <dt>Relation path</dt>
+          <dd id="inspectorRelation">${escapeHtml(item?.relationPath?.join(' -> ') ?? 'direct or not recorded')}</dd>
+        </div>
+        <div>
+          <dt>Evidence hits</dt>
+          <dd id="inspectorEvidence">0</dd>
+        </div>
+      </dl>
+    </section>
+  `;
+}
+
 function compactMapLabel(value: string, maxLength: number): string {
   if (value.length <= maxLength) return value;
   const pathParts = value.split('/').filter(Boolean);
@@ -658,7 +691,7 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
     </li>
   `).join('');
   const affectedRows = (report?.affectedFiles ?? []).slice(0, 40).map((item) => `
-    <li class="impact-row" data-filter-text="${escapeHtml(`${item.path} ${item.reason} ${item.confidence}`)}">
+    <li class="impact-row selectable-impact" tabindex="0" role="button" data-impact-path="${escapeHtml(item.path)}" data-filter-text="${escapeHtml(`${item.path} ${item.reason} ${item.confidence}`)}">
       <div>
         <strong>${escapeHtml(item.path)}</strong>
         <span>${escapeHtml(item.reason)}</span>
@@ -667,7 +700,7 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
     </li>
   `).join('');
   const evidenceRows = (report?.evidence ?? []).slice(0, 30).map((item) => `
-    <li class="evidence-row" data-filter-text="${escapeHtml(`${item.file} ${item.kind} ${item.snippet}`)}">
+    <li class="evidence-row" data-impact-path="${escapeHtml(item.file)}" data-filter-text="${escapeHtml(`${item.file} ${item.kind} ${item.snippet}`)}">
       <div class="evidence-meta">
         <strong>${escapeHtml(item.file)}</strong>
         <span>${escapeHtml(item.kind)} · ${escapeHtml(item.confidence)}</span>
@@ -1062,6 +1095,22 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       font-variant-numeric: tabular-nums;
     }
     .priority-row em { font-style: normal; }
+    .selectable-impact {
+      cursor: pointer;
+      transition: background-color 120ms ease-out, box-shadow 120ms ease-out;
+    }
+    .selectable-impact:focus-visible {
+      outline: 2px solid #73c2ac;
+      outline-offset: -2px;
+    }
+    .selected-impact {
+      background: #eef8f3 !important;
+      box-shadow: inset 0 0 0 2px #73b29e;
+    }
+    .related-evidence {
+      background: #f4fbf7 !important;
+      box-shadow: inset 3px 0 0 #73b29e;
+    }
     .map-panel {
       min-height: 420px;
       display: grid;
@@ -1152,6 +1201,14 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       font-size: 11px;
       font-weight: 700;
     }
+    .map-node.selectable-impact rect {
+      transition: fill 120ms ease-out, stroke 120ms ease-out, stroke-width 120ms ease-out;
+    }
+    .map-node.selected-impact rect {
+      fill: #e0f4ea;
+      stroke: #73c2ac;
+      stroke-width: 2.5;
+    }
     .map-legend {
       display: grid;
       align-content: start;
@@ -1201,6 +1258,51 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       background: #fff6e7;
       font-size: 11px;
       font-weight: 800;
+    }
+    .impact-inspector {
+      display: grid;
+      gap: 8px;
+      margin-top: 2px;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+    }
+    .impact-inspector h3 {
+      margin: 0;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+    .impact-inspector > strong {
+      color: var(--ink);
+      overflow-wrap: anywhere;
+      font-size: 13px;
+    }
+    .impact-inspector > span {
+      color: var(--muted);
+      overflow-wrap: anywhere;
+      font-size: 12px;
+    }
+    .impact-inspector dl {
+      display: grid;
+      gap: 8px;
+      margin: 0;
+    }
+    .impact-inspector dl div {
+      display: grid;
+      gap: 3px;
+    }
+    .impact-inspector dt {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+    .impact-inspector dd {
+      margin: 0;
+      color: var(--ink);
+      font-size: 12px;
+      overflow-wrap: anywhere;
     }
     .bottom {
       display: grid;
@@ -1340,7 +1442,51 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
   </main>
   <script id="impact-data" type="application/json">${dataJson}</script>
   <script>
+    const snapshot = JSON.parse(document.getElementById('impact-data')?.textContent || '{}');
+    const affectedFiles = snapshot.selectedReport?.affectedFiles || [];
+    const evidenceItems = snapshot.selectedReport?.evidence || [];
     const input = document.getElementById('filterInput');
+    function evidenceMatchesPath(evidence, path) {
+      return evidence.file === path || evidence.subject?.path === path || (evidence.snippet || '').includes(path);
+    }
+    function evidenceHitCount(path) {
+      return evidenceItems.filter((item) => evidenceMatchesPath(item, path)).length;
+    }
+    function setText(id, value) {
+      const element = document.getElementById(id);
+      if (element) element.textContent = value;
+    }
+    function selectImpact(path, options = {}) {
+      const item = affectedFiles.find((candidate) => candidate.path === path);
+      if (!item) return;
+      document.body.dataset.selectedImpactPath = path;
+      setText('inspectorPath', item.path);
+      setText('inspectorReason', item.reason);
+      setText('inspectorConfidence', item.confidence);
+      setText('inspectorRelation', item.relationPath?.join(' -> ') || 'direct or not recorded');
+      setText('inspectorEvidence', String(evidenceHitCount(path)));
+      for (const row of document.querySelectorAll('[data-impact-path]')) {
+        const rowPath = row.getAttribute('data-impact-path');
+        const isSelected = rowPath === path;
+        const isRelatedEvidence = row.classList.contains('evidence-row') && rowPath === path;
+        row.classList.toggle('selected-impact', isSelected && !row.classList.contains('evidence-row'));
+        row.classList.toggle('related-evidence', isRelatedEvidence);
+      }
+      if (options.scroll) {
+        document.querySelector('.evidence-row.related-evidence, .impact-row.selected-impact')?.scrollIntoView({
+          block: 'nearest',
+          behavior: 'smooth'
+        });
+      }
+    }
+    for (const element of document.querySelectorAll('.selectable-impact[data-impact-path]')) {
+      element.addEventListener('click', () => selectImpact(element.getAttribute('data-impact-path'), { scroll: true }));
+      element.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        selectImpact(element.getAttribute('data-impact-path'), { scroll: true });
+      });
+    }
     input?.addEventListener('input', () => {
       const query = input.value.trim().toLowerCase();
       for (const row of document.querySelectorAll('.filterable > li')) {
@@ -1352,6 +1498,7 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       const value = event.target.value;
       if (value) window.location.href = '/?report=' + encodeURIComponent(value);
     });
+    if (affectedFiles[0]) selectImpact(affectedFiles[0].path);
   </script>
 </body>
 </html>`;

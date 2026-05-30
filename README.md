@@ -151,7 +151,8 @@ parallax profile --entity file:src/auth.ts
 | **Impact Summary** | 변경 수, 영향 범위, confidence 분포, 우선 확인 대상을 첫 화면에 요약 |
 | **Impact Paths** | 변경 → 영향 대상까지의 relation path |
 | **Evidence** | redacted snippet, source span, relation provenance |
-| **Impact Map** | changed root와 affected target을 실제 graph link로 연결한 시각적 preview |
+| **Impact Map** | changed root와 affected target을 실제 graph link로 연결하고, target 선택 시 관련 경로와 evidence를 강조 |
+| **Impact Inspector** | 선택한 target의 reason, relation path, evidence hit 수를 즉시 확인 |
 | **Coverage Gaps** | adapter confidence와 known-gap 확인 |
 | **Doctor Findings** | schema/index/vector/telemetry 상태 점검 |
 

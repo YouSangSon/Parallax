@@ -40,7 +40,7 @@ MVP 구현이 들어가 있습니다.
 - stale-index warning과 oversized file skip coverage
 - 저장된 report에서 Mermaid/JSON/DOT graph export 생성
 - TS/JS export symbol 추출
-- TS/JS import edge 추출과 parser-backed import evidence span 저장
+- TS/JS import edge 추출과 parser-backed import, declaration, imported call-site evidence span 저장
 - Spring Boot endpoint/declaration/config/test evidence span 저장
 - Python/Go/Rust declaration/test evidence span 저장
 - `package.json`, `pom.xml`, `build.gradle(.kts)`, `go.mod`, `Cargo.toml`, `pyproject.toml` manifest-only package graph 저장

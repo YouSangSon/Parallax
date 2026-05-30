@@ -56,6 +56,12 @@ type InferredTestTarget = {
   evidence?: EvidenceSpan;
 };
 
+type ExtractedCall = EvidenceSpan & {
+  targetPath: string;
+  callee: string;
+  provenance: string;
+};
+
 type SpringClass = {
   name: string;
   kind: string;
@@ -124,8 +130,8 @@ abstract class RegexBackedSemanticAdapter implements SemanticAdapter {
 
 export class TypeScriptJavaScriptSemanticAdapter extends RegexBackedSemanticAdapter {
   override readonly knownGaps = [
-    'TypeScript/JavaScript import spans are parser-backed, but full symbol, call, and type relation resolution is not yet complete',
-    'dynamic imports, generated code, and framework-specific routing may require deeper adapters'
+    'TypeScript/JavaScript import, declaration, and imported call-site spans are parser-backed, but full local call graph and type relation resolution are not yet complete',
+    'dynamic dispatch, generated code, and framework-specific routing may require deeper adapters'
   ];
 
   constructor() {
@@ -329,6 +335,25 @@ async function* extractEvents(
         })
       };
     }
+  }
+
+  for (const call of extractCalls(file, filePathSet, importResolver.resolve)) {
+    yield {
+      kind: 'relation',
+      relation: makeRelation({
+        source: fileDescriptor,
+        target: { kind: 'file', path: call.targetPath, languageId: file.language },
+        kind: 'CALLS',
+        confidence: 'inferred',
+        provenance: call.provenance,
+        evidenceFile,
+        evidenceSnippet: call.snippet,
+        startLine: call.startLine,
+        endLine: call.endLine,
+        startCol: call.startCol,
+        endCol: call.endCol
+      })
+    };
   }
 
   if (isTestSource(file)) {
@@ -1383,6 +1408,19 @@ function evidenceSpanFromRange(content: string, startIndex: number, endIndex: nu
   };
 }
 
+function exactEvidenceSpanFromRange(content: string, startIndex: number, endIndex: number): EvidenceSpan {
+  const boundedEnd = Math.max(startIndex, endIndex);
+  const start = offsetPosition(content, startIndex);
+  const end = offsetPosition(content, boundedEnd);
+  return {
+    snippet: content.slice(startIndex, boundedEnd).trim(),
+    startLine: start.line,
+    endLine: end.line,
+    startCol: start.col,
+    endCol: end.col
+  };
+}
+
 function lineEndIndex(content: string, index: number): number {
   const nextNewline = content.indexOf('\n', Math.max(0, index));
   return nextNewline === -1 ? content.length : nextNewline;
@@ -1431,7 +1469,7 @@ function extractSymbols(file: ScannedFile): ExtractedSymbol[] {
   };
 
   if (file.language === 'typescript' || file.language === 'javascript') {
-    addMatches(/(export\s+)?(?:async\s+)?(function|class|const|let|var)\s+([A-Za-z_$][\w$]*)/g, 2, 3, 1);
+    return extractTypeScriptJavaScriptSymbols(file);
   } else if (file.language === 'python') {
     addMatches(/^\s*(?:async\s+)?(def)\s+([A-Za-z_]\w*)\s*\(/gm, 1, 2);
     addMatches(/^\s*(class)\s+([A-Za-z_]\w*)\b/gm, 1, 2);
@@ -1451,6 +1489,78 @@ function extractSymbols(file: ScannedFile): ExtractedSymbol[] {
   }
 
   return dedupeSymbols(symbols);
+}
+
+function extractTypeScriptJavaScriptSymbols(file: ScannedFile): ExtractedSymbol[] {
+  const sourceFile = ts.createSourceFile(
+    file.relativePath,
+    file.content,
+    ts.ScriptTarget.Latest,
+    true,
+    scriptKindFor(file.relativePath)
+  );
+  const symbols: ExtractedSymbol[] = [];
+
+  const addNamedNode = (
+    name: ts.Node | undefined,
+    kind: string,
+    node: ts.Node,
+    exported: boolean
+  ): void => {
+    if (!name || !ts.isIdentifier(name)) return;
+    symbols.push({
+      name: name.text,
+      kind,
+      exported,
+      evidence: nodeEvidence(file.content, sourceFile, node)
+    });
+  };
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isFunctionDeclaration(node)) {
+      addNamedNode(node.name, 'function', node, hasExportModifier(node));
+    } else if (ts.isClassDeclaration(node)) {
+      addNamedNode(node.name, 'class', node, hasExportModifier(node));
+    } else if (ts.isInterfaceDeclaration(node)) {
+      addNamedNode(node.name, 'interface', node, hasExportModifier(node));
+    } else if (ts.isTypeAliasDeclaration(node)) {
+      addNamedNode(node.name, 'type', node, hasExportModifier(node));
+    } else if (ts.isEnumDeclaration(node)) {
+      addNamedNode(node.name, 'enum', node, hasExportModifier(node));
+    } else if (ts.isVariableStatement(node)) {
+      const exported = hasExportModifier(node);
+      const kind = variableKind(node.declarationList);
+      for (const declaration of node.declarationList.declarations) {
+        addNamedNode(declaration.name, kind, node, exported);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+
+  visit(sourceFile);
+  return dedupeSymbols(symbols);
+}
+
+function nodeEvidence(content: string, sourceFile: ts.SourceFile, node: ts.Node): EvidenceSpan {
+  return evidenceSpanFromRange(content, node.getStart(sourceFile), node.getEnd());
+}
+
+function nodeExactEvidence(content: string, sourceFile: ts.SourceFile, node: ts.Node): EvidenceSpan {
+  return exactEvidenceSpanFromRange(content, node.getStart(sourceFile), node.getEnd());
+}
+
+function variableKind(declarationList: ts.VariableDeclarationList): string {
+  if ((declarationList.flags & ts.NodeFlags.Const) !== 0) return 'const';
+  if ((declarationList.flags & ts.NodeFlags.Let) !== 0) return 'let';
+  return 'var';
+}
+
+function hasExportModifier(node: ts.Node): boolean {
+  return Boolean(
+    (node as { modifiers?: readonly ts.ModifierLike[] }).modifiers?.some(
+      (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword
+    )
+  );
 }
 
 function symbolEvidenceForMatch(
@@ -1560,6 +1670,182 @@ function extractTypeScriptJavaScriptImports(file: ScannedFile): ExtractedImport[
   };
   visit(sourceFile);
   return dedupeImports(imports);
+}
+
+function extractCalls(
+  file: ScannedFile,
+  filePathSet: ReadonlySet<string>,
+  importResolver?: ImportResolver
+): ExtractedCall[] {
+  if (file.language !== 'typescript' && file.language !== 'javascript') return [];
+  const sourceFile = ts.createSourceFile(
+    file.relativePath,
+    file.content,
+    ts.ScriptTarget.Latest,
+    true,
+    scriptKindFor(file.relativePath)
+  );
+  const importBindings = collectTypeScriptJavaScriptImportBindings(
+    file,
+    sourceFile,
+    filePathSet,
+    importResolver
+  );
+  const calls: ExtractedCall[] = [];
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node)) {
+      const target = callTargetForExpression(node.expression, importBindings);
+      if (target) {
+        const evidence = nodeExactEvidence(file.content, sourceFile, node);
+        calls.push({
+          ...evidence,
+          targetPath: target.targetPath,
+          callee: target.callee,
+          provenance: `call:${target.callee}:${evidence.startLine}:${evidence.startCol}`
+        });
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+
+  visit(sourceFile);
+  return dedupeCalls(calls);
+}
+
+type TsImportBinding = {
+  targetPath: string;
+  importedName?: string;
+  namespace: boolean;
+};
+
+function collectTypeScriptJavaScriptImportBindings(
+  file: ScannedFile,
+  sourceFile: ts.SourceFile,
+  filePathSet: ReadonlySet<string>,
+  importResolver?: ImportResolver
+): Map<string, TsImportBinding> {
+  const bindings = new Map<string, TsImportBinding>();
+
+  const addBinding = (
+    localName: string | undefined,
+    specifier: string | undefined,
+    importedName: string | undefined,
+    namespace: boolean
+  ): void => {
+    if (!localName || !specifier) return;
+    const targetPath = resolveImportPath(file.relativePath, specifier, filePathSet, importResolver);
+    if (!targetPath) return;
+    bindings.set(localName, {
+      targetPath,
+      ...(importedName ? { importedName } : {}),
+      namespace
+    });
+  };
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isImportDeclaration(node)) {
+      const specifier = moduleSpecifierText(node.moduleSpecifier);
+      if (node.importClause?.name) {
+        addBinding(node.importClause.name.text, specifier, 'default', false);
+      }
+      const namedBindings = node.importClause?.namedBindings;
+      if (namedBindings && ts.isNamespaceImport(namedBindings)) {
+        addBinding(namedBindings.name.text, specifier, undefined, true);
+      } else if (namedBindings && ts.isNamedImports(namedBindings)) {
+        for (const element of namedBindings.elements) {
+          addBinding(
+            element.name.text,
+            specifier,
+            element.propertyName?.text ?? element.name.text,
+            false
+          );
+        }
+      }
+    } else if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)) {
+      addBinding(
+        node.name.text,
+        moduleSpecifierText(node.moduleReference.expression),
+        undefined,
+        true
+      );
+    } else if (ts.isVariableStatement(node)) {
+      collectRequireBindings(node, addBinding);
+    }
+    ts.forEachChild(node, visit);
+  };
+
+  visit(sourceFile);
+  return bindings;
+}
+
+function collectRequireBindings(
+  node: ts.VariableStatement,
+  addBinding: (
+    localName: string | undefined,
+    specifier: string | undefined,
+    importedName: string | undefined,
+    namespace: boolean
+  ) => void
+): void {
+  for (const declaration of node.declarationList.declarations) {
+    const specifier = requireSpecifier(declaration.initializer);
+    if (!specifier) continue;
+    if (ts.isIdentifier(declaration.name)) {
+      addBinding(declaration.name.text, specifier, undefined, true);
+    } else if (ts.isObjectBindingPattern(declaration.name)) {
+      for (const element of declaration.name.elements) {
+        if (!ts.isIdentifier(element.name)) continue;
+        const importedName = element.propertyName && ts.isIdentifier(element.propertyName)
+          ? element.propertyName.text
+          : element.name.text;
+        addBinding(element.name.text, specifier, importedName, false);
+      }
+    }
+  }
+}
+
+function requireSpecifier(node: ts.Expression | undefined): string | undefined {
+  if (!node || !ts.isCallExpression(node)) return undefined;
+  if (!ts.isIdentifier(node.expression) || node.expression.text !== 'require') return undefined;
+  return moduleSpecifierText(node.arguments[0]);
+}
+
+function callTargetForExpression(
+  expression: ts.Expression,
+  importBindings: ReadonlyMap<string, TsImportBinding>
+): { targetPath: string; callee: string } | undefined {
+  if (ts.isIdentifier(expression)) {
+    const binding = importBindings.get(expression.text);
+    if (!binding || binding.namespace) return undefined;
+    return {
+      targetPath: binding.targetPath,
+      callee: binding.importedName && binding.importedName !== expression.text
+        ? binding.importedName
+        : expression.text
+    };
+  }
+  if (ts.isPropertyAccessExpression(expression) && ts.isIdentifier(expression.expression)) {
+    const binding = importBindings.get(expression.expression.text);
+    if (!binding || !binding.namespace) return undefined;
+    return {
+      targetPath: binding.targetPath,
+      callee: `${expression.expression.text}.${expression.name.text}`
+    };
+  }
+  return undefined;
+}
+
+function dedupeCalls(calls: readonly ExtractedCall[]): ExtractedCall[] {
+  return [...new Map(calls.map((call) => [
+    `${call.targetPath}:${call.callee}:${call.startLine}:${call.startCol}`,
+    call
+  ])).values()]
+    .sort((a, b) =>
+      a.targetPath.localeCompare(b.targetPath) ||
+      a.startLine - b.startLine ||
+      a.startCol - b.startCol
+    );
 }
 
 function moduleSpecifierText(node: ts.Node | undefined): string | undefined {

@@ -4975,7 +4975,7 @@ test('indexProject infers VERIFIES and tests fact from default TypeScript test i
 
     assert.deepEqual(
       relationRows.map((row) => row.kind),
-      ['DEPENDS_ON', 'VERIFIES']
+      ['CALLS', 'DEPENDS_ON', 'VERIFIES']
     );
 
     const testsFacts = db

@@ -1899,7 +1899,8 @@ function collectTypeScriptJavaScriptClassInstanceBindings(
   const visit = (node: ts.Node): void => {
     if (ts.isPropertyDeclaration(node) && ts.isIdentifier(node.name)) {
       const ownerClassName = enclosingTypeScriptJavaScriptClassName(node);
-      const className = classNameFromNewExpression(node.initializer);
+      const className = classNameFromNewExpression(node.initializer)
+        ?? classNameFromInitializedTypeReference(node);
       if (ownerClassName && className) addBinding(ownerClassName, node.name.text, className);
     } else if (ts.isParameter(node) && ts.isIdentifier(node.name) && isConstructorParameterProperty(node)) {
       const ownerClassName = enclosingTypeScriptJavaScriptClassName(node);
@@ -1957,7 +1958,9 @@ function classNameFromTypeReference(node: ts.TypeNode | undefined): string | und
   return ts.isIdentifier(node.typeName) ? node.typeName.text : undefined;
 }
 
-function classNameFromInitializedTypeReference(node: ts.VariableDeclaration): string | undefined {
+function classNameFromInitializedTypeReference(
+  node: ts.VariableDeclaration | ts.PropertyDeclaration
+): string | undefined {
   if (!node.initializer) return undefined;
   return classNameFromTypeReference(node.type);
 }

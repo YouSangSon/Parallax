@@ -136,6 +136,116 @@ test('TypeScript JavaScript adapter records parser-backed import evidence spans'
   }
 });
 
+test('TypeScript JavaScript adapter records parser-backed declaration and call spans', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-call-spans-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+
+  await writeFile(path.join(repoRoot, 'src/session.ts'), [
+    'export type Session = { id: string };',
+    'export function validateSession(id: string): boolean {',
+    '  return id.length > 0;',
+    '}',
+    'export const createSession = (id: string): Session => ({ id });',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/consumer.ts'), [
+    'import { validateSession as validate } from "./session";',
+    'import * as session from "./session";',
+    'export const direct = validate("direct");',
+    'export const namespaced = session.validateSession("namespace");',
+    ''
+  ].join('\n'));
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const declarations = db
+      .prepare(`
+        SELECT
+          target.symbol AS symbol,
+          ev.snippet,
+          ev.start_line,
+          ev.end_line,
+          ev.start_col,
+          ev.end_col,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind = 'DECLARES'
+          AND r.source_entity_id = 'file:src/session.ts'
+        ORDER BY target.symbol
+      `)
+      .all(index.indexRunId) as Array<{
+        symbol: string;
+        snippet: string;
+        start_line: number | null;
+        end_line: number | null;
+        start_col: number | null;
+        end_col: number | null;
+        adapter_id: string | null;
+      }>;
+
+    const validateDecl = declarations.find((row) => row.symbol === 'validateSession');
+    assert.ok(validateDecl, 'validateSession declaration should be indexed');
+    assert.equal(validateDecl.adapter_id, TS_JS_SEMANTIC_ADAPTER_ID);
+    assert.equal(validateDecl.start_line, 2);
+    assert.equal(validateDecl.start_col, 1);
+    assert.match(validateDecl.snippet, /^export function validateSession/);
+    assert.equal(validateDecl.snippet.includes('createSession'), false);
+
+    const createDecl = declarations.find((row) => row.symbol === 'createSession');
+    assert.ok(createDecl, 'createSession declaration should be indexed');
+    assert.equal(createDecl.start_line, 5);
+    assert.equal(createDecl.snippet, 'export const createSession = (id: string): Session => ({ id });');
+
+    const calls = db
+      .prepare(`
+        SELECT
+          r.provenance,
+          ev.snippet,
+          ev.start_line,
+          ev.end_line,
+          ev.start_col,
+          ev.end_col,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities source ON source.id = r.source_entity_id
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind = 'CALLS'
+          AND source.path = 'src/consumer.ts'
+          AND target.path = 'src/session.ts'
+        ORDER BY ev.start_line, ev.start_col
+      `)
+      .all(index.indexRunId) as Array<{
+        provenance: string;
+        snippet: string;
+        start_line: number | null;
+        end_line: number | null;
+        start_col: number | null;
+        end_col: number | null;
+        adapter_id: string | null;
+      }>;
+
+    assert.deepEqual(calls.map((row) => row.snippet), [
+      'validate("direct")',
+      'session.validateSession("namespace")'
+    ]);
+    assert.deepEqual(calls.map((row) => row.start_line), [3, 4]);
+    assert.ok(calls.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
+    assert.ok(calls.every((row) => row.provenance.startsWith('call:')));
+  } finally {
+    db.close();
+  }
+});
+
 function findEvidence(rows: readonly EvidenceRow[], kind: string, sourcePath: string): EvidenceRow {
   const row = rows.find((item) => item.kind === kind && item.source_path === sourcePath);
   assert.ok(row, `missing ${kind} evidence for ${sourcePath}`);

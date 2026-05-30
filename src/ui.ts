@@ -295,6 +295,8 @@ type ImpactMapNode = {
   kind: string;
   group: 'changed' | 'affected' | 'context';
   confidence?: string;
+  laneLabel?: string;
+  laneTone?: ImpactLaneTone;
   path?: string;
 };
 
@@ -989,6 +991,14 @@ function classifyImpactLane(pathValue: string, reason: string, actionTargets: Re
   return 'code';
 }
 
+function impactLaneDisplay(id: ImpactLaneId): Pick<ImpactLane, 'label' | 'tone'> {
+  if (id === 'tests') return { label: 'Tests to verify', tone: 'amber' };
+  if (id === 'knowledge') return { label: 'Docs & policy', tone: 'teal' };
+  if (id === 'contracts') return { label: 'Contracts', tone: 'red' };
+  if (id === 'config') return { label: 'Config & infra', tone: 'blue' };
+  return { label: 'Runtime code', tone: 'green' };
+}
+
 function isUiTestPath(pathLower: string): boolean {
   return /(^|\/)(tests?|__tests__)\/|(^|\/)src\/test\//.test(pathLower)
     || /(\.|-)(test|spec)\.[cm]?[tj]sx?$/.test(pathLower);
@@ -1142,15 +1152,21 @@ function buildImpactMap(
     })),
     ...(graph?.nodes ?? []).filter((node) => node.group === 'changed').map(graphNodeForImpactMap)
   ]).slice(0, 5);
+  const actionTargets = new Set((report?.actions ?? []).map((action) => action.target.path).filter((value): value is string => Boolean(value)));
   const affectedNodes = uniqueImpactMapNodes([
-    ...[...(report?.affectedFiles ?? [])].sort(compareAffectedFilesForUi).map((item): ImpactMapNode => ({
-      id: `file:${item.path}`,
-      label: item.path,
-      kind: 'file',
-      group: 'affected',
-      confidence: item.confidence,
-      path: item.path
-    })),
+    ...[...(report?.affectedFiles ?? [])].sort(compareAffectedFilesForUi).map((item): ImpactMapNode => {
+      const lane = impactLaneDisplay(classifyImpactLane(item.path, item.reason, actionTargets));
+      return {
+        id: `file:${item.path}`,
+        label: item.path,
+        kind: 'file',
+        group: 'affected',
+        confidence: item.confidence,
+        laneLabel: lane.label,
+        laneTone: lane.tone,
+        path: item.path
+      };
+    }),
     ...(graph?.nodes ?? []).filter((node) => node.group !== 'changed').map(graphNodeForImpactMap)
   ]).slice(0, 8);
   const nodeById = new Map([...changedNodes, ...affectedNodes].map((node) => [node.id, node]));
@@ -1192,9 +1208,9 @@ function renderImpactMapSvg(map: ReturnType<typeof buildImpactMap>, selectedPath
   const leftX = 38;
   const rightX = 462;
   const nodeWidth = 238;
-  const nodeHeight = 54;
+  const nodeHeight = 66;
   const rowCount = Math.max(map.changedNodes.length, map.affectedNodes.length, 1);
-  const height = Math.max(420, 150 + rowCount * 70);
+  const height = Math.max(420, 160 + rowCount * 78);
   const changedPositions = impactNodePositions(map.changedNodes, height);
   const affectedPositions = impactNodePositions(map.affectedNodes, height);
   const yByNode = new Map<string, number>([
@@ -1248,17 +1264,28 @@ function renderImpactMapSvg(map: ReturnType<typeof buildImpactMap>, selectedPath
 
 function renderImpactMapNode(node: ImpactMapNode, x: number, y: number, width: number, height: number, selectedPath?: string): string {
   const label = compactMapLabel(node.label, 42);
+  const roleLabel = node.group === 'affected'
+    ? (node.laneLabel ?? 'Affected target')
+    : node.group === 'changed'
+      ? 'Changed input'
+      : node.kind;
+  const confidenceLabel = node.group === 'affected' ? (node.confidence ?? 'unknown') : '';
+  const confidenceText = confidenceLabel
+    ? `<text class="map-node-confidence confidence-text-${escapeHtml(node.confidence ?? 'unknown')}" x="${width - 14}" y="47" text-anchor="end">${escapeHtml(confidenceLabel)}</text>`
+    : '';
   const impactAttrs = node.group === 'affected' && node.path
     ? ` data-impact-path="${escapeHtml(node.path)}" tabindex="0" role="button" aria-label="Inspect ${escapeHtml(node.path)}"`
     : '';
   const selectableClass = impactAttrs ? ` selectable-impact${node.path === selectedPath ? ' selected-impact' : ''}` : '';
+  const laneClass = node.laneTone ? ` map-node-lane-${escapeHtml(node.laneTone)}` : '';
   return `
-    <g class="map-node${selectableClass} map-node-${escapeHtml(node.group)} confidence-node-${escapeHtml(node.confidence ?? 'unknown')}" transform="translate(${x} ${y})"${impactAttrs}>
+    <g class="map-node${selectableClass} map-node-${escapeHtml(node.group)} confidence-node-${escapeHtml(node.confidence ?? 'unknown')}${laneClass}" transform="translate(${x} ${y})"${impactAttrs}>
       <title>${escapeHtml(node.label)}</title>
       <rect width="${width}" height="${height}" rx="8" />
-      <circle cx="20" cy="24" r="5" />
-      <text class="map-node-label" x="36" y="23">${escapeHtml(label)}</text>
-      <text class="map-node-kind" x="36" y="41">${escapeHtml(node.kind)}</text>
+      <circle cx="20" cy="26" r="5" />
+      <text class="map-node-label" x="36" y="25">${escapeHtml(label)}</text>
+      <text class="map-node-kind" x="36" y="47">${escapeHtml(roleLabel)}</text>
+      ${confidenceText}
     </g>
   `;
 }
@@ -2781,6 +2808,33 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       fill: #64706a;
       font-size: 11px;
       font-weight: 700;
+    }
+    .map-node-confidence {
+      font-size: 10px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+    .map-node-lane-green .map-node-kind,
+    .confidence-text-proven {
+      fill: var(--green);
+    }
+    .map-node-lane-amber .map-node-kind,
+    .confidence-text-heuristic {
+      fill: var(--amber);
+    }
+    .map-node-lane-teal .map-node-kind,
+    .confidence-text-inferred {
+      fill: var(--teal);
+    }
+    .map-node-lane-blue .map-node-kind {
+      fill: var(--blue);
+    }
+    .map-node-lane-red .map-node-kind,
+    .confidence-text-low {
+      fill: var(--red);
+    }
+    .confidence-text-unknown {
+      fill: #64706a;
     }
     .map-node.selectable-impact rect {
       transition: fill 120ms ease-out, stroke 120ms ease-out, stroke-width 120ms ease-out;

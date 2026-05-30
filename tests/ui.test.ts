@@ -250,6 +250,9 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(html, /function renderMapAction/);
     assert.match(html, /setText\('mapFlowMeta'/);
     assert.match(html, /map-stage-changed/);
+    assert.match(html, /map-node-lane-green[\s\S]*Runtime code[\s\S]*confidence-text-proven[\s\S]*proven/);
+    assert.match(html, /map-node-lane-amber[\s\S]*Tests to verify[\s\S]*confidence-text-proven[\s\S]*proven/);
+    assert.match(html, /map-node-lane-teal[\s\S]*Docs &amp; policy[\s\S]*confidence-text-heuristic[\s\S]*heuristic/);
     assert.match(html, /class="map-edge-group selectable-impact selected-impact"[\s\S]*data-impact-path="tests\/b\.test\.ts"[\s\S]*class="map-edge confidence-proven"/);
     assert.match(html, /marker-end="url\(#impactArrow\)"/);
     assert.match(html, /4 displayed paths/);

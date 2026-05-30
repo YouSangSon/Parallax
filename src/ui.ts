@@ -216,6 +216,21 @@ type WorkspaceLinkRow = {
   target_service: string | null;
 };
 
+type ImpactMapNode = {
+  id: string;
+  label: string;
+  kind: string;
+  group: 'changed' | 'affected' | 'context';
+  confidence?: string;
+};
+
+type ImpactMapEdge = {
+  from: string;
+  to: string;
+  label: string;
+  confidence: string;
+};
+
 export async function buildUiSnapshot(options: UiOptions): Promise<UiSnapshot> {
   const repoRoot = normalizeRepoRoot(options.repoRoot);
   const doctor = doctorProject({ repoRoot });
@@ -297,6 +312,322 @@ export async function buildUiSnapshot(options: UiOptions): Promise<UiSnapshot> {
   }
 }
 
+function renderImpactSummaryPanel(snapshot: UiSnapshot): string {
+  const report = snapshot.selectedReport;
+  if (!report) {
+    return `
+      <section class="panel impact-summary-panel">
+        <h2>Impact Summary</h2>
+        <div class="empty">Run ${PACKAGE_NAME} analyze to see the current blast radius.</div>
+      </section>
+    `;
+  }
+
+  const affectedFiles = [...report.affectedFiles].sort(compareAffectedFilesForUi).slice(0, 4);
+  const primaryChange = report.changed[0] ? entityLabel(report.changed[0]) : report.changedFiles[0] ?? 'unknown change';
+  const blast = blastRadiusLabel(report.affectedCount);
+  const graphEdges = snapshot.graph?.totalEdges ?? snapshot.graph?.edges.length ?? 0;
+  const confidenceRows = ['proven', 'inferred', 'heuristic', 'unknown'].map((confidence) => {
+    const count = report.affectedFiles.filter((item) => item.confidence === confidence).length;
+    return `<span class="confidence-meter confidence-${escapeHtml(confidence)}"><b>${count}</b>${escapeHtml(confidence)}</span>`;
+  }).join('');
+  const changedPreview = report.changed.slice(0, 4).map((entity) => `
+    <li>
+      <span class="node-dot changed"></span>
+      <strong>${escapeHtml(entityLabel(entity))}</strong>
+      <small>${escapeHtml(entity.kind)}</small>
+    </li>
+  `).join('');
+  const affectedPreview = affectedFiles.map((item, index) => `
+    <li class="priority-row" data-filter-text="${escapeHtml(`${item.path} ${item.reason} ${item.confidence}`)}">
+      <b>${index + 1}</b>
+      <span>
+        <strong>${escapeHtml(item.path)}</strong>
+        <small>${escapeHtml(item.reason)}</small>
+      </span>
+      <em class="badge confidence-${escapeHtml(item.confidence)}">${escapeHtml(item.confidence)}</em>
+    </li>
+  `).join('');
+
+  return `
+    <section class="panel impact-summary-panel">
+      <h2>Impact Summary</h2>
+      <div class="blast-card">
+        <span>Blast radius</span>
+        <strong>${escapeHtml(blast)}</strong>
+        <small>${escapeHtml(primaryChange)} touches ${report.affectedCount} targets through ${graphEdges} graph links.</small>
+      </div>
+      <div class="confidence-strip" aria-label="Affected files by confidence">${confidenceRows}</div>
+      <div class="summary-columns">
+        <div>
+          <h3>Changed</h3>
+          <ul class="summary-list">${changedPreview || '<li class="empty">No changed entities.</li>'}</ul>
+        </div>
+        <div>
+          <h3>Top Impact</h3>
+          <ul class="summary-list filterable">${affectedPreview || '<li class="empty">No affected targets.</li>'}</ul>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderImpactMapPanel(graph: UiGraphPreview | null, report: UiReportPreview | null): string {
+  const map = buildImpactMap(graph, report);
+  const chips = `
+    <span>${map.changedNodes.length} changed</span>
+    <span>${map.affectedNodes.length} affected</span>
+    <span>${graph?.totalEdges ?? graph?.edges.length ?? map.edges.length} graph links</span>
+  `;
+  if (map.changedNodes.length === 0 && map.affectedNodes.length === 0) {
+    return `
+      <section class="panel map-panel">
+        <div class="panel-heading">
+          <h2>Impact Map</h2>
+          <div class="panel-chips">${chips}</div>
+        </div>
+        <div class="empty">No graph nodes available.</div>
+      </section>
+    `;
+  }
+
+  const svg = renderImpactMapSvg(map);
+  const edgeRows = map.edges.slice(0, 6).map((edge) => {
+    const from = map.nodeById.get(edge.from);
+    const to = map.nodeById.get(edge.to);
+    return `
+      <li>
+        <strong>${escapeHtml(from?.label ?? edge.from)}</strong>
+        <span>${escapeHtml(edge.label)}</span>
+        <strong>${escapeHtml(to?.label ?? edge.to)}</strong>
+      </li>
+    `;
+  }).join('');
+
+  return `
+    <section class="panel map-panel">
+      <div class="panel-heading">
+        <h2>Impact Map</h2>
+        <div class="panel-chips">${chips}</div>
+      </div>
+      <div class="map-content">
+        <div class="map-frame">${svg}</div>
+        <aside class="map-legend" aria-label="Impact map legend">
+          <div><span class="legend-swatch changed"></span>Changed root</div>
+          <div><span class="legend-swatch affected"></span>Affected target</div>
+          <div><span class="legend-swatch context"></span>Context node</div>
+          <ol>${edgeRows || '<li>No visible graph links.</li>'}</ol>
+        </aside>
+      </div>
+    </section>
+  `;
+}
+
+function buildImpactMap(
+  graph: UiGraphPreview | null,
+  report: UiReportPreview | null
+): {
+  changedNodes: ImpactMapNode[];
+  affectedNodes: ImpactMapNode[];
+  edges: ImpactMapEdge[];
+  nodeById: Map<string, ImpactMapNode>;
+} {
+  const changedNodes = uniqueImpactMapNodes([
+    ...(report?.changed ?? []).map((entity): ImpactMapNode => ({
+      id: entity.id,
+      label: entityLabel(entity),
+      kind: entity.kind,
+      group: 'changed'
+    })),
+    ...(graph?.nodes ?? []).filter((node) => node.group === 'changed').map(graphNodeForImpactMap)
+  ]).slice(0, 5);
+  const affectedNodes = uniqueImpactMapNodes([
+    ...[...(report?.affectedFiles ?? [])].sort(compareAffectedFilesForUi).map((item): ImpactMapNode => ({
+      id: `file:${item.path}`,
+      label: item.path,
+      kind: 'file',
+      group: 'affected',
+      confidence: item.confidence
+    })),
+    ...(graph?.nodes ?? []).filter((node) => node.group !== 'changed').map(graphNodeForImpactMap)
+  ]).slice(0, 8);
+  const nodeById = new Map([...changedNodes, ...affectedNodes].map((node) => [node.id, node]));
+  const changedIds = new Set(changedNodes.map((node) => node.id));
+  const affectedIds = new Set(affectedNodes.map((node) => node.id));
+  const affectedFilesByNodeId = new Map((report?.affectedFiles ?? []).map((item) => [`file:${item.path}`, item]));
+  const edges: ImpactMapEdge[] = [];
+  const seenEdges = new Set<string>();
+  for (const edge of graph?.edges ?? []) {
+    const oriented = orientImpactEdge(edge, changedIds, affectedIds);
+    if (!oriented) continue;
+    const key = `${oriented.from}:${oriented.to}:${oriented.label}`;
+    if (seenEdges.has(key)) continue;
+    seenEdges.add(key);
+    edges.push(oriented);
+  }
+  if (changedNodes[0]) {
+    for (const node of affectedNodes) {
+      if (edges.some((edge) => edge.to === node.id)) continue;
+      const affectedFile = affectedFilesByNodeId.get(node.id);
+      edges.push({
+        from: changedNodes[0].id,
+        to: node.id,
+        label: affectedFile ? impactPathLabel(affectedFile) : 'IMPACTS',
+        confidence: node.confidence ?? affectedFile?.confidence ?? 'unknown'
+      });
+    }
+  }
+  return { changedNodes, affectedNodes, edges: edges.slice(0, 12), nodeById };
+}
+
+function renderImpactMapSvg(map: ReturnType<typeof buildImpactMap>): string {
+  const width = 920;
+  const leftX = 36;
+  const rightX = 616;
+  const nodeWidth = 264;
+  const nodeHeight = 46;
+  const rowCount = Math.max(map.changedNodes.length, map.affectedNodes.length, 1);
+  const height = Math.max(300, 138 + rowCount * 58);
+  const changedPositions = impactNodePositions(map.changedNodes, height);
+  const affectedPositions = impactNodePositions(map.affectedNodes, height);
+  const yByNode = new Map<string, number>([
+    ...map.changedNodes.map((node, index): [string, number] => [node.id, changedPositions[index] ?? 92]),
+    ...map.affectedNodes.map((node, index): [string, number] => [node.id, affectedPositions[index] ?? 92])
+  ]);
+  const edges = map.edges.map((edge) => {
+    const fromY = yByNode.get(edge.from);
+    const toY = yByNode.get(edge.to);
+    if (fromY === undefined || toY === undefined) return '';
+    const startX = leftX + nodeWidth;
+    const endX = rightX;
+    const controlX = (startX + endX) / 2;
+    const labelY = Math.min(height - 28, Math.max(62, (fromY + toY) / 2 - 8));
+    return `
+      <path class="map-edge confidence-${escapeHtml(edge.confidence)}" d="M ${startX} ${fromY} C ${controlX} ${fromY}, ${controlX} ${toY}, ${endX} ${toY}" />
+      <text class="map-edge-label" x="${controlX}" y="${labelY}" text-anchor="middle">${escapeHtml(shortenMiddle(edge.label, 18))}</text>
+    `;
+  }).join('');
+  const changedNodes = map.changedNodes.map((node, index) =>
+    renderImpactMapNode(node, leftX, (changedPositions[index] ?? 92) - nodeHeight / 2, nodeWidth, nodeHeight)
+  ).join('');
+  const affectedNodes = map.affectedNodes.map((node, index) =>
+    renderImpactMapNode(node, rightX, (affectedPositions[index] ?? 92) - nodeHeight / 2, nodeWidth, nodeHeight)
+  ).join('');
+
+  return `
+    <svg class="impact-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Changed entities connected to affected targets">
+      <text class="map-column-label" x="${leftX}" y="34">Changed</text>
+      <text class="map-column-label" x="${rightX}" y="34">Affected</text>
+      <g>${edges}</g>
+      <g>${changedNodes}</g>
+      <g>${affectedNodes}</g>
+    </svg>
+  `;
+}
+
+function renderImpactMapNode(node: ImpactMapNode, x: number, y: number, width: number, height: number): string {
+  const label = compactMapLabel(node.label, 38);
+  return `
+    <g class="map-node map-node-${escapeHtml(node.group)} confidence-node-${escapeHtml(node.confidence ?? 'unknown')}" transform="translate(${x} ${y})">
+      <title>${escapeHtml(node.label)}</title>
+      <rect width="${width}" height="${height}" rx="8" />
+      <circle cx="18" cy="20" r="5" />
+      <text class="map-node-label" x="32" y="20">${escapeHtml(label)}</text>
+      <text class="map-node-kind" x="32" y="36">${escapeHtml(node.kind)}</text>
+    </g>
+  `;
+}
+
+function impactNodePositions(nodes: ImpactMapNode[], height: number): number[] {
+  if (nodes.length === 0) return [];
+  const top = 86;
+  const bottom = height - 48;
+  if (nodes.length === 1) return [(top + bottom) / 2];
+  const step = (bottom - top) / (nodes.length - 1);
+  return nodes.map((_, index) => top + step * index);
+}
+
+function graphNodeForImpactMap(node: UiGraphPreview['nodes'][number]): ImpactMapNode {
+  return {
+    id: node.id,
+    label: node.label,
+    kind: node.kind,
+    group: node.group,
+    ...(node.confidence ? { confidence: node.confidence } : {})
+  };
+}
+
+function orientImpactEdge(
+  edge: UiGraphPreview['edges'][number],
+  changedIds: ReadonlySet<string>,
+  affectedIds: ReadonlySet<string>
+): ImpactMapEdge | null {
+  if (changedIds.has(edge.source) && affectedIds.has(edge.target)) {
+    return { from: edge.source, to: edge.target, label: edge.label, confidence: edge.confidence };
+  }
+  if (changedIds.has(edge.target) && affectedIds.has(edge.source)) {
+    return { from: edge.target, to: edge.source, label: edge.label, confidence: edge.confidence };
+  }
+  return null;
+}
+
+function uniqueImpactMapNodes(nodes: ImpactMapNode[]): ImpactMapNode[] {
+  const byId = new Map<string, ImpactMapNode>();
+  for (const node of nodes) {
+    if (byId.has(node.id)) continue;
+    byId.set(node.id, node);
+  }
+  return [...byId.values()];
+}
+
+function compareAffectedFilesForUi(left: UiReportPreview['affectedFiles'][number], right: UiReportPreview['affectedFiles'][number]): number {
+  return confidenceSortRank(left.confidence) - confidenceSortRank(right.confidence)
+    || (left.depth ?? 99) - (right.depth ?? 99)
+    || left.path.localeCompare(right.path);
+}
+
+function confidenceSortRank(confidence: string): number {
+  if (confidence === 'proven') return 0;
+  if (confidence === 'inferred') return 1;
+  if (confidence === 'heuristic') return 2;
+  return 3;
+}
+
+function blastRadiusLabel(count: number): string {
+  if (count === 0) return 'clear';
+  if (count <= 3) return 'contained';
+  if (count <= 12) return 'expanding';
+  return 'wide';
+}
+
+function impactPathLabel(item: UiReportPreview['affectedFiles'][number]): string {
+  const relationCount = item.relationPath?.length ?? 0;
+  if (relationCount > 1) return `${relationCount} hops`;
+  return item.reason.split(' ')[0]?.toUpperCase() ?? 'IMPACTS';
+}
+
+function entityLabel(entity: ImpactReport['changed'][number]): string {
+  return entity.displayName ?? entity.path ?? entity.symbol ?? entity.id;
+}
+
+function compactMapLabel(value: string, maxLength: number): string {
+  if (value.length <= maxLength) return value;
+  const pathParts = value.split('/').filter(Boolean);
+  if (pathParts.length > 2) {
+    const tail = pathParts.slice(-2).join('/');
+    if (tail.length <= maxLength) return tail;
+  }
+  return shortenMiddle(value, maxLength);
+}
+
+function shortenMiddle(value: string, maxLength: number): string {
+  if (value.length <= maxLength) return value;
+  if (maxLength <= 5) return value.slice(0, maxLength);
+  const prefixLength = Math.ceil((maxLength - 1) / 2);
+  const suffixLength = Math.floor((maxLength - 1) / 2);
+  return `${value.slice(0, prefixLength)}…${value.slice(value.length - suffixLength)}`;
+}
+
 export function renderUiHtml(snapshot: UiSnapshot): string {
   const report = snapshot.selectedReport;
   const doctor = snapshot.doctor;
@@ -359,16 +690,6 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       ${adapter.knownGaps.length > 0 ? `<small>${escapeHtml(adapter.knownGaps.join(' | '))}</small>` : ''}
     </li>
   `).join('');
-  const graphNodes = (snapshot.graph?.nodes ?? []).slice(0, 28).map((node) => `
-    <li>
-      <span class="node-dot ${escapeHtml(node.group ?? 'neutral')}"></span>
-      <span>${escapeHtml(node.label)}</span>
-      <small>${escapeHtml(node.kind)}</small>
-    </li>
-  `).join('');
-  const graphEdges = (snapshot.graph?.edges ?? []).slice(0, 24).map((edge) => `
-    <li><span>${escapeHtml(edge.source)}</span><b>${escapeHtml(edge.kind)}</b><span>${escapeHtml(edge.target)}</span></li>
-  `).join('');
   const contextPackRows = snapshot.contextPacks.map((pack) => `
     <li class="pack-row">
       <strong>${escapeHtml(pack.id)}</strong>
@@ -423,6 +744,8 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       </li>
     `)
   ]).join('');
+  const impactSummaryPanel = renderImpactSummaryPanel(snapshot);
+  const impactMapPanel = renderImpactMapPanel(snapshot.graph, report);
   const dataJson = JSON.stringify(snapshot).replaceAll('<', '\\u003c');
 
   return `<!doctype html>
@@ -434,131 +757,459 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
   <style>
     :root {
       color-scheme: light;
-      --bg: #f6f4ef;
-      --panel: #fffdf8;
-      --ink: #1f2320;
-      --muted: #6b6f68;
-      --line: #d9d5ca;
-      --green: #2f7d5c;
-      --amber: #a86b18;
-      --red: #b23b3b;
-      --teal: #26747a;
-      --graph: #344b3f;
+      --bg: #f2f4f1;
+      --surface: #fffefa;
+      --surface-subtle: #f7f5ee;
+      --surface-strong: #20251f;
+      --ink: #172019;
+      --ink-inverse: #f8f4e8;
+      --muted: #667067;
+      --muted-inverse: #bcc8bd;
+      --line: #d8d4c8;
+      --line-strong: #b8b2a3;
+      --green: #18735f;
+      --amber: #a56312;
+      --red: #b5423f;
+      --teal: #1f6f78;
+      --blue: #365f86;
+      --graph: #263d32;
+      --shadow: 0 18px 45px rgba(23, 32, 25, 0.08);
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       min-width: 320px;
-      background: var(--bg);
+      background:
+        linear-gradient(180deg, #f7f8f4 0, var(--bg) 280px),
+        var(--bg);
       color: var(--ink);
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       letter-spacing: 0;
     }
     button, input, select { font: inherit; letter-spacing: 0; }
     .topbar {
-      min-height: 64px;
+      min-height: 78px;
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
-      gap: 16px;
+      gap: 18px;
       align-items: center;
-      padding: 12px 18px;
-      border-bottom: 1px solid var(--line);
-      background: #fbfaf6;
+      padding: 14px 20px;
+      border-bottom: 3px solid var(--green);
+      background: var(--surface-strong);
+      color: var(--ink-inverse);
+      box-shadow: 0 10px 30px rgba(23, 32, 25, 0.16);
       position: sticky;
       top: 0;
       z-index: 2;
     }
-    .title h1 { margin: 0; font-size: 20px; line-height: 1.2; }
-    .title p { margin: 4px 0 0; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+    .title { min-width: 0; }
+    .eyebrow {
+      display: block;
+      margin-bottom: 4px;
+      color: #9ed3c4;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .title h1 { margin: 0; font-size: 22px; line-height: 1.15; }
+    .title p { margin: 6px 0 0; color: var(--muted-inverse); font-size: 13px; overflow-wrap: anywhere; }
     .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
     .toolbar input, .toolbar select {
-      min-height: 36px;
-      border: 1px solid var(--line);
+      min-height: 38px;
+      border: 1px solid #566158;
       border-radius: 6px;
-      background: white;
-      padding: 0 10px;
+      background: #fbfaf5;
+      color: var(--ink);
+      padding: 0 12px;
       max-width: min(360px, 100%);
     }
-    .shell { width: min(1480px, 100%); margin: 0 auto; padding: 16px; }
+    .toolbar input:focus, .toolbar select:focus {
+      outline: 2px solid #9ed3c4;
+      outline-offset: 2px;
+    }
+    .shell { width: min(1500px, 100%); margin: 0 auto; padding: 18px; }
     .metrics {
       display: grid;
-      grid-template-columns: repeat(6, minmax(120px, 1fr));
+      grid-template-columns: repeat(8, minmax(112px, 1fr));
       gap: 10px;
-      margin-bottom: 14px;
+      margin-bottom: 16px;
     }
     .metric, .panel {
-      background: var(--panel);
+      background: var(--surface);
       border: 1px solid var(--line);
       border-radius: 8px;
     }
-    .metric { padding: 12px; min-height: 76px; }
-    .metric span { display: block; color: var(--muted); font-size: 12px; }
-    .metric strong { display: block; margin-top: 8px; font-size: 22px; line-height: 1; }
+    .metric {
+      min-height: 64px;
+      padding: 10px 12px;
+      border-top: 4px solid var(--blue);
+      box-shadow: 0 8px 24px rgba(23, 32, 25, 0.05);
+    }
+    .metric:nth-child(2), .metric:nth-child(3) { border-top-color: var(--green); }
+    .metric:nth-child(4) { border-top-color: var(--teal); }
+    .metric:nth-child(5) { border-top-color: var(--amber); }
+    .metric:nth-child(6) { border-top-color: var(--red); }
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .metric strong {
+      display: block;
+      margin-top: 7px;
+      font-size: 22px;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+    .impact-overview {
+      display: grid;
+      grid-template-columns: minmax(320px, 0.72fr) minmax(620px, 1.55fr);
+      gap: 14px;
+      align-items: stretch;
+      margin-bottom: 14px;
+    }
     .workbench {
       display: grid;
-      grid-template-columns: minmax(220px, 0.9fr) minmax(300px, 1.25fr) minmax(320px, 1.2fr);
-      gap: 12px;
+      grid-template-columns: minmax(250px, 0.78fr) minmax(360px, 1.05fr) minmax(460px, 1.32fr);
+      gap: 14px;
       align-items: start;
     }
-    .panel { min-width: 0; overflow: hidden; }
-    .panel h2 {
-      margin: 0;
-      padding: 12px;
-      font-size: 14px;
-      border-bottom: 1px solid var(--line);
-      background: #fdfaf2;
+    .stacked-pane {
+      display: grid;
+      gap: 14px;
+      min-width: 0;
     }
-    .list { list-style: none; margin: 0; padding: 0; max-height: 520px; overflow: auto; }
+    .panel {
+      min-width: 0;
+      overflow: hidden;
+      box-shadow: var(--shadow);
+    }
+    .panel > h2, .panel-heading {
+      margin: 0;
+      padding: 13px 14px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, #fffefa 0, var(--surface-subtle) 100%);
+      color: #243126;
+    }
+    .panel > h2, .panel-heading h2 {
+      font-size: 13px;
+      font-weight: 800;
+    }
+    .panel-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .panel-heading h2 { margin: 0; }
+    .panel-chips {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .panel-chips span {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 3px 7px;
+      background: #f5f3eb;
+    }
+    .list { list-style: none; margin: 0; padding: 0; max-height: 540px; overflow: auto; }
+    .evidence-panel .list { max-height: 680px; }
     .entity-row, .impact-row, .evidence-row, .action-row, .pack-row, .coverage-row, .work-artifact-row, .workspace-row, .workspace-link-row, .workspace-contract-row, .finding {
-      padding: 10px 12px;
+      padding: 11px 14px;
       border-bottom: 1px solid var(--line);
       min-width: 0;
+    }
+    .entity-row:hover, .impact-row:hover, .evidence-row:hover, .action-row:hover, .pack-row:hover, .coverage-row:hover, .work-artifact-row:hover, .workspace-row:hover, .workspace-link-row:hover, .workspace-contract-row:hover {
+      background: #f8fbf7;
     }
     .entity-row, .action-row { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; align-items: center; }
     .impact-row, .workspace-link-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; }
     .impact-row strong, .pack-row strong, .coverage-row strong, .work-artifact-row strong, .workspace-row strong, .workspace-link-row strong, .workspace-contract-row strong { display: block; overflow-wrap: anywhere; }
-    .impact-row span, .pack-row span, .coverage-row span, .work-artifact-row span, .work-artifact-row small, .workspace-row span, .workspace-link-row span, .workspace-link-row small, .workspace-contract-row span, .evidence-meta span { color: var(--muted); font-size: 12px; }
+    .impact-row strong, .evidence-meta strong, .coverage-row strong, .workspace-link-row strong {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 13px;
+    }
+    .impact-row span, .pack-row span, .coverage-row span, .work-artifact-row span, .work-artifact-row small, .workspace-row span, .workspace-link-row span, .workspace-link-row small, .workspace-contract-row span, .evidence-meta span {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
     .kind, .badge {
       border: 1px solid var(--line);
-      border-radius: 999px;
-      padding: 2px 8px;
+      border-radius: 6px;
+      padding: 3px 8px;
       font-size: 12px;
       white-space: nowrap;
-      background: #f8f5ee;
+      background: #f3f1e8;
+      font-weight: 700;
     }
-    .confidence-proven { color: var(--green); border-color: #8ab9a4; }
-    .confidence-inferred { color: var(--teal); border-color: #8bb8bc; }
-    .confidence-heuristic { color: var(--amber); border-color: #d6b47a; }
-    .confidence-low { color: var(--red); border-color: #d9a0a0; }
-    .freshness-current { color: var(--green); border-color: #8ab9a4; }
-    .freshness-stale { color: var(--red); border-color: #d9a0a0; }
-    .freshness-unknown { color: var(--amber); border-color: #d6b47a; }
+    .confidence-proven { color: var(--green); border-color: #89b6a5; background: #eef8f3; }
+    .confidence-inferred { color: var(--teal); border-color: #8bb8bc; background: #eef7f8; }
+    .confidence-heuristic { color: var(--amber); border-color: #d7b477; background: #fff6e7; }
+    .confidence-low { color: var(--red); border-color: #d9a0a0; background: #fff1f0; }
+    .freshness-current { color: var(--green); border-color: #89b6a5; background: #eef8f3; }
+    .freshness-stale { color: var(--red); border-color: #d9a0a0; background: #fff1f0; }
+    .freshness-unknown { color: var(--amber); border-color: #d7b477; background: #fff6e7; }
+    .evidence-row { background: #fffefa; }
+    .evidence-meta {
+      display: grid;
+      gap: 3px;
+    }
     pre {
-      margin: 8px 0 0;
+      margin: 9px 0 0;
+      padding: 10px;
+      border: 1px solid #d9ded5;
+      border-radius: 6px;
+      background: #f3f7f4;
       white-space: pre-wrap;
       overflow-wrap: anywhere;
       font-size: 12px;
       line-height: 1.45;
-      color: #2d332e;
+      color: #243126;
     }
     code { font-size: 12px; overflow-wrap: anywhere; color: var(--graph); }
+    .impact-summary-panel {
+      display: grid;
+      grid-template-rows: auto auto auto minmax(0, 1fr);
+    }
+    .blast-card {
+      margin: 14px;
+      padding: 16px;
+      border-radius: 8px;
+      background: #18211b;
+      color: var(--ink-inverse);
+      box-shadow: inset 0 0 0 1px rgba(158, 211, 196, 0.24);
+    }
+    .blast-card span, .blast-card small {
+      display: block;
+      color: #bfd1c6;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .blast-card strong {
+      display: block;
+      margin: 7px 0 5px;
+      font-size: 31px;
+      line-height: 1;
+      text-transform: capitalize;
+    }
+    .confidence-strip {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      padding: 0 14px 14px;
+    }
+    .confidence-meter {
+      display: grid;
+      gap: 3px;
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px;
+      background: #fbfaf5;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+    .confidence-meter b {
+      color: var(--ink);
+      font-size: 18px;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+    .summary-columns {
+      display: grid;
+      grid-template-columns: 1fr;
+      min-height: 0;
+      border-top: 1px solid var(--line);
+    }
+    .summary-columns > div:first-child { border-bottom: 1px solid var(--line); }
+    .summary-columns h3 {
+      margin: 0;
+      padding: 10px 14px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+    .summary-list { list-style: none; margin: 0; padding: 0; }
+    .summary-list li {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      padding: 10px 14px;
+      border-top: 1px solid var(--line);
+      min-width: 0;
+    }
+    .summary-list strong { display: block; overflow-wrap: anywhere; font-size: 13px; }
+    .summary-list small { color: var(--muted); font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; }
+    .summary-list .empty { display: block; }
+    .priority-row b {
+      width: 24px;
+      height: 24px;
+      display: grid;
+      place-items: center;
+      border-radius: 6px;
+      background: #edf5ef;
+      color: var(--green);
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+    }
+    .priority-row em { font-style: normal; }
+    .map-panel {
+      min-height: 420px;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+    .map-content {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 250px;
+      min-height: 372px;
+      height: 100%;
+    }
+    .map-frame {
+      min-width: 0;
+      padding: 14px;
+      background:
+        linear-gradient(180deg, rgba(24, 33, 27, 0.97), rgba(24, 33, 27, 0.94)),
+        #18211b;
+    }
+    .impact-svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+      min-height: 340px;
+      filter: drop-shadow(0 16px 30px rgba(0, 0, 0, 0.18));
+    }
+    .map-column-label {
+      fill: #a8caba;
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }
+    .map-edge {
+      fill: none;
+      stroke: #73c2ac;
+      stroke-width: 3;
+      opacity: 0.88;
+    }
+    .map-edge.confidence-heuristic {
+      stroke: #d59a45;
+      stroke-dasharray: 8 6;
+    }
+    .map-edge.confidence-inferred { stroke: #69b9c0; }
+    .map-edge.confidence-unknown { stroke: #a7b3aa; stroke-dasharray: 4 5; }
+    .map-edge-label {
+      fill: #142017;
+      paint-order: stroke;
+      stroke: #f6f2e8;
+      stroke-width: 8px;
+      stroke-linejoin: round;
+      font-size: 11px;
+      font-weight: 800;
+    }
+    .map-node rect {
+      fill: #fbfaf5;
+      stroke: #d6ded4;
+      stroke-width: 1.2;
+    }
+    .map-node circle { fill: var(--blue); }
+    .map-node-changed rect {
+      fill: #eef8f3;
+      stroke: #73b29e;
+    }
+    .map-node-changed circle { fill: var(--green); }
+    .map-node-affected rect {
+      fill: #fff7e8;
+      stroke: #d7b477;
+    }
+    .map-node-affected circle { fill: var(--amber); }
+    .confidence-node-proven rect {
+      fill: #eef8f3;
+      stroke: #73b29e;
+    }
+    .confidence-node-proven circle { fill: var(--green); }
+    .confidence-node-inferred rect {
+      fill: #edf9fa;
+      stroke: #81bbc0;
+    }
+    .confidence-node-inferred circle { fill: var(--teal); }
+    .map-node-label {
+      fill: #142017;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .map-node-kind {
+      fill: #64706a;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .map-legend {
+      display: grid;
+      align-content: start;
+      gap: 10px;
+      padding: 14px;
+      border-left: 1px solid var(--line);
+      background: #fbfaf5;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    .map-legend div {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 800;
+      color: #27312a;
+    }
+    .legend-swatch {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--blue);
+    }
+    .legend-swatch.changed { background: var(--green); }
+    .legend-swatch.affected { background: var(--amber); }
+    .legend-swatch.context { background: var(--teal); }
+    .map-legend ol {
+      display: grid;
+      gap: 8px;
+      margin: 8px 0 0;
+      padding: 10px 0 0 18px;
+      border-top: 1px solid var(--line);
+    }
+    .map-legend li strong {
+      display: block;
+      color: var(--ink);
+      overflow-wrap: anywhere;
+    }
+    .map-legend li span {
+      display: inline-block;
+      margin: 3px 0;
+      padding: 2px 6px;
+      border: 1px solid #d7b477;
+      border-radius: 6px;
+      color: var(--amber);
+      background: #fff6e7;
+      font-size: 11px;
+      font-weight: 800;
+    }
     .bottom {
       display: grid;
       grid-template-columns: minmax(0, 1fr) minmax(280px, 0.8fr);
-      gap: 12px;
-      margin-top: 12px;
+      gap: 14px;
+      margin-top: 14px;
     }
-    .wide-panel { margin-top: 12px; }
-    .graph-grid {
-      display: grid;
-      grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
-      gap: 0;
-    }
-    .graph-list { list-style: none; margin: 0; padding: 0; max-height: 300px; overflow: auto; }
-    .graph-list li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); align-items: center; }
-    .graph-list li span, .graph-list li small { overflow-wrap: anywhere; }
-    .edge-list li { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
-    .node-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; background: var(--teal); }
+    .wide-panel { margin-top: 14px; }
+    .node-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; background: var(--blue); }
     .node-dot.changed { background: var(--green); }
     .node-dot.affected { background: var(--amber); }
     .finding { display: grid; gap: 4px; }
@@ -572,18 +1223,22 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       .toolbar { justify-content: stretch; }
       .toolbar input, .toolbar select { width: 100%; }
       .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .workbench, .bottom, .graph-grid { grid-template-columns: 1fr; }
+      .impact-overview, .workbench, .bottom, .map-content, .summary-columns { grid-template-columns: 1fr; }
+      .summary-columns > div:first-child, .map-legend { border-right: 0; border-left: 0; }
     }
     @media (max-width: 560px) {
       .shell { padding: 10px; }
       .metrics { grid-template-columns: 1fr; }
       .impact-row, .workspace-link-row { grid-template-columns: 1fr; }
+      .confidence-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .panel-heading { align-items: flex-start; flex-direction: column; }
     }
   </style>
 </head>
 <body>
   <header class="topbar">
     <div class="title">
+      <span class="eyebrow">Parallax local impact intelligence</span>
       <h1>Impact Workbench</h1>
       <p>${escapeHtml(snapshot.repoRoot)} · schema ${escapeHtml(String(doctor.database.schemaVersion ?? 'missing'))} · generated ${escapeHtml(snapshot.generatedAt)}</p>
     </div>
@@ -603,16 +1258,28 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       <div class="metric"><span>Work artifacts</span><strong>${escapeHtml(String(snapshot.workArtifacts.length))}</strong></div>
       <div class="metric"><span>Workspaces</span><strong>${escapeHtml(String(snapshot.workspaces.length))}</strong></div>
     </section>
+    <section class="impact-overview" aria-label="Impact overview">
+      ${impactSummaryPanel}
+      ${impactMapPanel}
+    </section>
     <section class="workbench" aria-label="Impact report workbench">
-      <section class="panel">
-        <h2>Change Set</h2>
-        <ul class="list filterable">${changedRows || `<li class="empty">Run ${PACKAGE_NAME} analyze to create a report.</li>`}</ul>
-      </section>
-      <section class="panel">
-        <h2>Impact Paths</h2>
-        <ul class="list filterable">${affectedRows || '<li class="empty">No affected paths in the selected report.</li>'}</ul>
-      </section>
-      <section class="panel">
+      <div class="stacked-pane">
+        <section class="panel">
+          <h2>Change Set</h2>
+          <ul class="list filterable">${changedRows || `<li class="empty">Run ${PACKAGE_NAME} analyze to create a report.</li>`}</ul>
+        </section>
+        <section class="panel">
+          <h2>Verification Queue</h2>
+          <ul class="list">${actionRows || '<li class="empty">No recommended actions in this report.</li>'}</ul>
+        </section>
+      </div>
+      <div class="stacked-pane">
+        <section class="panel">
+          <h2>Impact Paths</h2>
+          <ul class="list filterable">${affectedRows || '<li class="empty">No affected paths in the selected report.</li>'}</ul>
+        </section>
+      </div>
+      <section class="panel evidence-panel">
         <h2>Evidence</h2>
         <ul class="list filterable">${evidenceRows || '<li class="empty">No evidence in the selected report.</li>'}</ul>
       </section>
@@ -620,19 +1287,6 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
     <section class="panel wide-panel">
       <h2>Work Artifacts</h2>
       <ul class="list filterable">${workArtifactRows || '<li class="empty">No policy, decision, PRD, requirement, or proposal impact in the selected report.</li>'}</ul>
-    </section>
-    <section class="bottom">
-      <section class="panel">
-        <h2>Focused Graph</h2>
-        <div class="graph-grid">
-          <ul class="graph-list">${graphNodes || '<li class="empty">No graph nodes available.</li>'}</ul>
-          <ul class="graph-list edge-list">${graphEdges || '<li class="empty">No graph edges available.</li>'}</ul>
-        </div>
-      </section>
-      <section class="panel">
-        <h2>Verification Queue</h2>
-        <ul class="list">${actionRows || '<li class="empty">No recommended actions in this report.</li>'}</ul>
-      </section>
     </section>
     <section class="bottom">
       <section class="panel">

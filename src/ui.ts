@@ -1047,7 +1047,7 @@ function renderImpactMapPanel(graph: UiGraphPreview | null, report: UiReportPrev
   const svg = renderImpactMapSvg(map, selectedPath);
   const selectedAction = selectedPath && report ? actionByTargetPath(report.actions).get(selectedPath) : undefined;
   const insight = renderImpactMapInsight(map, displayedPathCount, firstImpact?.path, selectedAction);
-  const mobileRoutes = renderMobileImpactRoutes(map, selectedPath);
+  const routeStrip = renderImpactRouteStrip(map, selectedPath);
   const edgeRows = map.edges.slice(0, 6).map((edge) => {
     const from = map.nodeById.get(edge.from);
     const to = map.nodeById.get(edge.to);
@@ -1074,7 +1074,7 @@ function renderImpactMapPanel(graph: UiGraphPreview | null, report: UiReportPrev
       <div class="map-content">
         <div class="map-frame">
           ${insight}
-          ${mobileRoutes}
+          ${routeStrip}
           ${svg}
         </div>
         <aside class="map-legend" aria-label="Impact map legend">
@@ -1091,14 +1091,14 @@ function renderImpactMapPanel(graph: UiGraphPreview | null, report: UiReportPrev
   `;
 }
 
-function renderMobileImpactRoutes(map: ReturnType<typeof buildImpactMap>, selectedPath?: string): string {
+function renderImpactRouteStrip(map: ReturnType<typeof buildImpactMap>, selectedPath?: string): string {
   const rows = map.affectedNodes.slice(0, 4).map((node, index) => {
     const edge = map.edges.find((item) => item.to === node.id);
     const pathValue = node.path ?? node.label;
     const selectedClass = node.path === selectedPath ? ' selected-impact' : '';
     const attrs = node.path
-      ? ` class="mobile-route-card selectable-impact${selectedClass}" tabindex="0" role="button" data-impact-path="${escapeHtml(node.path)}" data-filter-text="${escapeHtml(`${node.label} ${edge?.label ?? ''} ${node.laneLabel ?? ''} ${node.confidence ?? ''}`)}"`
-      : ` class="mobile-route-card"`;
+      ? ` class="impact-route-card selectable-impact${selectedClass}" tabindex="0" role="button" data-impact-path="${escapeHtml(node.path)}" data-filter-text="${escapeHtml(`${node.label} ${edge?.label ?? ''} ${node.laneLabel ?? ''} ${node.confidence ?? ''}`)}"`
+      : ` class="impact-route-card"`;
     return `
       <li${attrs}>
         <b>${escapeHtml(String(index + 1))}</b>
@@ -1108,7 +1108,7 @@ function renderMobileImpactRoutes(map: ReturnType<typeof buildImpactMap>, select
       </li>
     `;
   }).join('');
-  return `<ol class="mobile-route-strip" aria-label="Mobile impact route summary">${rows}</ol>`;
+  return `<ol class="impact-route-strip" aria-label="Ranked impact route summary">${rows}</ol>`;
 }
 
 function renderImpactMapInsight(
@@ -1176,7 +1176,7 @@ function buildImpactMap(
   ]).slice(0, 5);
   const actionTargets = new Set((report?.actions ?? []).map((action) => action.target.path).filter((value): value is string => Boolean(value)));
   const affectedNodes = uniqueImpactMapNodes([
-    ...[...(report?.affectedFiles ?? [])].sort(compareAffectedFilesForUi).map((item): ImpactMapNode => {
+    ...(report ? topAffectedFilesForSummary(report) : []).map((item): ImpactMapNode => {
       const lane = impactLaneDisplay(classifyImpactLane(item.path, item.reason, actionTargets));
       return {
         id: `file:${item.path}`,
@@ -1204,8 +1204,11 @@ function buildImpactMap(
     if (seenEdges.has(key)) continue;
     seenEdges.add(key);
     const targetPath = nodeById.get(oriented.to)?.path;
+    const affectedFile = affectedFilesByNodeId.get(oriented.to);
     edges.push({
       ...oriented,
+      label: affectedFile ? impactPathLabel(affectedFile, actionTargets) : oriented.label,
+      confidence: affectedFile?.confidence ?? oriented.confidence,
       ...(targetPath ? { targetPath } : {})
     });
   }
@@ -1216,7 +1219,7 @@ function buildImpactMap(
       edges.push({
         from: changedNodes[0].id,
         to: node.id,
-        label: affectedFile ? impactPathLabel(affectedFile) : 'IMPACTS',
+        label: affectedFile ? impactPathLabel(affectedFile, actionTargets) : 'IMPACTS',
         confidence: node.confidence ?? affectedFile?.confidence ?? 'unknown',
         ...(node.path ? { targetPath: node.path } : {})
       });
@@ -1390,7 +1393,12 @@ function blastRadiusLabel(count: number): string {
   return 'wide';
 }
 
-function impactPathLabel(item: UiReportPreview['affectedFiles'][number]): string {
+function impactPathLabel(item: UiReportPreview['affectedFiles'][number], actionTargets: ReadonlySet<string> = new Set()): string {
+  const lane = classifyImpactLane(item.path, item.reason, actionTargets);
+  if (lane === 'tests') return 'VERIFY';
+  if (lane === 'knowledge') return 'DOCUMENTS';
+  if (lane === 'contracts') return 'CONTRACT';
+  if (lane === 'config') return 'CONFIG';
   const relationCount = item.relationPath?.length ?? 0;
   if (relationCount > 1) return `${relationCount} hops`;
   return item.reason.split(' ')[0]?.toUpperCase() ?? 'IMPACTS';
@@ -2718,8 +2726,80 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       border-color: #73c2ac;
       background: #e6f7ef;
     }
-    .mobile-route-strip {
-      display: none;
+    .impact-route-strip {
+      list-style: none;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(188px, 1fr));
+      gap: 8px;
+      margin: 0;
+      padding: 0;
+    }
+    .impact-route-card {
+      min-height: 58px;
+      display: grid;
+      grid-template-columns: 24px minmax(0, 1fr) auto;
+      gap: 3px 8px;
+      align-items: center;
+      padding: 8px 9px;
+      border: 1px solid rgba(168, 202, 186, 0.28);
+      border-radius: 8px;
+      background: rgba(255, 253, 244, 0.055);
+      color: #f8fff9;
+    }
+    .impact-route-card.selectable-impact {
+      cursor: pointer;
+    }
+    .impact-route-card b {
+      grid-row: 1 / span 2;
+      width: 24px;
+      height: 24px;
+      display: grid;
+      place-items: center;
+      border-radius: 6px;
+      background: rgba(115, 194, 172, 0.14);
+      color: #b9e2d0;
+      font-size: 11px;
+    }
+    .impact-route-card strong {
+      min-width: 0;
+      overflow-wrap: anywhere;
+      font-size: 12px;
+      line-height: 1.15;
+    }
+    .impact-route-card span {
+      min-width: 0;
+      overflow-wrap: anywhere;
+      color: #c9d8cf;
+      font-size: 10px;
+      line-height: 1.2;
+    }
+    .impact-route-card em {
+      grid-column: 3;
+      grid-row: 1 / span 2;
+      align-self: center;
+      border: 1px solid rgba(168, 202, 186, 0.25);
+      border-radius: 999px;
+      padding: 2px 6px;
+      background: rgba(255, 253, 244, 0.08);
+      font-size: 10px;
+      font-style: normal;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+    .impact-route-card.selected-impact {
+      border-color: #73c2ac;
+      background: #eef8f3 !important;
+      color: #102119;
+    }
+    .impact-route-card.selected-impact strong {
+      color: #102119;
+    }
+    .impact-route-card.selected-impact span {
+      color: #41564b;
+    }
+    .impact-route-card.selected-impact b {
+      background: #d9f1e6;
+      color: var(--green);
     }
     .impact-svg {
       display: block;
@@ -3236,74 +3316,19 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
         grid-template-columns: minmax(0, 1fr) auto;
         padding: 6px 7px;
       }
-      .mobile-route-strip {
-        list-style: none;
-        display: grid;
+      .impact-route-strip {
+        grid-template-columns: 1fr;
         gap: 6px;
-        margin: 0;
-        padding: 0;
       }
-      .mobile-route-card {
+      .impact-route-card {
         min-height: 48px;
-        display: grid;
         grid-template-columns: 22px minmax(0, 1fr) auto;
         gap: 3px 7px;
-        align-items: center;
         padding: 7px 8px;
-        border: 1px solid rgba(168, 202, 186, 0.28);
-        border-radius: 8px;
-        background: rgba(255, 253, 244, 0.055);
-        color: #f8fff9;
       }
-      .mobile-route-card b {
-        grid-row: 1 / span 2;
+      .impact-route-card b {
         width: 22px;
         height: 22px;
-        display: grid;
-        place-items: center;
-        border-radius: 6px;
-        background: rgba(115, 194, 172, 0.14);
-        color: #b9e2d0;
-        font-size: 11px;
-      }
-      .mobile-route-card strong {
-        min-width: 0;
-        overflow-wrap: anywhere;
-        font-size: 12px;
-        line-height: 1.15;
-      }
-      .mobile-route-card span {
-        min-width: 0;
-        overflow-wrap: anywhere;
-        color: #c9d8cf;
-        font-size: 10px;
-        line-height: 1.2;
-      }
-      .mobile-route-card em {
-        grid-column: 3;
-        grid-row: 1 / span 2;
-        align-self: center;
-        border: 1px solid rgba(168, 202, 186, 0.25);
-        border-radius: 999px;
-        padding: 2px 6px;
-        background: rgba(255, 253, 244, 0.08);
-        font-size: 10px;
-        font-style: normal;
-        font-weight: 900;
-        text-transform: uppercase;
-      }
-      .mobile-route-card.selected-impact {
-        background: #eef8f3 !important;
-      }
-      .mobile-route-card.selected-impact strong {
-        color: #102119;
-      }
-      .mobile-route-card.selected-impact span {
-        color: #41564b;
-      }
-      .mobile-route-card.selected-impact b {
-        background: #d9f1e6;
-        color: var(--green);
       }
       .impact-svg { height: 320px; }
       .map-legend { max-height: 300px; padding: 10px; overflow: auto; }

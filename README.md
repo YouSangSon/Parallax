@@ -15,7 +15,7 @@ Claude Code, Codex, Cursor 같은 에이전트가 코드를 고치기 전에<br/
 
 [🚀 빠른 시작](#-빠른-시작) · [✨ 주요 기능](#-주요-기능) · [🧱 핵심 개념](#-핵심-개념) · [🤖 MCP](#-mcp--agents) · [🔒 안전 모델](#-안전-모델) · [🗺️ Roadmap](#%EF%B8%8F-roadmap) · [📚 더 읽기](#-더-읽기)
 
-<img src="docs/assets/parallax-ui-demo.png" alt="Parallax Impact Workbench UI showing a graph-first impact map, impact summary, verification action, affected paths, and evidence" width="100%">
+<img src="docs/assets/parallax-ui-demo.png" alt="Parallax Impact Workbench UI showing ranked impact route cards, a graph-first impact map, impact summary, verification action, affected paths, and evidence" width="100%">
 
 </div>
 
@@ -148,7 +148,7 @@ parallax profile --entity file:src/auth.ts
 | 화면 | 기능 |
 | :--- | :--- |
 | **Impact Triage** | changed root, affected target 수, 다음 verification target을 첫 화면에서 한 줄 흐름으로 요약하고 클릭 시 inspector/evidence 선택으로 연결 |
-| **Impact Map** | changed root에서 affected target까지 primary flow, 방향 화살표, 실제 graph link를 첫 화면 우선순위로 보여주고 target 선택 시 primary flow, 관련 edge, legend row, 경로, evidence를 같은 target으로 강조 |
+| **Impact Map** | changed root에서 affected target까지 ranked route card, primary flow, 방향 화살표, 실제 graph link를 첫 화면 우선순위로 보여주고 target 선택 시 primary flow, 관련 edge, legend row, 경로, evidence를 같은 target으로 강조 |
 | **Impact Summary** | 변경 수, 영향 범위, confidence 분포, 우선 확인 대상을 첫 화면에 요약 |
 | **Impact Lanes** | runtime code, tests, docs/policy, contracts, config/infra 영향 범주를 한눈에 분리 |
 | **Report Delta** | 선택한 report를 직전 saved report와 비교해 영향 범위, evidence, action, lane 변화량과 policy preset별 판정을 표시하고 added path를 source/inspector로 연결 |
@@ -161,7 +161,7 @@ parallax profile --entity file:src/auth.ts
 | **Coverage Gaps** | adapter confidence와 known-gap 확인 |
 | **Doctor Findings** | schema/index/vector/telemetry 상태 점검 |
 
-Impact Map의 각 노드는 영향 범주(`Runtime code`, `Tests to verify`, `Docs & policy`)와 confidence(`proven`, `heuristic`)를 노드 안에 직접 표시한다. 모바일에서는 SVG 라벨이 작아지는 문제를 줄이기 위해 그래프 위에 tappable impact route card를 먼저 보여준다.
+Impact Map은 그래프 위에 ranked impact route card를 먼저 보여줘 “무엇을 먼저 봐야 하는지”를 바로 드러낸다. 각 노드는 영향 범주(`Runtime code`, `Tests to verify`, `Docs & policy`)와 confidence(`proven`, `heuristic`)를 노드 안에 직접 표시한다. 모바일에서는 SVG 라벨이 작아지는 문제를 줄이기 위해 같은 route card를 세로로 배치한다.
 
 <p align="center">
   <img src="docs/assets/parallax-ui-mobile.png" alt="Parallax mobile Impact Map showing readable route cards before the graph" width="360">

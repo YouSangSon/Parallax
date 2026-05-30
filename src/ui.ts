@@ -1093,24 +1093,33 @@ function renderImpactMapInsight(
   const primaryEdge = map.edges.find((edge) => edge.from === map.changedNodes[0]?.id && edge.to === primaryTarget?.id) ?? map.edges[0];
   const relation = primaryEdge?.label ?? 'IMPACTS';
   const confidence = primaryTarget?.confidence ?? primaryEdge?.confidence ?? 'unknown';
-  const command = action ? actionCommandText(action) : undefined;
-  const actionHtml = command
-    ? `
-      <div class="map-next-action" aria-label="Next verification command">
-        <span>Next verification</span>
-        <code>${escapeHtml(command)}</code>
-        <button class="copy-command" type="button" data-command="${escapeHtml(command)}" aria-label="Copy map verification command">Copy</button>
-      </div>
-    `
-    : '';
   return `
-    <div class="map-insight" aria-label="Primary impact flow">
+    <div class="map-insight" aria-label="Primary impact flow" data-primary-change="${escapeHtml(primaryChange)}" data-affected-count="${escapeHtml(String(map.affectedNodes.length))}" data-displayed-path-count="${escapeHtml(String(displayedPathCount))}">
       <div class="map-flow-text">
         <span>Primary impact flow</span>
-        <strong>${escapeHtml(shortenMiddle(primaryChange, 34))} <em>&rarr;</em> ${escapeHtml(shortenMiddle(primaryTargetLabel, 34))}</strong>
-        <small>${escapeHtml(relation)} · ${escapeHtml(String(map.affectedNodes.length))} targets · ${escapeHtml(String(displayedPathCount))} displayed paths · ${escapeHtml(confidence)} confidence</small>
+        <strong id="mapFlowPath">${escapeHtml(shortenMiddle(primaryChange, 34))} <em>&rarr;</em> ${escapeHtml(shortenMiddle(primaryTargetLabel, 34))}</strong>
+        <small id="mapFlowMeta">${escapeHtml(relation)} · ${escapeHtml(String(map.affectedNodes.length))} targets · ${escapeHtml(String(displayedPathCount))} displayed paths · ${escapeHtml(confidence)} confidence</small>
       </div>
-      ${actionHtml}
+      ${renderMapNextAction(action)}
+    </div>
+  `;
+}
+
+function renderMapNextAction(action: ImpactAction | undefined): string {
+  const command = action ? actionCommandText(action) : undefined;
+  if (!command) {
+    return `
+      <div id="mapNextAction" class="map-next-action map-next-action-empty" aria-label="Next verification command">
+        <span>Next verification</span>
+        <small>No verification action recorded.</small>
+      </div>
+    `;
+  }
+  return `
+    <div id="mapNextAction" class="map-next-action" aria-label="Next verification command">
+      <span>Next verification</span>
+      <code>${escapeHtml(command)}</code>
+      <button class="copy-command" type="button" data-command="${escapeHtml(command)}" aria-label="Copy map verification command">Copy</button>
     </div>
   `;
 }
@@ -2642,6 +2651,17 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       color: #f8fff9;
       font-size: 11px;
     }
+    .map-next-action small {
+      grid-column: 1 / -1;
+      color: #c9d8cf;
+      font-size: 11px;
+      line-height: 1.3;
+      overflow-wrap: anywhere;
+    }
+    .map-next-action-empty {
+      border-color: rgba(167, 179, 170, 0.32);
+      background: rgba(255, 253, 244, 0.045);
+    }
     .map-next-action .copy-command {
       min-height: 24px;
       padding: 2px 7px;
@@ -3267,6 +3287,12 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       if (!action?.command) return '';
       return [action.command, ...(action.args || [])].map(shellQuoteForUi).join(' ');
     }
+    function shortenMiddleForUi(value, maxLength) {
+      const text = String(value || '');
+      if (text.length <= maxLength) return text;
+      const keep = Math.max(4, Math.floor((maxLength - 1) / 2));
+      return text.slice(0, keep) + '…' + text.slice(text.length - keep);
+    }
     function shellQuoteForUi(value) {
       const displayValue = String(value)
         .replace(/\\n/g, '\\\\n')
@@ -3298,6 +3324,33 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       button.setAttribute('aria-label', 'Copy inspector verification command');
       button.textContent = 'Copy';
       target.append(code, button);
+      wireCopyButton(button);
+    }
+    function renderMapAction(path) {
+      const target = document.getElementById('mapNextAction');
+      if (!target) return;
+      target.replaceChildren();
+      target.classList.remove('map-next-action-empty');
+      const label = document.createElement('span');
+      label.textContent = 'Next verification';
+      const action = actionItems.find((candidate) => candidate.target?.path === path);
+      const command = actionCommandText(action);
+      if (!action || !command) {
+        const empty = document.createElement('small');
+        empty.textContent = 'No verification action recorded.';
+        target.classList.add('map-next-action-empty');
+        target.append(label, empty);
+        return;
+      }
+      const code = document.createElement('code');
+      code.textContent = command;
+      const button = document.createElement('button');
+      button.className = 'copy-command';
+      button.type = 'button';
+      button.dataset.command = command;
+      button.setAttribute('aria-label', 'Copy map verification command');
+      button.textContent = 'Copy';
+      target.append(label, code, button);
       wireCopyButton(button);
     }
     function renderInspectorEvidence(evidence) {
@@ -3353,7 +3406,21 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       const item = affectedFiles.find((candidate) => candidate.path === path);
       if (!item) return;
       const matchingEvidence = evidenceForPath(path);
+      const mapInsight = document.querySelector('.map-insight');
+      const primaryChange = mapInsight?.getAttribute('data-primary-change') || 'Changed root';
+      const affectedCount = mapInsight?.getAttribute('data-affected-count') || String(affectedFiles.length);
+      const displayedPathCount = mapInsight?.getAttribute('data-displayed-path-count') || String(affectedFiles.length);
       document.body.dataset.selectedImpactPath = path;
+      const flowTarget = document.getElementById('mapFlowPath');
+      if (flowTarget) {
+        flowTarget.replaceChildren(
+          document.createTextNode(shortenMiddleForUi(primaryChange, 34) + ' '),
+          Object.assign(document.createElement('em'), { textContent: '→' }),
+          document.createTextNode(' ' + shortenMiddleForUi(item.path, 34))
+        );
+      }
+      setText('mapFlowMeta', (item.reason || 'impacts') + ' · ' + affectedCount + ' targets · ' + displayedPathCount + ' displayed paths · ' + item.confidence + ' confidence');
+      renderMapAction(path);
       setText('inspectorPath', item.path);
       setText('inspectorReason', item.reason);
       setText('inspectorConfidence', item.confidence);

@@ -660,10 +660,59 @@ function evidenceSourceLocation(item: UiEvidencePreview): SourceLocation | undef
   if (!Number.isInteger(line) || line < 1) return undefined;
   const endLine = item.endLine && item.endLine > line ? item.endLine : undefined;
   return {
-    href: `/source?path=${encodeURIComponent(item.file)}&line=${line}`,
+    href: sourceHref(item.file, line),
     label: endLine ? `L${line}-L${endLine}` : `L${line}`,
     line
   };
+}
+
+function renderActionRow(item: ImpactAction): string {
+  const command = actionCommandText(item);
+  const targetPath = item.target.path && !item.target.path.includes('\0') ? item.target.path : undefined;
+  const targetLabel = targetPath ?? item.target.displayName ?? item.target.symbol ?? item.target.id;
+  const heading = item.kind === 'verify' && targetLabel ? `Verify ${targetLabel}` : item.display;
+  const meta = [
+    item.runnerId ? `runner ${item.runnerId}` : undefined,
+    targetLabel ? `target ${targetLabel}` : undefined,
+    `${item.confidence} confidence`
+  ].filter((value): value is string => Boolean(value)).join(' · ');
+  const sourceLink = targetPath
+    ? `<a class="source-link" href="${escapeHtml(sourceHref(targetPath, 1))}" target="_blank" rel="noreferrer">Target</a>`
+    : '';
+
+  return `
+    <li class="action-row" data-filter-text="${escapeHtml(`${item.kind} ${heading} ${item.display} ${command ?? ''} ${targetLabel} ${item.confidence}`)}">
+      <span class="kind">${escapeHtml(item.kind)}</span>
+      <div class="action-main">
+        <strong>${escapeHtml(heading)}</strong>
+        <span>${escapeHtml(meta)}</span>
+        ${command ? `<code>${escapeHtml(command)}</code>` : `<span>${escapeHtml(item.display)}</span>`}
+      </div>
+      <div class="action-controls">
+        ${command ? `<button class="copy-command" type="button" data-command="${escapeHtml(command)}" aria-label="Copy ${escapeHtml(item.kind)} command">Copy</button>` : ''}
+        ${sourceLink}
+      </div>
+    </li>
+  `;
+}
+
+function actionCommandText(item: ImpactAction): string | undefined {
+  if (!item.command) return undefined;
+  return [item.command, ...(item.args ?? [])].map(shellQuoteForUi).join(' ');
+}
+
+function shellQuoteForUi(value: string): string {
+  const displayValue = value
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\t/g, '\\t');
+  if (displayValue === '--') return displayValue;
+  if (/^[A-Za-z0-9_./:=@%+,-]+$/.test(displayValue) && !displayValue.startsWith('-')) return displayValue;
+  return `'${displayValue.replaceAll("'", `'\\''`)}'`;
+}
+
+function sourceHref(file: string, line: number): string {
+  return `/source?path=${encodeURIComponent(file)}&line=${line}`;
 }
 
 function compactMapLabel(value: string, maxLength: number): string {
@@ -736,13 +785,7 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
     </li>
   `;
   }).join('');
-  const actionRows = (report?.actions ?? []).slice(0, 20).map((item) => `
-    <li class="action-row">
-      <span class="kind">${escapeHtml(item.kind)}</span>
-      <span>${escapeHtml(item.display)}</span>
-      ${item.command ? `<code>${escapeHtml(item.command)}</code>` : ''}
-    </li>
-  `).join('');
+  const actionRows = (report?.actions ?? []).slice(0, 20).map(renderActionRow).join('');
   const adapterInsightRows = (report?.adapterInsights ?? []).map((adapter) => `
     <li class="pack-row" data-filter-text="${escapeHtml(`${adapter.id} ${adapter.status} ${adapter.confidence} ${adapter.languageIds.join(' ')} ${adapter.knownGaps.join(' ')}`)}">
       <strong>${escapeHtml(adapter.id)}</strong>
@@ -925,7 +968,7 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       display: grid;
       grid-template-columns: minmax(320px, 0.72fr) minmax(620px, 1.55fr);
       gap: 14px;
-      align-items: stretch;
+      align-items: start;
       margin-bottom: 14px;
     }
     .workbench {
@@ -987,7 +1030,77 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
     .entity-row:hover, .impact-row:hover, .evidence-row:hover, .action-row:hover, .pack-row:hover, .coverage-row:hover, .work-artifact-row:hover, .workspace-row:hover, .workspace-link-row:hover, .workspace-contract-row:hover {
       background: #f8fbf7;
     }
-    .entity-row, .action-row { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; align-items: center; }
+    .entity-row { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; align-items: center; }
+    .action-row {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 10px;
+      align-items: start;
+      background: #fffefa;
+    }
+    .action-main {
+      min-width: 0;
+      display: grid;
+      gap: 5px;
+    }
+    .action-main strong {
+      display: block;
+      overflow-wrap: anywhere;
+      font-size: 13px;
+    }
+    .action-main span {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+      overflow-wrap: anywhere;
+    }
+    .action-main code {
+      width: fit-content;
+      max-width: 100%;
+      display: block;
+      border: 1px solid #d9ded5;
+      border-radius: 6px;
+      padding: 5px 7px;
+      background: #f3f7f4;
+      color: #263d32;
+      white-space: pre-wrap;
+    }
+    .action-controls {
+      grid-column: 2;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-start;
+      gap: 6px;
+    }
+    .copy-command {
+      min-height: 26px;
+      border: 1px solid #89b6a5;
+      border-radius: 6px;
+      padding: 3px 8px;
+      background: #eef8f3;
+      color: var(--green);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .copy-command:hover {
+      border-color: var(--green);
+      background: #e2f2eb;
+    }
+    .copy-command:focus-visible {
+      outline: 2px solid #73c2ac;
+      outline-offset: 2px;
+    }
+    .copy-command[data-state="copied"] {
+      border-color: #8bb8bc;
+      background: #eef7f8;
+      color: var(--teal);
+    }
+    .copy-command[data-state="failed"] {
+      border-color: #d9a0a0;
+      background: #fff1f0;
+      color: var(--red);
+    }
     .impact-row, .workspace-link-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; }
     .impact-row strong, .pack-row strong, .coverage-row strong, .work-artifact-row strong, .workspace-row strong, .workspace-link-row strong, .workspace-contract-row strong { display: block; overflow-wrap: anywhere; }
     .impact-row strong, .evidence-meta strong, .coverage-row strong, .workspace-link-row strong {
@@ -1158,18 +1271,19 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       box-shadow: inset 3px 0 0 #73b29e;
     }
     .map-panel {
-      min-height: 420px;
+      min-height: 0;
       display: grid;
       grid-template-rows: auto minmax(0, 1fr);
     }
     .map-content {
       display: grid;
       grid-template-columns: minmax(0, 1fr) 250px;
-      min-height: 372px;
-      height: 100%;
+      height: 480px;
+      min-height: 0;
     }
     .map-frame {
       min-width: 0;
+      min-height: 0;
       padding: 14px;
       background:
         linear-gradient(180deg, rgba(24, 33, 27, 0.97), rgba(24, 33, 27, 0.94)),
@@ -1179,7 +1293,6 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       display: block;
       width: 100%;
       height: 100%;
-      min-height: 340px;
       filter: drop-shadow(0 16px 30px rgba(0, 0, 0, 0.18));
     }
     .map-column-label {
@@ -1265,6 +1378,7 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       color: var(--muted);
       font-size: 12px;
       line-height: 1.4;
+      overflow: auto;
     }
     .map-legend div {
       display: flex;
@@ -1373,11 +1487,14 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .impact-overview, .workbench, .bottom, .map-content, .summary-columns { grid-template-columns: 1fr; }
       .summary-columns > div:first-child, .map-legend { border-right: 0; border-left: 0; }
+      .map-content { height: auto; }
+      .impact-svg { height: 360px; }
     }
     @media (max-width: 560px) {
       .shell { padding: 10px; }
       .metrics { grid-template-columns: 1fr; }
-      .impact-row, .workspace-link-row { grid-template-columns: 1fr; }
+      .impact-row, .workspace-link-row, .action-row { grid-template-columns: 1fr; }
+      .action-controls { grid-column: auto; justify-content: flex-start; }
       .confidence-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .panel-heading { align-items: flex-start; flex-direction: column; }
     }
@@ -1418,7 +1535,7 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
         </section>
         <section class="panel">
           <h2>Verification Queue</h2>
-          <ul class="list">${actionRows || '<li class="empty">No recommended actions in this report.</li>'}</ul>
+          <ul class="list filterable">${actionRows || '<li class="empty">No recommended actions in this report.</li>'}</ul>
         </section>
       </div>
       <div class="stacked-pane">
@@ -1563,6 +1680,44 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       const value = event.target.value;
       if (value) window.location.href = '/?report=' + encodeURIComponent(value);
     });
+    async function copyText(value) {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value);
+        return;
+      }
+      const textarea = document.createElement('textarea');
+      textarea.value = value;
+      textarea.setAttribute('readonly', '');
+      textarea.style.position = 'fixed';
+      textarea.style.left = '-9999px';
+      document.body.append(textarea);
+      textarea.select();
+      try {
+        document.execCommand('copy');
+      } finally {
+        textarea.remove();
+      }
+    }
+    for (const button of document.querySelectorAll('.copy-command[data-command]')) {
+      button.addEventListener('click', async () => {
+        const command = button.getAttribute('data-command') || '';
+        const original = button.textContent || 'Copy';
+        button.disabled = true;
+        try {
+          await copyText(command);
+          button.textContent = 'Copied';
+          button.dataset.state = 'copied';
+        } catch {
+          button.textContent = 'Copy failed';
+          button.dataset.state = 'failed';
+        }
+        window.setTimeout(() => {
+          button.textContent = original;
+          delete button.dataset.state;
+          button.disabled = false;
+        }, 1200);
+      });
+    }
     if (affectedFiles[0]) selectImpact(affectedFiles[0].path);
   </script>
 </body>

@@ -25,8 +25,10 @@ const tsxLoaderPath = require.resolve('tsx');
 async function makeUiRepo(): Promise<{ repoRoot: string; reportId: string }> {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ui-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await mkdir(path.join(repoRoot, 'tests'), { recursive: true });
   await writeFile(path.join(repoRoot, 'src/a.ts'), 'import { b } from "./b";\nexport const a = b + 1;\n');
   await writeFile(path.join(repoRoot, 'src/b.ts'), 'export const b = 1;\n');
+  await writeFile(path.join(repoRoot, 'tests/b.test.ts'), 'import { b } from "../src/b";\nif (b !== 1) throw new Error("bad fixture");\n');
   await writeFile(path.join(repoRoot, 'README.md'), 'The UI fixture documents src/b.ts.\n');
   await initProject({ repoRoot });
   await indexProject({ repoRoot });
@@ -207,6 +209,7 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.equal(snapshot.reports.length, 1);
     assert.equal(snapshot.selectedReport?.affectedCount, snapshot.selectedReport?.affectedFiles.length);
     assert.ok(snapshot.selectedReport?.affectedFiles.some((item) => item.path === 'src/a.ts'));
+    assert.ok(snapshot.selectedReport?.actions.some((item) => item.target.path === 'tests/b.test.ts'));
     assert.ok((snapshot.graph?.nodes.length ?? 0) > 0);
     assert.ok(snapshot.coverage?.coverage.some((item) => item.path === 'src/a.ts'));
 
@@ -221,6 +224,12 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(html, /Impact Inspector/);
     assert.match(html, /data-impact-path="src\/a\.ts"/);
     assert.match(html, /selectedImpactPath/);
+    assert.match(html, /Verification Queue/);
+    assert.match(html, /Verify tests\/b\.test\.ts/);
+    assert.match(html, /class="copy-command"/);
+    assert.match(html, /data-command="npm test -- tests\/b\.test\.ts"/);
+    assert.match(html, /navigator\.clipboard\.writeText/);
+    assert.match(html, /\/source\?path=tests%2Fb\.test\.ts&amp;line=1/);
     assert.match(html, /Open source L\d+/);
     assert.match(html, /\/source\?path=src%2Fa\.ts&amp;line=\d+/);
     assert.match(html, /Coverage Gaps/);

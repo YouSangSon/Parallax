@@ -15,7 +15,7 @@ Claude Code, Codex, Cursor 같은 에이전트가 코드를 고치기 전에<br/
 
 [🚀 빠른 시작](#-빠른-시작) · [✨ 주요 기능](#-주요-기능) · [🧱 핵심 개념](#-핵심-개념) · [🤖 MCP](#-mcp--agents) · [🔒 안전 모델](#-안전-모델) · [🗺️ Roadmap](#%EF%B8%8F-roadmap) · [📚 더 읽기](#-더-읽기)
 
-<img src="docs/assets/parallax-ui-demo.png" alt="Parallax Impact Workbench UI showing impact summary, visual impact map, affected paths, and evidence" width="100%">
+<img src="docs/assets/parallax-ui-demo.png" alt="Parallax Impact Workbench UI showing impact summary, visual impact map, verification queue, affected paths, and evidence" width="100%">
 
 </div>
 
@@ -150,6 +150,7 @@ parallax profile --entity file:src/auth.ts
 | **Change Set** | 분석된 변경 파일과 entity 요약 |
 | **Impact Summary** | 변경 수, 영향 범위, confidence 분포, 우선 확인 대상을 첫 화면에 요약 |
 | **Impact Paths** | 변경 → 영향 대상까지의 relation path |
+| **Verification Queue** | 영향받는 테스트/리뷰 action을 복사 가능한 command와 target source link로 표시 |
 | **Evidence** | redacted snippet, source span, relation provenance |
 | **Impact Map** | changed root와 affected target을 실제 graph link로 연결하고, target 선택 시 관련 경로와 evidence를 강조 |
 | **Impact Inspector** | 선택한 target의 reason, relation path, evidence hit 수를 즉시 확인 |

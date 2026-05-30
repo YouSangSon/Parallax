@@ -220,6 +220,7 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(html, /Impact Paths/);
     assert.match(html, /Evidence/);
     assert.match(html, /Impact Summary/);
+    assert.match(html, /src\/b\.ts touches 3 targets through 4 displayed paths/);
     assert.match(html, /aria-label="Affected targets by product lane"/);
     assert.match(html, /@media \(max-width: 560px\)[\s\S]*\.metrics \{\s*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
     assert.match(html, /impact-lane-green[\s\S]*Runtime code[\s\S]*<b>1<\/b>[\s\S]*src\/a\.ts/);

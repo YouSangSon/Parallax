@@ -413,7 +413,7 @@ function renderImpactSummaryPanel(snapshot: UiSnapshot): string {
   const affectedFiles = [...report.affectedFiles].sort(compareAffectedFilesForUi).slice(0, 4);
   const primaryChange = report.changed[0] ? entityLabel(report.changed[0]) : report.changedFiles[0] ?? 'unknown change';
   const blast = blastRadiusLabel(report.affectedCount);
-  const graphEdges = snapshot.graph?.totalEdges ?? snapshot.graph?.edges.length ?? 0;
+  const displayedPathCount = buildImpactMap(snapshot.graph, report).edges.length;
   const impactLanes = buildImpactLanes(report, snapshot.workArtifacts);
   const confidenceRows = ['proven', 'inferred', 'heuristic', 'unknown'].map((confidence) => {
     const count = report.affectedFiles.filter((item) => item.confidence === confidence).length;
@@ -455,7 +455,7 @@ function renderImpactSummaryPanel(snapshot: UiSnapshot): string {
       <div class="blast-card">
         <span>Blast radius</span>
         <strong>${escapeHtml(blast)}</strong>
-        <small>${escapeHtml(primaryChange)} touches ${report.affectedCount} targets through ${graphEdges} graph links.</small>
+        <small>${escapeHtml(primaryChange)} touches ${report.affectedCount} targets through ${displayedPathCount} displayed paths.</small>
       </div>
       <div class="confidence-strip" aria-label="Affected files by confidence">${confidenceRows}</div>
       <ul class="impact-lanes filterable" aria-label="Affected targets by product lane">${laneRows}</ul>
@@ -986,7 +986,7 @@ function renderImpactMapPanel(graph: UiGraphPreview | null, report: UiReportPrev
           <div><span class="legend-swatch changed"></span>Changed root</div>
           <div><span class="legend-swatch affected"></span>Affected target</div>
           <div><span class="legend-swatch context"></span>Context node</div>
-          <ol>${edgeRows || '<li>No visible graph links.</li>'}</ol>
+          <ol>${edgeRows || '<li>No visible impact paths.</li>'}</ol>
           ${renderImpactInspector(firstImpact, report)}
         </aside>
       </div>

@@ -1601,6 +1601,18 @@ function hasStaticModifier(node: ts.Node): boolean {
   );
 }
 
+function isConstructorParameterProperty(node: ts.ParameterDeclaration): boolean {
+  return ts.isConstructorDeclaration(node.parent)
+    && Boolean(
+      (node as { modifiers?: readonly ts.ModifierLike[] }).modifiers?.some((modifier) =>
+        modifier.kind === ts.SyntaxKind.PrivateKeyword
+        || modifier.kind === ts.SyntaxKind.PublicKeyword
+        || modifier.kind === ts.SyntaxKind.ProtectedKeyword
+        || modifier.kind === ts.SyntaxKind.ReadonlyKeyword
+      )
+    );
+}
+
 function symbolEvidenceForMatch(
   file: ScannedFile,
   match: RegExpExecArray
@@ -1887,6 +1899,10 @@ function collectTypeScriptJavaScriptClassInstanceBindings(
     if (ts.isPropertyDeclaration(node) && ts.isIdentifier(node.name)) {
       const ownerClassName = enclosingTypeScriptJavaScriptClassName(node);
       const className = classNameFromNewExpression(node.initializer);
+      if (ownerClassName && className) addBinding(ownerClassName, node.name.text, className);
+    } else if (ts.isParameter(node) && ts.isIdentifier(node.name) && isConstructorParameterProperty(node)) {
+      const ownerClassName = enclosingTypeScriptJavaScriptClassName(node);
+      const className = classNameFromTypeReference(node.type);
       if (ownerClassName && className) addBinding(ownerClassName, node.name.text, className);
     }
     ts.forEachChild(node, visit);

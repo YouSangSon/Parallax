@@ -494,14 +494,22 @@ function renderImpactTriageStrip(snapshot: UiSnapshot): string {
   const map = buildImpactMap(snapshot.graph, report);
   const affectedFiles = [...report.affectedFiles].sort(compareAffectedFilesForUi);
   const primaryChange = report.changed[0] ? entityLabel(report.changed[0]) : report.changedFiles[0] ?? 'unknown change';
-  const topTarget = affectedFiles[0]?.path ?? 'No affected target';
+  const topTargetPath = affectedFiles[0]?.path;
+  const topTarget = topTargetPath ?? 'No affected target';
   const actionsByPath = actionByTargetPath(report.actions);
   const actionableTarget = affectedFiles.find((item) => actionsByPath.has(item.path));
   const nextAction = (actionableTarget ? actionsByPath.get(actionableTarget.path) : undefined) ?? report.actions[0];
+  const nextActionPath = nextAction?.target.path;
   const nextActionLabel = nextAction
-    ? nextAction.target.path ?? nextAction.target.displayName ?? nextAction.target.symbol ?? nextAction.target.id
+    ? nextActionPath ?? nextAction.target.displayName ?? nextAction.target.symbol ?? nextAction.target.id
     : 'No verification target';
   const nextCommand = nextAction ? actionCommandText(nextAction) : undefined;
+  const topTargetAttrs = topTargetPath
+    ? ` tabindex="0" role="button" data-impact-path="${escapeHtml(topTargetPath)}" data-filter-text="${escapeHtml(`${topTargetPath} ${affectedFiles[0]?.reason ?? ''}`)}"`
+    : '';
+  const nextActionAttrs = nextActionPath
+    ? ` tabindex="0" role="button" data-impact-path="${escapeHtml(nextActionPath)}" data-filter-text="${escapeHtml(`${nextActionPath} ${nextCommand ?? ''}`)}"`
+    : '';
   const blast = blastRadiusLabel(report.affectedCount);
   const provenCount = report.affectedFiles.filter((item) => item.confidence === 'proven').length;
   const heuristicCount = report.affectedFiles.filter((item) => item.confidence === 'heuristic').length;
@@ -525,12 +533,12 @@ function renderImpactTriageStrip(snapshot: UiSnapshot): string {
           <strong title="${escapeHtml(primaryChange)}">${escapeHtml(shortenMiddle(primaryChange, 44))}</strong>
           <small>${escapeHtml(String(report.changedCount))} changed input</small>
         </li>
-        <li class="triage-step triage-step-affected">
+        <li class="triage-step triage-step-affected${topTargetPath ? ' selectable-impact' : ''}"${topTargetAttrs}>
           <span>Affected targets</span>
           <strong>${escapeHtml(String(report.affectedCount))} targets</strong>
           <small title="${escapeHtml(topTarget)}">${escapeHtml(shortenMiddle(topTarget, 58))}</small>
         </li>
-        <li class="triage-step triage-step-action">
+        <li class="triage-step triage-step-action${nextActionPath ? ' selectable-impact' : ''}"${nextActionAttrs}>
           <span>Next verification</span>
           <strong title="${escapeHtml(nextActionLabel)}">${escapeHtml(shortenMiddle(nextActionLabel, 44))}</strong>
           <small title="${escapeHtml(nextCommand ?? '')}">${escapeHtml(nextCommand ? shortenMiddle(nextCommand, 64) : 'No verification action recorded.')}</small>
@@ -1826,6 +1834,10 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
     .triage-step-changed { border-left-color: var(--green); }
     .triage-step-affected { border-left-color: var(--teal); }
     .triage-step-action { border-left-color: var(--amber); }
+    .triage-step.selectable-impact:hover {
+      background: #f4fbf7;
+      box-shadow: inset 0 0 0 1px #9fcdbd;
+    }
     .impact-triage-wide .triage-head { box-shadow: inset 4px 0 0 var(--red); }
     .impact-triage-expanding .triage-head { box-shadow: inset 4px 0 0 var(--amber); }
     .impact-triage-contained .triage-head, .impact-triage-clear .triage-head { box-shadow: inset 4px 0 0 var(--green); }

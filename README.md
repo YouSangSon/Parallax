@@ -147,7 +147,7 @@ parallax profile --entity file:src/auth.ts
 
 | 화면 | 기능 |
 | :--- | :--- |
-| **Impact Triage** | changed root, affected target 수, 다음 verification target을 첫 화면에서 한 줄 흐름으로 요약 |
+| **Impact Triage** | changed root, affected target 수, 다음 verification target을 첫 화면에서 한 줄 흐름으로 요약하고 클릭 시 inspector/evidence 선택으로 연결 |
 | **Impact Map** | changed root에서 affected target까지 primary flow, 방향 화살표, 실제 graph link를 첫 화면 우선순위로 보여주고 target 선택 시 관련 경로와 evidence를 강조 |
 | **Impact Summary** | 변경 수, 영향 범위, confidence 분포, 우선 확인 대상을 첫 화면에 요약 |
 | **Impact Lanes** | runtime code, tests, docs/policy, contracts, config/infra 영향 범주를 한눈에 분리 |

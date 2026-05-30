@@ -141,7 +141,7 @@ abstract class RegexBackedSemanticAdapter implements SemanticAdapter {
 
 export class TypeScriptJavaScriptSemanticAdapter extends RegexBackedSemanticAdapter {
   override readonly knownGaps = [
-    'TypeScript/JavaScript import, declaration, imported call-site, local identifier call, same-class this.method, static ClassName.method, same-file factory return type instance method call, interface/type-literal method/function-property/function-type-alias signature and same-file interface extends typed receiver method call, typed local variable instance method call, typed parameter instance method call, constructor parameter property instance method call, constructor assignment instance method call, class field arrow method caller/target, typed class field instance method call, class field instance method call, same-file new ClassName instance call, and direct new ClassName().method call spans are parser-backed, but broader dynamic dispatch and type relation resolution are not yet complete',
+    'TypeScript/JavaScript import, declaration, imported call-site, local identifier call, same-class this.method, static ClassName.method, same-file factory return type instance method call, interface/type-literal method/function-property/function-type-alias signature, same-file interface extends typed receiver method call, and same-file type reference alias typed receiver method call spans are parser-backed, but broader dynamic dispatch and type relation resolution are not yet complete',
     'polymorphism, alias-heavy object flows, generated code, and framework-specific routing may require deeper adapters'
   ];
 
@@ -1754,18 +1754,24 @@ function extractCalls(
   );
   const localCallables = collectTypeScriptJavaScriptLocalCallables(file, sourceFile);
   const interfaceExtends = collectTypeScriptJavaScriptInterfaceExtends(sourceFile);
-  const factoryReturnTypes = collectTypeScriptJavaScriptFactoryReturnTypes(sourceFile);
+  const typeReferenceAliases = collectTypeScriptJavaScriptTypeReferenceAliases(sourceFile);
+  const factoryReturnTypes = collectTypeScriptJavaScriptFactoryReturnTypes(
+    sourceFile,
+    typeReferenceAliases
+  );
   const localInstanceBindings = collectTypeScriptJavaScriptLocalInstanceBindings(
     sourceFile,
     localCallables,
     factoryReturnTypes,
-    interfaceExtends
+    interfaceExtends,
+    typeReferenceAliases
   );
   const classInstanceBindings = collectTypeScriptJavaScriptClassInstanceBindings(
     sourceFile,
     localCallables,
     factoryReturnTypes,
-    interfaceExtends
+    interfaceExtends,
+    typeReferenceAliases
   );
   const staticClassCallables = collectTypeScriptJavaScriptStaticClassCallables(sourceFile);
   const calls: ExtractedCall[] = [];
@@ -1883,12 +1889,15 @@ function collectTypeScriptJavaScriptLocalCallables(
   return callables;
 }
 
-function collectTypeScriptJavaScriptFactoryReturnTypes(sourceFile: ts.SourceFile): Map<string, string> {
+function collectTypeScriptJavaScriptFactoryReturnTypes(
+  sourceFile: ts.SourceFile,
+  typeReferenceAliases: ReadonlyMap<string, string>
+): Map<string, string> {
   const factoryReturnTypes = new Map<string, string>();
 
   const addReturnType = (name: string | undefined, type: ts.TypeNode | undefined): void => {
     if (!name) return;
-    const className = classNameFromTypeReference(type);
+    const className = classNameFromTypeReference(type, typeReferenceAliases);
     if (!className) return;
     factoryReturnTypes.set(name, className);
   };
@@ -1928,11 +1937,31 @@ function collectTypeScriptJavaScriptInterfaceExtends(sourceFile: ts.SourceFile):
   return interfaceExtends;
 }
 
+function collectTypeScriptJavaScriptTypeReferenceAliases(sourceFile: ts.SourceFile): Map<string, string> {
+  const aliases = new Map<string, string>();
+
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isTypeAliasDeclaration(node)
+      && ts.isTypeReferenceNode(node.type)
+      && ts.isIdentifier(node.type.typeName)
+      && !node.type.typeArguments
+    ) {
+      aliases.set(node.name.text, node.type.typeName.text);
+    }
+    ts.forEachChild(node, visit);
+  };
+
+  visit(sourceFile);
+  return aliases;
+}
+
 function collectTypeScriptJavaScriptLocalInstanceBindings(
   sourceFile: ts.SourceFile,
   localCallables: ReadonlyMap<string, TsLocalCallable>,
   factoryReturnTypes: ReadonlyMap<string, string>,
-  interfaceExtends: ReadonlyMap<string, readonly string[]>
+  interfaceExtends: ReadonlyMap<string, readonly string[]>,
+  typeReferenceAliases: ReadonlyMap<string, string>
 ): Map<string, TsLocalInstanceBinding> {
   const bindings = new Map<string, TsLocalInstanceBinding>();
 
@@ -1944,11 +1973,11 @@ function collectTypeScriptJavaScriptLocalInstanceBindings(
   const visit = (node: ts.Node): void => {
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
       const className = classNameFromKnownInstanceExpression(node.initializer, factoryReturnTypes)
-        ?? classNameFromInitializedTypeReference(node);
+        ?? classNameFromInitializedTypeReference(node, typeReferenceAliases);
       const scope = enclosingLocalCaller(node, localCallables);
       if (className && scope) addBinding(scope.name, node.name.text, className);
     } else if (ts.isParameter(node) && ts.isIdentifier(node.name)) {
-      const className = classNameFromTypeReference(node.type);
+      const className = classNameFromTypeReference(node.type, typeReferenceAliases);
       const scope = enclosingLocalCaller(node, localCallables);
       if (className && scope) addBinding(scope.name, node.name.text, className);
     }
@@ -1963,7 +1992,8 @@ function collectTypeScriptJavaScriptClassInstanceBindings(
   sourceFile: ts.SourceFile,
   localCallables: ReadonlyMap<string, TsLocalCallable>,
   factoryReturnTypes: ReadonlyMap<string, string>,
-  interfaceExtends: ReadonlyMap<string, readonly string[]>
+  interfaceExtends: ReadonlyMap<string, readonly string[]>,
+  typeReferenceAliases: ReadonlyMap<string, string>
 ): Map<string, TsLocalInstanceBinding> {
   const bindings = new Map<string, TsLocalInstanceBinding>();
 
@@ -1976,16 +2006,20 @@ function collectTypeScriptJavaScriptClassInstanceBindings(
     if (ts.isPropertyDeclaration(node) && ts.isIdentifier(node.name)) {
       const ownerClassName = enclosingTypeScriptJavaScriptClassName(node);
       const className = classNameFromKnownInstanceExpression(node.initializer, factoryReturnTypes)
-        ?? classNameFromInitializedTypeReference(node);
+        ?? classNameFromInitializedTypeReference(node, typeReferenceAliases);
       if (ownerClassName && className) addBinding(ownerClassName, node.name.text, className);
     } else if (ts.isParameter(node) && ts.isIdentifier(node.name) && isConstructorParameterProperty(node)) {
       const ownerClassName = enclosingTypeScriptJavaScriptClassName(node);
-      const className = classNameFromTypeReference(node.type);
+      const className = classNameFromTypeReference(node.type, typeReferenceAliases);
       if (ownerClassName && className) addBinding(ownerClassName, node.name.text, className);
     } else if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
       const ownerClassName = enclosingTypeScriptJavaScriptClassName(node);
       const propertyName = thisPropertyName(node.left);
-      const className = classNameFromConstructorAssignment(node, factoryReturnTypes);
+      const className = classNameFromConstructorAssignment(
+        node,
+        factoryReturnTypes,
+        typeReferenceAliases
+      );
       if (ownerClassName && propertyName && className) addBinding(ownerClassName, propertyName, className);
     }
     ts.forEachChild(node, visit);
@@ -2052,9 +2086,27 @@ function classNameFromFactoryCall(
   return factoryReturnTypes.get(node.expression.text);
 }
 
-function classNameFromTypeReference(node: ts.TypeNode | undefined): string | undefined {
+function classNameFromTypeReference(
+  node: ts.TypeNode | undefined,
+  typeReferenceAliases: ReadonlyMap<string, string> = new Map(),
+  seen = new Set<string>()
+): string | undefined {
   if (!node || !ts.isTypeReferenceNode(node)) return undefined;
-  return ts.isIdentifier(node.typeName) ? node.typeName.text : undefined;
+  if (!ts.isIdentifier(node.typeName)) return undefined;
+  return resolveTypeReferenceAlias(node.typeName.text, typeReferenceAliases, seen);
+}
+
+function resolveTypeReferenceAlias(
+  typeName: string,
+  typeReferenceAliases: ReadonlyMap<string, string>,
+  seen = new Set<string>()
+): string {
+  if (seen.has(typeName)) return typeName;
+  seen.add(typeName);
+  const targetName = typeReferenceAliases.get(typeName);
+  return targetName
+    ? resolveTypeReferenceAlias(targetName, typeReferenceAliases, seen)
+    : typeName;
 }
 
 function returnTypeFromCallableInitializer(node: ts.Expression | undefined): ts.TypeNode | undefined {
@@ -2064,31 +2116,34 @@ function returnTypeFromCallableInitializer(node: ts.Expression | undefined): ts.
 }
 
 function classNameFromInitializedTypeReference(
-  node: ts.VariableDeclaration | ts.PropertyDeclaration
+  node: ts.VariableDeclaration | ts.PropertyDeclaration,
+  typeReferenceAliases: ReadonlyMap<string, string>
 ): string | undefined {
   if (!node.initializer) return undefined;
-  return classNameFromTypeReference(node.type);
+  return classNameFromTypeReference(node.type, typeReferenceAliases);
 }
 
 function classNameFromConstructorAssignment(
   node: ts.BinaryExpression,
-  factoryReturnTypes: ReadonlyMap<string, string>
+  factoryReturnTypes: ReadonlyMap<string, string>,
+  typeReferenceAliases: ReadonlyMap<string, string>
 ): string | undefined {
   const constructorNode = enclosingConstructorDeclaration(node);
   if (!constructorNode) return undefined;
   const className = classNameFromKnownInstanceExpression(node.right, factoryReturnTypes);
   if (className) return className;
   if (!ts.isIdentifier(node.right)) return undefined;
-  return classNameFromConstructorParameter(constructorNode, node.right.text);
+  return classNameFromConstructorParameter(constructorNode, node.right.text, typeReferenceAliases);
 }
 
 function classNameFromConstructorParameter(
   node: ts.ConstructorDeclaration,
-  parameterName: string
+  parameterName: string,
+  typeReferenceAliases: ReadonlyMap<string, string>
 ): string | undefined {
   for (const parameter of node.parameters) {
     if (!ts.isIdentifier(parameter.name) || parameter.name.text !== parameterName) continue;
-    return classNameFromTypeReference(parameter.type);
+    return classNameFromTypeReference(parameter.type, typeReferenceAliases);
   }
   return undefined;
 }

@@ -62,6 +62,7 @@ MCP는 read-only로 안정화됐다. 다음은 agent 사용성을 깊게 보는 
 - [x] triage strip에서 top affected/verification target을 클릭하면 inspector/evidence 선택으로 연결
 - [x] impact map edge/label도 selected target과 함께 강조해 그래프 해석성 강화
 - [x] 초기 primary flow/inspector를 action-first selected target 기준으로 통일
+- [x] map legend row도 selected target과 동기화하고 서버 렌더링부터 selected state 표시
 
 ## 6. 회고와 측정
 

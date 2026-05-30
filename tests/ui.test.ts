@@ -235,11 +235,12 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(html, /Primary impact flow/);
     assert.match(html, /Primary impact flow[\s\S]*src\/b\.ts <em>&rarr;<\/em> tests\/b\.test\.ts/);
     assert.match(html, /map-stage-changed/);
-    assert.match(html, /class="map-edge-group selectable-impact"[\s\S]*data-impact-path="tests\/b\.test\.ts"[\s\S]*class="map-edge confidence-proven"/);
+    assert.match(html, /class="map-edge-group selectable-impact selected-impact"[\s\S]*data-impact-path="tests\/b\.test\.ts"[\s\S]*class="map-edge confidence-proven"/);
     assert.match(html, /marker-end="url\(#impactArrow\)"/);
     assert.match(html, /4 displayed paths/);
     assert.match(html, /viewBox="0 0 760 /);
     assert.match(html, /class="impact-svg"/);
+    assert.match(html, /class="map-legend-edge selectable-impact selected-impact" tabindex="0" role="button" data-impact-path="tests\/b\.test\.ts"/);
     assert.match(html, /Impact Inspector/);
     assert.ok(html.indexOf('Impact Map') < html.indexOf('Impact Summary'));
     assert.match(html, /Next verification/);

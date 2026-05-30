@@ -1033,13 +1033,19 @@ function renderImpactMapPanel(graph: UiGraphPreview | null, report: UiReportPrev
     `;
   }
 
-  const svg = renderImpactMapSvg(map);
+  const selectedPath = firstImpact?.path;
+  const svg = renderImpactMapSvg(map, selectedPath);
   const insight = renderImpactMapInsight(map, displayedPathCount, firstImpact?.path);
   const edgeRows = map.edges.slice(0, 6).map((edge) => {
     const from = map.nodeById.get(edge.from);
     const to = map.nodeById.get(edge.to);
+    const targetPath = edge.targetPath ?? to?.path;
+    const edgeClasses = `map-legend-edge${targetPath ? ' selectable-impact' : ''}${targetPath === selectedPath ? ' selected-impact' : ''}`;
+    const edgeAttrs = targetPath
+      ? ` class="${escapeHtml(edgeClasses)}" tabindex="0" role="button" data-impact-path="${escapeHtml(targetPath)}" data-filter-text="${escapeHtml(`${from?.label ?? edge.from} ${edge.label} ${to?.label ?? edge.to}`)}"`
+      : ` class="${escapeHtml(edgeClasses)}"`;
     return `
-      <li>
+      <li${edgeAttrs}>
         <strong>${escapeHtml(from?.label ?? edge.from)}</strong>
         <span>${escapeHtml(edge.label)}</span>
         <strong>${escapeHtml(to?.label ?? edge.to)}</strong>
@@ -1155,7 +1161,7 @@ function buildImpactMap(
   return { changedNodes, affectedNodes, edges: edges.slice(0, 12), nodeById };
 }
 
-function renderImpactMapSvg(map: ReturnType<typeof buildImpactMap>): string {
+function renderImpactMapSvg(map: ReturnType<typeof buildImpactMap>, selectedPath?: string): string {
   const width = 760;
   const leftX = 38;
   const rightX = 462;
@@ -1177,8 +1183,9 @@ function renderImpactMapSvg(map: ReturnType<typeof buildImpactMap>): string {
     const endX = rightX;
     const controlX = (startX + endX) / 2;
     const labelY = Math.min(height - 32, Math.max(78, (fromY + toY) / 2 - 8));
+    const edgeClass = `map-edge-group${edge.targetPath ? ' selectable-impact' : ''}${edge.targetPath === selectedPath ? ' selected-impact' : ''}`;
     const edgeAttrs = edge.targetPath
-      ? ` class="map-edge-group selectable-impact" data-impact-path="${escapeHtml(edge.targetPath)}" tabindex="0" role="button" aria-label="Inspect ${escapeHtml(edge.targetPath)} impact path"`
+      ? ` class="${escapeHtml(edgeClass)}" data-impact-path="${escapeHtml(edge.targetPath)}" tabindex="0" role="button" aria-label="Inspect ${escapeHtml(edge.targetPath)} impact path"`
       : ' class="map-edge-group"';
     return `
       <g${edgeAttrs}>
@@ -1188,10 +1195,10 @@ function renderImpactMapSvg(map: ReturnType<typeof buildImpactMap>): string {
     `;
   }).join('');
   const changedNodes = map.changedNodes.map((node, index) =>
-    renderImpactMapNode(node, leftX, (changedPositions[index] ?? 92) - nodeHeight / 2, nodeWidth, nodeHeight)
+    renderImpactMapNode(node, leftX, (changedPositions[index] ?? 92) - nodeHeight / 2, nodeWidth, nodeHeight, selectedPath)
   ).join('');
   const affectedNodes = map.affectedNodes.map((node, index) =>
-    renderImpactMapNode(node, rightX, (affectedPositions[index] ?? 92) - nodeHeight / 2, nodeWidth, nodeHeight)
+    renderImpactMapNode(node, rightX, (affectedPositions[index] ?? 92) - nodeHeight / 2, nodeWidth, nodeHeight, selectedPath)
   ).join('');
 
   return `
@@ -1213,12 +1220,12 @@ function renderImpactMapSvg(map: ReturnType<typeof buildImpactMap>): string {
   `;
 }
 
-function renderImpactMapNode(node: ImpactMapNode, x: number, y: number, width: number, height: number): string {
+function renderImpactMapNode(node: ImpactMapNode, x: number, y: number, width: number, height: number, selectedPath?: string): string {
   const label = compactMapLabel(node.label, 42);
   const impactAttrs = node.group === 'affected' && node.path
     ? ` data-impact-path="${escapeHtml(node.path)}" tabindex="0" role="button" aria-label="Inspect ${escapeHtml(node.path)}"`
     : '';
-  const selectableClass = impactAttrs ? ' selectable-impact' : '';
+  const selectableClass = impactAttrs ? ` selectable-impact${node.path === selectedPath ? ' selected-impact' : ''}` : '';
   return `
     <g class="map-node${selectableClass} map-node-${escapeHtml(node.group)} confidence-node-${escapeHtml(node.confidence ?? 'unknown')}" transform="translate(${x} ${y})"${impactAttrs}>
       <title>${escapeHtml(node.label)}</title>
@@ -2726,6 +2733,17 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       display: block;
       color: var(--ink);
       overflow-wrap: anywhere;
+    }
+    .map-legend-edge.selectable-impact {
+      cursor: pointer;
+      border-radius: 8px;
+      padding: 6px;
+      margin-left: -6px;
+    }
+    .map-legend-edge.selectable-impact:hover,
+    .map-legend-edge.selected-impact {
+      background: #eef8f3;
+      box-shadow: inset 0 0 0 2px #73b29e;
     }
     .map-legend li span {
       display: inline-block;

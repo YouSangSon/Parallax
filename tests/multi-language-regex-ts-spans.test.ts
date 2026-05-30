@@ -246,6 +246,892 @@ test('TypeScript JavaScript adapter records parser-backed declaration and call s
   }
 });
 
+test('TypeScript JavaScript adapter records parser-backed type heritage relation spans', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-type-heritage-spans-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+
+  await writeFile(path.join(repoRoot, 'src/guard.ts'), [
+    'interface BaseValidator {',
+    '  validateSession(token: string): boolean;',
+    '}',
+    '',
+    'type AuditableValidator = {',
+    '  auditSession(token: string): boolean;',
+    '};',
+    '',
+    'interface SessionValidator extends BaseValidator, AuditableValidator {}',
+    '',
+    'class BaseGuard {}',
+    '',
+    'class SessionGuard extends BaseGuard implements SessionValidator {',
+    '  validateSession(token: string): boolean {',
+    '    return token.length > 0;',
+    '  }',
+    '  auditSession(token: string): boolean {',
+    '    return token.length > 0;',
+    '  }',
+    '}',
+    ''
+  ].join('\n'));
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const relations = db
+      .prepare(`
+        SELECT
+          r.kind,
+          source.symbol AS source_symbol,
+          target.symbol AS target_symbol,
+          r.provenance,
+          ev.snippet,
+          ev.start_line,
+          ev.end_line,
+          ev.start_col,
+          ev.end_col,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities source ON source.id = r.source_entity_id
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind IN ('EXTENDS', 'IMPLEMENTS')
+          AND source.path = 'src/guard.ts'
+          AND target.path = 'src/guard.ts'
+        ORDER BY ev.start_line, ev.start_col
+      `)
+      .all(index.indexRunId) as Array<{
+        kind: string;
+        source_symbol: string;
+        target_symbol: string;
+        provenance: string;
+        snippet: string;
+        start_line: number | null;
+        end_line: number | null;
+        start_col: number | null;
+        end_col: number | null;
+        adapter_id: string | null;
+      }>;
+
+    assert.deepEqual(
+      relations.map((row) => [
+        row.kind,
+        row.source_symbol,
+        row.target_symbol,
+        row.snippet
+      ]),
+      [
+        ['EXTENDS', 'SessionValidator', 'BaseValidator', 'BaseValidator'],
+        ['EXTENDS', 'SessionValidator', 'AuditableValidator', 'AuditableValidator'],
+        ['EXTENDS', 'SessionGuard', 'BaseGuard', 'BaseGuard'],
+        ['IMPLEMENTS', 'SessionGuard', 'SessionValidator', 'SessionValidator']
+      ]
+    );
+    assert.deepEqual(relations.map((row) => row.start_line), [9, 9, 13, 13]);
+    assert.ok(relations.every((row) => row.end_line !== null));
+    assert.ok(relations.every((row) => row.start_col !== null));
+    assert.ok(relations.every((row) => row.end_col !== null));
+    assert.ok(relations.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
+    assert.ok(relations.every((row) => row.provenance.startsWith('typescript:')));
+  } finally {
+    db.close();
+  }
+});
+
+test('TypeScript JavaScript adapter records parser-backed imported type heritage relation spans', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-imported-type-heritage-spans-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+
+  await writeFile(path.join(repoRoot, 'src/base.ts'), [
+    'export interface BaseValidator {',
+    '  validateSession(token: string): boolean;',
+    '}',
+    '',
+    'export type AuditableValidator = {',
+    '  auditSession(token: string): boolean;',
+    '};',
+    '',
+    'export class BaseGuard {}',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/guard.ts'), [
+    'import { BaseGuard } from "./base";',
+    'import type { BaseValidator as Validator, AuditableValidator } from "./base";',
+    '',
+    'interface SessionValidator extends Validator, AuditableValidator {}',
+    '',
+    'class SessionGuard extends BaseGuard implements SessionValidator {}',
+    ''
+  ].join('\n'));
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const relations = db
+      .prepare(`
+        SELECT
+          r.kind,
+          source.path AS source_path,
+          source.symbol AS source_symbol,
+          target.path AS target_path,
+          target.symbol AS target_symbol,
+          r.provenance,
+          ev.snippet,
+          ev.start_line,
+          ev.end_line,
+          ev.start_col,
+          ev.end_col,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities source ON source.id = r.source_entity_id
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind IN ('EXTENDS', 'IMPLEMENTS')
+          AND source.path = 'src/guard.ts'
+        ORDER BY ev.start_line, ev.start_col
+      `)
+      .all(index.indexRunId) as Array<{
+        kind: string;
+        source_path: string;
+        source_symbol: string;
+        target_path: string;
+        target_symbol: string;
+        provenance: string;
+        snippet: string;
+        start_line: number | null;
+        end_line: number | null;
+        start_col: number | null;
+        end_col: number | null;
+        adapter_id: string | null;
+      }>;
+
+    assert.deepEqual(
+      relations.map((row) => [
+        row.kind,
+        row.source_symbol,
+        row.target_path,
+        row.target_symbol,
+        row.snippet
+      ]),
+      [
+        ['EXTENDS', 'SessionValidator', 'src/base.ts', 'BaseValidator', 'Validator'],
+        ['EXTENDS', 'SessionValidator', 'src/base.ts', 'AuditableValidator', 'AuditableValidator'],
+        ['EXTENDS', 'SessionGuard', 'src/base.ts', 'BaseGuard', 'BaseGuard'],
+        ['IMPLEMENTS', 'SessionGuard', 'src/guard.ts', 'SessionValidator', 'SessionValidator']
+      ]
+    );
+    assert.deepEqual(relations.map((row) => row.start_line), [4, 4, 6, 6]);
+    assert.ok(relations.every((row) => row.end_line !== null));
+    assert.ok(relations.every((row) => row.start_col !== null));
+    assert.ok(relations.every((row) => row.end_col !== null));
+    assert.ok(relations.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
+    assert.ok(relations.every((row) => row.provenance.startsWith('typescript:')));
+  } finally {
+    db.close();
+  }
+});
+
+test('TypeScript JavaScript adapter records parser-backed named re-exported type heritage and receiver spans', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-named-reexported-type-spans-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+
+  await writeFile(path.join(repoRoot, 'src/contracts.ts'), [
+    'export interface SessionValidator {',
+    '  validateSession(token: string): boolean;',
+    '}',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/barrel.ts'), [
+    'export { SessionValidator } from "./contracts";',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/guard.ts'), [
+    'import type { SessionValidator as Validator } from "./barrel";',
+    '',
+    'type GuardAlias = Validator;',
+    '',
+    'interface ChildValidator extends Validator {}',
+    '',
+    'export function authorize(guard: GuardAlias, token: string): boolean {',
+    '  return guard.validateSession(token);',
+    '}',
+    ''
+  ].join('\n'));
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const relations = db
+      .prepare(`
+        SELECT
+          r.kind,
+          source.symbol AS source_symbol,
+          target.path AS target_path,
+          target.symbol AS target_symbol,
+          ev.snippet,
+          ev.start_line,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities source ON source.id = r.source_entity_id
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind = 'EXTENDS'
+          AND source.path = 'src/guard.ts'
+          AND target.path = 'src/contracts.ts'
+        ORDER BY ev.start_line, ev.start_col
+      `)
+      .all(index.indexRunId) as Array<{
+        kind: string;
+        source_symbol: string;
+        target_path: string;
+        target_symbol: string;
+        snippet: string;
+        start_line: number | null;
+        adapter_id: string | null;
+      }>;
+
+    assert.deepEqual(
+      relations.map((row) => [
+        row.kind,
+        row.source_symbol,
+        row.target_symbol,
+        row.snippet
+      ]),
+      [
+        ['EXTENDS', 'ChildValidator', 'SessionValidator', 'Validator']
+      ]
+    );
+    assert.equal(relations[0]?.start_line, 5);
+    assert.ok(relations.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
+
+    const calls = db
+      .prepare(`
+        SELECT
+          source.symbol AS source_symbol,
+          target.symbol AS target_symbol,
+          r.provenance,
+          ev.snippet,
+          ev.start_line,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities source ON source.id = r.source_entity_id
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind = 'CALLS'
+          AND source.kind = 'symbol'
+          AND target.kind = 'symbol'
+          AND source.path = 'src/guard.ts'
+          AND target.path = 'src/contracts.ts'
+        ORDER BY ev.start_line, ev.start_col
+      `)
+      .all(index.indexRunId) as Array<{
+        source_symbol: string;
+        target_symbol: string;
+        provenance: string;
+        snippet: string;
+        start_line: number | null;
+        adapter_id: string | null;
+      }>;
+
+    assert.deepEqual(
+      calls.map((row) => [
+        row.source_symbol,
+        row.target_symbol,
+        row.snippet
+      ]),
+      [
+        ['authorize', 'SessionValidator.validateSession', 'guard.validateSession(token)']
+      ]
+    );
+    assert.equal(calls[0]?.start_line, 8);
+    assert.ok(calls.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
+    assert.ok(calls.every((row) => row.provenance.startsWith('instance-call:')));
+  } finally {
+    db.close();
+  }
+});
+
+test('TypeScript JavaScript adapter records parser-backed star re-exported type heritage and receiver spans', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-star-reexported-type-spans-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+
+  await writeFile(path.join(repoRoot, 'src/contracts.ts'), [
+    'export interface SessionValidator {',
+    '  validateSession(token: string): boolean;',
+    '}',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/barrel.ts'), [
+    'export * from "./contracts";',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/guard.ts'), [
+    'import type { SessionValidator as Validator } from "./barrel";',
+    '',
+    'type GuardAlias = Validator;',
+    '',
+    'interface ChildValidator extends Validator {}',
+    '',
+    'export function authorize(guard: GuardAlias, token: string): boolean {',
+    '  return guard.validateSession(token);',
+    '}',
+    ''
+  ].join('\n'));
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const relations = db
+      .prepare(`
+        SELECT
+          r.kind,
+          source.symbol AS source_symbol,
+          target.path AS target_path,
+          target.symbol AS target_symbol,
+          ev.snippet,
+          ev.start_line,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities source ON source.id = r.source_entity_id
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind = 'EXTENDS'
+          AND source.path = 'src/guard.ts'
+          AND target.path = 'src/contracts.ts'
+        ORDER BY ev.start_line, ev.start_col
+      `)
+      .all(index.indexRunId) as Array<{
+        kind: string;
+        source_symbol: string;
+        target_path: string;
+        target_symbol: string;
+        snippet: string;
+        start_line: number | null;
+        adapter_id: string | null;
+      }>;
+
+    assert.deepEqual(
+      relations.map((row) => [
+        row.kind,
+        row.source_symbol,
+        row.target_symbol,
+        row.snippet
+      ]),
+      [
+        ['EXTENDS', 'ChildValidator', 'SessionValidator', 'Validator']
+      ]
+    );
+    assert.equal(relations[0]?.start_line, 5);
+    assert.ok(relations.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
+
+    const calls = db
+      .prepare(`
+        SELECT
+          source.symbol AS source_symbol,
+          target.symbol AS target_symbol,
+          r.provenance,
+          ev.snippet,
+          ev.start_line,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities source ON source.id = r.source_entity_id
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind = 'CALLS'
+          AND source.kind = 'symbol'
+          AND target.kind = 'symbol'
+          AND source.path = 'src/guard.ts'
+          AND target.path = 'src/contracts.ts'
+        ORDER BY ev.start_line, ev.start_col
+      `)
+      .all(index.indexRunId) as Array<{
+        source_symbol: string;
+        target_symbol: string;
+        provenance: string;
+        snippet: string;
+        start_line: number | null;
+        adapter_id: string | null;
+      }>;
+
+    assert.deepEqual(
+      calls.map((row) => [
+        row.source_symbol,
+        row.target_symbol,
+        row.snippet
+      ]),
+      [
+        ['authorize', 'SessionValidator.validateSession', 'guard.validateSession(token)']
+      ]
+    );
+    assert.equal(calls[0]?.start_line, 8);
+    assert.ok(calls.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
+    assert.ok(calls.every((row) => row.provenance.startsWith('instance-call:')));
+  } finally {
+    db.close();
+  }
+});
+
+test('TypeScript JavaScript adapter records parser-backed namespace re-exported type heritage and receiver spans', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-namespace-reexported-type-spans-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+
+  await writeFile(path.join(repoRoot, 'src/contracts.ts'), [
+    'export interface SessionValidator {',
+    '  validateSession(token: string): boolean;',
+    '}',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/barrel.ts'), [
+    'export * as Contracts from "./contracts";',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/guard.ts'), [
+    'import type { Contracts as ContractTypes } from "./barrel";',
+    '',
+    'type GuardAlias = ContractTypes.SessionValidator;',
+    '',
+    'interface ChildValidator extends ContractTypes.SessionValidator {}',
+    '',
+    'export function authorize(guard: GuardAlias, token: string): boolean {',
+    '  return guard.validateSession(token);',
+    '}',
+    ''
+  ].join('\n'));
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const relations = db
+      .prepare(`
+        SELECT
+          r.kind,
+          source.symbol AS source_symbol,
+          target.path AS target_path,
+          target.symbol AS target_symbol,
+          ev.snippet,
+          ev.start_line,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities source ON source.id = r.source_entity_id
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind = 'EXTENDS'
+          AND source.path = 'src/guard.ts'
+          AND target.path = 'src/contracts.ts'
+        ORDER BY ev.start_line, ev.start_col
+      `)
+      .all(index.indexRunId) as Array<{
+        kind: string;
+        source_symbol: string;
+        target_path: string;
+        target_symbol: string;
+        snippet: string;
+        start_line: number | null;
+        adapter_id: string | null;
+      }>;
+
+    assert.deepEqual(
+      relations.map((row) => [
+        row.kind,
+        row.source_symbol,
+        row.target_symbol,
+        row.snippet
+      ]),
+      [
+        ['EXTENDS', 'ChildValidator', 'SessionValidator', 'ContractTypes.SessionValidator']
+      ]
+    );
+    assert.equal(relations[0]?.start_line, 5);
+    assert.ok(relations.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
+
+    const calls = db
+      .prepare(`
+        SELECT
+          source.symbol AS source_symbol,
+          target.symbol AS target_symbol,
+          r.provenance,
+          ev.snippet,
+          ev.start_line,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities source ON source.id = r.source_entity_id
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind = 'CALLS'
+          AND source.kind = 'symbol'
+          AND target.kind = 'symbol'
+          AND source.path = 'src/guard.ts'
+          AND target.path = 'src/contracts.ts'
+        ORDER BY ev.start_line, ev.start_col
+      `)
+      .all(index.indexRunId) as Array<{
+        source_symbol: string;
+        target_symbol: string;
+        provenance: string;
+        snippet: string;
+        start_line: number | null;
+        adapter_id: string | null;
+      }>;
+
+    assert.deepEqual(
+      calls.map((row) => [
+        row.source_symbol,
+        row.target_symbol,
+        row.snippet
+      ]),
+      [
+        ['authorize', 'SessionValidator.validateSession', 'guard.validateSession(token)']
+      ]
+    );
+    assert.equal(calls[0]?.start_line, 8);
+    assert.ok(calls.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
+    assert.ok(calls.every((row) => row.provenance.startsWith('instance-call:')));
+  } finally {
+    db.close();
+  }
+});
+
+test('TypeScript JavaScript adapter records parser-backed default imported type heritage relation spans', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-default-imported-type-heritage-spans-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+
+  await writeFile(path.join(repoRoot, 'src/base-guard.ts'), [
+    'export default class BaseGuard {}',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/base-validator.ts'), [
+    'export default interface BaseValidator {',
+    '  validateSession(token: string): boolean;',
+    '}',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/guard.ts'), [
+    'import BaseGuard from "./base-guard";',
+    'import type Validator from "./base-validator";',
+    '',
+    'interface SessionValidator extends Validator {}',
+    '',
+    'class SessionGuard extends BaseGuard implements SessionValidator {}',
+    ''
+  ].join('\n'));
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const relations = db
+      .prepare(`
+        SELECT
+          r.kind,
+          source.path AS source_path,
+          source.symbol AS source_symbol,
+          target.path AS target_path,
+          target.symbol AS target_symbol,
+          r.provenance,
+          ev.snippet,
+          ev.start_line,
+          ev.end_line,
+          ev.start_col,
+          ev.end_col,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities source ON source.id = r.source_entity_id
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind IN ('EXTENDS', 'IMPLEMENTS')
+          AND source.path = 'src/guard.ts'
+        ORDER BY ev.start_line, ev.start_col
+      `)
+      .all(index.indexRunId) as Array<{
+        kind: string;
+        source_path: string;
+        source_symbol: string;
+        target_path: string;
+        target_symbol: string;
+        provenance: string;
+        snippet: string;
+        start_line: number | null;
+        end_line: number | null;
+        start_col: number | null;
+        end_col: number | null;
+        adapter_id: string | null;
+      }>;
+
+    assert.deepEqual(
+      relations.map((row) => [
+        row.kind,
+        row.source_symbol,
+        row.target_path,
+        row.target_symbol,
+        row.snippet
+      ]),
+      [
+        ['EXTENDS', 'SessionValidator', 'src/base-validator.ts', 'BaseValidator', 'Validator'],
+        ['EXTENDS', 'SessionGuard', 'src/base-guard.ts', 'BaseGuard', 'BaseGuard'],
+        ['IMPLEMENTS', 'SessionGuard', 'src/guard.ts', 'SessionValidator', 'SessionValidator']
+      ]
+    );
+    assert.deepEqual(relations.map((row) => row.start_line), [4, 6, 6]);
+    assert.ok(relations.every((row) => row.end_line !== null));
+    assert.ok(relations.every((row) => row.start_col !== null));
+    assert.ok(relations.every((row) => row.end_col !== null));
+    assert.ok(relations.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
+    assert.ok(relations.every((row) => row.provenance.startsWith('typescript:')));
+  } finally {
+    db.close();
+  }
+});
+
+test('TypeScript JavaScript adapter records parser-backed default re-exported type heritage and receiver spans', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-default-reexported-type-spans-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+
+  await writeFile(path.join(repoRoot, 'src/contracts.ts'), [
+    'export interface SessionValidator {',
+    '  validateSession(token: string): boolean;',
+    '}',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/barrel.ts'), [
+    'export { SessionValidator as default } from "./contracts";',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/guard.ts'), [
+    'import type Validator from "./barrel";',
+    '',
+    'type GuardAlias = Validator;',
+    '',
+    'interface ChildValidator extends Validator {}',
+    '',
+    'export function authorize(guard: GuardAlias, token: string): boolean {',
+    '  return guard.validateSession(token);',
+    '}',
+    ''
+  ].join('\n'));
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const relations = db
+      .prepare(`
+        SELECT
+          r.kind,
+          source.symbol AS source_symbol,
+          target.path AS target_path,
+          target.symbol AS target_symbol,
+          ev.snippet,
+          ev.start_line,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities source ON source.id = r.source_entity_id
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind = 'EXTENDS'
+          AND source.path = 'src/guard.ts'
+          AND target.path = 'src/contracts.ts'
+        ORDER BY ev.start_line, ev.start_col
+      `)
+      .all(index.indexRunId) as Array<{
+        kind: string;
+        source_symbol: string;
+        target_path: string;
+        target_symbol: string;
+        snippet: string;
+        start_line: number | null;
+        adapter_id: string | null;
+      }>;
+
+    assert.deepEqual(
+      relations.map((row) => [
+        row.kind,
+        row.source_symbol,
+        row.target_symbol,
+        row.snippet
+      ]),
+      [
+        ['EXTENDS', 'ChildValidator', 'SessionValidator', 'Validator']
+      ]
+    );
+    assert.equal(relations[0]?.start_line, 5);
+    assert.ok(relations.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
+
+    const calls = db
+      .prepare(`
+        SELECT
+          source.symbol AS source_symbol,
+          target.symbol AS target_symbol,
+          r.provenance,
+          ev.snippet,
+          ev.start_line,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities source ON source.id = r.source_entity_id
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind = 'CALLS'
+          AND source.kind = 'symbol'
+          AND target.kind = 'symbol'
+          AND source.path = 'src/guard.ts'
+          AND target.path = 'src/contracts.ts'
+        ORDER BY ev.start_line, ev.start_col
+      `)
+      .all(index.indexRunId) as Array<{
+        source_symbol: string;
+        target_symbol: string;
+        provenance: string;
+        snippet: string;
+        start_line: number | null;
+        adapter_id: string | null;
+      }>;
+
+    assert.deepEqual(
+      calls.map((row) => [
+        row.source_symbol,
+        row.target_symbol,
+        row.snippet
+      ]),
+      [
+        ['authorize', 'SessionValidator.validateSession', 'guard.validateSession(token)']
+      ]
+    );
+    assert.equal(calls[0]?.start_line, 8);
+    assert.ok(calls.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
+    assert.ok(calls.every((row) => row.provenance.startsWith('instance-call:')));
+  } finally {
+    db.close();
+  }
+});
+
+test('TypeScript JavaScript adapter records parser-backed namespace imported type heritage relation spans', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-namespace-imported-type-heritage-spans-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+
+  await writeFile(path.join(repoRoot, 'src/base.ts'), [
+    'export interface BaseValidator {',
+    '  validateSession(token: string): boolean;',
+    '}',
+    '',
+    'export type AuditableValidator = {',
+    '  auditSession(token: string): boolean;',
+    '};',
+    '',
+    'export class BaseGuard {}',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/guard.ts'), [
+    'import type * as Base from "./base";',
+    '',
+    'interface SessionValidator extends Base.BaseValidator, Base.AuditableValidator {}',
+    '',
+    'class SessionGuard extends Base.BaseGuard implements SessionValidator {}',
+    ''
+  ].join('\n'));
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const relations = db
+      .prepare(`
+        SELECT
+          r.kind,
+          source.path AS source_path,
+          source.symbol AS source_symbol,
+          target.path AS target_path,
+          target.symbol AS target_symbol,
+          r.provenance,
+          ev.snippet,
+          ev.start_line,
+          ev.end_line,
+          ev.start_col,
+          ev.end_col,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities source ON source.id = r.source_entity_id
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind IN ('EXTENDS', 'IMPLEMENTS')
+          AND source.path = 'src/guard.ts'
+        ORDER BY ev.start_line, ev.start_col
+      `)
+      .all(index.indexRunId) as Array<{
+        kind: string;
+        source_path: string;
+        source_symbol: string;
+        target_path: string;
+        target_symbol: string;
+        provenance: string;
+        snippet: string;
+        start_line: number | null;
+        end_line: number | null;
+        start_col: number | null;
+        end_col: number | null;
+        adapter_id: string | null;
+      }>;
+
+    assert.deepEqual(
+      relations.map((row) => [
+        row.kind,
+        row.source_symbol,
+        row.target_path,
+        row.target_symbol,
+        row.snippet
+      ]),
+      [
+        ['EXTENDS', 'SessionValidator', 'src/base.ts', 'BaseValidator', 'Base.BaseValidator'],
+        ['EXTENDS', 'SessionValidator', 'src/base.ts', 'AuditableValidator', 'Base.AuditableValidator'],
+        ['EXTENDS', 'SessionGuard', 'src/base.ts', 'BaseGuard', 'Base.BaseGuard'],
+        ['IMPLEMENTS', 'SessionGuard', 'src/guard.ts', 'SessionValidator', 'SessionValidator']
+      ]
+    );
+    assert.deepEqual(relations.map((row) => row.start_line), [3, 3, 5, 5]);
+    assert.ok(relations.every((row) => row.end_line !== null));
+    assert.ok(relations.every((row) => row.start_col !== null));
+    assert.ok(relations.every((row) => row.end_col !== null));
+    assert.ok(relations.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
+    assert.ok(relations.every((row) => row.provenance.startsWith('typescript:')));
+  } finally {
+    db.close();
+  }
+});
+
 test('TypeScript JavaScript adapter records parser-backed local symbol call spans', async () => {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-local-call-spans-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
@@ -427,6 +1313,139 @@ test('TypeScript JavaScript adapter records parser-backed class method dispatch 
   }
 });
 
+test('TypeScript JavaScript adapter records parser-backed class extends inherited method dispatch spans', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-class-extends-spans-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+
+  await writeFile(path.join(repoRoot, 'src/guard.ts'), [
+    'class BaseGuard {',
+    '  validateSession(token: string): boolean {',
+    '    return this.normalizeToken(token).length > 0;',
+    '  }',
+    '',
+    '  protected normalizeToken(token: string): string {',
+    '    return token.trim();',
+    '  }',
+    '}',
+    '',
+    'class SessionGuard extends BaseGuard {',
+    '  authorize(token: string): boolean {',
+    '    return this.validateSession(token);',
+    '  }',
+    '}',
+    '',
+    'export function authorizeLocal(token: string): boolean {',
+    '  const guard = new SessionGuard();',
+    '  return guard.validateSession(token);',
+    '}',
+    '',
+    'export function authorizeDirect(token: string): boolean {',
+    '  return new SessionGuard().validateSession(token);',
+    '}',
+    ''
+  ].join('\n'));
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const declarations = db
+      .prepare(`
+        SELECT
+          target.symbol AS symbol,
+          ev.start_line,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind = 'DECLARES'
+          AND r.source_entity_id = 'file:src/guard.ts'
+        ORDER BY target.symbol
+      `)
+      .all(index.indexRunId) as Array<{
+        symbol: string;
+        start_line: number | null;
+        adapter_id: string | null;
+      }>;
+
+    assert.deepEqual(
+      declarations.map((row) => [row.symbol, row.start_line]),
+      [
+        ['BaseGuard', 1],
+        ['BaseGuard.normalizeToken', 6],
+        ['BaseGuard.validateSession', 2],
+        ['SessionGuard', 11],
+        ['SessionGuard.authorize', 12],
+        ['authorizeDirect', 22],
+        ['authorizeLocal', 17],
+        ['guard', 18]
+      ]
+    );
+    assert.ok(declarations.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
+
+    const calls = db
+      .prepare(`
+        SELECT
+          source.symbol AS source_symbol,
+          target.symbol AS target_symbol,
+          r.provenance,
+          ev.snippet,
+          ev.start_line,
+          ev.end_line,
+          ev.start_col,
+          ev.end_col,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities source ON source.id = r.source_entity_id
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind = 'CALLS'
+          AND source.kind = 'symbol'
+          AND target.kind = 'symbol'
+          AND source.path = 'src/guard.ts'
+          AND target.path = 'src/guard.ts'
+        ORDER BY ev.start_line, ev.start_col
+      `)
+      .all(index.indexRunId) as Array<{
+        source_symbol: string;
+        target_symbol: string;
+        provenance: string;
+        snippet: string;
+        start_line: number | null;
+        end_line: number | null;
+        start_col: number | null;
+        end_col: number | null;
+        adapter_id: string | null;
+      }>;
+
+    assert.deepEqual(
+      calls.map((row) => [row.source_symbol, row.target_symbol, row.snippet]),
+      [
+        ['BaseGuard.validateSession', 'BaseGuard.normalizeToken', 'this.normalizeToken(token)'],
+        ['SessionGuard.authorize', 'BaseGuard.validateSession', 'this.validateSession(token)'],
+        ['authorizeLocal', 'BaseGuard.validateSession', 'guard.validateSession(token)'],
+        ['authorizeDirect', 'BaseGuard.validateSession', 'new SessionGuard().validateSession(token)']
+      ]
+    );
+    assert.deepEqual(calls.map((row) => row.start_line), [3, 13, 19, 23]);
+    assert.ok(calls.every((row) => row.end_line !== null));
+    assert.ok(calls.every((row) => row.start_col !== null));
+    assert.ok(calls.every((row) => row.end_col !== null));
+    assert.ok(calls.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
+    assert.deepEqual(
+      calls.map((row) => row.provenance.split(':')[0]),
+      ['method-call', 'method-call', 'instance-call', 'direct-instance-call']
+    );
+  } finally {
+    db.close();
+  }
+});
+
 test('TypeScript JavaScript adapter records parser-backed local instance method dispatch spans', async () => {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-instance-call-spans-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
@@ -580,6 +1599,94 @@ test('TypeScript JavaScript adapter records parser-backed typed local variable i
   }
 });
 
+test('TypeScript JavaScript adapter records parser-backed declared typed local and field receiver dispatch spans', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-declared-typed-receiver-spans-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+
+  await writeFile(path.join(repoRoot, 'src/guard.ts'), [
+    'interface SessionValidator {',
+    '  validateSession(token: string): boolean;',
+    '}',
+    '',
+    'class Coordinator {',
+    '  private guard!: SessionValidator;',
+    '',
+    '  authorize(token: string): boolean {',
+    '    return this.guard.validateSession(token);',
+    '  }',
+    '}',
+    '',
+    'export function authorize(guard: SessionValidator, token: string): boolean {',
+    '  let selected: SessionValidator;',
+    '  selected = guard;',
+    '  return selected.validateSession(token);',
+    '}',
+    ''
+  ].join('\n'));
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const calls = db
+      .prepare(`
+        SELECT
+          source.symbol AS source_symbol,
+          target.symbol AS target_symbol,
+          r.provenance,
+          ev.snippet,
+          ev.start_line,
+          ev.end_line,
+          ev.start_col,
+          ev.end_col,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities source ON source.id = r.source_entity_id
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind = 'CALLS'
+          AND source.kind = 'symbol'
+          AND target.kind = 'symbol'
+          AND source.path = 'src/guard.ts'
+          AND target.path = 'src/guard.ts'
+        ORDER BY ev.start_line, ev.start_col
+      `)
+      .all(index.indexRunId) as Array<{
+        source_symbol: string;
+        target_symbol: string;
+        provenance: string;
+        snippet: string;
+        start_line: number | null;
+        end_line: number | null;
+        start_col: number | null;
+        end_col: number | null;
+        adapter_id: string | null;
+      }>;
+
+    assert.deepEqual(
+      calls.map((row) => [row.source_symbol, row.target_symbol, row.snippet]),
+      [
+        ['Coordinator.authorize', 'SessionValidator.validateSession', 'this.guard.validateSession(token)'],
+        ['authorize', 'SessionValidator.validateSession', 'selected.validateSession(token)']
+      ]
+    );
+    assert.deepEqual(calls.map((row) => row.start_line), [9, 16]);
+    assert.ok(calls.every((row) => row.end_line !== null));
+    assert.ok(calls.every((row) => row.start_col !== null));
+    assert.ok(calls.every((row) => row.end_col !== null));
+    assert.ok(calls.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
+    assert.deepEqual(
+      calls.map((row) => row.provenance.split(':')[0]),
+      ['field-instance-call', 'instance-call']
+    );
+  } finally {
+    db.close();
+  }
+});
+
 test('TypeScript JavaScript adapter records parser-backed factory return type instance method dispatch spans', async () => {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-factory-return-spans-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
@@ -657,6 +1764,860 @@ test('TypeScript JavaScript adapter records parser-backed factory return type in
     assert.ok(calls.every((row) => row.end_col !== null));
     assert.ok(calls.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
     assert.ok(calls.some((row) => row.provenance.startsWith('instance-call:')));
+  } finally {
+    db.close();
+  }
+});
+
+test('TypeScript JavaScript adapter records parser-backed inferred factory return type instance method dispatch spans', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-inferred-factory-return-spans-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+
+  await writeFile(path.join(repoRoot, 'src/guard.ts'), [
+    'class SessionGuard {',
+    '  validateSession(token: string): boolean {',
+    '    return token.length > 0;',
+    '  }',
+    '}',
+    '',
+    'class AuditGuard {',
+    '  auditSession(token: string): boolean {',
+    '    return token.trim().length > 0;',
+    '  }',
+    '}',
+    '',
+    'function createGuard() {',
+    '  return new SessionGuard();',
+    '}',
+    '',
+    'const createAuditGuard = () => new AuditGuard();',
+    '',
+    'function createAliasedGuard() {',
+    '  const guard = new SessionGuard();',
+    '  return guard;',
+    '}',
+    '',
+    'const createAliasedAuditGuard = () => {',
+    '  const auditGuard = new AuditGuard();',
+    '  return auditGuard;',
+    '};',
+    '',
+    'function createWrappedGuard() {',
+    '  return createGuard();',
+    '}',
+    '',
+    'const createWrappedAuditGuard = () => createAuditGuard();',
+    '',
+    'export function authorize(token: string): boolean {',
+    '  const guard = createGuard();',
+    '  const auditGuard = createAuditGuard();',
+    '  const aliasedGuard = createAliasedGuard();',
+    '  const aliasedAuditGuard = createAliasedAuditGuard();',
+    '  const wrappedGuard = createWrappedGuard();',
+    '  const wrappedAuditGuard = createWrappedAuditGuard();',
+    '  return guard.validateSession(token)',
+    '    && auditGuard.auditSession(token)',
+    '    && aliasedGuard.validateSession(token)',
+    '    && aliasedAuditGuard.auditSession(token)',
+    '    && wrappedGuard.validateSession(token)',
+    '    && wrappedAuditGuard.auditSession(token);',
+    '}',
+    ''
+  ].join('\n'));
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const calls = db
+      .prepare(`
+        SELECT
+          source.symbol AS source_symbol,
+          target.symbol AS target_symbol,
+          r.provenance,
+          ev.snippet,
+          ev.start_line,
+          ev.end_line,
+          ev.start_col,
+          ev.end_col,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities source ON source.id = r.source_entity_id
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind = 'CALLS'
+          AND source.kind = 'symbol'
+          AND target.kind = 'symbol'
+          AND source.path = 'src/guard.ts'
+          AND target.path = 'src/guard.ts'
+        ORDER BY ev.start_line, ev.start_col
+      `)
+      .all(index.indexRunId) as Array<{
+        source_symbol: string;
+        target_symbol: string;
+        provenance: string;
+        snippet: string;
+        start_line: number | null;
+        end_line: number | null;
+        start_col: number | null;
+        end_col: number | null;
+        adapter_id: string | null;
+      }>;
+
+    assert.deepEqual(
+      calls.map((row) => [row.source_symbol, row.target_symbol, row.snippet]),
+      [
+        ['createWrappedGuard', 'createGuard', 'createGuard()'],
+        ['createWrappedAuditGuard', 'createAuditGuard', 'createAuditGuard()'],
+        ['authorize', 'createGuard', 'createGuard()'],
+        ['authorize', 'createAuditGuard', 'createAuditGuard()'],
+        ['authorize', 'createAliasedGuard', 'createAliasedGuard()'],
+        ['authorize', 'createAliasedAuditGuard', 'createAliasedAuditGuard()'],
+        ['authorize', 'createWrappedGuard', 'createWrappedGuard()'],
+        ['authorize', 'createWrappedAuditGuard', 'createWrappedAuditGuard()'],
+        ['authorize', 'SessionGuard.validateSession', 'guard.validateSession(token)'],
+        ['authorize', 'AuditGuard.auditSession', 'auditGuard.auditSession(token)'],
+        ['authorize', 'SessionGuard.validateSession', 'aliasedGuard.validateSession(token)'],
+        ['authorize', 'AuditGuard.auditSession', 'aliasedAuditGuard.auditSession(token)'],
+        ['authorize', 'SessionGuard.validateSession', 'wrappedGuard.validateSession(token)'],
+        ['authorize', 'AuditGuard.auditSession', 'wrappedAuditGuard.auditSession(token)']
+      ]
+    );
+    assert.deepEqual(
+      calls.map((row) => row.start_line),
+      [30, 33, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47]
+    );
+    assert.ok(calls.every((row) => row.end_line !== null));
+    assert.ok(calls.every((row) => row.start_col !== null));
+    assert.ok(calls.every((row) => row.end_col !== null));
+    assert.ok(calls.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
+    assert.equal(
+      calls.filter((row) => row.provenance.startsWith('instance-call:')).length,
+      6
+    );
+  } finally {
+    db.close();
+  }
+});
+
+test('TypeScript JavaScript adapter records parser-backed out-of-order factory wrapper return type instance method dispatch spans', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-out-of-order-factory-wrapper-spans-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+
+  await writeFile(path.join(repoRoot, 'src/guard.ts'), [
+    'class SessionGuard {',
+    '  validateSession(token: string): boolean {',
+    '    return token.length > 0;',
+    '  }',
+    '}',
+    '',
+    'class AuditGuard {',
+    '  auditSession(token: string): boolean {',
+    '    return token.trim().length > 0;',
+    '  }',
+    '}',
+    '',
+    'function createWrappedGuard() {',
+    '  return createGuard();',
+    '}',
+    '',
+    'const createWrappedAuditGuard = () => createAuditGuard();',
+    '',
+    'function createGuard() {',
+    '  return new SessionGuard();',
+    '}',
+    '',
+    'const createAuditGuard = () => new AuditGuard();',
+    '',
+    'export function authorize(token: string): boolean {',
+    '  const guard = createWrappedGuard();',
+    '  const auditGuard = createWrappedAuditGuard();',
+    '  return guard.validateSession(token)',
+    '    && auditGuard.auditSession(token);',
+    '}',
+    ''
+  ].join('\n'));
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const calls = db
+      .prepare(`
+        SELECT
+          source.symbol AS source_symbol,
+          target.symbol AS target_symbol,
+          r.provenance,
+          ev.snippet,
+          ev.start_line,
+          ev.end_line,
+          ev.start_col,
+          ev.end_col,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities source ON source.id = r.source_entity_id
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind = 'CALLS'
+          AND source.kind = 'symbol'
+          AND target.kind = 'symbol'
+          AND source.path = 'src/guard.ts'
+          AND target.path = 'src/guard.ts'
+        ORDER BY ev.start_line, ev.start_col
+      `)
+      .all(index.indexRunId) as Array<{
+        source_symbol: string;
+        target_symbol: string;
+        provenance: string;
+        snippet: string;
+        start_line: number | null;
+        end_line: number | null;
+        start_col: number | null;
+        end_col: number | null;
+        adapter_id: string | null;
+      }>;
+
+    assert.deepEqual(
+      calls.map((row) => [row.source_symbol, row.target_symbol, row.snippet]),
+      [
+        ['createWrappedGuard', 'createGuard', 'createGuard()'],
+        ['createWrappedAuditGuard', 'createAuditGuard', 'createAuditGuard()'],
+        ['authorize', 'createWrappedGuard', 'createWrappedGuard()'],
+        ['authorize', 'createWrappedAuditGuard', 'createWrappedAuditGuard()'],
+        ['authorize', 'SessionGuard.validateSession', 'guard.validateSession(token)'],
+        ['authorize', 'AuditGuard.auditSession', 'auditGuard.auditSession(token)']
+      ]
+    );
+    assert.deepEqual(calls.map((row) => row.start_line), [14, 17, 26, 27, 28, 29]);
+    assert.ok(calls.every((row) => row.end_line !== null));
+    assert.ok(calls.every((row) => row.start_col !== null));
+    assert.ok(calls.every((row) => row.end_col !== null));
+    assert.ok(calls.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
+    assert.equal(
+      calls.filter((row) => row.provenance.startsWith('instance-call:')).length,
+      2
+    );
+  } finally {
+    db.close();
+  }
+});
+
+test('TypeScript JavaScript adapter records parser-backed namespace constructor factory return type instance method dispatch spans', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-namespace-constructor-factory-return-spans-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+
+  await writeFile(path.join(repoRoot, 'src/contracts.ts'), [
+    'export class SessionGuard {',
+    '  validateSession(token: string): boolean {',
+    '    return token.length > 0;',
+    '  }',
+    '}',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/guard.ts'), [
+    'import * as Contracts from "./contracts";',
+    '',
+    'function createGuard() {',
+    '  return new Contracts.SessionGuard();',
+    '}',
+    '',
+    'export function authorize(token: string): boolean {',
+    '  const guard = createGuard();',
+    '  return guard.validateSession(token);',
+    '}',
+    ''
+  ].join('\n'));
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const calls = db
+      .prepare(`
+        SELECT
+          source.symbol AS source_symbol,
+          target.symbol AS target_symbol,
+          target.path AS target_path,
+          r.provenance,
+          ev.snippet,
+          ev.start_line,
+          ev.end_line,
+          ev.start_col,
+          ev.end_col,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities source ON source.id = r.source_entity_id
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind = 'CALLS'
+          AND source.kind = 'symbol'
+          AND target.kind = 'symbol'
+          AND source.path = 'src/guard.ts'
+        ORDER BY ev.start_line, ev.start_col
+      `)
+      .all(index.indexRunId) as Array<{
+        source_symbol: string;
+        target_symbol: string;
+        target_path: string;
+        provenance: string;
+        snippet: string;
+        start_line: number | null;
+        end_line: number | null;
+        start_col: number | null;
+        end_col: number | null;
+        adapter_id: string | null;
+      }>;
+
+    assert.deepEqual(
+      calls.map((row) => [row.source_symbol, row.target_path, row.target_symbol, row.snippet]),
+      [
+        ['authorize', 'src/guard.ts', 'createGuard', 'createGuard()'],
+        [
+          'authorize',
+          'src/contracts.ts',
+          'SessionGuard.validateSession',
+          'guard.validateSession(token)'
+        ]
+      ]
+    );
+    assert.deepEqual(calls.map((row) => row.start_line), [8, 9]);
+    assert.ok(calls.every((row) => row.end_line !== null));
+    assert.ok(calls.every((row) => row.start_col !== null));
+    assert.ok(calls.every((row) => row.end_col !== null));
+    assert.ok(calls.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
+    assert.ok(calls.some((row) => row.provenance.startsWith('instance-call:')));
+  } finally {
+    db.close();
+  }
+});
+
+test('TypeScript JavaScript adapter records parser-backed imported factory return type instance method dispatch spans', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-imported-factory-return-spans-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+
+  await writeFile(path.join(repoRoot, 'src/contracts.ts'), [
+    'export class SessionGuard {',
+    '  validateSession(token: string): boolean {',
+    '    return token.length > 0;',
+    '  }',
+    '}',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/factory.ts'), [
+    'import { SessionGuard } from "./contracts";',
+    '',
+    'export function createGuard(): SessionGuard {',
+    '  return new SessionGuard();',
+    '}',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/guard.ts'), [
+    'import { createGuard } from "./factory";',
+    '',
+    'export function authorize(token: string): boolean {',
+    '  const guard = createGuard();',
+    '  return guard.validateSession(token);',
+    '}',
+    ''
+  ].join('\n'));
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const calls = db
+      .prepare(`
+        SELECT
+          source.symbol AS source_symbol,
+          target.symbol AS target_symbol,
+          r.provenance,
+          ev.snippet,
+          ev.start_line,
+          ev.end_line,
+          ev.start_col,
+          ev.end_col,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities source ON source.id = r.source_entity_id
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind = 'CALLS'
+          AND source.kind = 'symbol'
+          AND target.kind = 'symbol'
+          AND source.path = 'src/guard.ts'
+          AND target.path = 'src/contracts.ts'
+        ORDER BY ev.start_line, ev.start_col
+      `)
+      .all(index.indexRunId) as Array<{
+        source_symbol: string;
+        target_symbol: string;
+        provenance: string;
+        snippet: string;
+        start_line: number | null;
+        end_line: number | null;
+        start_col: number | null;
+        end_col: number | null;
+        adapter_id: string | null;
+      }>;
+
+    assert.deepEqual(
+      calls.map((row) => [row.source_symbol, row.target_symbol, row.snippet]),
+      [
+        ['authorize', 'SessionGuard.validateSession', 'guard.validateSession(token)']
+      ]
+    );
+    assert.equal(calls[0]?.start_line, 5);
+    assert.ok(calls.every((row) => row.end_line !== null));
+    assert.ok(calls.every((row) => row.start_col !== null));
+    assert.ok(calls.every((row) => row.end_col !== null));
+    assert.ok(calls.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
+    assert.ok(calls.every((row) => row.provenance.startsWith('instance-call:')));
+  } finally {
+    db.close();
+  }
+});
+
+test('TypeScript JavaScript adapter records parser-backed re-exported factory return type instance method dispatch spans', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-reexported-factory-return-spans-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+
+  await writeFile(path.join(repoRoot, 'src/contracts.ts'), [
+    'export class SessionGuard {',
+    '  validateSession(token: string): boolean {',
+    '    return token.length > 0;',
+    '  }',
+    '}',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/factory.ts'), [
+    'import { SessionGuard } from "./contracts";',
+    '',
+    'export function createGuard(): SessionGuard {',
+    '  return new SessionGuard();',
+    '}',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/barrel.ts'), [
+    'export { createGuard } from "./factory";',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/guard.ts'), [
+    'import { createGuard as makeGuard } from "./barrel";',
+    '',
+    'export function authorize(token: string): boolean {',
+    '  const guard = makeGuard();',
+    '  return guard.validateSession(token);',
+    '}',
+    ''
+  ].join('\n'));
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const calls = db
+      .prepare(`
+        SELECT
+          source.symbol AS source_symbol,
+          target.symbol AS target_symbol,
+          r.provenance,
+          ev.snippet,
+          ev.start_line,
+          ev.end_line,
+          ev.start_col,
+          ev.end_col,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities source ON source.id = r.source_entity_id
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind = 'CALLS'
+          AND source.kind = 'symbol'
+          AND target.kind = 'symbol'
+          AND source.path = 'src/guard.ts'
+          AND target.path = 'src/contracts.ts'
+        ORDER BY ev.start_line, ev.start_col
+      `)
+      .all(index.indexRunId) as Array<{
+        source_symbol: string;
+        target_symbol: string;
+        provenance: string;
+        snippet: string;
+        start_line: number | null;
+        end_line: number | null;
+        start_col: number | null;
+        end_col: number | null;
+        adapter_id: string | null;
+      }>;
+
+    assert.deepEqual(
+      calls.map((row) => [row.source_symbol, row.target_symbol, row.snippet]),
+      [
+        ['authorize', 'SessionGuard.validateSession', 'guard.validateSession(token)']
+      ]
+    );
+    assert.equal(calls[0]?.start_line, 5);
+    assert.ok(calls.every((row) => row.end_line !== null));
+    assert.ok(calls.every((row) => row.start_col !== null));
+    assert.ok(calls.every((row) => row.end_col !== null));
+    assert.ok(calls.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
+    assert.ok(calls.every((row) => row.provenance.startsWith('instance-call:')));
+  } finally {
+    db.close();
+  }
+});
+
+test('TypeScript JavaScript adapter records parser-backed star re-exported factory return type instance method dispatch spans', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-star-reexported-factory-return-spans-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+
+  await writeFile(path.join(repoRoot, 'src/contracts.ts'), [
+    'export class SessionGuard {',
+    '  validateSession(token: string): boolean {',
+    '    return token.length > 0;',
+    '  }',
+    '}',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/factory.ts'), [
+    'import { SessionGuard } from "./contracts";',
+    '',
+    'export function createGuard(): SessionGuard {',
+    '  return new SessionGuard();',
+    '}',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/barrel.ts'), [
+    'export * from "./factory";',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/guard.ts'), [
+    'import { createGuard as makeGuard } from "./barrel";',
+    '',
+    'export function authorize(token: string): boolean {',
+    '  const guard = makeGuard();',
+    '  return guard.validateSession(token);',
+    '}',
+    ''
+  ].join('\n'));
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const calls = db
+      .prepare(`
+        SELECT
+          source.symbol AS source_symbol,
+          target.symbol AS target_symbol,
+          r.provenance,
+          ev.snippet,
+          ev.start_line,
+          ev.end_line,
+          ev.start_col,
+          ev.end_col,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities source ON source.id = r.source_entity_id
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind = 'CALLS'
+          AND source.kind = 'symbol'
+          AND target.kind = 'symbol'
+          AND source.path = 'src/guard.ts'
+          AND target.path = 'src/contracts.ts'
+        ORDER BY ev.start_line, ev.start_col
+      `)
+      .all(index.indexRunId) as Array<{
+        source_symbol: string;
+        target_symbol: string;
+        provenance: string;
+        snippet: string;
+        start_line: number | null;
+        end_line: number | null;
+        start_col: number | null;
+        end_col: number | null;
+        adapter_id: string | null;
+      }>;
+
+    assert.deepEqual(
+      calls.map((row) => [row.source_symbol, row.target_symbol, row.snippet]),
+      [
+        ['authorize', 'SessionGuard.validateSession', 'guard.validateSession(token)']
+      ]
+    );
+    assert.equal(calls[0]?.start_line, 5);
+    assert.ok(calls.every((row) => row.end_line !== null));
+    assert.ok(calls.every((row) => row.start_col !== null));
+    assert.ok(calls.every((row) => row.end_col !== null));
+    assert.ok(calls.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
+    assert.ok(calls.every((row) => row.provenance.startsWith('instance-call:')));
+  } finally {
+    db.close();
+  }
+});
+
+test('TypeScript JavaScript adapter records parser-backed namespace factory return type instance method dispatch spans', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-namespace-factory-return-spans-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+
+  await writeFile(path.join(repoRoot, 'src/contracts.ts'), [
+    'export class SessionGuard {',
+    '  validateSession(token: string): boolean {',
+    '    return token.length > 0;',
+    '  }',
+    '}',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/factory.ts'), [
+    'import { SessionGuard } from "./contracts";',
+    '',
+    'export function createGuard(): SessionGuard {',
+    '  return new SessionGuard();',
+    '}',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/barrel.ts'), [
+    'export * as GuardFactories from "./factory";',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/namespace-guard.ts'), [
+    'import * as GuardFactories from "./factory";',
+    '',
+    'export function authorizeNamespace(token: string): boolean {',
+    '  const guard = GuardFactories.createGuard();',
+    '  return guard.validateSession(token);',
+    '}',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/reexported-guard.ts'), [
+    'import { GuardFactories as Factories } from "./barrel";',
+    '',
+    'export function authorizeReexported(token: string): boolean {',
+    '  const guard = Factories.createGuard();',
+    '  return guard.validateSession(token);',
+    '}',
+    ''
+  ].join('\n'));
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const calls = db
+      .prepare(`
+        SELECT
+          source.symbol AS source_symbol,
+          source.path AS source_path,
+          target.symbol AS target_symbol,
+          r.provenance,
+          ev.snippet,
+          ev.start_line,
+          ev.end_line,
+          ev.start_col,
+          ev.end_col,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities source ON source.id = r.source_entity_id
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind = 'CALLS'
+          AND source.kind = 'symbol'
+          AND target.kind = 'symbol'
+          AND source.path IN ('src/namespace-guard.ts', 'src/reexported-guard.ts')
+          AND target.path = 'src/contracts.ts'
+        ORDER BY source.path, ev.start_line, ev.start_col
+      `)
+      .all(index.indexRunId) as Array<{
+        source_symbol: string;
+        source_path: string;
+        target_symbol: string;
+        provenance: string;
+        snippet: string;
+        start_line: number | null;
+        end_line: number | null;
+        start_col: number | null;
+        end_col: number | null;
+        adapter_id: string | null;
+      }>;
+
+    assert.deepEqual(
+      calls.map((row) => [
+        row.source_symbol,
+        row.source_path,
+        row.target_symbol,
+        row.snippet
+      ]),
+      [
+        [
+          'authorizeNamespace',
+          'src/namespace-guard.ts',
+          'SessionGuard.validateSession',
+          'guard.validateSession(token)'
+        ],
+        [
+          'authorizeReexported',
+          'src/reexported-guard.ts',
+          'SessionGuard.validateSession',
+          'guard.validateSession(token)'
+        ]
+      ]
+    );
+    assert.deepEqual(calls.map((row) => row.start_line), [5, 5]);
+    assert.ok(calls.every((row) => row.end_line !== null));
+    assert.ok(calls.every((row) => row.start_col !== null));
+    assert.ok(calls.every((row) => row.end_col !== null));
+    assert.ok(calls.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
+    assert.ok(calls.every((row) => row.provenance.startsWith('instance-call:')));
+  } finally {
+    db.close();
+  }
+});
+
+test('TypeScript JavaScript adapter records parser-backed default factory return type instance method dispatch spans', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-default-factory-return-spans-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+
+  await writeFile(path.join(repoRoot, 'src/contracts.ts'), [
+    'export class SessionGuard {',
+    '  validateSession(token: string): boolean {',
+    '    return token.length > 0;',
+    '  }',
+    '}',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/default-factory.ts'), [
+    'import { SessionGuard } from "./contracts";',
+    '',
+    'export default function createGuard(): SessionGuard {',
+    '  return new SessionGuard();',
+    '}',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/named-factory.ts'), [
+    'import { SessionGuard } from "./contracts";',
+    '',
+    'export function createGuard(): SessionGuard {',
+    '  return new SessionGuard();',
+    '}',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/default-barrel.ts'), [
+    'export { createGuard as default } from "./named-factory";',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/default-guard.ts'), [
+    'import makeGuard from "./default-factory";',
+    '',
+    'export function authorizeDefault(token: string): boolean {',
+    '  const guard = makeGuard();',
+    '  return guard.validateSession(token);',
+    '}',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/reexported-default-guard.ts'), [
+    'import makeGuard from "./default-barrel";',
+    '',
+    'export function authorizeReexportedDefault(token: string): boolean {',
+    '  const guard = makeGuard();',
+    '  return guard.validateSession(token);',
+    '}',
+    ''
+  ].join('\n'));
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const calls = db
+      .prepare(`
+        SELECT
+          source.symbol AS source_symbol,
+          source.path AS source_path,
+          target.symbol AS target_symbol,
+          r.provenance,
+          ev.snippet,
+          ev.start_line,
+          ev.end_line,
+          ev.start_col,
+          ev.end_col,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities source ON source.id = r.source_entity_id
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind = 'CALLS'
+          AND source.kind = 'symbol'
+          AND target.kind = 'symbol'
+          AND source.path IN ('src/default-guard.ts', 'src/reexported-default-guard.ts')
+          AND target.path = 'src/contracts.ts'
+        ORDER BY source.path, ev.start_line, ev.start_col
+      `)
+      .all(index.indexRunId) as Array<{
+        source_symbol: string;
+        source_path: string;
+        target_symbol: string;
+        provenance: string;
+        snippet: string;
+        start_line: number | null;
+        end_line: number | null;
+        start_col: number | null;
+        end_col: number | null;
+        adapter_id: string | null;
+      }>;
+
+    assert.deepEqual(
+      calls.map((row) => [
+        row.source_symbol,
+        row.source_path,
+        row.target_symbol,
+        row.snippet
+      ]),
+      [
+        [
+          'authorizeDefault',
+          'src/default-guard.ts',
+          'SessionGuard.validateSession',
+          'guard.validateSession(token)'
+        ],
+        [
+          'authorizeReexportedDefault',
+          'src/reexported-default-guard.ts',
+          'SessionGuard.validateSession',
+          'guard.validateSession(token)'
+        ]
+      ]
+    );
+    assert.deepEqual(calls.map((row) => row.start_line), [5, 5]);
+    assert.ok(calls.every((row) => row.end_line !== null));
+    assert.ok(calls.every((row) => row.start_col !== null));
+    assert.ok(calls.every((row) => row.end_col !== null));
+    assert.ok(calls.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
+    assert.ok(calls.every((row) => row.provenance.startsWith('instance-call:')));
   } finally {
     db.close();
   }
@@ -1366,6 +3327,84 @@ test('TypeScript JavaScript adapter records parser-backed static class method ca
   }
 });
 
+test('TypeScript JavaScript adapter records parser-backed inherited static class method call spans', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-inherited-static-method-spans-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+
+  await writeFile(path.join(repoRoot, 'src/guard.ts'), [
+    'class BaseGuard {',
+    '  static validateSession(token: string): boolean {',
+    '    return token.length > 0;',
+    '  }',
+    '}',
+    '',
+    'class SessionGuard extends BaseGuard {}',
+    '',
+    'export function authorize(token: string): boolean {',
+    '  return SessionGuard.validateSession(token);',
+    '}',
+    ''
+  ].join('\n'));
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const calls = db
+      .prepare(`
+        SELECT
+          source.symbol AS source_symbol,
+          target.symbol AS target_symbol,
+          r.provenance,
+          ev.snippet,
+          ev.start_line,
+          ev.end_line,
+          ev.start_col,
+          ev.end_col,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities source ON source.id = r.source_entity_id
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind = 'CALLS'
+          AND source.kind = 'symbol'
+          AND target.kind = 'symbol'
+          AND source.path = 'src/guard.ts'
+          AND target.path = 'src/guard.ts'
+        ORDER BY ev.start_line, ev.start_col
+      `)
+      .all(index.indexRunId) as Array<{
+        source_symbol: string;
+        target_symbol: string;
+        provenance: string;
+        snippet: string;
+        start_line: number | null;
+        end_line: number | null;
+        start_col: number | null;
+        end_col: number | null;
+        adapter_id: string | null;
+      }>;
+
+    assert.deepEqual(
+      calls.map((row) => [row.source_symbol, row.target_symbol, row.snippet]),
+      [
+        ['authorize', 'BaseGuard.validateSession', 'SessionGuard.validateSession(token)']
+      ]
+    );
+    assert.equal(calls[0]?.start_line, 10);
+    assert.ok(calls.every((row) => row.end_line !== null));
+    assert.ok(calls.every((row) => row.start_col !== null));
+    assert.ok(calls.every((row) => row.end_col !== null));
+    assert.ok(calls.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
+    assert.ok(calls.every((row) => row.provenance.startsWith('static-call:')));
+  } finally {
+    db.close();
+  }
+});
+
 test('TypeScript JavaScript adapter does not treat non-static class method access as a parser-backed static call', async () => {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-non-static-method-spans-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
@@ -1376,6 +3415,62 @@ test('TypeScript JavaScript adapter does not treat non-static class method acces
     '    return token.length > 0;',
     '  }',
     '}',
+    '',
+    'export function authorize(token: string): boolean {',
+    '  return SessionGuard.validateSession(token);',
+    '}',
+    ''
+  ].join('\n'));
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const calls = db
+      .prepare(`
+        SELECT
+          source.symbol AS source_symbol,
+          target.symbol AS target_symbol,
+          r.provenance,
+          ev.snippet
+        FROM relations r
+        INNER JOIN entities source ON source.id = r.source_entity_id
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        WHERE r.index_run_id = ?
+          AND r.kind = 'CALLS'
+          AND source.kind = 'symbol'
+          AND target.kind = 'symbol'
+          AND source.path = 'src/guard.ts'
+          AND target.path = 'src/guard.ts'
+        ORDER BY ev.start_line, ev.start_col
+      `)
+      .all(index.indexRunId) as Array<{
+        source_symbol: string;
+        target_symbol: string;
+        provenance: string;
+        snippet: string;
+      }>;
+
+    assert.deepEqual(calls, []);
+  } finally {
+    db.close();
+  }
+});
+
+test('TypeScript JavaScript adapter does not treat inherited non-static class method access as a parser-backed static call', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-inherited-non-static-method-spans-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+
+  await writeFile(path.join(repoRoot, 'src/guard.ts'), [
+    'class BaseGuard {',
+    '  validateSession(token: string): boolean {',
+    '    return token.length > 0;',
+    '  }',
+    '}',
+    '',
+    'class SessionGuard extends BaseGuard {}',
     '',
     'export function authorize(token: string): boolean {',
     '  return SessionGuard.validateSession(token);',
@@ -1607,6 +3702,284 @@ test('TypeScript JavaScript adapter records parser-backed interface typed parame
   }
 });
 
+test('TypeScript JavaScript adapter records parser-backed imported interface typed receiver dispatch spans', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-imported-interface-receiver-spans-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+
+  await writeFile(path.join(repoRoot, 'src/contracts.ts'), [
+    'export interface SessionValidator {',
+    '  validateSession(token: string): boolean;',
+    '}',
+    '',
+    'export type AuditableValidator = {',
+    '  auditSession: (token: string) => boolean;',
+    '};',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/guard.ts'), [
+    'import type { SessionValidator as Validator, AuditableValidator } from "./contracts";',
+    '',
+    'type GuardAlias = Validator;',
+    '',
+    'export function authorize(guard: GuardAlias, audit: AuditableValidator, token: string): boolean {',
+    '  return guard.validateSession(token) && audit.auditSession(token);',
+    '}',
+    ''
+  ].join('\n'));
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const calls = db
+      .prepare(`
+        SELECT
+          source.symbol AS source_symbol,
+          source.path AS source_path,
+          target.symbol AS target_symbol,
+          target.path AS target_path,
+          r.provenance,
+          ev.snippet,
+          ev.start_line,
+          ev.end_line,
+          ev.start_col,
+          ev.end_col,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities source ON source.id = r.source_entity_id
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind = 'CALLS'
+          AND source.kind = 'symbol'
+          AND target.kind = 'symbol'
+          AND source.path = 'src/guard.ts'
+          AND target.path = 'src/contracts.ts'
+        ORDER BY ev.start_line, ev.start_col
+      `)
+      .all(index.indexRunId) as Array<{
+        source_symbol: string;
+        source_path: string;
+        target_symbol: string;
+        target_path: string;
+        provenance: string;
+        snippet: string;
+        start_line: number | null;
+        end_line: number | null;
+        start_col: number | null;
+        end_col: number | null;
+        adapter_id: string | null;
+      }>;
+
+    assert.deepEqual(
+      calls.map((row) => [
+        row.source_symbol,
+        row.target_symbol,
+        row.snippet
+      ]),
+      [
+        ['authorize', 'SessionValidator.validateSession', 'guard.validateSession(token)'],
+        ['authorize', 'AuditableValidator.auditSession', 'audit.auditSession(token)']
+      ]
+    );
+    assert.deepEqual(calls.map((row) => row.start_line), [6, 6]);
+    assert.ok(calls.every((row) => row.end_line !== null));
+    assert.ok(calls.every((row) => row.start_col !== null));
+    assert.ok(calls.every((row) => row.end_col !== null));
+    assert.ok(calls.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
+    assert.ok(calls.every((row) => row.provenance.startsWith('instance-call:')));
+  } finally {
+    db.close();
+  }
+});
+
+test('TypeScript JavaScript adapter records parser-backed default imported interface typed receiver dispatch spans', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-default-imported-interface-receiver-spans-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+
+  await writeFile(path.join(repoRoot, 'src/contracts.ts'), [
+    'export default interface SessionValidator {',
+    '  validateSession(token: string): boolean;',
+    '}',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/guard.ts'), [
+    'import type Validator from "./contracts";',
+    '',
+    'type GuardAlias = Validator;',
+    '',
+    'export function authorize(guard: GuardAlias, token: string): boolean {',
+    '  return guard.validateSession(token);',
+    '}',
+    ''
+  ].join('\n'));
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const calls = db
+      .prepare(`
+        SELECT
+          source.symbol AS source_symbol,
+          source.path AS source_path,
+          target.symbol AS target_symbol,
+          target.path AS target_path,
+          r.provenance,
+          ev.snippet,
+          ev.start_line,
+          ev.end_line,
+          ev.start_col,
+          ev.end_col,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities source ON source.id = r.source_entity_id
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind = 'CALLS'
+          AND source.kind = 'symbol'
+          AND target.kind = 'symbol'
+          AND source.path = 'src/guard.ts'
+          AND target.path = 'src/contracts.ts'
+        ORDER BY ev.start_line, ev.start_col
+      `)
+      .all(index.indexRunId) as Array<{
+        source_symbol: string;
+        source_path: string;
+        target_symbol: string;
+        target_path: string;
+        provenance: string;
+        snippet: string;
+        start_line: number | null;
+        end_line: number | null;
+        start_col: number | null;
+        end_col: number | null;
+        adapter_id: string | null;
+      }>;
+
+    assert.deepEqual(
+      calls.map((row) => [
+        row.source_symbol,
+        row.target_symbol,
+        row.snippet
+      ]),
+      [
+        ['authorize', 'SessionValidator.validateSession', 'guard.validateSession(token)']
+      ]
+    );
+    assert.equal(calls[0]?.start_line, 6);
+    assert.ok(calls.every((row) => row.end_line !== null));
+    assert.ok(calls.every((row) => row.start_col !== null));
+    assert.ok(calls.every((row) => row.end_col !== null));
+    assert.ok(calls.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
+    assert.ok(calls.every((row) => row.provenance.startsWith('instance-call:')));
+  } finally {
+    db.close();
+  }
+});
+
+test('TypeScript JavaScript adapter records parser-backed namespace imported interface typed receiver dispatch spans', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-namespace-imported-interface-receiver-spans-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+
+  await writeFile(path.join(repoRoot, 'src/contracts.ts'), [
+    'export interface SessionValidator {',
+    '  validateSession(token: string): boolean;',
+    '}',
+    '',
+    'export type AuditableValidator = {',
+    '  auditSession: (token: string) => boolean;',
+    '};',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/guard.ts'), [
+    'import type * as Contracts from "./contracts";',
+    '',
+    'type GuardAlias = Contracts.SessionValidator;',
+    '',
+    'export function authorize(',
+    '  guard: GuardAlias,',
+    '  audit: Contracts.AuditableValidator,',
+    '  token: string',
+    '): boolean {',
+    '  return guard.validateSession(token) && audit.auditSession(token);',
+    '}',
+    ''
+  ].join('\n'));
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const calls = db
+      .prepare(`
+        SELECT
+          source.symbol AS source_symbol,
+          source.path AS source_path,
+          target.symbol AS target_symbol,
+          target.path AS target_path,
+          r.provenance,
+          ev.snippet,
+          ev.start_line,
+          ev.end_line,
+          ev.start_col,
+          ev.end_col,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities source ON source.id = r.source_entity_id
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind = 'CALLS'
+          AND source.kind = 'symbol'
+          AND target.kind = 'symbol'
+          AND source.path = 'src/guard.ts'
+          AND target.path = 'src/contracts.ts'
+        ORDER BY ev.start_line, ev.start_col
+      `)
+      .all(index.indexRunId) as Array<{
+        source_symbol: string;
+        source_path: string;
+        target_symbol: string;
+        target_path: string;
+        provenance: string;
+        snippet: string;
+        start_line: number | null;
+        end_line: number | null;
+        start_col: number | null;
+        end_col: number | null;
+        adapter_id: string | null;
+      }>;
+
+    assert.deepEqual(
+      calls.map((row) => [
+        row.source_symbol,
+        row.target_symbol,
+        row.snippet
+      ]),
+      [
+        ['authorize', 'SessionValidator.validateSession', 'guard.validateSession(token)'],
+        ['authorize', 'AuditableValidator.auditSession', 'audit.auditSession(token)']
+      ]
+    );
+    assert.deepEqual(calls.map((row) => row.start_line), [10, 10]);
+    assert.ok(calls.every((row) => row.end_line !== null));
+    assert.ok(calls.every((row) => row.start_col !== null));
+    assert.ok(calls.every((row) => row.end_col !== null));
+    assert.ok(calls.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
+    assert.ok(calls.every((row) => row.provenance.startsWith('instance-call:')));
+  } finally {
+    db.close();
+  }
+});
+
 test('TypeScript JavaScript adapter records parser-backed interface function property dispatch spans', async () => {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-interface-property-spans-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
@@ -1825,6 +4198,136 @@ test('TypeScript JavaScript adapter records parser-backed interface extends disp
       ]
     );
     assert.deepEqual(calls.map((row) => row.start_line), [12, 12]);
+    assert.ok(calls.every((row) => row.end_line !== null));
+    assert.ok(calls.every((row) => row.start_col !== null));
+    assert.ok(calls.every((row) => row.end_col !== null));
+    assert.ok(calls.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
+    assert.ok(calls.every((row) => row.provenance.startsWith('instance-call:')));
+  } finally {
+    db.close();
+  }
+});
+
+test('TypeScript JavaScript adapter records parser-backed alias-backed interface extends dispatch spans', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-interface-alias-extends-spans-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+
+  await writeFile(path.join(repoRoot, 'src/guard.ts'), [
+    'interface BaseSessionValidator {',
+    '  validateSession(token: string): boolean;',
+    '}',
+    '',
+    'type AuditableSessionValidator = {',
+    '  auditSession: (token: string) => boolean;',
+    '};',
+    '',
+    'type BaseAlias = BaseSessionValidator;',
+    'type CombinedValidator = BaseAlias & AuditableSessionValidator;',
+    '',
+    'interface SimpleSessionValidator extends BaseAlias {}',
+    'interface SessionValidator extends CombinedValidator {}',
+    '',
+    'export function authorizeSimple(guard: SimpleSessionValidator, token: string): boolean {',
+    '  return guard.validateSession(token);',
+    '}',
+    '',
+    'export function authorizeCombined(guard: SessionValidator, token: string): boolean {',
+    '  return guard.validateSession(token) && guard.auditSession(token);',
+    '}',
+    ''
+  ].join('\n'));
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const declarations = db
+      .prepare(`
+        SELECT
+          target.symbol AS symbol,
+          ev.snippet,
+          ev.start_line,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind = 'DECLARES'
+          AND r.source_entity_id = 'file:src/guard.ts'
+        ORDER BY target.symbol
+      `)
+      .all(index.indexRunId) as Array<{
+        symbol: string;
+        snippet: string;
+        start_line: number | null;
+        adapter_id: string | null;
+      }>;
+
+    assert.deepEqual(
+      declarations.map((row) => [row.symbol, row.start_line]),
+      [
+        ['AuditableSessionValidator', 5],
+        ['AuditableSessionValidator.auditSession', 6],
+        ['BaseAlias', 9],
+        ['BaseSessionValidator', 1],
+        ['BaseSessionValidator.validateSession', 2],
+        ['CombinedValidator', 10],
+        ['SessionValidator', 13],
+        ['SimpleSessionValidator', 12],
+        ['authorizeCombined', 19],
+        ['authorizeSimple', 15]
+      ]
+    );
+    assert.ok(declarations.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
+
+    const calls = db
+      .prepare(`
+        SELECT
+          source.symbol AS source_symbol,
+          target.symbol AS target_symbol,
+          r.provenance,
+          ev.snippet,
+          ev.start_line,
+          ev.end_line,
+          ev.start_col,
+          ev.end_col,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities source ON source.id = r.source_entity_id
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind = 'CALLS'
+          AND source.kind = 'symbol'
+          AND target.kind = 'symbol'
+          AND source.path = 'src/guard.ts'
+          AND target.path = 'src/guard.ts'
+        ORDER BY ev.start_line, ev.start_col
+      `)
+      .all(index.indexRunId) as Array<{
+        source_symbol: string;
+        target_symbol: string;
+        provenance: string;
+        snippet: string;
+        start_line: number | null;
+        end_line: number | null;
+        start_col: number | null;
+        end_col: number | null;
+        adapter_id: string | null;
+      }>;
+
+    assert.deepEqual(
+      calls.map((row) => [row.source_symbol, row.target_symbol, row.snippet]),
+      [
+        ['authorizeSimple', 'BaseSessionValidator.validateSession', 'guard.validateSession(token)'],
+        ['authorizeCombined', 'BaseSessionValidator.validateSession', 'guard.validateSession(token)'],
+        ['authorizeCombined', 'AuditableSessionValidator.auditSession', 'guard.auditSession(token)']
+      ]
+    );
+    assert.deepEqual(calls.map((row) => row.start_line), [16, 20, 20]);
     assert.ok(calls.every((row) => row.end_line !== null));
     assert.ok(calls.every((row) => row.start_col !== null));
     assert.ok(calls.every((row) => row.end_col !== null));
@@ -2071,6 +4574,376 @@ test('TypeScript JavaScript adapter records parser-backed intersection type alia
     assert.ok(calls.every((row) => row.end_col !== null));
     assert.ok(calls.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
     assert.ok(calls.every((row) => row.provenance.startsWith('instance-call:')));
+  } finally {
+    db.close();
+  }
+});
+
+test('TypeScript JavaScript adapter records parser-backed direct intersection typed receiver dispatch spans', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-direct-intersection-type-spans-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+
+  await writeFile(path.join(repoRoot, 'src/guard.ts'), [
+    'interface BaseSessionValidator {',
+    '  validateSession(token: string): boolean;',
+    '}',
+    '',
+    'type AuditableSessionValidator = {',
+    '  auditSession: (token: string) => boolean;',
+    '};',
+    '',
+    'export function authorize(',
+    '  guard: BaseSessionValidator & AuditableSessionValidator,',
+    '  token: string',
+    '): boolean {',
+    '  return guard.validateSession(token) && guard.auditSession(token);',
+    '}',
+    ''
+  ].join('\n'));
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const calls = db
+      .prepare(`
+        SELECT
+          source.symbol AS source_symbol,
+          target.symbol AS target_symbol,
+          r.provenance,
+          ev.snippet,
+          ev.start_line,
+          ev.end_line,
+          ev.start_col,
+          ev.end_col,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities source ON source.id = r.source_entity_id
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind = 'CALLS'
+          AND source.kind = 'symbol'
+          AND target.kind = 'symbol'
+          AND source.path = 'src/guard.ts'
+          AND target.path = 'src/guard.ts'
+        ORDER BY ev.start_line, ev.start_col
+      `)
+      .all(index.indexRunId) as Array<{
+        source_symbol: string;
+        target_symbol: string;
+        provenance: string;
+        snippet: string;
+        start_line: number | null;
+        end_line: number | null;
+        start_col: number | null;
+        end_col: number | null;
+        adapter_id: string | null;
+      }>;
+
+    assert.deepEqual(
+      calls.map((row) => [row.source_symbol, row.target_symbol, row.snippet]),
+      [
+        ['authorize', 'BaseSessionValidator.validateSession', 'guard.validateSession(token)'],
+        ['authorize', 'AuditableSessionValidator.auditSession', 'guard.auditSession(token)']
+      ]
+    );
+    assert.deepEqual(calls.map((row) => row.start_line), [13, 13]);
+    assert.ok(calls.every((row) => row.end_line !== null));
+    assert.ok(calls.every((row) => row.start_col !== null));
+    assert.ok(calls.every((row) => row.end_col !== null));
+    assert.ok(calls.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
+    assert.ok(calls.every((row) => row.provenance.startsWith('instance-call:')));
+  } finally {
+    db.close();
+  }
+});
+
+test('TypeScript JavaScript adapter records parser-backed union typed receiver dispatch spans', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-union-type-spans-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+
+  await writeFile(path.join(repoRoot, 'src/guard.ts'), [
+    'interface PrimarySessionValidator {',
+    '  validateSession(token: string): boolean;',
+    '}',
+    '',
+    'type SecondarySessionValidator = {',
+    '  validateSession: (token: string) => boolean;',
+    '};',
+    '',
+    'type SessionValidator = PrimarySessionValidator | SecondarySessionValidator;',
+    '',
+    'export function authorize(guard: SessionValidator, token: string): boolean {',
+    '  return guard.validateSession(token);',
+    '}',
+    ''
+  ].join('\n'));
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const calls = db
+      .prepare(`
+        SELECT
+          source.symbol AS source_symbol,
+          target.symbol AS target_symbol,
+          r.provenance,
+          ev.snippet,
+          ev.start_line,
+          ev.end_line,
+          ev.start_col,
+          ev.end_col,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities source ON source.id = r.source_entity_id
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind = 'CALLS'
+          AND source.kind = 'symbol'
+          AND target.kind = 'symbol'
+          AND source.path = 'src/guard.ts'
+          AND target.path = 'src/guard.ts'
+        ORDER BY target.symbol
+      `)
+      .all(index.indexRunId) as Array<{
+        source_symbol: string;
+        target_symbol: string;
+        provenance: string;
+        snippet: string;
+        start_line: number | null;
+        end_line: number | null;
+        start_col: number | null;
+        end_col: number | null;
+        adapter_id: string | null;
+      }>;
+
+    assert.deepEqual(
+      calls.map((row) => [row.source_symbol, row.target_symbol, row.snippet]),
+      [
+        ['authorize', 'PrimarySessionValidator.validateSession', 'guard.validateSession(token)'],
+        ['authorize', 'SecondarySessionValidator.validateSession', 'guard.validateSession(token)']
+      ]
+    );
+    assert.deepEqual(calls.map((row) => row.start_line), [12, 12]);
+    assert.ok(calls.every((row) => row.end_line !== null));
+    assert.ok(calls.every((row) => row.start_col !== null));
+    assert.ok(calls.every((row) => row.end_col !== null));
+    assert.ok(calls.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
+    assert.ok(calls.every((row) => row.provenance.startsWith('instance-call:')));
+  } finally {
+    db.close();
+  }
+});
+
+test('TypeScript JavaScript adapter records parser-backed simple generic receiver dispatch spans', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-generic-receiver-spans-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+
+  await writeFile(path.join(repoRoot, 'src/guard.ts'), [
+    'interface SessionValidator<TToken> {',
+    '  validateSession(token: TToken): boolean;',
+    '}',
+    '',
+    'type AuditValidator<TToken> = {',
+    '  auditSession: (token: TToken) => boolean;',
+    '};',
+    '',
+    'type GuardAlias = SessionValidator<string>;',
+    'type AuditAlias<TToken> = AuditValidator<TToken>;',
+    '',
+    'interface ExtendedValidator<TToken> extends SessionValidator<TToken> {}',
+    '',
+    'class BaseGuard<TToken> {',
+    '  validateSession(token: TToken): boolean {',
+    '    return Boolean(token);',
+    '  }',
+    '}',
+    '',
+    'class SessionGuard extends BaseGuard<string> {}',
+    '',
+    'export function authorize(',
+    '  guard: SessionValidator<string>,',
+    '  alias: GuardAlias,',
+    '  extended: ExtendedValidator<string>,',
+    '  audit: AuditAlias<string>,',
+    '  token: string',
+    '): boolean {',
+    '  return guard.validateSession(token)',
+    '    && alias.validateSession(token)',
+    '    && extended.validateSession(token)',
+    '    && audit.auditSession(token);',
+    '}',
+    '',
+    'export function authorizeClass(token: string): boolean {',
+    '  return new SessionGuard().validateSession(token);',
+    '}',
+    ''
+  ].join('\n'));
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const calls = db
+      .prepare(`
+        SELECT
+          source.symbol AS source_symbol,
+          target.symbol AS target_symbol,
+          r.provenance,
+          ev.snippet,
+          ev.start_line,
+          ev.end_line,
+          ev.start_col,
+          ev.end_col,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities source ON source.id = r.source_entity_id
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind = 'CALLS'
+          AND source.kind = 'symbol'
+          AND target.kind = 'symbol'
+          AND source.path = 'src/guard.ts'
+          AND target.path = 'src/guard.ts'
+        ORDER BY ev.start_line, ev.start_col
+      `)
+      .all(index.indexRunId) as Array<{
+        source_symbol: string;
+        target_symbol: string;
+        provenance: string;
+        snippet: string;
+        start_line: number | null;
+        end_line: number | null;
+        start_col: number | null;
+        end_col: number | null;
+        adapter_id: string | null;
+      }>;
+
+    assert.deepEqual(
+      calls.map((row) => [row.source_symbol, row.target_symbol, row.snippet]),
+      [
+        ['authorize', 'SessionValidator.validateSession', 'guard.validateSession(token)'],
+        ['authorize', 'SessionValidator.validateSession', 'alias.validateSession(token)'],
+        ['authorize', 'SessionValidator.validateSession', 'extended.validateSession(token)'],
+        ['authorize', 'AuditValidator.auditSession', 'audit.auditSession(token)'],
+        ['authorizeClass', 'BaseGuard.validateSession', 'new SessionGuard().validateSession(token)']
+      ]
+    );
+    assert.deepEqual(calls.map((row) => row.start_line), [29, 30, 31, 32, 36]);
+    assert.ok(calls.every((row) => row.end_line !== null));
+    assert.ok(calls.every((row) => row.start_col !== null));
+    assert.ok(calls.every((row) => row.end_col !== null));
+    assert.ok(calls.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
+    assert.deepEqual(
+      calls.map((row) => row.provenance.split(':')[0]),
+      ['instance-call', 'instance-call', 'instance-call', 'instance-call', 'direct-instance-call']
+    );
+  } finally {
+    db.close();
+  }
+});
+
+test('TypeScript JavaScript adapter records parser-backed generic constraint receiver dispatch spans', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-generic-constraint-receiver-spans-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+
+  await writeFile(path.join(repoRoot, 'src/guard.ts'), [
+    'interface SessionValidator {',
+    '  validateSession(token: string): boolean;',
+    '}',
+    '',
+    'type AuditableValidator = {',
+    '  auditSession: (token: string) => boolean;',
+    '};',
+    '',
+    'export function authorize<TGuard extends SessionValidator, TAudit extends AuditableValidator>(',
+    '  guard: TGuard,',
+    '  audit: TAudit,',
+    '  token: string',
+    '): boolean {',
+    '  return guard.validateSession(token)',
+    '    && audit.auditSession(token);',
+    '}',
+    '',
+    'class Coordinator<TGuard extends SessionValidator> {',
+    '  private guard!: TGuard;',
+    '',
+    '  authorize(token: string): boolean {',
+    '    return this.guard.validateSession(token);',
+    '  }',
+    '}',
+    ''
+  ].join('\n'));
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const calls = db
+      .prepare(`
+        SELECT
+          source.symbol AS source_symbol,
+          target.symbol AS target_symbol,
+          r.provenance,
+          ev.snippet,
+          ev.start_line,
+          ev.end_line,
+          ev.start_col,
+          ev.end_col,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities source ON source.id = r.source_entity_id
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind = 'CALLS'
+          AND source.kind = 'symbol'
+          AND target.kind = 'symbol'
+          AND source.path = 'src/guard.ts'
+          AND target.path = 'src/guard.ts'
+        ORDER BY ev.start_line, ev.start_col
+      `)
+      .all(index.indexRunId) as Array<{
+        source_symbol: string;
+        target_symbol: string;
+        provenance: string;
+        snippet: string;
+        start_line: number | null;
+        end_line: number | null;
+        start_col: number | null;
+        end_col: number | null;
+        adapter_id: string | null;
+      }>;
+
+    assert.deepEqual(
+      calls.map((row) => [row.source_symbol, row.target_symbol, row.snippet]),
+      [
+        ['authorize', 'SessionValidator.validateSession', 'guard.validateSession(token)'],
+        ['authorize', 'AuditableValidator.auditSession', 'audit.auditSession(token)'],
+        ['Coordinator.authorize', 'SessionValidator.validateSession', 'this.guard.validateSession(token)']
+      ]
+    );
+    assert.deepEqual(calls.map((row) => row.start_line), [14, 15, 22]);
+    assert.ok(calls.every((row) => row.end_line !== null));
+    assert.ok(calls.every((row) => row.start_col !== null));
+    assert.ok(calls.every((row) => row.end_col !== null));
+    assert.ok(calls.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
+    assert.deepEqual(
+      calls.map((row) => row.provenance.split(':')[0]),
+      ['instance-call', 'instance-call', 'field-instance-call']
+    );
   } finally {
     db.close();
   }

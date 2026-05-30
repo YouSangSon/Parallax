@@ -23,14 +23,14 @@ import type {
 } from './types.js';
 
 export const MULTI_LANG_REGEX_ADAPTER_ID = 'multi-language-regex-mvp';
-export const MULTI_LANG_REGEX_ADAPTER_VERSION = '3';
+export const MULTI_LANG_REGEX_ADAPTER_VERSION = '26';
 export const TS_JS_SEMANTIC_ADAPTER_ID = 'typescript-javascript-semantic-v0';
 export const JVM_SPRING_SEMANTIC_ADAPTER_ID = 'jvm-spring-semantic-v0';
 export const PYTHON_SEMANTIC_ADAPTER_ID = 'python-semantic-v0';
 export const GO_SEMANTIC_ADAPTER_ID = 'go-semantic-v0';
 export const RUST_SEMANTIC_ADAPTER_ID = 'rust-semantic-v0';
 
-const capabilities: readonly AdapterCapability[] = ['imports', 'symbols', 'calls', 'docrefs', 'tests'];
+const capabilities: readonly AdapterCapability[] = ['imports', 'symbols', 'calls', 'types', 'docrefs', 'tests'];
 
 type ExtractedSymbol = {
   name: string;
@@ -63,14 +63,59 @@ type ExtractedCall = EvidenceSpan & {
   provenance: string;
 };
 
+type ExtractedTypeRelation = EvidenceSpan & {
+  source: EntityDescriptor;
+  target: EntityDescriptor;
+  kind: 'EXTENDS' | 'IMPLEMENTS';
+  provenance: string;
+};
+
+type TsResolvedHeritageType = {
+  name: string;
+  symbolKind: string;
+  path: string;
+  languageId: string;
+};
+
+type TsResolvedDefaultTypeExport = {
+  targetPath: string;
+  name: string;
+};
+
+type TsResolvedNamespaceTypeExport = {
+  targetPath: string;
+};
+
+type TsTypeReExport = {
+  specifier: string;
+  exportedName: string;
+  sourceName: string;
+};
+
+type TsNamespaceTypeReExport = {
+  specifier: string;
+  exportedName: string;
+};
+
 type TsLocalCallable = {
   name: string;
   symbolKind: string;
   descriptor: EntityDescriptor;
 };
 
+type TsImportedFactoryReturns = {
+  factoryReturnTypes: Map<string, string>;
+  typeMemberCallables: Map<string, TsLocalCallable>;
+};
+
+type TsResolvedFactoryExport = {
+  targetPath: string;
+  name: string;
+};
+
 type TsLocalInstanceBinding = {
-  className: string;
+  typeNames: readonly string[];
+  resolution: 'first' | 'all';
 };
 
 type SpringClass = {
@@ -130,10 +175,11 @@ abstract class RegexBackedSemanticAdapter implements SemanticAdapter {
 
   start(ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun {
     const filePathSet = new Set(ctx.indexedFiles.map((f) => f.relativePath));
+    const indexedFileByPath = new Map(ctx.indexedFiles.map((f) => [f.relativePath, f]));
     const importResolver = createImportResolver(ctx.indexedFiles);
     return {
       async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
-        yield* extractEvents(file, filePathSet, importResolver);
+        yield* extractEvents(file, filePathSet, importResolver, indexedFileByPath);
       }
     };
   }
@@ -141,7 +187,7 @@ abstract class RegexBackedSemanticAdapter implements SemanticAdapter {
 
 export class TypeScriptJavaScriptSemanticAdapter extends RegexBackedSemanticAdapter {
   override readonly knownGaps = [
-    'TypeScript/JavaScript import, declaration, imported call-site, local identifier call, same-class this.method, static ClassName.method, same-file factory return type instance method call, interface/type-literal method/function-property/function-type-alias signature, same-file interface extends typed receiver method call, same-file type reference alias typed receiver method call, typed local variable instance method call, typed parameter instance method call, constructor parameter property instance method call, constructor assignment instance method call, class field arrow method caller/target, typed class field instance method call, class field instance method call, same-file new ClassName instance call, and direct new ClassName().method call spans are parser-backed, but broader dynamic dispatch and type relation resolution are not yet complete',
+    'TypeScript/JavaScript import, declaration, same-file/named-imported/direct-named-re-exported/star-re-exported/namespace-re-exported/default-imported/direct-default-re-exported/namespace-imported class/interface heritage type relation, imported call-site, local identifier call, same-class this.method, same-file/direct-new-or-const-alias-inferred/namespace-constructor-inferred/factory-wrapper-inferred/named-imported/direct-named-re-exported/star-re-exported/namespace-imported/namespace-re-exported/default-imported/direct-default-re-exported factory return type instance method call, interface/type-literal method/function-property/function-type-alias signature, same-file/named-imported/direct-named-re-exported/star-re-exported/namespace-re-exported/default-imported/direct-default-re-exported/namespace-imported interface/type-literal typed receiver method call, same-file interface extends typed receiver method call, same-file alias-backed interface extends typed receiver method call, same-file type reference alias typed receiver method call, same-file simple generic type reference typed receiver method call, same-file generic constraint typed receiver method call, same-file intersection type alias typed receiver method call, direct intersection typed receiver method call, same-file simple union typed receiver method call, declared typed local/class field receiver method call, typed local variable instance method call, typed parameter instance method call, constructor parameter property instance method call, constructor assignment instance method call, class field arrow method caller/target, typed class field instance method call, class field instance method call, same-file new ClassName instance call, and direct new ClassName().method call spans are parser-backed, but broader dynamic dispatch and advanced type relation resolution are not yet complete',
     'polymorphism, alias-heavy object flows, generated code, and framework-specific routing may require deeper adapters'
   ];
 
@@ -210,10 +256,11 @@ export class MultiLanguageRegexAdapter implements SemanticAdapter {
 
   start(ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun {
     const filePathSet = new Set(ctx.indexedFiles.map((f) => f.relativePath));
+    const indexedFileByPath = new Map(ctx.indexedFiles.map((f) => [f.relativePath, f]));
     const importResolver = createImportResolver(ctx.indexedFiles);
     return {
       async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
-        yield* extractEvents(file, filePathSet, importResolver);
+        yield* extractEvents(file, filePathSet, importResolver, indexedFileByPath);
       }
     };
   }
@@ -228,7 +275,8 @@ type ImportResolverWithDiagnostics = {
 async function* extractEvents(
   file: ScannedFile,
   filePathSet: ReadonlySet<string>,
-  importResolver: ImportResolverWithDiagnostics
+  importResolver: ImportResolverWithDiagnostics,
+  indexedFileByPath: ReadonlyMap<string, ScannedFile>
 ): AsyncIterable<IndexEvent> {
   const contractFile = isContractLikeFile(file.relativePath, file.language);
   const fileDescriptor: EntityDescriptor = {
@@ -292,6 +340,30 @@ async function* extractEvents(
     };
   }
 
+  for (const typeRelation of extractTypeRelations(
+    file,
+    filePathSet,
+    importResolver.resolve,
+    indexedFileByPath
+  )) {
+    yield {
+      kind: 'relation',
+      relation: makeRelation({
+        source: typeRelation.source,
+        target: typeRelation.target,
+        kind: typeRelation.kind,
+        confidence: 'inferred',
+        provenance: typeRelation.provenance,
+        evidenceFile,
+        evidenceSnippet: typeRelation.snippet,
+        startLine: typeRelation.startLine,
+        endLine: typeRelation.endLine,
+        startCol: typeRelation.startCol,
+        endCol: typeRelation.endCol
+      })
+    };
+  }
+
   if (isJvmLanguage(file.language)) {
     yield* extractSpringEvents(file, fileDescriptor);
   }
@@ -348,7 +420,7 @@ async function* extractEvents(
     }
   }
 
-  for (const call of extractCalls(file, filePathSet, importResolver.resolve)) {
+  for (const call of extractCalls(file, filePathSet, importResolver.resolve, indexedFileByPath)) {
     yield {
       kind: 'relation',
       relation: makeRelation({
@@ -1502,6 +1574,10 @@ function extractSymbols(file: ScannedFile): ExtractedSymbol[] {
   return dedupeSymbols(symbols);
 }
 
+function isTypeScriptJavaScriptLanguage(language: string): boolean {
+  return language === 'typescript' || language === 'javascript';
+}
+
 function extractTypeScriptJavaScriptSymbols(file: ScannedFile): ExtractedSymbol[] {
   const sourceFile = ts.createSourceFile(
     file.relativePath,
@@ -1582,6 +1658,602 @@ function extractTypeScriptJavaScriptSymbols(file: ScannedFile): ExtractedSymbol[
   return dedupeSymbols(symbols);
 }
 
+function extractTypeRelations(
+  file: ScannedFile,
+  filePathSet: ReadonlySet<string>,
+  importResolver: ImportResolver,
+  indexedFileByPath: ReadonlyMap<string, ScannedFile>
+): ExtractedTypeRelation[] {
+  if (file.language !== 'typescript' && file.language !== 'javascript') return [];
+  const sourceFile = ts.createSourceFile(
+    file.relativePath,
+    file.content,
+    ts.ScriptTarget.Latest,
+    true,
+    scriptKindFor(file.relativePath)
+  );
+  const typeSymbolKinds = collectTypeScriptJavaScriptTypeSymbolKinds(sourceFile);
+  const importBindings = collectTypeScriptJavaScriptImportBindings(
+    file,
+    sourceFile,
+    filePathSet,
+    importResolver
+  );
+  const importedTypeSymbolKinds = new Map<string, Map<string, string>>();
+  const importedDefaultTypeExports = new Map<string, TsResolvedDefaultTypeExport | undefined>();
+  const importedNamedTypeExports = new Map<string, TsResolvedDefaultTypeExport | undefined>();
+  const importedNamespaceTypeExports = new Map<string, TsResolvedNamespaceTypeExport | undefined>();
+  const relations: ExtractedTypeRelation[] = [];
+
+  const typeSymbolKindsForPath = (targetPath: string): ReadonlyMap<string, string> => {
+    if (targetPath === file.relativePath) return typeSymbolKinds;
+    const existing = importedTypeSymbolKinds.get(targetPath);
+    if (existing) return existing;
+    const targetFile = indexedFileByPath.get(targetPath);
+    const targetKinds = targetFile && isTypeScriptJavaScriptLanguage(targetFile.language)
+      ? collectTypeScriptJavaScriptTypeSymbolKindsForFile(targetFile)
+      : new Map<string, string>();
+    importedTypeSymbolKinds.set(targetPath, targetKinds);
+    return targetKinds;
+  };
+  const defaultTypeExportForPath = (targetPath: string): TsResolvedDefaultTypeExport | undefined => {
+    if (importedDefaultTypeExports.has(targetPath)) {
+      return importedDefaultTypeExports.get(targetPath);
+    }
+    const target = resolveTypeScriptJavaScriptDefaultTypeExport(
+      targetPath,
+      indexedFileByPath,
+      importResolver
+    );
+    importedDefaultTypeExports.set(targetPath, target);
+    return target;
+  };
+  const namedTypeExportForPath = (
+    targetPath: string,
+    exportedName: string
+  ): TsResolvedDefaultTypeExport | undefined => {
+    const cacheKey = `${targetPath}:${exportedName}`;
+    if (importedNamedTypeExports.has(cacheKey)) {
+      return importedNamedTypeExports.get(cacheKey);
+    }
+    const target = resolveTypeScriptJavaScriptNamedTypeExport(
+      targetPath,
+      exportedName,
+      indexedFileByPath,
+      importResolver
+    );
+    importedNamedTypeExports.set(cacheKey, target);
+    return target;
+  };
+  const namespaceTypeExportForPath = (
+    targetPath: string,
+    exportedName: string
+  ): TsResolvedNamespaceTypeExport | undefined => {
+    const cacheKey = `${targetPath}:${exportedName}`;
+    if (importedNamespaceTypeExports.has(cacheKey)) {
+      return importedNamespaceTypeExports.get(cacheKey);
+    }
+    const target = resolveTypeScriptJavaScriptNamespaceTypeExport(
+      targetPath,
+      exportedName,
+      indexedFileByPath,
+      importResolver
+    );
+    importedNamespaceTypeExports.set(cacheKey, target);
+    return target;
+  };
+
+  const addRelation = (
+    sourceName: string,
+    sourceKind: string,
+    target: TsResolvedHeritageType,
+    relationKind: 'EXTENDS' | 'IMPLEMENTS',
+    node: ts.Node
+  ): void => {
+    relations.push({
+      ...nodeExactEvidence(file.content, sourceFile, node),
+      source: typeScriptJavaScriptSymbolDescriptor(file, sourceName, sourceKind),
+      target: typeScriptJavaScriptSymbolDescriptorForPath(
+        target.path,
+        target.languageId,
+        target.name,
+        target.symbolKind
+      ),
+      kind: relationKind,
+      provenance: `typescript:${relationKind.toLowerCase()}:${sourceName}->${target.name}`
+    });
+  };
+
+  const resolveHeritageType = (type: ts.ExpressionWithTypeArguments): TsResolvedHeritageType | undefined => {
+    const targetName = simpleHeritageTypeName(type);
+    if (!targetName) return undefined;
+    const binding = importBindings.get(targetName);
+    if (binding && !binding.namespace) {
+      const defaultExport = binding.importedName === 'default'
+        ? defaultTypeExportForPath(binding.targetPath)
+        : undefined;
+      const namedExport = binding.importedName && binding.importedName !== 'default'
+        ? namedTypeExportForPath(binding.targetPath, binding.importedName)
+        : undefined;
+      const importedName = binding.importedName === 'default'
+        ? defaultExport?.name
+        : namedExport?.name ?? binding.importedName ?? targetName;
+      if (!importedName) return undefined;
+      const targetPath = defaultExport?.targetPath ?? namedExport?.targetPath ?? binding.targetPath;
+      const targetKind = typeSymbolKindsForPath(targetPath).get(importedName);
+      const targetFile = indexedFileByPath.get(targetPath);
+      return targetKind
+        ? {
+            name: importedName,
+            symbolKind: targetKind,
+            path: targetPath,
+            languageId: targetFile?.language ?? file.language
+        }
+        : undefined;
+    }
+    const namespaceTarget = namespaceQualifiedHeritageTarget(
+      targetName,
+      importBindings,
+      namespaceTypeExportForPath
+    );
+    if (namespaceTarget) {
+      const targetKind = typeSymbolKindsForPath(namespaceTarget.targetPath).get(namespaceTarget.importedName);
+      const targetFile = indexedFileByPath.get(namespaceTarget.targetPath);
+      return targetKind
+        ? {
+            name: namespaceTarget.importedName,
+            symbolKind: targetKind,
+            path: namespaceTarget.targetPath,
+            languageId: targetFile?.language ?? file.language
+          }
+        : undefined;
+    }
+    const targetKind = typeSymbolKinds.get(targetName);
+    return targetKind
+      ? {
+          name: targetName,
+          symbolKind: targetKind,
+          path: file.relativePath,
+          languageId: file.language
+        }
+      : undefined;
+  };
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isClassDeclaration(node) && node.name) {
+      for (const clause of node.heritageClauses ?? []) {
+        if (clause.token !== ts.SyntaxKind.ExtendsKeyword && clause.token !== ts.SyntaxKind.ImplementsKeyword) {
+          continue;
+        }
+        for (const type of clause.types) {
+          const target = resolveHeritageType(type);
+          if (!target) continue;
+          addRelation(
+            node.name.text,
+            'class',
+            target,
+            clause.token === ts.SyntaxKind.ExtendsKeyword ? 'EXTENDS' : 'IMPLEMENTS',
+            type
+          );
+        }
+      }
+    } else if (ts.isInterfaceDeclaration(node)) {
+      for (const clause of node.heritageClauses ?? []) {
+        if (clause.token !== ts.SyntaxKind.ExtendsKeyword) continue;
+        for (const type of clause.types) {
+          const target = resolveHeritageType(type);
+          if (!target) continue;
+          addRelation(node.name.text, 'interface', target, 'EXTENDS', type);
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+
+  visit(sourceFile);
+  return dedupeTypeRelations(relations);
+}
+
+function collectTypeScriptJavaScriptTypeSymbolKinds(sourceFile: ts.SourceFile): Map<string, string> {
+  const typeSymbolKinds = new Map<string, string>();
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isClassDeclaration(node) && node.name) {
+      typeSymbolKinds.set(node.name.text, 'class');
+    } else if (ts.isInterfaceDeclaration(node)) {
+      typeSymbolKinds.set(node.name.text, 'interface');
+    } else if (ts.isTypeAliasDeclaration(node)) {
+      typeSymbolKinds.set(node.name.text, 'type');
+    }
+    ts.forEachChild(node, visit);
+  };
+
+  visit(sourceFile);
+  return typeSymbolKinds;
+}
+
+function collectTypeScriptJavaScriptTypeSymbolKindsForFile(file: ScannedFile): Map<string, string> {
+  const sourceFile = ts.createSourceFile(
+    file.relativePath,
+    file.content,
+    ts.ScriptTarget.Latest,
+    true,
+    scriptKindFor(file.relativePath)
+  );
+  return collectTypeScriptJavaScriptTypeSymbolKinds(sourceFile);
+}
+
+function resolveTypeScriptJavaScriptDefaultTypeExport(
+  targetPath: string,
+  indexedFileByPath: ReadonlyMap<string, ScannedFile>,
+  importResolver: ImportResolver,
+  seen = new Set<string>()
+): TsResolvedDefaultTypeExport | undefined {
+  if (seen.has(targetPath)) return undefined;
+  seen.add(targetPath);
+  const targetFile = indexedFileByPath.get(targetPath);
+  if (!targetFile || !isTypeScriptJavaScriptLanguage(targetFile.language)) return undefined;
+  const sourceFile = ts.createSourceFile(
+    targetFile.relativePath,
+    targetFile.content,
+    ts.ScriptTarget.Latest,
+    true,
+    scriptKindFor(targetFile.relativePath)
+  );
+  const localName = collectTypeScriptJavaScriptLocalDefaultTypeSymbolName(sourceFile);
+  if (localName) return { targetPath, name: localName };
+  const filePathSet = new Set(indexedFileByPath.keys());
+
+  for (const defaultReExport of collectTypeScriptJavaScriptDefaultTypeReExports(sourceFile)) {
+    const resolvedPath = resolveImportPath(
+      targetPath,
+      defaultReExport.specifier,
+      filePathSet,
+      importResolver
+    );
+    if (!resolvedPath) continue;
+    if (defaultReExport.sourceName === 'default') {
+      const resolvedDefault = resolveTypeScriptJavaScriptDefaultTypeExport(
+        resolvedPath,
+        indexedFileByPath,
+        importResolver,
+        seen
+      );
+      if (resolvedDefault) return resolvedDefault;
+      continue;
+    }
+    const namedExport = resolveTypeScriptJavaScriptNamedTypeExport(
+      resolvedPath,
+      defaultReExport.sourceName,
+      indexedFileByPath,
+      importResolver
+    );
+    if (namedExport) return namedExport;
+  }
+
+  return undefined;
+}
+
+function resolveTypeScriptJavaScriptNamedTypeExport(
+  targetPath: string,
+  exportedName: string,
+  indexedFileByPath: ReadonlyMap<string, ScannedFile>,
+  importResolver: ImportResolver,
+  seen = new Set<string>()
+): TsResolvedDefaultTypeExport | undefined {
+  const seenKey = `${targetPath}:${exportedName}`;
+  if (seen.has(seenKey)) return undefined;
+  seen.add(seenKey);
+  const targetFile = indexedFileByPath.get(targetPath);
+  if (!targetFile || !isTypeScriptJavaScriptLanguage(targetFile.language)) return undefined;
+  const sourceFile = ts.createSourceFile(
+    targetFile.relativePath,
+    targetFile.content,
+    ts.ScriptTarget.Latest,
+    true,
+    scriptKindFor(targetFile.relativePath)
+  );
+  const typeSymbolKinds = collectTypeScriptJavaScriptTypeSymbolKinds(sourceFile);
+  if (typeSymbolKinds.has(exportedName)) return { targetPath, name: exportedName };
+
+  const filePathSet = new Set(indexedFileByPath.keys());
+  for (const reExport of collectTypeScriptJavaScriptNamedTypeReExports(sourceFile)) {
+    if (reExport.exportedName !== exportedName) continue;
+    const resolvedPath = resolveImportPath(
+      targetPath,
+      reExport.specifier,
+      filePathSet,
+      importResolver
+    );
+    if (!resolvedPath) continue;
+    if (reExport.sourceName === 'default') {
+      const defaultExport = resolveTypeScriptJavaScriptDefaultTypeExport(
+        resolvedPath,
+        indexedFileByPath,
+        importResolver
+      );
+      if (defaultExport) return defaultExport;
+      continue;
+    }
+    const namedExport = resolveTypeScriptJavaScriptNamedTypeExport(
+      resolvedPath,
+      reExport.sourceName,
+      indexedFileByPath,
+      importResolver,
+      seen
+    );
+    if (namedExport) return namedExport;
+  }
+  for (const starSpecifier of collectTypeScriptJavaScriptStarTypeReExports(sourceFile)) {
+    const resolvedPath = resolveImportPath(
+      targetPath,
+      starSpecifier,
+      filePathSet,
+      importResolver
+    );
+    if (!resolvedPath) continue;
+    const namedExport = resolveTypeScriptJavaScriptNamedTypeExport(
+      resolvedPath,
+      exportedName,
+      indexedFileByPath,
+      importResolver,
+      seen
+    );
+    if (namedExport) return namedExport;
+  }
+
+  return undefined;
+}
+
+function resolveTypeScriptJavaScriptNamespaceTypeExport(
+  targetPath: string,
+  exportedName: string,
+  indexedFileByPath: ReadonlyMap<string, ScannedFile>,
+  importResolver: ImportResolver,
+  seen = new Set<string>()
+): TsResolvedNamespaceTypeExport | undefined {
+  const seenKey = `${targetPath}:${exportedName}`;
+  if (seen.has(seenKey)) return undefined;
+  seen.add(seenKey);
+  const targetFile = indexedFileByPath.get(targetPath);
+  if (!targetFile || !isTypeScriptJavaScriptLanguage(targetFile.language)) return undefined;
+  const sourceFile = ts.createSourceFile(
+    targetFile.relativePath,
+    targetFile.content,
+    ts.ScriptTarget.Latest,
+    true,
+    scriptKindFor(targetFile.relativePath)
+  );
+
+  const filePathSet = new Set(indexedFileByPath.keys());
+  for (const namespaceReExport of collectTypeScriptJavaScriptNamespaceTypeReExports(sourceFile)) {
+    if (namespaceReExport.exportedName !== exportedName) continue;
+    const resolvedPath = resolveImportPath(
+      targetPath,
+      namespaceReExport.specifier,
+      filePathSet,
+      importResolver
+    );
+    const resolvedFile = resolvedPath ? indexedFileByPath.get(resolvedPath) : undefined;
+    if (resolvedPath && resolvedFile && isTypeScriptJavaScriptLanguage(resolvedFile.language)) {
+      return { targetPath: resolvedPath };
+    }
+  }
+  for (const reExport of collectTypeScriptJavaScriptNamedTypeReExports(sourceFile)) {
+    if (reExport.exportedName !== exportedName || reExport.sourceName === 'default') continue;
+    const resolvedPath = resolveImportPath(
+      targetPath,
+      reExport.specifier,
+      filePathSet,
+      importResolver
+    );
+    if (!resolvedPath) continue;
+    const namespaceExport = resolveTypeScriptJavaScriptNamespaceTypeExport(
+      resolvedPath,
+      reExport.sourceName,
+      indexedFileByPath,
+      importResolver,
+      seen
+    );
+    if (namespaceExport) return namespaceExport;
+  }
+  for (const starSpecifier of collectTypeScriptJavaScriptStarTypeReExports(sourceFile)) {
+    const resolvedPath = resolveImportPath(
+      targetPath,
+      starSpecifier,
+      filePathSet,
+      importResolver
+    );
+    if (!resolvedPath) continue;
+    const namespaceExport = resolveTypeScriptJavaScriptNamespaceTypeExport(
+      resolvedPath,
+      exportedName,
+      indexedFileByPath,
+      importResolver,
+      seen
+    );
+    if (namespaceExport) return namespaceExport;
+  }
+
+  return undefined;
+}
+
+function collectTypeScriptJavaScriptLocalDefaultTypeSymbolName(sourceFile: ts.SourceFile): string | undefined {
+  const typeSymbolKinds = collectTypeScriptJavaScriptTypeSymbolKinds(sourceFile);
+  let defaultName: string | undefined;
+
+  const recordIfTypeSymbol = (name: string | undefined): void => {
+    if (!name || defaultName || !typeSymbolKinds.has(name)) return;
+    defaultName = name;
+  };
+
+  const visit = (node: ts.Node): void => {
+    if (
+      (ts.isClassDeclaration(node) || ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node))
+      && node.name
+      && hasDefaultModifier(node)
+    ) {
+      recordIfTypeSymbol(node.name.text);
+    } else if (ts.isExportAssignment(node) && !node.isExportEquals && ts.isIdentifier(node.expression)) {
+      recordIfTypeSymbol(node.expression.text);
+    } else if (
+      ts.isExportDeclaration(node)
+      && !node.moduleSpecifier
+      && node.exportClause
+      && ts.isNamedExports(node.exportClause)
+    ) {
+      for (const element of node.exportClause.elements) {
+        if (element.name.text === 'default') {
+          recordIfTypeSymbol(element.propertyName?.text ?? element.name.text);
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+
+  visit(sourceFile);
+  return defaultName;
+}
+
+function collectTypeScriptJavaScriptDefaultTypeReExports(
+  sourceFile: ts.SourceFile
+): TsTypeReExport[] {
+  return collectTypeScriptJavaScriptNamedTypeReExports(sourceFile)
+    .filter((reExport) => reExport.exportedName === 'default');
+}
+
+function collectTypeScriptJavaScriptNamedTypeReExports(sourceFile: ts.SourceFile): TsTypeReExport[] {
+  const reExports: TsTypeReExport[] = [];
+
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isExportDeclaration(node)
+      && node.moduleSpecifier
+      && node.exportClause
+      && ts.isNamedExports(node.exportClause)
+    ) {
+      const specifier = moduleSpecifierText(node.moduleSpecifier);
+      if (specifier) {
+        for (const element of node.exportClause.elements) {
+          reExports.push({
+            specifier,
+            exportedName: element.name.text,
+            sourceName: element.propertyName?.text ?? element.name.text
+          });
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+
+  visit(sourceFile);
+  return reExports;
+}
+
+function collectTypeScriptJavaScriptNamespaceTypeReExports(sourceFile: ts.SourceFile): TsNamespaceTypeReExport[] {
+  const reExports: TsNamespaceTypeReExport[] = [];
+
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isExportDeclaration(node)
+      && node.moduleSpecifier
+      && node.exportClause
+      && ts.isNamespaceExport(node.exportClause)
+    ) {
+      const specifier = moduleSpecifierText(node.moduleSpecifier);
+      if (specifier) {
+        reExports.push({
+          specifier,
+          exportedName: node.exportClause.name.text
+        });
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+
+  visit(sourceFile);
+  return reExports;
+}
+
+function collectTypeScriptJavaScriptStarTypeReExports(sourceFile: ts.SourceFile): string[] {
+  const reExports: string[] = [];
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isExportDeclaration(node) && node.moduleSpecifier && !node.exportClause) {
+      const specifier = moduleSpecifierText(node.moduleSpecifier);
+      if (specifier) reExports.push(specifier);
+    }
+    ts.forEachChild(node, visit);
+  };
+
+  visit(sourceFile);
+  return reExports;
+}
+
+function simpleHeritageTypeName(type: ts.ExpressionWithTypeArguments): string | undefined {
+  return expressionNameText(type.expression);
+}
+
+function namespaceQualifiedHeritageTarget(
+  targetName: string,
+  importBindings: ReadonlyMap<string, TsImportBinding>,
+  namespaceTypeExportForPath?: (
+    targetPath: string,
+    exportedName: string
+  ) => TsResolvedNamespaceTypeExport | undefined
+): { targetPath: string; importedName: string } | undefined {
+  const [namespaceName, ...parts] = targetName.split('.');
+  if (!namespaceName || parts.length === 0) return undefined;
+  const binding = importBindings.get(namespaceName);
+  if (!binding) return undefined;
+  const importedName = parts.join('.');
+  if (binding.namespace) return { targetPath: binding.targetPath, importedName };
+  const namespaceExport = binding.importedName
+    ? namespaceTypeExportForPath?.(binding.targetPath, binding.importedName)
+    : undefined;
+  return namespaceExport
+    ? { targetPath: namespaceExport.targetPath, importedName }
+    : undefined;
+}
+
+function expressionNameText(node: ts.Expression): string | undefined {
+  if (ts.isIdentifier(node)) return node.text;
+  if (ts.isPropertyAccessExpression(node)) {
+    const left = expressionNameText(node.expression);
+    return left ? `${left}.${node.name.text}` : undefined;
+  }
+  return undefined;
+}
+
+function typeScriptJavaScriptSymbolDescriptor(
+  file: ScannedFile,
+  name: string,
+  symbolKind: string
+): EntityDescriptor {
+  return typeScriptJavaScriptSymbolDescriptorForPath(
+    file.relativePath,
+    file.language,
+    name,
+    symbolKind
+  );
+}
+
+function typeScriptJavaScriptSymbolDescriptorForPath(
+  relativePath: string,
+  languageId: string,
+  name: string,
+  symbolKind: string
+): EntityDescriptor {
+  return {
+    kind: 'symbol',
+    path: relativePath,
+    symbol: name,
+    symbolKind,
+    languageId,
+    displayName: `${name} (${relativePath})`
+  };
+}
+
 function nodeEvidence(content: string, sourceFile: ts.SourceFile, node: ts.Node): EvidenceSpan {
   return evidenceSpanFromRange(content, node.getStart(sourceFile), node.getEnd());
 }
@@ -1600,6 +2272,14 @@ function hasExportModifier(node: ts.Node): boolean {
   return Boolean(
     (node as { modifiers?: readonly ts.ModifierLike[] }).modifiers?.some(
       (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword
+    )
+  );
+}
+
+function hasDefaultModifier(node: ts.Node): boolean {
+  return Boolean(
+    (node as { modifiers?: readonly ts.ModifierLike[] }).modifiers?.some(
+      (modifier) => modifier.kind === ts.SyntaxKind.DefaultKeyword
     )
   );
 }
@@ -1736,7 +2416,8 @@ function extractTypeScriptJavaScriptImports(file: ScannedFile): ExtractedImport[
 function extractCalls(
   file: ScannedFile,
   filePathSet: ReadonlySet<string>,
-  importResolver?: ImportResolver
+  importResolver?: ImportResolver,
+  indexedFileByPath: ReadonlyMap<string, ScannedFile> = new Map()
 ): ExtractedCall[] {
   if (file.language !== 'typescript' && file.language !== 'javascript') return [];
   const sourceFile = ts.createSourceFile(
@@ -1753,30 +2434,65 @@ function extractCalls(
     importResolver
   );
   const localCallables = collectTypeScriptJavaScriptLocalCallables(file, sourceFile);
-  const interfaceExtends = collectTypeScriptJavaScriptInterfaceExtends(sourceFile);
+  const importedTypeMemberCallables = collectTypeScriptJavaScriptImportedTypeMemberCallables(
+    file,
+    importBindings,
+    indexedFileByPath,
+    importResolver
+  );
+  const importedFactoryReturns = collectTypeScriptJavaScriptImportedFactoryReturns(
+    importBindings,
+    filePathSet,
+    indexedFileByPath,
+    importResolver
+  );
+  const typeMemberCallables = mergeLocalCallables(
+    localCallables,
+    mergeLocalCallables(importedTypeMemberCallables, importedFactoryReturns.typeMemberCallables)
+  );
   const typeReferenceAliases = collectTypeScriptJavaScriptTypeReferenceAliases(sourceFile);
   const typeIntersectionAliases = collectTypeScriptJavaScriptTypeIntersectionAliases(
     sourceFile,
     typeReferenceAliases
   );
-  const factoryReturnTypes = collectTypeScriptJavaScriptFactoryReturnTypes(
+  const typeUnionAliases = collectTypeScriptJavaScriptTypeUnionAliases(
     sourceFile,
     typeReferenceAliases
   );
+  const interfaceExtends = collectTypeScriptJavaScriptInterfaceExtends(
+    sourceFile,
+    typeReferenceAliases,
+    typeIntersectionAliases
+  );
+  const classExtends = collectTypeScriptJavaScriptClassExtends(sourceFile);
+  const typeExtends = mergeTypeExtends(
+    interfaceExtends,
+    classExtends
+  );
+  const localFactoryReturnTypes = collectTypeScriptJavaScriptFactoryReturnTypes(
+    sourceFile,
+    typeReferenceAliases
+  );
+  const factoryReturnTypes = new Map([
+    ...importedFactoryReturns.factoryReturnTypes.entries(),
+    ...localFactoryReturnTypes.entries()
+  ]);
   const localInstanceBindings = collectTypeScriptJavaScriptLocalInstanceBindings(
     sourceFile,
-    localCallables,
+    typeMemberCallables,
     factoryReturnTypes,
-    interfaceExtends,
+    typeExtends,
     typeIntersectionAliases,
+    typeUnionAliases,
     typeReferenceAliases
   );
   const classInstanceBindings = collectTypeScriptJavaScriptClassInstanceBindings(
     sourceFile,
-    localCallables,
+    typeMemberCallables,
     factoryReturnTypes,
-    interfaceExtends,
+    typeExtends,
     typeIntersectionAliases,
+    typeUnionAliases,
     typeReferenceAliases
   );
   const staticClassCallables = collectTypeScriptJavaScriptStaticClassCallables(sourceFile);
@@ -1795,25 +2511,26 @@ function extractCalls(
         });
       } else {
         const localSource = enclosingLocalCaller(node, localCallables);
-        const localTarget = localSource
-          ? localCallTargetForExpression(
+        const localTargets = localSource
+          ? localCallTargetsForExpression(
             node.expression,
-            localCallables,
+            typeMemberCallables,
             localInstanceBindings,
             classInstanceBindings,
             staticClassCallables,
-            interfaceExtends,
+            typeExtends,
+            classExtends,
             typeIntersectionAliases,
             localSource.name
           )
-          : undefined;
-        if (localSource && localTarget) {
+          : [];
+        if (localSource && localTargets.length > 0) {
           const evidence = nodeExactEvidence(file.content, sourceFile, node);
           const provenanceKind = isThisFieldInstanceCallExpression(node.expression)
             ? 'field-instance-call'
             : isDirectNewInstanceCallExpression(node.expression)
             ? 'direct-instance-call'
-            : isStaticClassCallExpression(node.expression, staticClassCallables)
+            : isStaticClassCallExpression(node.expression, staticClassCallables, classExtends)
             ? 'static-call'
             : ts.isPropertyAccessExpression(node.expression)
             && ts.isIdentifier(node.expression.expression)
@@ -1822,13 +2539,15 @@ function extractCalls(
             && node.expression.expression.kind === ts.SyntaxKind.ThisKeyword
             ? 'method-call'
             : 'local-call';
-          calls.push({
-            ...evidence,
-            source: localSource.descriptor,
-            target: localTarget.descriptor,
-            callee: localTarget.name,
-            provenance: `${provenanceKind}:${localSource.name}->${localTarget.name}:${evidence.startLine}:${evidence.startCol}`
-          });
+          for (const localTarget of localTargets) {
+            calls.push({
+              ...evidence,
+              source: localSource.descriptor,
+              target: localTarget.descriptor,
+              callee: localTarget.name,
+              provenance: `${provenanceKind}:${localSource.name}->${localTarget.name}:${evidence.startLine}:${evidence.startCol}`
+            });
+          }
         }
       }
     }
@@ -1896,11 +2615,417 @@ function collectTypeScriptJavaScriptLocalCallables(
   return callables;
 }
 
+function collectTypeScriptJavaScriptImportedTypeMemberCallables(
+  file: ScannedFile,
+  importBindings: ReadonlyMap<string, TsImportBinding>,
+  indexedFileByPath: ReadonlyMap<string, ScannedFile>,
+  importResolver?: ImportResolver
+): Map<string, TsLocalCallable> {
+  const callables = new Map<string, TsLocalCallable>();
+  const targetCallablesByPath = new Map<string, ReadonlyMap<string, TsLocalCallable>>();
+  const targetDefaultTypeExportsByPath = new Map<string, TsResolvedDefaultTypeExport | undefined>();
+  const targetNamedTypeExportsByPath = new Map<string, TsResolvedDefaultTypeExport | undefined>();
+  const targetNamespaceTypeExportsByPath = new Map<string, TsResolvedNamespaceTypeExport | undefined>();
+
+  const callablesForPath = (targetPath: string): ReadonlyMap<string, TsLocalCallable> => {
+    const existing = targetCallablesByPath.get(targetPath);
+    if (existing) return existing;
+    const targetFile = indexedFileByPath.get(targetPath);
+    const targetCallables = targetFile && isTypeScriptJavaScriptLanguage(targetFile.language)
+      ? collectTypeScriptJavaScriptLocalCallables(
+          targetFile,
+          ts.createSourceFile(
+            targetFile.relativePath,
+            targetFile.content,
+            ts.ScriptTarget.Latest,
+            true,
+            scriptKindFor(targetFile.relativePath)
+          )
+        )
+      : new Map<string, TsLocalCallable>();
+    targetCallablesByPath.set(targetPath, targetCallables);
+    return targetCallables;
+  };
+  const defaultTypeExportForPath = (targetPath: string): TsResolvedDefaultTypeExport | undefined => {
+    if (targetDefaultTypeExportsByPath.has(targetPath)) {
+      return targetDefaultTypeExportsByPath.get(targetPath);
+    }
+    const target = importResolver
+      ? resolveTypeScriptJavaScriptDefaultTypeExport(
+          targetPath,
+          indexedFileByPath,
+          importResolver
+        )
+      : undefined;
+    targetDefaultTypeExportsByPath.set(targetPath, target);
+    return target;
+  };
+  const namedTypeExportForPath = (
+    targetPath: string,
+    exportedName: string
+  ): TsResolvedDefaultTypeExport | undefined => {
+    const cacheKey = `${targetPath}:${exportedName}`;
+    if (targetNamedTypeExportsByPath.has(cacheKey)) {
+      return targetNamedTypeExportsByPath.get(cacheKey);
+    }
+    const target = importResolver
+      ? resolveTypeScriptJavaScriptNamedTypeExport(
+          targetPath,
+          exportedName,
+          indexedFileByPath,
+          importResolver
+        )
+      : undefined;
+    targetNamedTypeExportsByPath.set(cacheKey, target);
+    return target;
+  };
+  const namespaceTypeExportForPath = (
+    targetPath: string,
+    exportedName: string
+  ): TsResolvedNamespaceTypeExport | undefined => {
+    const cacheKey = `${targetPath}:${exportedName}`;
+    if (targetNamespaceTypeExportsByPath.has(cacheKey)) {
+      return targetNamespaceTypeExportsByPath.get(cacheKey);
+    }
+    const target = importResolver
+      ? resolveTypeScriptJavaScriptNamespaceTypeExport(
+          targetPath,
+          exportedName,
+          indexedFileByPath,
+          importResolver
+        )
+      : undefined;
+    targetNamespaceTypeExportsByPath.set(cacheKey, target);
+    return target;
+  };
+
+  for (const [localName, binding] of importBindings.entries()) {
+    if (binding.namespace) {
+      for (const [targetName, targetCallable] of callablesForPath(binding.targetPath).entries()) {
+        callables.set(`${localName}.${targetName}`, targetCallable);
+      }
+      continue;
+    }
+    const namespaceExport = binding.importedName && binding.importedName !== 'default'
+      ? namespaceTypeExportForPath(binding.targetPath, binding.importedName)
+      : undefined;
+    if (namespaceExport) {
+      for (const [targetName, targetCallable] of callablesForPath(namespaceExport.targetPath).entries()) {
+        callables.set(`${localName}.${targetName}`, targetCallable);
+      }
+      continue;
+    }
+    const defaultExport = binding.importedName === 'default'
+      ? defaultTypeExportForPath(binding.targetPath)
+      : undefined;
+    const namedExport = binding.importedName && binding.importedName !== 'default'
+      ? namedTypeExportForPath(binding.targetPath, binding.importedName)
+      : undefined;
+    const importedName = binding.importedName === 'default'
+      ? defaultExport?.name
+      : namedExport?.name ?? binding.importedName;
+    if (!importedName) continue;
+    const targetPath = defaultExport?.targetPath ?? namedExport?.targetPath ?? binding.targetPath;
+    const memberPrefix = `${importedName}.`;
+    for (const [targetName, targetCallable] of callablesForPath(targetPath).entries()) {
+      if (!targetName.startsWith(memberPrefix)) continue;
+      callables.set(`${localName}.${targetName.slice(memberPrefix.length)}`, targetCallable);
+    }
+  }
+
+  return callables;
+}
+
+function collectTypeScriptJavaScriptImportedFactoryReturns(
+  importBindings: ReadonlyMap<string, TsImportBinding>,
+  filePathSet: ReadonlySet<string>,
+  indexedFileByPath: ReadonlyMap<string, ScannedFile>,
+  importResolver?: ImportResolver
+): TsImportedFactoryReturns {
+  const factoryReturnTypes = new Map<string, string>();
+  const typeMemberCallables = new Map<string, TsLocalCallable>();
+  const targetInfoByPath = new Map<
+    string,
+    {
+      factoryReturnTypes: ReadonlyMap<string, string>;
+      typeMemberCallables: ReadonlyMap<string, TsLocalCallable>;
+    }
+  >();
+  const targetNamespaceTypeExportsByPath = new Map<string, TsResolvedNamespaceTypeExport | undefined>();
+
+  const targetInfoForPath = (
+    targetPath: string
+  ): {
+    factoryReturnTypes: ReadonlyMap<string, string>;
+    typeMemberCallables: ReadonlyMap<string, TsLocalCallable>;
+  } | undefined => {
+    const existing = targetInfoByPath.get(targetPath);
+    if (existing) return existing;
+    const targetFile = indexedFileByPath.get(targetPath);
+    if (!targetFile || !isTypeScriptJavaScriptLanguage(targetFile.language)) return undefined;
+    const targetSourceFile = ts.createSourceFile(
+      targetFile.relativePath,
+      targetFile.content,
+      ts.ScriptTarget.Latest,
+      true,
+      scriptKindFor(targetFile.relativePath)
+    );
+    const targetTypeReferenceAliases = collectTypeScriptJavaScriptTypeReferenceAliases(targetSourceFile);
+    const targetImportBindings = collectTypeScriptJavaScriptImportBindings(
+      targetFile,
+      targetSourceFile,
+      filePathSet,
+      importResolver
+    );
+    const targetLocalCallables = collectTypeScriptJavaScriptLocalCallables(targetFile, targetSourceFile);
+    const targetTypeMemberCallables = mergeLocalCallables(
+      targetLocalCallables,
+      collectTypeScriptJavaScriptImportedTypeMemberCallables(
+        targetFile,
+        targetImportBindings,
+        indexedFileByPath,
+        importResolver
+      )
+    );
+    const targetInfo = {
+      factoryReturnTypes: collectTypeScriptJavaScriptFactoryReturnTypes(
+        targetSourceFile,
+        targetTypeReferenceAliases
+      ),
+      typeMemberCallables: targetTypeMemberCallables
+    };
+    targetInfoByPath.set(targetPath, targetInfo);
+    return targetInfo;
+  };
+  const namespaceTypeExportForPath = (
+    targetPath: string,
+    exportedName: string
+  ): TsResolvedNamespaceTypeExport | undefined => {
+    const cacheKey = `${targetPath}:${exportedName}`;
+    if (targetNamespaceTypeExportsByPath.has(cacheKey)) {
+      return targetNamespaceTypeExportsByPath.get(cacheKey);
+    }
+    const target = importResolver
+      ? resolveTypeScriptJavaScriptNamespaceTypeExport(
+          targetPath,
+          exportedName,
+          indexedFileByPath,
+          importResolver
+        )
+      : undefined;
+    targetNamespaceTypeExportsByPath.set(cacheKey, target);
+    return target;
+  };
+
+  const addImportedFactoryReturn = (
+    localFactoryName: string,
+    targetInfo: {
+      factoryReturnTypes: ReadonlyMap<string, string>;
+      typeMemberCallables: ReadonlyMap<string, TsLocalCallable>;
+    },
+    factoryName: string
+  ): void => {
+    const returnTypeName = targetInfo.factoryReturnTypes.get(factoryName);
+    if (!returnTypeName) return;
+    const memberPrefix = `${returnTypeName}.`;
+    let foundMember = false;
+    for (const [targetName, targetCallable] of targetInfo.typeMemberCallables.entries()) {
+      if (!targetName.startsWith(memberPrefix)) continue;
+      typeMemberCallables.set(`${localFactoryName}.${targetName.slice(memberPrefix.length)}`, targetCallable);
+      foundMember = true;
+    }
+    if (foundMember) factoryReturnTypes.set(localFactoryName, localFactoryName);
+  };
+
+  for (const [localName, binding] of importBindings.entries()) {
+    if (binding.namespace) {
+      const targetInfo = targetInfoForPath(binding.targetPath);
+      if (!targetInfo) continue;
+      for (const factoryName of targetInfo.factoryReturnTypes.keys()) {
+        addImportedFactoryReturn(`${localName}.${factoryName}`, targetInfo, factoryName);
+      }
+      continue;
+    }
+    const namespaceExport = binding.importedName && binding.importedName !== 'default'
+      ? namespaceTypeExportForPath(binding.targetPath, binding.importedName)
+      : undefined;
+    if (namespaceExport) {
+      const targetInfo = targetInfoForPath(namespaceExport.targetPath);
+      if (!targetInfo) continue;
+      for (const factoryName of targetInfo.factoryReturnTypes.keys()) {
+        addImportedFactoryReturn(`${localName}.${factoryName}`, targetInfo, factoryName);
+      }
+      continue;
+    }
+    if (binding.importedName === 'default') {
+      const factoryExport = importResolver
+        ? resolveTypeScriptJavaScriptDefaultFactoryExport(
+            binding.targetPath,
+            indexedFileByPath,
+            importResolver
+          )
+        : undefined;
+      const factoryPath = factoryExport?.targetPath ?? binding.targetPath;
+      const factoryName = factoryExport?.name ?? binding.importedName;
+      const targetInfo = targetInfoForPath(factoryPath);
+      if (!targetInfo) continue;
+      addImportedFactoryReturn(localName, targetInfo, factoryName);
+      continue;
+    }
+    if (!binding.importedName || binding.importedName === 'default') continue;
+    const factoryExport = importResolver
+      ? resolveTypeScriptJavaScriptNamedFactoryExport(
+          binding.targetPath,
+          binding.importedName,
+          indexedFileByPath,
+          importResolver
+        )
+      : undefined;
+    const factoryPath = factoryExport?.targetPath ?? binding.targetPath;
+    const factoryName = factoryExport?.name ?? binding.importedName;
+    const targetInfo = targetInfoForPath(factoryPath);
+    if (!targetInfo) continue;
+    addImportedFactoryReturn(localName, targetInfo, factoryName);
+  }
+
+  return { factoryReturnTypes, typeMemberCallables };
+}
+
+function resolveTypeScriptJavaScriptDefaultFactoryExport(
+  targetPath: string,
+  indexedFileByPath: ReadonlyMap<string, ScannedFile>,
+  importResolver: ImportResolver,
+  seen = new Set<string>()
+): TsResolvedFactoryExport | undefined {
+  const seenKey = `${targetPath}:default`;
+  if (seen.has(seenKey)) return undefined;
+  seen.add(seenKey);
+  const targetFile = indexedFileByPath.get(targetPath);
+  if (!targetFile || !isTypeScriptJavaScriptLanguage(targetFile.language)) return undefined;
+  const sourceFile = ts.createSourceFile(
+    targetFile.relativePath,
+    targetFile.content,
+    ts.ScriptTarget.Latest,
+    true,
+    scriptKindFor(targetFile.relativePath)
+  );
+  const factoryReturnTypes = collectTypeScriptJavaScriptFactoryReturnTypes(
+    sourceFile,
+    collectTypeScriptJavaScriptTypeReferenceAliases(sourceFile)
+  );
+  if (factoryReturnTypes.has('default')) return { targetPath, name: 'default' };
+
+  const filePathSet = new Set(indexedFileByPath.keys());
+  for (const reExport of collectTypeScriptJavaScriptDefaultTypeReExports(sourceFile)) {
+    const resolvedPath = resolveImportPath(
+      targetPath,
+      reExport.specifier,
+      filePathSet,
+      importResolver
+    );
+    if (!resolvedPath) continue;
+    const factoryExport = reExport.sourceName === 'default'
+      ? resolveTypeScriptJavaScriptDefaultFactoryExport(
+          resolvedPath,
+          indexedFileByPath,
+          importResolver,
+          seen
+        )
+      : resolveTypeScriptJavaScriptNamedFactoryExport(
+          resolvedPath,
+          reExport.sourceName,
+          indexedFileByPath,
+          importResolver,
+          seen
+        );
+    if (factoryExport) return factoryExport;
+  }
+
+  return undefined;
+}
+
+function resolveTypeScriptJavaScriptNamedFactoryExport(
+  targetPath: string,
+  exportedName: string,
+  indexedFileByPath: ReadonlyMap<string, ScannedFile>,
+  importResolver: ImportResolver,
+  seen = new Set<string>()
+): TsResolvedFactoryExport | undefined {
+  const seenKey = `${targetPath}:${exportedName}`;
+  if (seen.has(seenKey)) return undefined;
+  seen.add(seenKey);
+  const targetFile = indexedFileByPath.get(targetPath);
+  if (!targetFile || !isTypeScriptJavaScriptLanguage(targetFile.language)) return undefined;
+  const sourceFile = ts.createSourceFile(
+    targetFile.relativePath,
+    targetFile.content,
+    ts.ScriptTarget.Latest,
+    true,
+    scriptKindFor(targetFile.relativePath)
+  );
+  const factoryReturnTypes = collectTypeScriptJavaScriptFactoryReturnTypes(
+    sourceFile,
+    collectTypeScriptJavaScriptTypeReferenceAliases(sourceFile)
+  );
+  if (factoryReturnTypes.has(exportedName)) return { targetPath, name: exportedName };
+
+  const filePathSet = new Set(indexedFileByPath.keys());
+  for (const reExport of collectTypeScriptJavaScriptNamedTypeReExports(sourceFile)) {
+    if (reExport.exportedName !== exportedName || reExport.sourceName === 'default') continue;
+    const resolvedPath = resolveImportPath(
+      targetPath,
+      reExport.specifier,
+      filePathSet,
+      importResolver
+    );
+    if (!resolvedPath) continue;
+    const factoryExport = resolveTypeScriptJavaScriptNamedFactoryExport(
+      resolvedPath,
+      reExport.sourceName,
+      indexedFileByPath,
+      importResolver,
+      seen
+    );
+    if (factoryExport) return factoryExport;
+  }
+  for (const starSpecifier of collectTypeScriptJavaScriptStarTypeReExports(sourceFile)) {
+    const resolvedPath = resolveImportPath(
+      targetPath,
+      starSpecifier,
+      filePathSet,
+      importResolver
+    );
+    if (!resolvedPath) continue;
+    const factoryExport = resolveTypeScriptJavaScriptNamedFactoryExport(
+      resolvedPath,
+      exportedName,
+      indexedFileByPath,
+      importResolver,
+      seen
+    );
+    if (factoryExport) return factoryExport;
+  }
+
+  return undefined;
+}
+
+function mergeLocalCallables(
+  primary: ReadonlyMap<string, TsLocalCallable>,
+  secondary: ReadonlyMap<string, TsLocalCallable>
+): Map<string, TsLocalCallable> {
+  return new Map([...secondary.entries(), ...primary.entries()]);
+}
+
 function collectTypeScriptJavaScriptFactoryReturnTypes(
   sourceFile: ts.SourceFile,
   typeReferenceAliases: ReadonlyMap<string, string>
 ): Map<string, string> {
   const factoryReturnTypes = new Map<string, string>();
+  const inferredReturnCandidates: Array<{
+    names: readonly string[];
+    resolve: () => string | undefined;
+  }> = [];
+  const returnTypeAliases: Array<{ name: string; sourceName: string | undefined }> = [];
 
   const addReturnType = (name: string | undefined, type: ts.TypeNode | undefined): void => {
     if (!name) return;
@@ -1908,21 +3033,148 @@ function collectTypeScriptJavaScriptFactoryReturnTypes(
     if (!className) return;
     factoryReturnTypes.set(name, className);
   };
+  const addReturnClassName = (name: string | undefined, className: string | undefined): void => {
+    if (!name || !className) return;
+    factoryReturnTypes.set(name, className);
+  };
+  const addReturnTypeAlias = (name: string, sourceName: string | undefined): void => {
+    returnTypeAliases.push({ name, sourceName });
+  };
+  const addInferredReturnCandidate = (
+    names: ReadonlyArray<string | undefined>,
+    resolve: () => string | undefined
+  ): void => {
+    const resolvedNames = names.filter((name): name is string => Boolean(name));
+    if (resolvedNames.length === 0) return;
+    inferredReturnCandidates.push({ names: resolvedNames, resolve });
+  };
+  const resolveReturnTypeAlias = (name: string, sourceName: string | undefined): boolean => {
+    const className = sourceName ? factoryReturnTypes.get(sourceName) : undefined;
+    if (!className || factoryReturnTypes.get(name) === className) return false;
+    factoryReturnTypes.set(name, className);
+    return true;
+  };
 
   const visit = (node: ts.Node): void => {
-    if (ts.isFunctionDeclaration(node) && node.name) {
-      addReturnType(node.name.text, node.type);
+    if (ts.isFunctionDeclaration(node)) {
+      addReturnType(node.name?.text, node.type);
+      if (hasDefaultModifier(node)) addReturnType('default', node.type);
+      if (!node.type) {
+        addInferredReturnCandidate(
+          [node.name?.text, hasDefaultModifier(node) ? 'default' : undefined],
+          () => classNameFromFunctionLikeInferredReturn(node, factoryReturnTypes)
+        );
+      }
     } else if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
       addReturnType(node.name.text, returnTypeFromCallableInitializer(node.initializer));
+      addInferredReturnCandidate(
+        [node.name.text],
+        () => classNameFromCallableInitializerInferredReturn(node.initializer, factoryReturnTypes)
+      );
+    } else if (ts.isExportAssignment(node) && !node.isExportEquals && ts.isIdentifier(node.expression)) {
+      addReturnTypeAlias('default', node.expression.text);
+    } else if (ts.isExportAssignment(node) && !node.isExportEquals) {
+      addInferredReturnCandidate(
+        ['default'],
+        () => classNameFromCallableInitializerInferredReturn(node.expression, factoryReturnTypes)
+      );
+    } else if (
+      ts.isExportDeclaration(node)
+      && !node.moduleSpecifier
+      && node.exportClause
+      && ts.isNamedExports(node.exportClause)
+    ) {
+      for (const element of node.exportClause.elements) {
+        if (element.name.text !== 'default') continue;
+        addReturnTypeAlias('default', element.propertyName?.text ?? element.name.text);
+      }
     }
     ts.forEachChild(node, visit);
   };
 
   visit(sourceFile);
+  for (let pass = 0; pass <= inferredReturnCandidates.length + returnTypeAliases.length; pass += 1) {
+    let changed = false;
+    for (const candidate of inferredReturnCandidates) {
+      const className = candidate.resolve();
+      if (!className) continue;
+      for (const name of candidate.names) {
+        if (factoryReturnTypes.get(name) === className) continue;
+        addReturnClassName(name, className);
+        changed = true;
+      }
+    }
+    for (const alias of returnTypeAliases) {
+      changed = resolveReturnTypeAlias(alias.name, alias.sourceName) || changed;
+    }
+    if (!changed) break;
+  }
   return factoryReturnTypes;
 }
 
-function collectTypeScriptJavaScriptInterfaceExtends(sourceFile: ts.SourceFile): Map<string, string[]> {
+function classNameFromFunctionLikeInferredReturn(
+  node: ts.FunctionDeclaration | ts.FunctionExpression | ts.ArrowFunction,
+  factoryReturnTypes: ReadonlyMap<string, string>
+): string | undefined {
+  if (node.type || !node.body) return undefined;
+  if (!ts.isBlock(node.body)) return classNameFromKnownInstanceExpression(node.body, factoryReturnTypes);
+  return classNameFromBlockInferredReturn(node.body, factoryReturnTypes);
+}
+
+function classNameFromCallableInitializerInferredReturn(
+  node: ts.Expression | undefined,
+  factoryReturnTypes: ReadonlyMap<string, string>
+): string | undefined {
+  if (!node) return undefined;
+  if (!ts.isArrowFunction(node) && !ts.isFunctionExpression(node)) return undefined;
+  return classNameFromFunctionLikeInferredReturn(node, factoryReturnTypes);
+}
+
+function classNameFromBlockInferredReturn(
+  block: ts.Block,
+  factoryReturnTypes: ReadonlyMap<string, string>
+): string | undefined {
+  const constNewClassNames = new Map<string, string>();
+  let returnedClassName: string | undefined;
+  let foundReturn = false;
+  for (const statement of block.statements) {
+    if (ts.isVariableStatement(statement) && isConstDeclarationList(statement.declarationList)) {
+      for (const declaration of statement.declarationList.declarations) {
+        if (!ts.isIdentifier(declaration.name)) continue;
+        const className = classNameFromNewExpression(declaration.initializer);
+        if (className) constNewClassNames.set(declaration.name.text, className);
+      }
+      continue;
+    }
+    if (!ts.isReturnStatement(statement)) continue;
+    foundReturn = true;
+    const className = classNameFromNewExpression(statement.expression)
+      ?? classNameFromReturnedConstNewAlias(statement.expression, constNewClassNames)
+      ?? classNameFromFactoryCall(statement.expression, factoryReturnTypes);
+    if (!className) return undefined;
+    if (returnedClassName && returnedClassName !== className) return undefined;
+    returnedClassName = className;
+  }
+  return foundReturn ? returnedClassName : undefined;
+}
+
+function isConstDeclarationList(node: ts.VariableDeclarationList): boolean {
+  return (node.flags & ts.NodeFlags.Const) !== 0;
+}
+
+function classNameFromReturnedConstNewAlias(
+  node: ts.Expression | undefined,
+  constNewClassNames: ReadonlyMap<string, string>
+): string | undefined {
+  if (!node || !ts.isIdentifier(node)) return undefined;
+  return constNewClassNames.get(node.text);
+}
+
+function collectTypeScriptJavaScriptInterfaceExtends(
+  sourceFile: ts.SourceFile,
+  typeReferenceAliases: ReadonlyMap<string, string> = new Map(),
+  typeIntersectionAliases: ReadonlyMap<string, readonly string[]> = new Map()
+): Map<string, string[]> {
   const interfaceExtends = new Map<string, string[]>();
 
   const visit = (node: ts.Node): void => {
@@ -1930,9 +3182,11 @@ function collectTypeScriptJavaScriptInterfaceExtends(sourceFile: ts.SourceFile):
       const baseNames = (node.heritageClauses ?? [])
         .filter((clause) => clause.token === ts.SyntaxKind.ExtendsKeyword)
         .flatMap((clause) => clause.types)
-        .map((type) => type.expression)
-        .filter(ts.isIdentifier)
-        .map((identifier) => identifier.text);
+        .flatMap((type) => interfaceHeritageTypeNames(
+          type.expression,
+          typeReferenceAliases,
+          typeIntersectionAliases
+        ));
       if (baseNames.length > 0) {
         interfaceExtends.set(node.name.text, baseNames);
       }
@@ -1944,6 +3198,49 @@ function collectTypeScriptJavaScriptInterfaceExtends(sourceFile: ts.SourceFile):
   return interfaceExtends;
 }
 
+function collectTypeScriptJavaScriptClassExtends(sourceFile: ts.SourceFile): Map<string, string[]> {
+  const classExtends = new Map<string, string[]>();
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isClassDeclaration(node) && node.name) {
+      const baseNames = (node.heritageClauses ?? [])
+        .filter((clause) => clause.token === ts.SyntaxKind.ExtendsKeyword)
+        .flatMap((clause) => clause.types)
+        .filter((type) => ts.isIdentifier(type.expression))
+        .map((type) => (type.expression as ts.Identifier).text);
+      if (baseNames.length > 0) {
+        classExtends.set(node.name.text, baseNames);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+
+  visit(sourceFile);
+  return classExtends;
+}
+
+function mergeTypeExtends(
+  ...maps: ReadonlyArray<ReadonlyMap<string, readonly string[]>>
+): Map<string, string[]> {
+  const merged = new Map<string, string[]>();
+  for (const map of maps) {
+    for (const [typeName, baseNames] of map.entries()) {
+      merged.set(typeName, [...(merged.get(typeName) ?? []), ...baseNames]);
+    }
+  }
+  return merged;
+}
+
+function interfaceHeritageTypeNames(
+  expression: ts.ExpressionWithTypeArguments['expression'],
+  typeReferenceAliases: ReadonlyMap<string, string>,
+  typeIntersectionAliases: ReadonlyMap<string, readonly string[]>
+): string[] {
+  if (!ts.isIdentifier(expression)) return [];
+  const baseName = resolveTypeReferenceAlias(expression.text, typeReferenceAliases);
+  return [...(typeIntersectionAliases.get(baseName) ?? [baseName])];
+}
+
 function collectTypeScriptJavaScriptTypeReferenceAliases(sourceFile: ts.SourceFile): Map<string, string> {
   const aliases = new Map<string, string>();
 
@@ -1951,10 +3248,9 @@ function collectTypeScriptJavaScriptTypeReferenceAliases(sourceFile: ts.SourceFi
     if (
       ts.isTypeAliasDeclaration(node)
       && ts.isTypeReferenceNode(node.type)
-      && ts.isIdentifier(node.type.typeName)
-      && !node.type.typeArguments
     ) {
-      aliases.set(node.name.text, node.type.typeName.text);
+      const typeName = typeReferenceNameText(node.type.typeName);
+      if (typeName) aliases.set(node.name.text, typeName);
     }
     ts.forEachChild(node, visit);
   };
@@ -1989,38 +3285,85 @@ function collectTypeScriptJavaScriptTypeIntersectionAliases(
   return aliases;
 }
 
+function collectTypeScriptJavaScriptTypeUnionAliases(
+  sourceFile: ts.SourceFile,
+  typeReferenceAliases: ReadonlyMap<string, string>
+): Map<string, string[]> {
+  const aliases = new Map<string, string[]>();
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isTypeAliasDeclaration(node) && ts.isUnionTypeNode(node.type)) {
+      const typeNames: string[] = [];
+      for (const type of node.type.types) {
+        const typeName = classNameFromTypeReference(type, typeReferenceAliases);
+        if (!typeName) {
+          typeNames.length = 0;
+          break;
+        }
+        typeNames.push(typeName);
+      }
+      if (typeNames.length > 0) aliases.set(node.name.text, typeNames);
+    }
+    ts.forEachChild(node, visit);
+  };
+
+  visit(sourceFile);
+  return aliases;
+}
+
 function collectTypeScriptJavaScriptLocalInstanceBindings(
   sourceFile: ts.SourceFile,
   localCallables: ReadonlyMap<string, TsLocalCallable>,
   factoryReturnTypes: ReadonlyMap<string, string>,
   interfaceExtends: ReadonlyMap<string, readonly string[]>,
   typeIntersectionAliases: ReadonlyMap<string, readonly string[]>,
+  typeUnionAliases: ReadonlyMap<string, readonly string[]>,
   typeReferenceAliases: ReadonlyMap<string, string>
 ): Map<string, TsLocalInstanceBinding> {
   const bindings = new Map<string, TsLocalInstanceBinding>();
 
-  const addBinding = (scopeName: string, localName: string, className: string): void => {
-    if (!hasLocalTypeMemberMethod(
+  const addBinding = (scopeName: string, localName: string, binding: TsLocalInstanceBinding): void => {
+    const hasTypeMember = (typeName: string): boolean => hasLocalTypeMemberMethod(
       localCallables,
-      className,
+      typeName,
       interfaceExtends,
       typeIntersectionAliases
-    )) {
+    );
+    if (
+      binding.resolution === 'all'
+        ? !binding.typeNames.every(hasTypeMember)
+        : !binding.typeNames.some(hasTypeMember)
+    ) {
       return;
     }
-    bindings.set(scopedLocalName(scopeName, localName), { className });
+    bindings.set(scopedLocalName(scopeName, localName), binding);
   };
 
   const visit = (node: ts.Node): void => {
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
-      const className = classNameFromKnownInstanceExpression(node.initializer, factoryReturnTypes)
-        ?? classNameFromInitializedTypeReference(node, typeReferenceAliases);
+      const typeParameterConstraints = typeParameterConstraintBindingsForNode(
+        node,
+        typeReferenceAliases,
+        typeUnionAliases
+      );
+      const binding = typeBindingFromKnownInstanceExpression(node.initializer, factoryReturnTypes)
+        ?? typeBindingFromDeclaredType(
+          node,
+          typeReferenceAliases,
+          typeUnionAliases,
+          typeParameterConstraints
+        );
       const scope = enclosingLocalCaller(node, localCallables);
-      if (className && scope) addBinding(scope.name, node.name.text, className);
+      if (binding && scope) addBinding(scope.name, node.name.text, binding);
     } else if (ts.isParameter(node) && ts.isIdentifier(node.name)) {
-      const className = classNameFromTypeReference(node.type, typeReferenceAliases);
+      const binding = typeBindingFromTypeNode(
+        node.type,
+        typeReferenceAliases,
+        typeUnionAliases,
+        typeParameterConstraintBindingsForNode(node, typeReferenceAliases, typeUnionAliases)
+      );
       const scope = enclosingLocalCaller(node, localCallables);
-      if (className && scope) addBinding(scope.name, node.name.text, className);
+      if (binding && scope) addBinding(scope.name, node.name.text, binding);
     }
     ts.forEachChild(node, visit);
   };
@@ -2035,41 +3378,69 @@ function collectTypeScriptJavaScriptClassInstanceBindings(
   factoryReturnTypes: ReadonlyMap<string, string>,
   interfaceExtends: ReadonlyMap<string, readonly string[]>,
   typeIntersectionAliases: ReadonlyMap<string, readonly string[]>,
+  typeUnionAliases: ReadonlyMap<string, readonly string[]>,
   typeReferenceAliases: ReadonlyMap<string, string>
 ): Map<string, TsLocalInstanceBinding> {
   const bindings = new Map<string, TsLocalInstanceBinding>();
 
-  const addBinding = (ownerClassName: string, propertyName: string, className: string): void => {
-    if (!hasLocalTypeMemberMethod(
+  const addBinding = (
+    ownerClassName: string,
+    propertyName: string,
+    binding: TsLocalInstanceBinding
+  ): void => {
+    const hasTypeMember = (typeName: string): boolean => hasLocalTypeMemberMethod(
       localCallables,
-      className,
+      typeName,
       interfaceExtends,
       typeIntersectionAliases
-    )) {
+    );
+    if (
+      binding.resolution === 'all'
+        ? !binding.typeNames.every(hasTypeMember)
+        : !binding.typeNames.some(hasTypeMember)
+    ) {
       return;
     }
-    bindings.set(scopedLocalName(ownerClassName, propertyName), { className });
+    bindings.set(scopedLocalName(ownerClassName, propertyName), binding);
   };
 
   const visit = (node: ts.Node): void => {
     if (ts.isPropertyDeclaration(node) && ts.isIdentifier(node.name)) {
       const ownerClassName = enclosingTypeScriptJavaScriptClassName(node);
-      const className = classNameFromKnownInstanceExpression(node.initializer, factoryReturnTypes)
-        ?? classNameFromInitializedTypeReference(node, typeReferenceAliases);
-      if (ownerClassName && className) addBinding(ownerClassName, node.name.text, className);
+      const typeParameterConstraints = typeParameterConstraintBindingsForNode(
+        node,
+        typeReferenceAliases,
+        typeUnionAliases
+      );
+      const binding = typeBindingFromKnownInstanceExpression(node.initializer, factoryReturnTypes)
+        ?? typeBindingFromDeclaredType(
+          node,
+          typeReferenceAliases,
+          typeUnionAliases,
+          typeParameterConstraints
+        );
+      if (ownerClassName && binding) addBinding(ownerClassName, node.name.text, binding);
     } else if (ts.isParameter(node) && ts.isIdentifier(node.name) && isConstructorParameterProperty(node)) {
       const ownerClassName = enclosingTypeScriptJavaScriptClassName(node);
-      const className = classNameFromTypeReference(node.type, typeReferenceAliases);
-      if (ownerClassName && className) addBinding(ownerClassName, node.name.text, className);
+      const binding = typeBindingFromTypeNode(
+        node.type,
+        typeReferenceAliases,
+        typeUnionAliases,
+        typeParameterConstraintBindingsForNode(node, typeReferenceAliases, typeUnionAliases)
+      );
+      if (ownerClassName && binding) addBinding(ownerClassName, node.name.text, binding);
     } else if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
       const ownerClassName = enclosingTypeScriptJavaScriptClassName(node);
       const propertyName = thisPropertyName(node.left);
-      const className = classNameFromConstructorAssignment(
+      const binding = typeBindingFromConstructorAssignment(
         node,
         factoryReturnTypes,
+        typeUnionAliases,
         typeReferenceAliases
       );
-      if (ownerClassName && propertyName && className) addBinding(ownerClassName, propertyName, className);
+      if (ownerClassName && propertyName && binding) {
+        addBinding(ownerClassName, propertyName, binding);
+      }
     }
     ts.forEachChild(node, visit);
   };
@@ -2136,7 +3507,7 @@ function hasLocalTypeMemberMethod(
 
 function classNameFromNewExpression(node: ts.Expression | undefined): string | undefined {
   if (!node || !ts.isNewExpression(node)) return undefined;
-  return ts.isIdentifier(node.expression) ? node.expression.text : undefined;
+  return expressionNameText(node.expression);
 }
 
 function classNameFromKnownInstanceExpression(
@@ -2146,13 +3517,21 @@ function classNameFromKnownInstanceExpression(
   return classNameFromNewExpression(node) ?? classNameFromFactoryCall(node, factoryReturnTypes);
 }
 
+function typeBindingFromKnownInstanceExpression(
+  node: ts.Expression | undefined,
+  factoryReturnTypes: ReadonlyMap<string, string>
+): TsLocalInstanceBinding | undefined {
+  const className = classNameFromKnownInstanceExpression(node, factoryReturnTypes);
+  return className ? { typeNames: [className], resolution: 'first' } : undefined;
+}
+
 function classNameFromFactoryCall(
   node: ts.Expression | undefined,
   factoryReturnTypes: ReadonlyMap<string, string>
 ): string | undefined {
   if (!node || !ts.isCallExpression(node)) return undefined;
-  if (!ts.isIdentifier(node.expression)) return undefined;
-  return factoryReturnTypes.get(node.expression.text);
+  const factoryName = expressionNameText(node.expression);
+  return factoryName ? factoryReturnTypes.get(factoryName) : undefined;
 }
 
 function classNameFromTypeReference(
@@ -2161,8 +3540,14 @@ function classNameFromTypeReference(
   seen = new Set<string>()
 ): string | undefined {
   if (!node || !ts.isTypeReferenceNode(node)) return undefined;
-  if (!ts.isIdentifier(node.typeName)) return undefined;
-  return resolveTypeReferenceAlias(node.typeName.text, typeReferenceAliases, seen);
+  const typeName = typeReferenceNameText(node.typeName);
+  return typeName ? resolveTypeReferenceAlias(typeName, typeReferenceAliases, seen) : undefined;
+}
+
+function typeReferenceNameText(node: ts.EntityName): string | undefined {
+  if (ts.isIdentifier(node)) return node.text;
+  const left = typeReferenceNameText(node.left);
+  return left ? `${left}.${node.right.text}` : undefined;
 }
 
 function resolveTypeReferenceAlias(
@@ -2184,37 +3569,139 @@ function returnTypeFromCallableInitializer(node: ts.Expression | undefined): ts.
   return undefined;
 }
 
-function classNameFromInitializedTypeReference(
+function typeBindingFromDeclaredType(
   node: ts.VariableDeclaration | ts.PropertyDeclaration,
-  typeReferenceAliases: ReadonlyMap<string, string>
-): string | undefined {
-  if (!node.initializer) return undefined;
-  return classNameFromTypeReference(node.type, typeReferenceAliases);
+  typeReferenceAliases: ReadonlyMap<string, string>,
+  typeUnionAliases: ReadonlyMap<string, readonly string[]>,
+  typeParameterConstraints: ReadonlyMap<string, TsLocalInstanceBinding> = new Map()
+): TsLocalInstanceBinding | undefined {
+  return typeBindingFromTypeNode(
+    node.type,
+    typeReferenceAliases,
+    typeUnionAliases,
+    typeParameterConstraints
+  );
 }
 
-function classNameFromConstructorAssignment(
+function typeBindingFromConstructorAssignment(
   node: ts.BinaryExpression,
   factoryReturnTypes: ReadonlyMap<string, string>,
+  typeUnionAliases: ReadonlyMap<string, readonly string[]>,
   typeReferenceAliases: ReadonlyMap<string, string>
-): string | undefined {
+): TsLocalInstanceBinding | undefined {
   const constructorNode = enclosingConstructorDeclaration(node);
   if (!constructorNode) return undefined;
   const className = classNameFromKnownInstanceExpression(node.right, factoryReturnTypes);
-  if (className) return className;
+  if (className) return { typeNames: [className], resolution: 'first' };
   if (!ts.isIdentifier(node.right)) return undefined;
-  return classNameFromConstructorParameter(constructorNode, node.right.text, typeReferenceAliases);
+  return typeBindingFromConstructorParameter(
+    constructorNode,
+    node.right.text,
+    typeUnionAliases,
+    typeReferenceAliases
+  );
 }
 
-function classNameFromConstructorParameter(
+function typeBindingFromConstructorParameter(
   node: ts.ConstructorDeclaration,
   parameterName: string,
+  typeUnionAliases: ReadonlyMap<string, readonly string[]>,
   typeReferenceAliases: ReadonlyMap<string, string>
-): string | undefined {
+): TsLocalInstanceBinding | undefined {
   for (const parameter of node.parameters) {
     if (!ts.isIdentifier(parameter.name) || parameter.name.text !== parameterName) continue;
-    return classNameFromTypeReference(parameter.type, typeReferenceAliases);
+    return typeBindingFromTypeNode(
+      parameter.type,
+      typeReferenceAliases,
+      typeUnionAliases,
+      typeParameterConstraintBindingsForNode(parameter, typeReferenceAliases, typeUnionAliases)
+    );
   }
   return undefined;
+}
+
+function typeBindingFromTypeNode(
+  node: ts.TypeNode | undefined,
+  typeReferenceAliases: ReadonlyMap<string, string>,
+  typeUnionAliases: ReadonlyMap<string, readonly string[]>,
+  typeParameterConstraints: ReadonlyMap<string, TsLocalInstanceBinding> = new Map()
+): TsLocalInstanceBinding | undefined {
+  const className = classNameFromTypeReference(node, typeReferenceAliases);
+  const typeParameterConstraint = className ? typeParameterConstraints.get(className) : undefined;
+  if (typeParameterConstraint) return cloneLocalInstanceBinding(typeParameterConstraint);
+  const unionAlias = className ? typeUnionAliases.get(className) : undefined;
+  if (unionAlias) return { typeNames: [...unionAlias], resolution: 'all' };
+  if (className) return { typeNames: [className], resolution: 'first' };
+  if (!node) return undefined;
+  if (ts.isUnionTypeNode(node)) {
+    const typeNames = typeNamesFromTypeList(node.types, typeReferenceAliases);
+    return typeNames ? { typeNames, resolution: 'all' } : undefined;
+  }
+  if (!ts.isIntersectionTypeNode(node)) return undefined;
+
+  const typeNames = typeNamesFromTypeList(node.types, typeReferenceAliases);
+  return typeNames ? { typeNames, resolution: 'first' } : undefined;
+}
+
+function typeParameterConstraintBindingsForNode(
+  node: ts.Node,
+  typeReferenceAliases: ReadonlyMap<string, string>,
+  typeUnionAliases: ReadonlyMap<string, readonly string[]>
+): Map<string, TsLocalInstanceBinding> {
+  const constraints = new Map<string, TsLocalInstanceBinding>();
+  let current: ts.Node | undefined = node.parent;
+  while (current) {
+    const typeParameters = typeParametersForNode(current);
+    if (typeParameters) {
+      for (const typeParameter of typeParameters) {
+        if (constraints.has(typeParameter.name.text)) continue;
+        const binding = typeBindingFromTypeNode(
+          typeParameter.constraint,
+          typeReferenceAliases,
+          typeUnionAliases,
+          constraints
+        );
+        if (binding) constraints.set(typeParameter.name.text, binding);
+      }
+    }
+    current = current.parent;
+  }
+  return constraints;
+}
+
+function typeParametersForNode(node: ts.Node): ts.NodeArray<ts.TypeParameterDeclaration> | undefined {
+  if (
+    ts.isClassDeclaration(node)
+    || ts.isFunctionDeclaration(node)
+    || ts.isMethodDeclaration(node)
+    || ts.isFunctionExpression(node)
+    || ts.isArrowFunction(node)
+    || ts.isInterfaceDeclaration(node)
+    || ts.isTypeAliasDeclaration(node)
+  ) {
+    return node.typeParameters;
+  }
+  return undefined;
+}
+
+function cloneLocalInstanceBinding(binding: TsLocalInstanceBinding): TsLocalInstanceBinding {
+  return {
+    typeNames: [...binding.typeNames],
+    resolution: binding.resolution
+  };
+}
+
+function typeNamesFromTypeList(
+  nodes: ts.NodeArray<ts.TypeNode>,
+  typeReferenceAliases: ReadonlyMap<string, string>
+): string[] | undefined {
+  const typeNames: string[] = [];
+  for (const type of nodes) {
+    const typeName = classNameFromTypeReference(type, typeReferenceAliases);
+    if (!typeName) return undefined;
+    typeNames.push(typeName);
+  }
+  return typeNames;
 }
 
 function isCallableInitializer(node: ts.Expression | undefined): boolean {
@@ -2388,32 +3875,39 @@ function callTargetForExpression(
   return undefined;
 }
 
-function localCallTargetForExpression(
+function localCallTargetsForExpression(
   expression: ts.Expression,
   localCallables: ReadonlyMap<string, TsLocalCallable>,
   localInstanceBindings: ReadonlyMap<string, TsLocalInstanceBinding>,
   classInstanceBindings: ReadonlyMap<string, TsLocalInstanceBinding>,
   staticClassCallables: ReadonlySet<string>,
   interfaceExtends: ReadonlyMap<string, readonly string[]>,
+  classExtends: ReadonlyMap<string, readonly string[]>,
   typeIntersectionAliases: ReadonlyMap<string, readonly string[]>,
   sourceScopeName: string
-): TsLocalCallable | undefined {
+): TsLocalCallable[] {
   if (ts.isIdentifier(expression)) {
-    return localCallables.get(expression.text);
+    const callable = localCallables.get(expression.text);
+    return callable ? [callable] : [];
   }
   if (ts.isPropertyAccessExpression(expression) && ts.isIdentifier(expression.expression)) {
     const instance = localInstanceBindings.get(scopedLocalName(sourceScopeName, expression.expression.text));
     if (instance) {
-      return localTypeMemberCallable(
+      return localTypeMemberCallablesForBinding(
         localCallables,
-        instance.className,
+        instance,
         expression.name.text,
         interfaceExtends,
         typeIntersectionAliases
       );
     }
-    const staticName = `${expression.expression.text}.${expression.name.text}`;
-    return staticClassCallables.has(staticName) ? localCallables.get(staticName) : undefined;
+    return localStaticClassCallable(
+      localCallables,
+      staticClassCallables,
+      expression.expression.text,
+      expression.name.text,
+      classExtends
+    );
   }
   if (ts.isPropertyAccessExpression(expression)) {
     const propertyName = thisPropertyName(expression.expression);
@@ -2422,9 +3916,9 @@ function localCallTargetForExpression(
       ? classInstanceBindings.get(scopedLocalName(className, propertyName))
       : undefined;
     if (instance) {
-      return localTypeMemberCallable(
+      return localTypeMemberCallablesForBinding(
         localCallables,
-        instance.className,
+        instance,
         expression.name.text,
         interfaceExtends,
         typeIntersectionAliases
@@ -2433,16 +3927,90 @@ function localCallTargetForExpression(
   }
   if (ts.isPropertyAccessExpression(expression)) {
     const className = classNameFromNewExpression(expression.expression);
-    if (className) return localCallables.get(`${className}.${expression.name.text}`);
+    if (className) {
+      const callable = localTypeMemberCallable(
+        localCallables,
+        className,
+        expression.name.text,
+        interfaceExtends,
+        typeIntersectionAliases
+      );
+      return callable ? [callable] : [];
+    }
   }
   if (
     ts.isPropertyAccessExpression(expression) &&
     expression.expression.kind === ts.SyntaxKind.ThisKeyword
   ) {
     const className = enclosingTypeScriptJavaScriptClassName(expression);
-    return className ? localCallables.get(`${className}.${expression.name.text}`) : undefined;
+    const callable = className
+      ? localTypeMemberCallable(
+        localCallables,
+        className,
+        expression.name.text,
+        interfaceExtends,
+        typeIntersectionAliases
+      )
+      : undefined;
+    return callable ? [callable] : [];
   }
-  return undefined;
+  return [];
+}
+
+function localTypeMemberCallablesForBinding(
+  localCallables: ReadonlyMap<string, TsLocalCallable>,
+  binding: TsLocalInstanceBinding,
+  memberName: string,
+  interfaceExtends: ReadonlyMap<string, readonly string[]>,
+  typeIntersectionAliases: ReadonlyMap<string, readonly string[]> = new Map()
+): TsLocalCallable[] {
+  const callables: TsLocalCallable[] = [];
+  for (const typeName of binding.typeNames) {
+    const callable = localTypeMemberCallable(
+      localCallables,
+      typeName,
+      memberName,
+      interfaceExtends,
+      typeIntersectionAliases
+    );
+    if (binding.resolution === 'first' && callable) return [callable];
+    if (binding.resolution === 'all' && !callable) return [];
+    if (callable) callables.push(callable);
+  }
+  return dedupeLocalCallables(callables);
+}
+
+function dedupeLocalCallables(callables: readonly TsLocalCallable[]): TsLocalCallable[] {
+  return [...new Map(callables.map((callable) => [entityDescriptorKey(callable.descriptor), callable])).values()];
+}
+
+function localStaticClassCallable(
+  localCallables: ReadonlyMap<string, TsLocalCallable>,
+  staticClassCallables: ReadonlySet<string>,
+  className: string,
+  memberName: string,
+  classExtends: ReadonlyMap<string, readonly string[]>,
+  seen = new Set<string>()
+): TsLocalCallable[] {
+  const staticName = `${className}.${memberName}`;
+  if (staticClassCallables.has(staticName)) {
+    const callable = localCallables.get(staticName);
+    return callable ? [callable] : [];
+  }
+  if (seen.has(className)) return [];
+  seen.add(className);
+  for (const baseName of classExtends.get(className) ?? []) {
+    const inherited = localStaticClassCallable(
+      localCallables,
+      staticClassCallables,
+      baseName,
+      memberName,
+      classExtends,
+      seen
+    );
+    if (inherited.length > 0) return inherited;
+  }
+  return [];
 }
 
 function localTypeMemberCallable(
@@ -2493,11 +4061,35 @@ function isDirectNewInstanceCallExpression(expression: ts.Expression): boolean {
 
 function isStaticClassCallExpression(
   expression: ts.Expression,
-  staticClassCallables: ReadonlySet<string>
+  staticClassCallables: ReadonlySet<string>,
+  classExtends: ReadonlyMap<string, readonly string[]> = new Map()
 ): boolean {
   return ts.isPropertyAccessExpression(expression)
     && ts.isIdentifier(expression.expression)
-    && staticClassCallables.has(`${expression.expression.text}.${expression.name.text}`);
+    && hasStaticClassCallable(
+      staticClassCallables,
+      expression.expression.text,
+      expression.name.text,
+      classExtends
+    );
+}
+
+function hasStaticClassCallable(
+  staticClassCallables: ReadonlySet<string>,
+  className: string,
+  memberName: string,
+  classExtends: ReadonlyMap<string, readonly string[]>,
+  seen = new Set<string>()
+): boolean {
+  if (staticClassCallables.has(`${className}.${memberName}`)) return true;
+  if (seen.has(className)) return false;
+  seen.add(className);
+  for (const baseName of classExtends.get(className) ?? []) {
+    if (hasStaticClassCallable(staticClassCallables, baseName, memberName, classExtends, seen)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function thisPropertyName(expression: ts.Expression): string | undefined {
@@ -2611,6 +4203,20 @@ function dedupeCalls(calls: readonly ExtractedCall[]): ExtractedCall[] {
     call
   ])).values()]
     .sort((a, b) =>
+      entityDescriptorKey(a.target).localeCompare(entityDescriptorKey(b.target)) ||
+      a.startLine - b.startLine ||
+      a.startCol - b.startCol
+    );
+}
+
+function dedupeTypeRelations(relations: readonly ExtractedTypeRelation[]): ExtractedTypeRelation[] {
+  return [...new Map(relations.map((relation) => [
+    `${entityDescriptorKey(relation.source)}:${relation.kind}:${entityDescriptorKey(relation.target)}:${relation.startLine}:${relation.startCol}`,
+    relation
+  ])).values()]
+    .sort((a, b) =>
+      entityDescriptorKey(a.source).localeCompare(entityDescriptorKey(b.source)) ||
+      a.kind.localeCompare(b.kind) ||
       entityDescriptorKey(a.target).localeCompare(entityDescriptorKey(b.target)) ||
       a.startLine - b.startLine ||
       a.startCol - b.startCol

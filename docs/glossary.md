@@ -7,7 +7,7 @@
 | **branch** | 의미 안 함 (해당 축은 git branch만 다룸) | `branches` 테이블의 한 행 — head_tx_id가 추적하는 *speculative line of work* |
 | **entity** | `entities` 테이블 — 코드의 식별 가능한 단위 (file/symbol/module/contract/policy 등 21종) | fact의 *주어* 문자열 (`'file:src/foo.ts'` 같은 자유로운 식별자) |
 | **transaction** | 의미 안 함 | `transactions` 테이블의 한 행 — 한 commit 단위의 *fact 묶음* (parent_tx_id로 DAG 형성) |
-| **relation** | `relations` 테이블 — entity↔entity (DEPENDS_ON, CALLS, IMPLEMENTS 등 15종) | 사용 안 함 (대신 `fact_provenance` edge) |
+| **relation** | `relations` 테이블 — entity↔entity (DEPENDS_ON, CALLS, IMPLEMENTS, EXTENDS 등) | 사용 안 함 (대신 `fact_provenance` edge) |
 | **fact** | 사용 안 함 | `facts` 테이블 — content-addressable 관찰 (`(entity, attribute, value, op)` SHA-256) |
 | **report** | `reports` 테이블 — analyzer가 만든 영향도 분석 결과 | 사용 안 함 |
 
@@ -19,7 +19,7 @@
 `entities` 테이블의 한 행. file / symbol / module / package / test / doc / config / policy / workflow / resource / endpoint / contract / event / business_plan / ... 등 21종 중 하나. 영향 분석은 entity 사이의 relation graph를 따라 blast radius를 계산한다.
 
 ### relation (impact)
-`relations` 테이블. `(source_entity_id, target_entity_id, kind, confidence, adapter_run_id)`. kind는 `DEPENDS_ON`, `DECLARES`, `CALLS`, `REFERENCES`, `VERIFIES`, `DOCUMENTS`, `CONFIGURES`, `GENERATES`, `DEPLOYS`, `OWNS`, `GOVERNS`, `IMPLEMENTS`, `CONSUMES`, `PRODUCES`, `BREAKS_COMPATIBILITY_WITH` 중 하나.
+`relations` 테이블. `(source_entity_id, target_entity_id, kind, confidence, adapter_run_id)`. kind는 `DEPENDS_ON`, `DECLARES`, `CALLS`, `REFERENCES`, `VERIFIES`, `DOCUMENTS`, `CONFIGURES`, `OWNS`, `GOVERNS`, `IMPLEMENTS`, `EXTENDS`, `BREAKS_COMPATIBILITY_WITH` 등 `RelationKind`에 정의된 값 중 하나.
 
 ### relation_evidence
 relation을 뒷받침하는 source span / 명령 출력 / confidence 근거. "왜 이 relation을 추출했는가"의 audit trail.

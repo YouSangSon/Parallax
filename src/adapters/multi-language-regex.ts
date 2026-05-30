@@ -141,7 +141,7 @@ abstract class RegexBackedSemanticAdapter implements SemanticAdapter {
 
 export class TypeScriptJavaScriptSemanticAdapter extends RegexBackedSemanticAdapter {
   override readonly knownGaps = [
-    'TypeScript/JavaScript import, declaration, imported call-site, local identifier call, same-class this.method, static ClassName.method, same-file factory return type instance method call, typed local variable instance method call, typed parameter instance method call, constructor parameter property instance method call, constructor assignment instance method call, class field arrow method caller/target, typed class field instance method call, class field instance method call, same-file new ClassName instance call, and direct new ClassName().method call spans are parser-backed, but broader dynamic dispatch and type relation resolution are not yet complete',
+    'TypeScript/JavaScript import, declaration, imported call-site, local identifier call, same-class this.method, static ClassName.method, same-file factory return type instance method call, interface method signature and typed receiver method call, typed local variable instance method call, typed parameter instance method call, constructor parameter property instance method call, constructor assignment instance method call, class field arrow method caller/target, typed class field instance method call, class field instance method call, same-file new ClassName instance call, and direct new ClassName().method call spans are parser-backed, but broader dynamic dispatch and type relation resolution are not yet complete',
     'polymorphism, alias-heavy object flows, generated code, and framework-specific routing may require deeper adapters'
   ];
 
@@ -1552,6 +1552,11 @@ function extractTypeScriptJavaScriptSymbols(file: ScannedFile): ExtractedSymbol[
       if (className) {
         addSymbol(`${className}.${node.name.text}`, 'method', node, classHasExportModifier(node));
       }
+    } else if (ts.isMethodSignature(node) && ts.isIdentifier(node.name)) {
+      const interfaceName = enclosingTypeScriptJavaScriptInterfaceName(node);
+      if (interfaceName) {
+        addSymbol(`${interfaceName}.${node.name.text}`, 'method', node, interfaceHasExportModifier(node));
+      }
     } else if (isCallableClassProperty(node)) {
       const className = enclosingTypeScriptJavaScriptClassName(node);
       if (className && ts.isIdentifier(node.name)) {
@@ -1839,6 +1844,9 @@ function collectTypeScriptJavaScriptLocalCallables(
     } else if (ts.isMethodDeclaration(node) && ts.isIdentifier(node.name)) {
       const className = enclosingTypeScriptJavaScriptClassName(node);
       if (className) addCallable(`${className}.${node.name.text}`, 'method');
+    } else if (ts.isMethodSignature(node) && ts.isIdentifier(node.name)) {
+      const interfaceName = enclosingTypeScriptJavaScriptInterfaceName(node);
+      if (interfaceName) addCallable(`${interfaceName}.${node.name.text}`, 'method');
     } else if (isCallableClassProperty(node)) {
       const className = enclosingTypeScriptJavaScriptClassName(node);
       if (className && ts.isIdentifier(node.name)) {
@@ -1890,7 +1898,7 @@ function collectTypeScriptJavaScriptLocalInstanceBindings(
   const bindings = new Map<string, TsLocalInstanceBinding>();
 
   const addBinding = (scopeName: string, localName: string, className: string): void => {
-    if (!hasLocalClassMethod(localCallables, className)) return;
+    if (!hasLocalTypeMemberMethod(localCallables, className)) return;
     bindings.set(scopedLocalName(scopeName, localName), { className });
   };
 
@@ -1920,7 +1928,7 @@ function collectTypeScriptJavaScriptClassInstanceBindings(
   const bindings = new Map<string, TsLocalInstanceBinding>();
 
   const addBinding = (ownerClassName: string, propertyName: string, className: string): void => {
-    if (!hasLocalClassMethod(localCallables, className)) return;
+    if (!hasLocalTypeMemberMethod(localCallables, className)) return;
     bindings.set(scopedLocalName(ownerClassName, propertyName), { className });
   };
 
@@ -1966,12 +1974,12 @@ function collectTypeScriptJavaScriptStaticClassCallables(sourceFile: ts.SourceFi
   return callables;
 }
 
-function hasLocalClassMethod(
+function hasLocalTypeMemberMethod(
   localCallables: ReadonlyMap<string, TsLocalCallable>,
-  className: string
+  typeName: string
 ): boolean {
   for (const name of localCallables.keys()) {
-    if (name.startsWith(`${className}.`)) return true;
+    if (name.startsWith(`${typeName}.`)) return true;
   }
   return false;
 }
@@ -2294,10 +2302,28 @@ function enclosingTypeScriptJavaScriptClassName(node: ts.Node): string | undefin
   return undefined;
 }
 
+function enclosingTypeScriptJavaScriptInterfaceName(node: ts.Node): string | undefined {
+  let current: ts.Node | undefined = node.parent;
+  while (current) {
+    if (ts.isInterfaceDeclaration(current)) return current.name.text;
+    current = current.parent;
+  }
+  return undefined;
+}
+
 function classHasExportModifier(node: ts.Node): boolean {
   let current: ts.Node | undefined = node.parent;
   while (current) {
     if (ts.isClassDeclaration(current)) return hasExportModifier(current);
+    current = current.parent;
+  }
+  return false;
+}
+
+function interfaceHasExportModifier(node: ts.Node): boolean {
+  let current: ts.Node | undefined = node.parent;
+  while (current) {
+    if (ts.isInterfaceDeclaration(current)) return hasExportModifier(current);
     current = current.parent;
   }
   return false;

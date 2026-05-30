@@ -23,7 +23,7 @@ import type {
 } from './types.js';
 
 export const MULTI_LANG_REGEX_ADAPTER_ID = 'multi-language-regex-mvp';
-export const MULTI_LANG_REGEX_ADAPTER_VERSION = '27';
+export const MULTI_LANG_REGEX_ADAPTER_VERSION = '28';
 export const TS_JS_SEMANTIC_ADAPTER_ID = 'typescript-javascript-semantic-v0';
 export const JVM_SPRING_SEMANTIC_ADAPTER_ID = 'jvm-spring-semantic-v0';
 export const PYTHON_SEMANTIC_ADAPTER_ID = 'python-semantic-v0';
@@ -189,7 +189,7 @@ abstract class RegexBackedSemanticAdapter implements SemanticAdapter {
 
 export class TypeScriptJavaScriptSemanticAdapter extends RegexBackedSemanticAdapter {
   override readonly knownGaps = [
-    'TypeScript/JavaScript import, declaration, same-file/named-imported/direct-named-re-exported/star-re-exported/namespace-re-exported/default-imported/direct-default-re-exported/namespace-imported class/interface heritage type relation, imported call-site, local identifier call, same-class this.method, same-file/direct-new-or-const-alias-inferred/namespace-constructor-inferred/factory-wrapper-inferred/direct-factory-call-receiver/named-imported/direct-named-re-exported/star-re-exported/namespace-imported/namespace-re-exported/default-imported/direct-default-re-exported factory return type instance method call, interface/type-literal method/function-property/function-type-alias signature, same-file/named-imported/direct-named-re-exported/star-re-exported/namespace-re-exported/default-imported/direct-default-re-exported/namespace-imported interface/type-literal typed receiver method call, same-file interface extends typed receiver method call, same-file alias-backed interface extends typed receiver method call, same-file type reference alias typed receiver method call, same-file simple generic type reference typed receiver method call, same-file generic constraint typed receiver method call, same-file intersection type alias typed receiver method call, direct intersection typed receiver method call, same-file simple union typed receiver method call, declared typed local/class field receiver method call, typed local variable instance method call, typed parameter instance method call, assertion-wrapped/non-null/parenthesized typed receiver method call, string-literal element access method call, constructor parameter property instance method call, constructor assignment instance method call, class field arrow method caller/target, typed class field instance method call, class field instance method call, same-file new ClassName instance call, and direct new ClassName().method call spans are parser-backed, but broader dynamic dispatch and advanced type relation resolution are not yet complete',
+    'TypeScript/JavaScript import, declaration, same-file/named-imported/direct-named-re-exported/star-re-exported/namespace-re-exported/default-imported/direct-default-re-exported/namespace-imported class/interface heritage type relation, imported call-site, local identifier call, same-class this.method, same-file/direct-new-or-const-alias-inferred/namespace-constructor-inferred/factory-wrapper-inferred/direct-factory-call-receiver/named-imported/direct-named-re-exported/star-re-exported/namespace-imported/namespace-re-exported/default-imported/direct-default-re-exported factory return type instance method call, interface/type-literal method/function-property/function-type-alias signature, same-file/named-imported/direct-named-re-exported/star-re-exported/namespace-re-exported/default-imported/direct-default-re-exported/namespace-imported interface/type-literal typed receiver method call, same-file interface extends typed receiver method call, same-file alias-backed interface extends typed receiver method call, same-file type reference alias typed receiver method call, same-file simple generic type reference typed receiver method call, same-file generic constraint typed receiver method call, same-file intersection type alias typed receiver method call, direct intersection typed receiver method call, same-file simple union typed receiver method call, declared typed local/class field receiver method call, typed local variable instance method call, typed parameter instance method call, assertion-wrapped/non-null/parenthesized typed receiver method call, string-literal element access method call, private member receiver method call, constructor parameter property instance method call, constructor assignment instance method call, class field arrow method caller/target, typed class field instance method call, class field instance method call, same-file new ClassName instance call, and direct new ClassName().method call spans are parser-backed, but broader dynamic dispatch and advanced type relation resolution are not yet complete',
     'polymorphism, alias-heavy object flows, generated code, and framework-specific routing may require deeper adapters'
   ];
 
@@ -1626,10 +1626,11 @@ function extractTypeScriptJavaScriptSymbols(file: ScannedFile): ExtractedSymbol[
       addNamedNode(node.name, 'type', node, hasExportModifier(node));
     } else if (ts.isEnumDeclaration(node)) {
       addNamedNode(node.name, 'enum', node, hasExportModifier(node));
-    } else if (ts.isMethodDeclaration(node) && ts.isIdentifier(node.name)) {
+    } else if (ts.isMethodDeclaration(node)) {
       const className = enclosingTypeScriptJavaScriptClassName(node);
-      if (className) {
-        addSymbol(`${className}.${node.name.text}`, 'method', node, classHasExportModifier(node));
+      const methodName = typeScriptJavaScriptMemberNameText(node.name);
+      if (className && methodName) {
+        addSymbol(`${className}.${methodName}`, 'method', node, classHasExportModifier(node));
       }
     } else if (ts.isMethodSignature(node) && ts.isIdentifier(node.name)) {
       const typeName = enclosingTypeScriptJavaScriptTypeMemberOwnerName(node);
@@ -1643,8 +1644,9 @@ function extractTypeScriptJavaScriptSymbols(file: ScannedFile): ExtractedSymbol[
       }
     } else if (isCallableClassProperty(node)) {
       const className = enclosingTypeScriptJavaScriptClassName(node);
-      if (className && ts.isIdentifier(node.name)) {
-        addSymbol(`${className}.${node.name.text}`, 'method', node, classHasExportModifier(node));
+      const propertyName = typeScriptJavaScriptMemberNameText(node.name);
+      if (className && propertyName) {
+        addSymbol(`${className}.${propertyName}`, 'method', node, classHasExportModifier(node));
       }
     } else if (ts.isVariableStatement(node)) {
       const exported = hasExportModifier(node);
@@ -2224,7 +2226,8 @@ function expressionNameText(node: ts.Expression): string | undefined {
   if (ts.isIdentifier(expression)) return expression.text;
   if (ts.isPropertyAccessExpression(expression)) {
     const left = expressionNameText(expression.expression);
-    return left ? `${left}.${expression.name.text}` : undefined;
+    const memberName = typeScriptJavaScriptMemberNameText(expression.name);
+    return left && memberName ? `${left}.${memberName}` : undefined;
   }
   if (ts.isElementAccessExpression(expression)) {
     const left = expressionNameText(expression.expression);
@@ -2257,8 +2260,12 @@ function memberAccessExpression(expression: ts.Expression): TsMemberAccessExpres
 
 function memberNameFromAccessExpression(expression: TsMemberAccessExpression): string | undefined {
   return ts.isPropertyAccessExpression(expression)
-    ? expression.name.text
+    ? typeScriptJavaScriptMemberNameText(expression.name)
     : elementAccessMemberName(expression);
+}
+
+function typeScriptJavaScriptMemberNameText(name: ts.Node | undefined): string | undefined {
+  return name && (ts.isIdentifier(name) || ts.isPrivateIdentifier(name)) ? name.text : undefined;
 }
 
 function elementAccessMemberName(expression: ts.ElementAccessExpression): string | undefined {
@@ -2636,9 +2643,10 @@ function collectTypeScriptJavaScriptLocalCallables(
   const visit = (node: ts.Node): void => {
     if (ts.isFunctionDeclaration(node) && node.name) {
       addCallable(node.name.text, 'function');
-    } else if (ts.isMethodDeclaration(node) && ts.isIdentifier(node.name)) {
+    } else if (ts.isMethodDeclaration(node)) {
       const className = enclosingTypeScriptJavaScriptClassName(node);
-      if (className) addCallable(`${className}.${node.name.text}`, 'method');
+      const methodName = typeScriptJavaScriptMemberNameText(node.name);
+      if (className && methodName) addCallable(`${className}.${methodName}`, 'method');
     } else if (ts.isMethodSignature(node) && ts.isIdentifier(node.name)) {
       const typeName = enclosingTypeScriptJavaScriptTypeMemberOwnerName(node);
       if (typeName) addCallable(`${typeName}.${node.name.text}`, 'method');
@@ -2649,8 +2657,9 @@ function collectTypeScriptJavaScriptLocalCallables(
       }
     } else if (isCallableClassProperty(node)) {
       const className = enclosingTypeScriptJavaScriptClassName(node);
-      if (className && ts.isIdentifier(node.name)) {
-        addCallable(`${className}.${node.name.text}`, 'method');
+      const propertyName = typeScriptJavaScriptMemberNameText(node.name);
+      if (className && propertyName) {
+        addCallable(`${className}.${propertyName}`, 'method');
       }
     } else if (ts.isVariableStatement(node)) {
       const symbolKind = variableKind(node.declarationList);
@@ -3457,8 +3466,9 @@ function collectTypeScriptJavaScriptClassInstanceBindings(
   };
 
   const visit = (node: ts.Node): void => {
-    if (ts.isPropertyDeclaration(node) && ts.isIdentifier(node.name)) {
+    if (ts.isPropertyDeclaration(node)) {
       const ownerClassName = enclosingTypeScriptJavaScriptClassName(node);
+      const propertyName = typeScriptJavaScriptMemberNameText(node.name);
       const typeParameterConstraints = typeParameterConstraintBindingsForNode(
         node,
         typeReferenceAliases,
@@ -3471,7 +3481,7 @@ function collectTypeScriptJavaScriptClassInstanceBindings(
           typeUnionAliases,
           typeParameterConstraints
         );
-      if (ownerClassName && binding) addBinding(ownerClassName, node.name.text, binding);
+      if (ownerClassName && propertyName && binding) addBinding(ownerClassName, propertyName, binding);
     } else if (ts.isParameter(node) && ts.isIdentifier(node.name) && isConstructorParameterProperty(node)) {
       const ownerClassName = enclosingTypeScriptJavaScriptClassName(node);
       const binding = typeBindingFromTypeNode(
@@ -3510,8 +3520,8 @@ function collectTypeScriptJavaScriptStaticClassCallables(sourceFile: ts.SourceFi
   };
 
   const visit = (node: ts.Node): void => {
-    if (ts.isMethodDeclaration(node) && ts.isIdentifier(node.name) && hasStaticModifier(node)) {
-      addCallable(enclosingTypeScriptJavaScriptClassName(node), node.name.text);
+    if (ts.isMethodDeclaration(node) && hasStaticModifier(node)) {
+      addCallable(enclosingTypeScriptJavaScriptClassName(node), typeScriptJavaScriptMemberNameText(node.name));
     }
     ts.forEachChild(node, visit);
   };
@@ -3790,7 +3800,7 @@ function isCallableInitializer(node: ts.Expression | undefined): boolean {
 
 function isCallableClassProperty(node: ts.Node): node is ts.PropertyDeclaration {
   return ts.isPropertyDeclaration(node)
-    && ts.isIdentifier(node.name)
+    && typeScriptJavaScriptMemberNameText(node.name) !== undefined
     && isCallableInitializer(node.initializer);
 }
 
@@ -4241,14 +4251,20 @@ function enclosingLocalCaller(
       const callable = localCallables.get(current.name.text);
       if (callable) return callable;
     }
-    if (ts.isMethodDeclaration(current) && ts.isIdentifier(current.name)) {
+    if (ts.isMethodDeclaration(current)) {
       const className = enclosingTypeScriptJavaScriptClassName(current);
-      const callable = className ? localCallables.get(`${className}.${current.name.text}`) : undefined;
+      const methodName = typeScriptJavaScriptMemberNameText(current.name);
+      const callable = className && methodName
+        ? localCallables.get(`${className}.${methodName}`)
+        : undefined;
       if (callable) return callable;
     }
-    if (isCallableClassProperty(current) && ts.isIdentifier(current.name)) {
+    if (isCallableClassProperty(current)) {
       const className = enclosingTypeScriptJavaScriptClassName(current);
-      const callable = className ? localCallables.get(`${className}.${current.name.text}`) : undefined;
+      const propertyName = typeScriptJavaScriptMemberNameText(current.name);
+      const callable = className && propertyName
+        ? localCallables.get(`${className}.${propertyName}`)
+        : undefined;
       if (callable) return callable;
     }
     current = current.parent;

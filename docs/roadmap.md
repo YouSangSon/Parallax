@@ -60,6 +60,7 @@ MCP는 read-only로 안정화됐다. 다음은 agent 사용성을 깊게 보는 
 - [x] impact summary도 displayed path 기준으로 맞춰 summary와 map의 용어 불일치 제거
 - [x] 첫 화면에 changed root → affected targets → next verification triage strip 추가
 - [x] triage strip에서 top affected/verification target을 클릭하면 inspector/evidence 선택으로 연결
+- [x] impact map edge/label도 selected target과 함께 강조해 그래프 해석성 강화
 
 ## 6. 회고와 측정
 

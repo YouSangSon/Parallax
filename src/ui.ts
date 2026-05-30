@@ -303,6 +303,7 @@ type ImpactMapEdge = {
   to: string;
   label: string;
   confidence: string;
+  targetPath?: string;
 };
 
 type ImpactLane = {
@@ -1126,7 +1127,11 @@ function buildImpactMap(
     const key = `${oriented.from}:${oriented.to}:${oriented.label}`;
     if (seenEdges.has(key)) continue;
     seenEdges.add(key);
-    edges.push(oriented);
+    const targetPath = nodeById.get(oriented.to)?.path;
+    edges.push({
+      ...oriented,
+      ...(targetPath ? { targetPath } : {})
+    });
   }
   if (changedNodes[0]) {
     for (const node of affectedNodes) {
@@ -1136,7 +1141,8 @@ function buildImpactMap(
         from: changedNodes[0].id,
         to: node.id,
         label: affectedFile ? impactPathLabel(affectedFile) : 'IMPACTS',
-        confidence: node.confidence ?? affectedFile?.confidence ?? 'unknown'
+        confidence: node.confidence ?? affectedFile?.confidence ?? 'unknown',
+        ...(node.path ? { targetPath: node.path } : {})
       });
     }
   }
@@ -1165,9 +1171,14 @@ function renderImpactMapSvg(map: ReturnType<typeof buildImpactMap>): string {
     const endX = rightX;
     const controlX = (startX + endX) / 2;
     const labelY = Math.min(height - 32, Math.max(78, (fromY + toY) / 2 - 8));
+    const edgeAttrs = edge.targetPath
+      ? ` class="map-edge-group selectable-impact" data-impact-path="${escapeHtml(edge.targetPath)}" tabindex="0" role="button" aria-label="Inspect ${escapeHtml(edge.targetPath)} impact path"`
+      : ' class="map-edge-group"';
     return `
-      <path class="map-edge confidence-${escapeHtml(edge.confidence)}" d="M ${startX} ${fromY} C ${controlX} ${fromY}, ${controlX} ${toY}, ${endX} ${toY}" marker-end="url(#impactArrow)" />
-      <text class="map-edge-label" x="${controlX}" y="${labelY}" text-anchor="middle">${escapeHtml(shortenMiddle(edge.label, 18))}</text>
+      <g${edgeAttrs}>
+        <path class="map-edge confidence-${escapeHtml(edge.confidence)}" d="M ${startX} ${fromY} C ${controlX} ${fromY}, ${controlX} ${toY}, ${endX} ${toY}" marker-end="url(#impactArrow)" />
+        <text class="map-edge-label" x="${controlX}" y="${labelY}" text-anchor="middle">${escapeHtml(shortenMiddle(edge.label, 18))}</text>
+      </g>
     `;
   }).join('');
   const changedNodes = map.changedNodes.map((node, index) =>
@@ -2579,6 +2590,27 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       stroke: #73c2ac;
       stroke-width: 3;
       opacity: 0.88;
+    }
+    .map-edge-group.selectable-impact {
+      cursor: pointer;
+      outline: none;
+    }
+    .map-edge-group.selectable-impact:hover .map-edge,
+    .map-edge-group.selected-impact .map-edge {
+      stroke: #d9f6e7;
+      stroke-width: 5;
+      opacity: 1;
+      filter: drop-shadow(0 0 8px rgba(115, 194, 172, 0.55));
+    }
+    .map-edge-group.selectable-impact:hover .map-edge-label,
+    .map-edge-group.selected-impact .map-edge-label {
+      fill: #0f1d16;
+      stroke: #d9f6e7;
+      stroke-width: 10px;
+    }
+    .map-edge-group:focus-visible .map-edge {
+      stroke-width: 5;
+      stroke: #d9f6e7;
     }
     .map-arrow {
       fill: #73c2ac;

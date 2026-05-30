@@ -234,6 +234,7 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(html, /Impact Map/);
     assert.match(html, /Primary impact flow/);
     assert.match(html, /map-stage-changed/);
+    assert.match(html, /class="map-edge-group selectable-impact"[\s\S]*data-impact-path="tests\/b\.test\.ts"[\s\S]*class="map-edge confidence-proven"/);
     assert.match(html, /marker-end="url\(#impactArrow\)"/);
     assert.match(html, /4 displayed paths/);
     assert.match(html, /viewBox="0 0 760 /);

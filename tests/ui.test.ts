@@ -245,6 +245,8 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(html, /\.inspector-evidence \{[\s\S]*max-height: 246px;[\s\S]*overflow: auto;/);
     assert.match(html, /Primary impact flow/);
     assert.match(html, /Primary impact flow[\s\S]*id="mapFlowPath">src\/b\.ts <em>&rarr;<\/em> tests\/b\.test\.ts/);
+    assert.match(html, /class="mobile-route-strip" aria-label="Mobile impact route summary"[\s\S]*tests\/b\.test\.ts[\s\S]*Tests to verify[\s\S]*proven/);
+    assert.match(html, /@media \(max-width: 560px\)[\s\S]*\.mobile-route-strip \{[\s\S]*display: grid;/);
     assert.match(html, /id="mapNextAction" class="map-next-action" aria-label="Next verification command"[\s\S]*<code>npm test -- tests\/b\.test\.ts<\/code>/);
     assert.match(html, /aria-label="Copy map verification command"/);
     assert.match(html, /function renderMapAction/);

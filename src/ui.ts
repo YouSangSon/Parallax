@@ -1047,6 +1047,7 @@ function renderImpactMapPanel(graph: UiGraphPreview | null, report: UiReportPrev
   const svg = renderImpactMapSvg(map, selectedPath);
   const selectedAction = selectedPath && report ? actionByTargetPath(report.actions).get(selectedPath) : undefined;
   const insight = renderImpactMapInsight(map, displayedPathCount, firstImpact?.path, selectedAction);
+  const mobileRoutes = renderMobileImpactRoutes(map, selectedPath);
   const edgeRows = map.edges.slice(0, 6).map((edge) => {
     const from = map.nodeById.get(edge.from);
     const to = map.nodeById.get(edge.to);
@@ -1073,6 +1074,7 @@ function renderImpactMapPanel(graph: UiGraphPreview | null, report: UiReportPrev
       <div class="map-content">
         <div class="map-frame">
           ${insight}
+          ${mobileRoutes}
           ${svg}
         </div>
         <aside class="map-legend" aria-label="Impact map legend">
@@ -1087,6 +1089,26 @@ function renderImpactMapPanel(graph: UiGraphPreview | null, report: UiReportPrev
       </div>
     </section>
   `;
+}
+
+function renderMobileImpactRoutes(map: ReturnType<typeof buildImpactMap>, selectedPath?: string): string {
+  const rows = map.affectedNodes.slice(0, 4).map((node, index) => {
+    const edge = map.edges.find((item) => item.to === node.id);
+    const pathValue = node.path ?? node.label;
+    const selectedClass = node.path === selectedPath ? ' selected-impact' : '';
+    const attrs = node.path
+      ? ` class="mobile-route-card selectable-impact${selectedClass}" tabindex="0" role="button" data-impact-path="${escapeHtml(node.path)}" data-filter-text="${escapeHtml(`${node.label} ${edge?.label ?? ''} ${node.laneLabel ?? ''} ${node.confidence ?? ''}`)}"`
+      : ` class="mobile-route-card"`;
+    return `
+      <li${attrs}>
+        <b>${escapeHtml(String(index + 1))}</b>
+        <strong>${escapeHtml(compactMapLabel(pathValue, 34))}</strong>
+        <span>${escapeHtml(edge?.label ?? 'IMPACTS')} · ${escapeHtml(node.laneLabel ?? node.kind)}</span>
+        <em class="confidence-${escapeHtml(node.confidence ?? 'unknown')}">${escapeHtml(node.confidence ?? 'unknown')}</em>
+      </li>
+    `;
+  }).join('');
+  return `<ol class="mobile-route-strip" aria-label="Mobile impact route summary">${rows}</ol>`;
 }
 
 function renderImpactMapInsight(
@@ -2696,6 +2718,9 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       border-color: #73c2ac;
       background: #e6f7ef;
     }
+    .mobile-route-strip {
+      display: none;
+    }
     .impact-svg {
       display: block;
       min-width: 0;
@@ -3210,6 +3235,75 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       .map-next-action {
         grid-template-columns: minmax(0, 1fr) auto;
         padding: 6px 7px;
+      }
+      .mobile-route-strip {
+        list-style: none;
+        display: grid;
+        gap: 6px;
+        margin: 0;
+        padding: 0;
+      }
+      .mobile-route-card {
+        min-height: 48px;
+        display: grid;
+        grid-template-columns: 22px minmax(0, 1fr) auto;
+        gap: 3px 7px;
+        align-items: center;
+        padding: 7px 8px;
+        border: 1px solid rgba(168, 202, 186, 0.28);
+        border-radius: 8px;
+        background: rgba(255, 253, 244, 0.055);
+        color: #f8fff9;
+      }
+      .mobile-route-card b {
+        grid-row: 1 / span 2;
+        width: 22px;
+        height: 22px;
+        display: grid;
+        place-items: center;
+        border-radius: 6px;
+        background: rgba(115, 194, 172, 0.14);
+        color: #b9e2d0;
+        font-size: 11px;
+      }
+      .mobile-route-card strong {
+        min-width: 0;
+        overflow-wrap: anywhere;
+        font-size: 12px;
+        line-height: 1.15;
+      }
+      .mobile-route-card span {
+        min-width: 0;
+        overflow-wrap: anywhere;
+        color: #c9d8cf;
+        font-size: 10px;
+        line-height: 1.2;
+      }
+      .mobile-route-card em {
+        grid-column: 3;
+        grid-row: 1 / span 2;
+        align-self: center;
+        border: 1px solid rgba(168, 202, 186, 0.25);
+        border-radius: 999px;
+        padding: 2px 6px;
+        background: rgba(255, 253, 244, 0.08);
+        font-size: 10px;
+        font-style: normal;
+        font-weight: 900;
+        text-transform: uppercase;
+      }
+      .mobile-route-card.selected-impact {
+        background: #eef8f3 !important;
+      }
+      .mobile-route-card.selected-impact strong {
+        color: #102119;
+      }
+      .mobile-route-card.selected-impact span {
+        color: #41564b;
+      }
+      .mobile-route-card.selected-impact b {
+        background: #d9f1e6;
+        color: var(--green);
       }
       .impact-svg { height: 320px; }
       .map-legend { max-height: 300px; padding: 10px; overflow: auto; }

@@ -7,7 +7,17 @@ import { PRODUCT_NAME } from './branding.js';
 import { readGitSnapshot } from './git-snapshot.js';
 import { ensureRepo, getRepoId, impactDir, latestCompletedIndexRun, openDatabase } from './store.js';
 import { normalizeRepoRoot, redactSecrets, resolveInsideRoot, toRelativePath } from './security.js';
-import type { AnalyzeOptions, Confidence, EntityKind, EntityRef, Evidence, ImpactAction, ImpactReport, ImpactTarget } from './types.js';
+import type {
+  AdapterRunInsight,
+  AnalyzeOptions,
+  Confidence,
+  EntityKind,
+  EntityRef,
+  Evidence,
+  ImpactAction,
+  ImpactReport,
+  ImpactTarget
+} from './types.js';
 
 type ImpactRow = {
   sourcePath: string;
@@ -57,6 +67,16 @@ type CanonicalContextEvidenceRow = {
   evidence_end_col: number | null;
 };
 
+type AdapterRunRow = {
+  adapter_id: string;
+  adapter_version: string;
+  language_ids: string;
+  confidence?: string;
+  known_gaps_json?: string;
+  status: string;
+  error_summary: string | null;
+};
+
 type LegacyImpactRow = {
   source_path: string;
   kind: string;
@@ -76,6 +96,7 @@ type IndexRunSnapshotRow = {
 };
 
 type AnalyzerSchemaFeatures = {
+  adapterRunMetadataColumns: boolean;
   gitSnapshotColumns: boolean;
   relationEvidenceSpanColumns: boolean;
 };
@@ -113,6 +134,7 @@ export async function analyzeDiff(options: AnalyzeOptions): Promise<ImpactReport
   if (schemaFeatures.gitSnapshotColumns) {
     appendGitSnapshotWarnings(db, repoId, indexRunId, repoRoot, warnings);
   }
+  const adapterInsights = loadAdapterInsights(db, indexRunId, schemaFeatures);
 
   for (const changedFile of changedFiles) {
     const changedEntityId = `file:${changedFile}`;
@@ -226,6 +248,7 @@ export async function analyzeDiff(options: AnalyzeOptions): Promise<ImpactReport
     actions,
     testCommands: actions,
     evidence: dedupeEvidence(evidence),
+    ...(adapterInsights.length > 0 ? { adapterInsights } : {}),
     ...(warnings.length > 0 ? { warnings: [...new Set(warnings)].sort() } : {})
   };
 
@@ -248,15 +271,79 @@ export async function analyzeDiff(options: AnalyzeOptions): Promise<ImpactReport
 
 function detectAnalyzerSchemaFeatures(db: ReturnType<typeof openDatabase>): AnalyzerSchemaFeatures {
   return {
+    adapterRunMetadataColumns: hasColumns(db, 'adapter_runs', ['confidence', 'known_gaps_json']),
     gitSnapshotColumns: hasColumn(db, 'index_runs', 'git_commit_sha'),
     relationEvidenceSpanColumns: hasColumn(db, 'relation_evidence', 'start_line')
   };
+}
+
+function hasColumns(db: ReturnType<typeof openDatabase>, table: string, columns: readonly string[]): boolean {
+  return columns.every((column) => hasColumn(db, table, column));
 }
 
 function hasColumn(db: ReturnType<typeof openDatabase>, table: string, column: string): boolean {
   return db
     .prepare('SELECT 1 AS one FROM pragma_table_info(?) WHERE name = ?')
     .get(table, column) !== undefined;
+}
+
+function loadAdapterInsights(
+  db: ReturnType<typeof openDatabase>,
+  indexRunId: number,
+  schemaFeatures: AnalyzerSchemaFeatures
+): AdapterRunInsight[] {
+  const rows = schemaFeatures.adapterRunMetadataColumns
+    ? db
+      .prepare(
+        `SELECT adapter_id, adapter_version, language_ids, confidence, known_gaps_json, status, error_summary
+           FROM adapter_runs
+          WHERE index_run_id = ?
+          ORDER BY adapter_id`
+      )
+      .all(indexRunId) as AdapterRunRow[]
+    : db
+      .prepare(
+        `SELECT adapter_id, adapter_version, language_ids, status, error_summary
+           FROM adapter_runs
+          WHERE index_run_id = ?
+          ORDER BY adapter_id`
+      )
+      .all(indexRunId) as AdapterRunRow[];
+
+  return rows.map((row) => {
+    const confidence = schemaFeatures.adapterRunMetadataColumns
+      ? normalizeConfidence(row.confidence ?? 'unknown')
+      : 'unknown';
+    const knownGaps = schemaFeatures.adapterRunMetadataColumns
+      ? parseStringArray(row.known_gaps_json ?? '[]')
+      : [];
+    return {
+      id: row.adapter_id,
+      version: row.adapter_version,
+      languageIds: parseStringArray(row.language_ids),
+      status: row.status,
+      confidence,
+      knownGaps,
+      ...(row.error_summary ? { errorSummary: redactSecrets(row.error_summary) } : {})
+    };
+  });
+}
+
+function parseStringArray(value: string): string[] {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is string => typeof item === 'string');
+  } catch {
+    return [];
+  }
+}
+
+function normalizeConfidence(value: string): Confidence {
+  if (value === 'proven' || value === 'inferred' || value === 'heuristic' || value === 'unknown') {
+    return value;
+  }
+  return 'unknown';
 }
 
 function appendGitSnapshotWarnings(
@@ -745,6 +832,15 @@ function renderMarkdown(report: ImpactReport): string {
     .filter((action) => action.kind === 'verify')
     .map((action) => `- \`${action.display}\``)
     .join('\n') || '- None';
+  const adapterInsights = report.adapterInsights
+    ?.map((adapter) => {
+      const gaps = adapter.knownGaps.length > 0
+        ? adapter.knownGaps.map((gap) => `  - ${gap}`).join('\n')
+        : '  - None declared';
+      const errorSummary = adapter.errorSummary ? `\n  - Error: ${adapter.errorSummary}` : '';
+      return `- ${adapter.id}@${adapter.version} - ${adapter.status}, ${adapter.confidence} (${adapter.languageIds.join(', ') || 'no files'})${errorSummary}\n${gaps}`;
+    })
+    .join('\n') ?? '- None';
   const evidence = report.evidence
     .map((item) => `### ${item.id}\n\nFile: \`${item.file}\`\n\nKind: ${item.kind}\n\nConfidence: ${item.confidence}\n\n\`\`\`text\n${item.snippet}\n\`\`\``)
     .join('\n\n');
@@ -770,6 +866,10 @@ ${tests}
 ## Warnings
 
 ${warnings}
+
+## Adapter Confidence
+
+${adapterInsights}
 
 ## Evidence
 

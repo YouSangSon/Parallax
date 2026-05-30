@@ -673,8 +673,10 @@ async function indexProjectInternal(
 
     const adapterRunIds = new Map<SemanticAdapter, number>();
     const insertAdapterRun = db.prepare(`
-        INSERT INTO adapter_runs (index_run_id, adapter_id, adapter_version, language_ids, status, started_at)
-        VALUES (?, ?, ?, ?, ?, datetime('now'))
+        INSERT INTO adapter_runs (
+          index_run_id, adapter_id, adapter_version, language_ids, confidence, known_gaps_json, status, started_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
       `);
     for (const group of adapterGroups) {
       const adapterRunInsert = insertAdapterRun.run(
@@ -682,6 +684,8 @@ async function indexProjectInternal(
         group.adapter.id,
         group.adapter.version,
         JSON.stringify(group.languageIds),
+        adapterConfidence(group.adapter),
+        JSON.stringify(adapterKnownGaps(group.adapter)),
         'running'
       );
       adapterRunIds.set(group.adapter, Number(adapterRunInsert.lastInsertRowid));
@@ -883,7 +887,9 @@ async function indexProjectInternal(
       adaptersUsed: adapterGroups.map((group) => ({
         id: group.adapter.id,
         version: group.adapter.version,
-        languageIds: group.languageIds
+        languageIds: group.languageIds,
+        confidence: adapterConfidence(group.adapter),
+        knownGaps: adapterKnownGaps(group.adapter)
       })),
       coverage: {
         indexedPaths: indexedFiles.length,
@@ -928,6 +934,14 @@ function createDefaultRegistry(): AdapterRegistry {
   registry.register(new RustSemanticAdapter());
   registry.register(new MultiLanguageRegexAdapter());
   return registry;
+}
+
+function adapterConfidence(adapter: SemanticAdapter): Confidence {
+  return adapter.confidence ?? 'unknown';
+}
+
+function adapterKnownGaps(adapter: SemanticAdapter): string[] {
+  return [...(adapter.knownGaps ?? [])];
 }
 
 function immutableIndexedFilesSnapshot(

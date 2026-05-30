@@ -33,6 +33,7 @@ ENTITY ←──── FACT ────→ TRANSACTION
 | v5 | transaction_parents | Multi-parent merge transactions |
 | v6 | fact_embeddings (model-agnostic, composite PK) | Phase 2 — model swap freedom |
 | v7 | branches.state, transactions.archived, fact_provenance.kind, reflections | Phase 3 — reflection + branch GC |
+| v16 | adapter_runs.confidence, adapter_runs.known_gaps_json | Report adapter-level confidence and known gaps |
 
 All migrations are **ADD-only**. The `tryAddColumn` helper in `src/store.ts` enforces an allowlist of `(table, column, definition)` triples so future ALTER calls cannot expand DDL surface accidentally.
 

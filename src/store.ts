@@ -7,7 +7,7 @@ import * as sqliteVec from 'sqlite-vec';
 import { DATA_DIR, PACKAGE_NAME, PRODUCT_NAME } from './branding.js';
 
 export type Db = DatabaseSync;
-export const CURRENT_SCHEMA_VERSION = 15;
+export const CURRENT_SCHEMA_VERSION = 16;
 
 type OpenDatabaseOptions = {
   readOnly?: boolean;
@@ -188,6 +188,8 @@ function migrate(db: Db, options: MigrateOptions): void {
       adapter_id TEXT NOT NULL,
       adapter_version TEXT NOT NULL,
       language_ids TEXT NOT NULL DEFAULT '[]',
+      confidence TEXT NOT NULL DEFAULT 'unknown',
+      known_gaps_json TEXT NOT NULL DEFAULT '[]',
       status TEXT NOT NULL,
       started_at TEXT NOT NULL,
       finished_at TEXT,
@@ -706,6 +708,15 @@ function migrate(db: Db, options: MigrateOptions): void {
     VALUES (15, datetime('now'));
   `);
 
+  // Schema v16: per-adapter confidence metadata. This lets reports and agent
+  // context distinguish parser-backed evidence from broad heuristic coverage.
+  tryAddColumn(db, 'adapter_runs', 'confidence', "TEXT NOT NULL DEFAULT 'unknown'");
+  tryAddColumn(db, 'adapter_runs', 'known_gaps_json', "TEXT NOT NULL DEFAULT '[]'");
+  db.exec(`
+    INSERT OR IGNORE INTO schema_versions (version, applied_at)
+    VALUES (16, datetime('now'));
+  `);
+
   // Schema v11/v14: persistent FTS projections for context search. These
   // projections make entities, relation evidence, and selected memory facts
   // searchable from read-only MCP calls without rebuilding temp FTS tables per
@@ -880,7 +891,7 @@ function migrate(db: Db, options: MigrateOptions): void {
 // IF NOT EXISTS form for ADD COLUMN and does not bind identifiers in
 // ALTER TABLE, so we accept the interpolation but constrain it. Every
 // caller must pass a literal that appears in these sets.
-const ALLOWED_TABLES = new Set(['branches', 'transactions', 'fact_provenance', 'relation_evidence', 'index_runs']);
+const ALLOWED_TABLES = new Set(['branches', 'transactions', 'fact_provenance', 'relation_evidence', 'index_runs', 'adapter_runs']);
 const ALLOWED_COLUMNS = new Set([
   'state',
   'archived',
@@ -892,9 +903,11 @@ const ALLOWED_COLUMNS = new Set([
   'end_col',
   'git_commit_sha',
   'git_branch_name',
-  'git_is_dirty'
+  'git_is_dirty',
+  'confidence',
+  'known_gaps_json'
 ]);
-const ALLOWED_DEFINITIONS = /^(?:TEXT|INTEGER|REAL|BLOB|NUMERIC)\b[\sA-Za-z0-9_'-]*$/;
+const ALLOWED_DEFINITIONS = /^(?:TEXT|INTEGER|REAL|BLOB|NUMERIC)\b[\sA-Za-z0-9_'\-[\]]*$/;
 
 function tryAddColumn(db: Db, table: string, column: string, definition: string): void {
   if (!ALLOWED_TABLES.has(table)) {
@@ -1059,9 +1072,18 @@ export function assertCurrentSchema(db: Db, feature: string): void {
     && tableExists(db, 'search_relation_evidence_fts')
     && tableExists(db, 'search_facts_fts');
   const hasContextPackStore = tableExists(db, 'context_packs');
-  if (version < CURRENT_SCHEMA_VERSION || !hasProvenanceTx || !hasCurrentSearchProjections || !hasContextPackStore) {
+  const hasAdapterRunMetadata =
+    columnExists(db, 'adapter_runs', 'confidence')
+    && columnExists(db, 'adapter_runs', 'known_gaps_json');
+  if (
+    version < CURRENT_SCHEMA_VERSION
+    || !hasProvenanceTx
+    || !hasCurrentSearchProjections
+    || !hasContextPackStore
+    || !hasAdapterRunMetadata
+  ) {
     throw new Error(
-      `${feature} requires ${PRODUCT_NAME} schema v${CURRENT_SCHEMA_VERSION} with current search projections and context pack store; current database is v${version}. Run ${PACKAGE_NAME} init with the current build to apply additive migrations.`
+      `${feature} requires ${PRODUCT_NAME} schema v${CURRENT_SCHEMA_VERSION} with current search projections, context pack store, and adapter metadata; current database is v${version}. Run ${PACKAGE_NAME} init with the current build to apply additive migrations.`
     );
   }
 }

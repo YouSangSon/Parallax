@@ -57,6 +57,7 @@ export type UiReportPreview = UiReportSummary & {
   changed: ImpactReport['changed'];
   affectedFiles: ImpactReport['affectedFiles'];
   evidence: UiEvidencePreview[];
+  adapterInsights: NonNullable<ImpactReport['adapterInsights']>;
   actions: ImpactAction[];
   warnings: string[];
 };
@@ -351,6 +352,13 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
       ${item.command ? `<code>${escapeHtml(item.command)}</code>` : ''}
     </li>
   `).join('');
+  const adapterInsightRows = (report?.adapterInsights ?? []).map((adapter) => `
+    <li class="pack-row" data-filter-text="${escapeHtml(`${adapter.id} ${adapter.status} ${adapter.confidence} ${adapter.languageIds.join(' ')} ${adapter.knownGaps.join(' ')}`)}">
+      <strong>${escapeHtml(adapter.id)}</strong>
+      <span>${escapeHtml(adapter.status)} · ${escapeHtml(adapter.confidence)} · ${escapeHtml(adapter.languageIds.join(', ') || 'no files')}</span>
+      ${adapter.knownGaps.length > 0 ? `<small>${escapeHtml(adapter.knownGaps.join(' | '))}</small>` : ''}
+    </li>
+  `).join('');
   const graphNodes = (snapshot.graph?.nodes ?? []).slice(0, 28).map((node) => `
     <li>
       <span class="node-dot ${escapeHtml(node.group ?? 'neutral')}"></span>
@@ -636,6 +644,10 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
         <ul class="list">${contextPackRows || '<li class="empty">No reusable context packs yet.</li>'}</ul>
       </section>
     </section>
+    <section class="panel wide-panel">
+      <h2>Adapter Confidence</h2>
+      <ul class="list filterable">${adapterInsightRows || '<li class="empty">No adapter confidence metadata in the selected report.</li>'}</ul>
+    </section>
     <section class="bottom">
       <section class="panel">
         <h2>Workspace Contracts</h2>
@@ -820,6 +832,7 @@ function reportPreviewFromRow(row: ReportRow): UiReportPreview {
     changed: report.changed,
     affectedFiles: report.affectedFiles,
     evidence: evidencePreviewFromReport(report),
+    adapterInsights: report.adapterInsights ?? [],
     actions: report.actions,
     warnings: report.warnings ?? []
   };

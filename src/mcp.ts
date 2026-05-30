@@ -979,6 +979,7 @@ function buildContextPack(report: ImpactReport, budget: ContextBudget, asOfIso: 
     })),
     context: contextItems,
     workArtifacts: selectedWorkArtifacts,
+    ...(report.adapterInsights && report.adapterInsights.length > 0 ? { adapterInsights: report.adapterInsights } : {}),
     actions,
     evidence: selectedEvidence,
     resources: {
@@ -1184,6 +1185,7 @@ function contextSummary(
     `${report.affectedFiles.length} affected file(s) found; ${selectedAffectedCount} included in this context pack.`,
     `${selectedWorkArtifactCount} work artifact(s) included without document bodies.`,
     `${selectedEvidenceCount} evidence item(s) included; fetch entity resources for more detail.`,
+    `${report.adapterInsights?.length ?? 0} adapter confidence profile(s) available from the latest index.`,
     `${report.actions.length} recommended action(s) available from the full impact analysis.`
   ];
 }

@@ -39,6 +39,11 @@ export class ConfigInfraSemanticAdapter implements SemanticAdapter {
   readonly id = CONFIG_INFRA_SEMANTIC_ADAPTER_ID;
   readonly version = CONFIG_INFRA_SEMANTIC_ADAPTER_VERSION;
   readonly capabilities = capabilities;
+  readonly confidence = 'heuristic';
+  readonly knownGaps = [
+    'path-reference inference does not fully evaluate workflow, Dockerfile, or Terraform execution semantics',
+    'computed paths, templated variables, and generated config are only partially visible'
+  ];
 
   supports(file: ScannedFile): boolean {
     return isWorkflowFile(file) || file.language === 'dockerfile' || file.language === 'terraform';

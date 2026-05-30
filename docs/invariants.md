@@ -50,3 +50,4 @@ MCP는 안전한 read-only 분석 표면을 먼저 안정화한다. write 권한
 ## I-10. Evidence first, no silent certainty
 
 모든 영향도 판단은 evidence + provenance + confidence를 같이 가져야 한다. 모르는 것은 `unknown` / coverage gap / missing adapter로 명시적으로 드러낸다. 추정값을 사실처럼 반환하지 않는다.
+분석 리포트는 adapter run 단위의 confidence와 known gap도 함께 노출해서, parser-backed 결과와 broad heuristic coverage를 agent와 사람이 구분할 수 있어야 한다.

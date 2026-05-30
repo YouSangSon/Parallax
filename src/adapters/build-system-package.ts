@@ -118,6 +118,11 @@ export class BuildSystemPackageAdapter implements SemanticAdapter {
   readonly id = BUILD_SYSTEM_PACKAGE_ADAPTER_ID;
   readonly version = BUILD_SYSTEM_PACKAGE_ADAPTER_VERSION;
   readonly capabilities = buildSystemCapabilities;
+  readonly confidence = 'heuristic';
+  readonly knownGaps = [
+    'manifest-only resolver; lockfiles, transitive dependencies, and semver range impact are not fully resolved',
+    'build scripts are not executed, so generated dependency graph edges may be absent'
+  ];
 
   supports(file: ScannedFile): boolean {
     return buildManifestKind(file.relativePath) !== undefined;

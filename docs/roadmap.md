@@ -13,7 +13,7 @@
 - [ ] TS/JS Tree-sitter 또는 TypeScript parser 기반 full symbol/call span
 - [ ] JVM/Spring Boot endpoint·DI·persistence relation을 parser 기반으로 승격
 - [ ] Python/Go/Rust call/import resolution을 declaration-only에서 parser-backed로 확장
-- [ ] adapter run마다 confidence label과 known-gap을 report에 명시
+- [x] adapter run마다 confidence label과 known-gap을 report에 명시
 
 ## 2. Workspace / Contract
 

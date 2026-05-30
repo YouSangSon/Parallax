@@ -16,7 +16,7 @@ import type { AdapterRun, ExtractCtx, IndexEvent, SemanticAdapter } from '../src
 import { analyzeDiff, exportImpactGraph, indexProject, initProject, profileEntity } from '../src/index.js';
 import { indexProjectWithRegistryForTest } from '../src/indexer.js';
 import { databasePath } from '../src/store.js';
-import type { RelationKind, ScannedFile } from '../src/types.js';
+import type { Confidence, RelationKind, ScannedFile } from '../src/types.js';
 
 // Force the deterministic SHA-256 stub so embedding tests don't download a
 // real model (~278 MB) and stay fast/offline. Spawned CLI subprocesses
@@ -158,11 +158,17 @@ function downgradeSnapshotAndSpanSchemaForReadOnlyTest(repoRoot: string): void {
   }
 }
 
-function makeAttributionAdapter(id: string, language: string): SemanticAdapter {
+function makeAttributionAdapter(
+  id: string,
+  language: string,
+  options: { confidence?: Confidence; knownGaps?: readonly string[] } = {}
+): SemanticAdapter {
   return {
     id,
     version: '1',
     capabilities: ['references'],
+    ...(options.confidence ? { confidence: options.confidence } : {}),
+    ...(options.knownGaps ? { knownGaps: options.knownGaps } : {}),
     supports: (file) => file.language === language,
     start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
       async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
@@ -227,7 +233,7 @@ test('initProject creates config and SQLite database tables', async () => {
     assert.match(tables.names, /search_entities_fts/);
     assert.match(tables.names, /search_relation_evidence_fts/);
     assert.match(tables.names, /search_facts_fts/);
-    assert.equal(schemaVersion.version, 15);
+    assert.equal(schemaVersion.version, 16);
   } finally {
     db.close();
   }
@@ -1639,7 +1645,10 @@ test('indexProject attributes adapter runs, relations, coverage, and usage per c
   await initProject({ repoRoot });
 
   const registry = new AdapterRegistry();
-  registry.register(makeAttributionAdapter('typescript-test-adapter', 'typescript'));
+  registry.register(makeAttributionAdapter('typescript-test-adapter', 'typescript', {
+    confidence: 'inferred',
+    knownGaps: ['fixture adapter only emits self-reference relations']
+  }));
   registry.register(makeAttributionAdapter('python-test-adapter', 'python'));
 
   const index = await indexProjectWithRegistryForTest({ repoRoot, maxFileBytes: 80 }, registry);
@@ -1647,11 +1656,18 @@ test('indexProject attributes adapter runs, relations, coverage, and usage per c
   assert.deepEqual(
     index.adaptersUsed?.map((adapter) => ({
       id: adapter.id,
-      languageIds: adapter.languageIds
+      languageIds: adapter.languageIds,
+      confidence: adapter.confidence,
+      knownGaps: adapter.knownGaps
     })),
     [
-      { id: 'typescript-test-adapter', languageIds: ['typescript'] },
-      { id: 'python-test-adapter', languageIds: ['python'] }
+      {
+        id: 'typescript-test-adapter',
+        languageIds: ['typescript'],
+        confidence: 'inferred',
+        knownGaps: ['fixture adapter only emits self-reference relations']
+      },
+      { id: 'python-test-adapter', languageIds: ['python'], confidence: 'unknown', knownGaps: [] }
     ]
   );
 
@@ -1659,23 +1675,39 @@ test('indexProject attributes adapter runs, relations, coverage, and usage per c
   try {
     const adapterRuns = db
       .prepare(
-        'SELECT id, adapter_id, language_ids, status FROM adapter_runs WHERE index_run_id = ? ORDER BY id'
+        'SELECT id, adapter_id, language_ids, confidence, known_gaps_json, status FROM adapter_runs WHERE index_run_id = ? ORDER BY id'
       )
       .all(index.indexRunId) as Array<{
         id: number;
         adapter_id: string;
         language_ids: string;
+        confidence: string;
+        known_gaps_json: string;
         status: string;
       }>;
     assert.deepEqual(
       adapterRuns.map((run) => ({
         adapterId: run.adapter_id,
         languageIds: JSON.parse(run.language_ids) as string[],
+        confidence: run.confidence,
+        knownGaps: JSON.parse(run.known_gaps_json) as string[],
         status: run.status
       })),
       [
-        { adapterId: 'typescript-test-adapter', languageIds: ['typescript'], status: 'completed' },
-        { adapterId: 'python-test-adapter', languageIds: ['python'], status: 'completed' }
+        {
+          adapterId: 'typescript-test-adapter',
+          languageIds: ['typescript'],
+          confidence: 'inferred',
+          knownGaps: ['fixture adapter only emits self-reference relations'],
+          status: 'completed'
+        },
+        {
+          adapterId: 'python-test-adapter',
+          languageIds: ['python'],
+          confidence: 'unknown',
+          knownGaps: [],
+          status: 'completed'
+        }
       ]
     );
 
@@ -1729,6 +1761,39 @@ test('indexProject attributes adapter runs, relations, coverage, and usage per c
   } finally {
     db.close();
   }
+});
+
+test('analyzeDiff reports adapter confidence and known gaps', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-adapter-insights-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const app = 1;\n');
+  await initProject({ repoRoot });
+
+  const registry = new AdapterRegistry();
+  registry.register(makeAttributionAdapter('typescript-insight-adapter', 'typescript', {
+    confidence: 'inferred',
+    knownGaps: ['fixture adapter only emits self-reference relations']
+  }));
+
+  await indexProjectWithRegistryForTest({ repoRoot }, registry);
+  const report = await analyzeDiff({ repoRoot, changedFiles: ['src/app.ts'], persistReport: false });
+
+  assert.deepEqual(
+    report.adapterInsights?.map((adapter) => ({
+      id: adapter.id,
+      status: adapter.status,
+      confidence: adapter.confidence,
+      knownGaps: adapter.knownGaps
+    })),
+    [
+      {
+        id: 'typescript-insight-adapter',
+        status: 'completed',
+        confidence: 'inferred',
+        knownGaps: ['fixture adapter only emits self-reference relations']
+      }
+    ]
+  );
 });
 
 test('indexProject preserves skipped-file adapter attribution for skipped-only adapters', async () => {
@@ -4227,7 +4292,7 @@ test('currentOnly uses supersession edge tx for reused archived replacement fact
   ]);
 });
 
-test('agent memory read APIs report schema v15 requirement for old read-only databases', async () => {
+test('agent memory read APIs report schema v16 requirement for old read-only databases', async () => {
   const repoRoot = await makeFixtureRepo();
   await initProject({ repoRoot });
 
@@ -4271,7 +4336,7 @@ test('agent memory read APIs report schema v15 requirement for old read-only dat
       withAgentMemoryDb(repoRoot, true, (readDb) =>
         recall(readDb, { entity: 'policy:schema-guard', attribute: 'decision' })
       ),
-    /schema v15/
+    /schema v16/
   );
 });
 

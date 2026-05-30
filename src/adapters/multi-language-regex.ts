@@ -96,6 +96,11 @@ const springComponentAnnotations = new Map<string, string>([
 abstract class RegexBackedSemanticAdapter implements SemanticAdapter {
   readonly version = MULTI_LANG_REGEX_ADAPTER_VERSION;
   readonly capabilities = capabilities;
+  readonly confidence = 'heuristic';
+  readonly knownGaps = [
+    'regex/lightweight parser extraction can miss dynamic references, generated code, and complex call graphs',
+    'source spans are partial outside the parser-backed TypeScript/JavaScript import lane'
+  ];
 
   constructor(
     readonly id: string,
@@ -118,30 +123,55 @@ abstract class RegexBackedSemanticAdapter implements SemanticAdapter {
 }
 
 export class TypeScriptJavaScriptSemanticAdapter extends RegexBackedSemanticAdapter {
+  override readonly knownGaps = [
+    'TypeScript/JavaScript import spans are parser-backed, but full symbol, call, and type relation resolution is not yet complete',
+    'dynamic imports, generated code, and framework-specific routing may require deeper adapters'
+  ];
+
   constructor() {
     super(TS_JS_SEMANTIC_ADAPTER_ID, new Set(['typescript', 'javascript']));
   }
 }
 
 export class JvmSpringSemanticAdapter extends RegexBackedSemanticAdapter {
+  override readonly knownGaps = [
+    'Spring endpoint and component extraction is lightweight and does not run a JVM parser or DI container',
+    'persistence, reflection, generated clients, and framework conventions may be incomplete'
+  ];
+
   constructor() {
     super(JVM_SPRING_SEMANTIC_ADAPTER_ID, new Set(['java', 'kotlin']));
   }
 }
 
 export class PythonSemanticAdapter extends RegexBackedSemanticAdapter {
+  override readonly knownGaps = [
+    'Python extraction is declaration/import oriented and does not execute module import resolution',
+    'dynamic attributes, decorators, and generated code may be incomplete'
+  ];
+
   constructor() {
     super(PYTHON_SEMANTIC_ADAPTER_ID, new Set(['python']));
   }
 }
 
 export class GoSemanticAdapter extends RegexBackedSemanticAdapter {
+  override readonly knownGaps = [
+    'Go extraction is lightweight and does not run go/packages or type checking',
+    'build tags, generated files, and interface implementation edges may be incomplete'
+  ];
+
   constructor() {
     super(GO_SEMANTIC_ADAPTER_ID, new Set(['go']));
   }
 }
 
 export class RustSemanticAdapter extends RegexBackedSemanticAdapter {
+  override readonly knownGaps = [
+    'Rust extraction is lightweight and does not run rust-analyzer or cargo metadata',
+    'macro expansion, trait implementation edges, and generated code may be incomplete'
+  ];
+
   constructor() {
     super(RUST_SEMANTIC_ADAPTER_ID, new Set(['rust']));
   }
@@ -151,6 +181,11 @@ export class MultiLanguageRegexAdapter implements SemanticAdapter {
   readonly id = MULTI_LANG_REGEX_ADAPTER_ID;
   readonly version = MULTI_LANG_REGEX_ADAPTER_VERSION;
   readonly capabilities = capabilities;
+  readonly confidence = 'heuristic';
+  readonly knownGaps = [
+    'fallback extraction is broad but shallow and should be treated as coverage guidance, not semantic proof',
+    'language-specific parser adapters should replace this path for high-risk changes'
+  ];
 
   supports(_file: ScannedFile): boolean {
     return true;

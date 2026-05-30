@@ -21,14 +21,14 @@ function withTempDb<T>(callback: (db: Db) => T): T {
   }
 }
 
-test('migrate records schema_versions through v15', () => {
+test('migrate records schema_versions through v16', () => {
   withTempDb((db) => {
     const versions = db
       .prepare('SELECT version FROM schema_versions ORDER BY version')
       .all() as Array<{ version: number }>;
     assert.deepEqual(
       versions.map((row) => row.version),
-      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
     );
   });
 });
@@ -58,6 +58,17 @@ test('migrate creates the agent memory tables and later extension tables', () =>
         .get(name);
       assert.ok(row, `expected table ${name} to exist`);
     }
+  });
+});
+
+test('migrate v16 adds adapter confidence metadata columns', () => {
+  withTempDb((db) => {
+    const columns = db
+      .prepare('SELECT name FROM pragma_table_info(?) ORDER BY name')
+      .all('adapter_runs')
+      .map((row) => (row as { name: string }).name);
+    assert.ok(columns.includes('confidence'));
+    assert.ok(columns.includes('known_gaps_json'));
   });
 });
 
@@ -621,7 +632,7 @@ test('migrate is idempotent across re-runs', () => {
         .all() as Array<{ version: number }>;
       assert.deepEqual(
         versions.map((row) => row.version),
-        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
       );
     } finally {
       second.close();
@@ -650,6 +661,7 @@ test('migrate upgrades a synthetic v6 schema by adding v7/v8/v9 columns and tabl
       seed.prepare('DELETE FROM schema_versions WHERE version = 13').run();
       seed.prepare('DELETE FROM schema_versions WHERE version = 14').run();
       seed.prepare('DELETE FROM schema_versions WHERE version = 15').run();
+      seed.prepare('DELETE FROM schema_versions WHERE version = 16').run();
       seed.prepare('DROP TABLE IF EXISTS reflections').run();
       seed.prepare('DROP TABLE IF EXISTS context_tool_runs').run();
       seed.prepare('DROP TABLE IF EXISTS context_resource_accesses').run();
@@ -768,7 +780,7 @@ test('migrate upgrades a synthetic v6 schema by adding v7/v8/v9 columns and tabl
       const versions = upgraded
         .prepare('SELECT max(version) AS v FROM schema_versions')
         .get() as { v: number };
-      assert.equal(versions.v, 15);
+      assert.equal(versions.v, 16);
       const telemetry = upgraded
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'context_tool_runs'")
         .get();

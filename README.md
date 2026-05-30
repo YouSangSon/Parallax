@@ -29,7 +29,7 @@ MVP 구현이 들어가 있습니다.
 - repo-local `.parallax/` 작업 공간 생성
 - 언어 중립 report model: `changed`, `affected`, `actions`, `evidence`
 - legacy `files/symbols/edges`와 canonical `entities/relations/relation_evidence` 동시 저장
-- adapter run과 index coverage metadata 저장
+- adapter run, confidence label, known-gap, index coverage metadata 저장
 - 기본 registry가 TypeScript/JavaScript, JVM/Spring Boot, Python, Go, Rust v0 adapter를 regex fallback보다 먼저 적용
 - Markdown과 system/config/contract 파일은 regex fallback adapter로 인덱싱
 - C#, C, C++ 파일은 fallback 휴리스틱으로 기본 symbol/dependency 인덱싱
@@ -265,6 +265,7 @@ JSON report에는 아래 정보가 들어갑니다.
 - `actions`
 - `testCommands` deprecated: 기존 caller 호환용이며 `actions`를 사용하세요.
 - `evidence`
+- `adapterInsights`
 - `warnings`
 - `indexRunId`
 - `reportPath`

@@ -1196,7 +1196,7 @@ test('MCP doctor returns the local health report without telemetry writes', asyn
     assert.equal(report.version, 0);
     assert.equal(report.repoRoot, '[REPO_ROOT]');
     assert.equal(report.database.path, '.parallax/impact.db');
-    assert.equal(report.database.schemaVersion, 15);
+    assert.equal(report.database.schemaVersion, 16);
     assert.equal(report.index.latestCompletedRun?.status, 'completed');
     assert.equal(report.telemetry.toolRuns, 0);
   } finally {
@@ -2868,12 +2868,11 @@ test('MCP search_context semantic lane hides facts superseded by visible main ed
   }
 });
 
-test('MCP search_context returns schema_outdated for pre-v15 read-only databases', async () => {
+test('MCP search_context returns schema_outdated for pre-v16 read-only databases', async () => {
   const repoRoot = await makeRepo();
   const db = new DatabaseSync(databasePath(repoRoot), { readOnly: false });
   try {
-    db.prepare('DELETE FROM schema_versions WHERE version >= 15').run();
-    db.prepare('DROP TABLE IF EXISTS context_packs').run();
+    db.prepare('DELETE FROM schema_versions WHERE version >= 16').run();
   } finally {
     db.close();
   }
@@ -2892,7 +2891,7 @@ test('MCP search_context returns schema_outdated for pre-v15 read-only databases
       error: { code: string; problem: string; fix: string };
     };
     assert.equal(envelope.error.code, 'schema_outdated');
-    assert.match(envelope.error.problem, /schema v15/);
+    assert.match(envelope.error.problem, /schema v16/);
     assert.match(envelope.error.fix, /parallax init/);
   } finally {
     await client.close();
@@ -3719,7 +3718,7 @@ test('MCP trace walks fact_provenance back through the causal chain', async () =
   }
 });
 
-test('MCP trace reports schema_outdated for pre-v15 fact_provenance tables', async () => {
+test('MCP trace reports schema_outdated for pre-v16 fact_provenance tables', async () => {
   const repoRoot = await makeRepo();
   let factId = '';
   const writer = new McpProcessClient(repoRoot);
@@ -3754,7 +3753,7 @@ test('MCP trace reports schema_outdated for pre-v15 fact_provenance tables', asy
       error: { code: string; problem: string; fix: string };
     };
     assert.equal(envelope.error.code, 'schema_outdated');
-    assert.match(envelope.error.problem, /schema v15/);
+    assert.match(envelope.error.problem, /schema v16/);
     assert.doesNotMatch(envelope.error.problem, /no such column/);
     assert.match(envelope.error.fix, /parallax init/);
   } finally {

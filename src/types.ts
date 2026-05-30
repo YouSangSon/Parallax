@@ -152,6 +152,13 @@ export type AdapterUsage = {
   id: string;
   version: string;
   languageIds: string[];
+  confidence: Confidence;
+  knownGaps: string[];
+};
+
+export type AdapterRunInsight = AdapterUsage & {
+  status: string;
+  errorSummary?: string;
 };
 
 export type IndexCoverage = {
@@ -181,6 +188,7 @@ export type ImpactReport = {
    */
   testCommands: ImpactAction[];
   evidence: Evidence[];
+  adapterInsights?: AdapterRunInsight[];
   warnings?: string[];
   reportPath?: string;
 };
@@ -265,6 +273,7 @@ export type ContextPack = {
   changed: ContextPackChangedEntity[];
   context: ContextPackItem[];
   workArtifacts: ContextPackWorkArtifact[];
+  adapterInsights?: AdapterRunInsight[];
   actions: ImpactAction[];
   evidence: ContextPackEvidence[];
   resources: {

@@ -49,8 +49,8 @@ test('doctorProject reports initialized repos before the first index', async () 
   const report = doctorProject({ repoRoot });
 
   assert.equal(report.database.exists, true);
-  assert.equal(report.database.schemaVersion, 15);
-  assert.equal(report.database.requiredSchemaVersion, 15);
+  assert.equal(report.database.schemaVersion, 16);
+  assert.equal(report.database.requiredSchemaVersion, 16);
   assert.equal(report.database.tables.contextToolRuns, true);
   assert.equal(report.database.tables.contextResourceAccesses, true);
   assert.equal(report.database.tables.contextPacks, true);
@@ -69,12 +69,14 @@ test('doctorProject reports latest completed index, coverage, adapters, and vect
   const report = doctorProject({ repoRoot });
 
   assert.equal(report.database.exists, true);
-  assert.equal(report.database.schemaVersion, 15);
-  assert.equal(report.database.requiredSchemaVersion, 15);
+  assert.equal(report.database.schemaVersion, 16);
+  assert.equal(report.database.requiredSchemaVersion, 16);
   assert.equal(report.index.latestCompletedRun?.id, index.indexRunId);
   assert.equal(report.index.latestCompletedRun?.status, 'completed');
   assert.ok((report.index.coverage?.indexedPaths ?? 0) >= 2);
   assert.ok(report.index.adapterRuns.length > 0);
+  assert.ok(report.index.adapterRuns.some((run) => run.confidence === 'heuristic'));
+  assert.ok(report.index.adapterRuns.some((run) => run.knownGaps.length > 0));
   assert.equal(typeof report.vector.sqliteVecLoaded, 'boolean');
   assert.ok(!report.findings.some((finding) => finding.severity === 'error'));
 });
@@ -211,7 +213,7 @@ test('CLI doctor prints the doctor report as JSON', async () => {
   assert.equal(result.status, 0, result.stderr);
   const report = JSON.parse(result.stdout) as Awaited<ReturnType<typeof doctorProject>>;
   assert.equal(report.version, 0);
-  assert.equal(report.database.schemaVersion, 15);
+  assert.equal(report.database.schemaVersion, 16);
   assert.equal(report.index.latestCompletedRun?.status, 'completed');
 });
 

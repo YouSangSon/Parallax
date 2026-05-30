@@ -69,6 +69,8 @@ export interface SemanticAdapter {
   readonly id: string;
   readonly version: string;
   readonly capabilities: readonly AdapterCapability[];
+  readonly confidence?: Confidence;
+  readonly knownGaps?: readonly string[];
   supports(file: ScannedFile): boolean;
   start(ctx: ExtractCtx, files: readonly ScannedFile[]): Promise<AdapterRun> | AdapterRun;
 }

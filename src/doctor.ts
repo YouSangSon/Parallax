@@ -65,6 +65,8 @@ export type DoctorCoverage = {
 export type DoctorAdapterRun = {
   adapterId: string;
   status: string;
+  confidence: string;
+  knownGaps: string[];
   count: number;
 };
 
@@ -447,7 +449,35 @@ function addCoverageFindings(report: DoctorReport): void {
 }
 
 function readAdapterRuns(db: Db, indexRunId: number): DoctorAdapterRun[] {
-  return db
+  if (hasColumns(db, 'adapter_runs', ['confidence', 'known_gaps_json'])) {
+    const rows = db
+      .prepare(
+        `SELECT adapter_id AS adapterId,
+                status,
+                confidence,
+                known_gaps_json AS knownGapsJson,
+                count(*) AS count
+           FROM adapter_runs
+          WHERE index_run_id = ?
+          GROUP BY adapter_id, status, confidence, known_gaps_json
+          ORDER BY adapter_id, status`
+      )
+      .all(indexRunId) as Array<{
+        adapterId: string;
+        status: string;
+        confidence: string;
+        knownGapsJson: string;
+        count: number;
+      }>;
+    return rows.map((row) => ({
+      adapterId: row.adapterId,
+      status: row.status,
+      confidence: row.confidence,
+      knownGaps: parseStringArray(row.knownGapsJson),
+      count: row.count
+    }));
+  }
+  const rows = db
     .prepare(
       `SELECT adapter_id AS adapterId, status, count(*) AS count
          FROM adapter_runs
@@ -455,7 +485,24 @@ function readAdapterRuns(db: Db, indexRunId: number): DoctorAdapterRun[] {
         GROUP BY adapter_id, status
         ORDER BY adapter_id, status`
     )
-    .all(indexRunId) as DoctorAdapterRun[];
+    .all(indexRunId) as Array<{ adapterId: string; status: string; count: number }>;
+  return rows.map((row) => ({
+    adapterId: row.adapterId,
+    status: row.status,
+    confidence: 'unknown',
+    knownGaps: [],
+    count: row.count
+  }));
+}
+
+function parseStringArray(value: string): string[] {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is string => typeof item === 'string');
+  } catch {
+    return [];
+  }
 }
 
 function readVecTables(db: Db): string[] {

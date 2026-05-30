@@ -141,7 +141,7 @@ abstract class RegexBackedSemanticAdapter implements SemanticAdapter {
 
 export class TypeScriptJavaScriptSemanticAdapter extends RegexBackedSemanticAdapter {
   override readonly knownGaps = [
-    'TypeScript/JavaScript import, declaration, imported call-site, local identifier call, same-class this.method, class field arrow method, and same-file new ClassName instance call spans are parser-backed, but broader dynamic dispatch and type relation resolution are not yet complete',
+    'TypeScript/JavaScript import, declaration, imported call-site, local identifier call, same-class this.method, class field arrow method caller/target, and same-file new ClassName instance call spans are parser-backed, but broader dynamic dispatch and type relation resolution are not yet complete',
     'polymorphism, alias-heavy object flows, generated code, and framework-specific routing may require deeper adapters'
   ];
 
@@ -2037,6 +2037,11 @@ function enclosingLocalCaller(
       if (callable) return callable;
     }
     if (ts.isMethodDeclaration(current) && ts.isIdentifier(current.name)) {
+      const className = enclosingTypeScriptJavaScriptClassName(current);
+      const callable = className ? localCallables.get(`${className}.${current.name.text}`) : undefined;
+      if (callable) return callable;
+    }
+    if (isCallableClassProperty(current) && ts.isIdentifier(current.name)) {
       const className = enclosingTypeScriptJavaScriptClassName(current);
       const callable = className ? localCallables.get(`${className}.${current.name.text}`) : undefined;
       if (callable) return callable;

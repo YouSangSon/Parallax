@@ -1835,6 +1835,128 @@ test('TypeScript JavaScript adapter records parser-backed interface extends disp
   }
 });
 
+test('TypeScript JavaScript adapter records parser-backed type reference alias dispatch spans', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-type-reference-alias-spans-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+
+  await writeFile(path.join(repoRoot, 'src/guard.ts'), [
+    'interface SessionValidator {',
+    '  validateSession(token: string): boolean;',
+    '}',
+    '',
+    'type GuardAlias = SessionValidator;',
+    '',
+    'type AuditValidator = {',
+    '  auditSession: (token: string) => boolean;',
+    '};',
+    '',
+    'type AuditAlias = GuardAuditAlias;',
+    'type GuardAuditAlias = AuditValidator;',
+    '',
+    'export function authorize(guard: GuardAlias, audit: AuditAlias, token: string): boolean {',
+    '  return guard.validateSession(token) && audit.auditSession(token);',
+    '}',
+    ''
+  ].join('\n'));
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const declarations = db
+      .prepare(`
+        SELECT
+          target.symbol AS symbol,
+          ev.snippet,
+          ev.start_line,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind = 'DECLARES'
+          AND r.source_entity_id = 'file:src/guard.ts'
+        ORDER BY target.symbol
+      `)
+      .all(index.indexRunId) as Array<{
+        symbol: string;
+        snippet: string;
+        start_line: number | null;
+        adapter_id: string | null;
+      }>;
+
+    assert.deepEqual(
+      declarations.map((row) => [row.symbol, row.start_line]),
+      [
+        ['AuditAlias', 11],
+        ['AuditValidator', 7],
+        ['AuditValidator.auditSession', 8],
+        ['GuardAlias', 5],
+        ['GuardAuditAlias', 12],
+        ['SessionValidator', 1],
+        ['SessionValidator.validateSession', 2],
+        ['authorize', 14]
+      ]
+    );
+    assert.ok(declarations.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
+
+    const calls = db
+      .prepare(`
+        SELECT
+          source.symbol AS source_symbol,
+          target.symbol AS target_symbol,
+          r.provenance,
+          ev.snippet,
+          ev.start_line,
+          ev.end_line,
+          ev.start_col,
+          ev.end_col,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities source ON source.id = r.source_entity_id
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind = 'CALLS'
+          AND source.kind = 'symbol'
+          AND target.kind = 'symbol'
+          AND source.path = 'src/guard.ts'
+          AND target.path = 'src/guard.ts'
+        ORDER BY ev.start_line, ev.start_col
+      `)
+      .all(index.indexRunId) as Array<{
+        source_symbol: string;
+        target_symbol: string;
+        provenance: string;
+        snippet: string;
+        start_line: number | null;
+        end_line: number | null;
+        start_col: number | null;
+        end_col: number | null;
+        adapter_id: string | null;
+      }>;
+
+    assert.deepEqual(
+      calls.map((row) => [row.source_symbol, row.target_symbol, row.snippet]),
+      [
+        ['authorize', 'SessionValidator.validateSession', 'guard.validateSession(token)'],
+        ['authorize', 'AuditValidator.auditSession', 'audit.auditSession(token)']
+      ]
+    );
+    assert.deepEqual(calls.map((row) => row.start_line), [15, 15]);
+    assert.ok(calls.every((row) => row.end_line !== null));
+    assert.ok(calls.every((row) => row.start_col !== null));
+    assert.ok(calls.every((row) => row.end_col !== null));
+    assert.ok(calls.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
+    assert.ok(calls.every((row) => row.provenance.startsWith('instance-call:')));
+  } finally {
+    db.close();
+  }
+});
+
 test('TypeScript JavaScript adapter records parser-backed type literal member dispatch spans', async () => {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-type-literal-member-spans-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });

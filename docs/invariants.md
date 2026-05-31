@@ -1,53 +1,53 @@
-# 불변 원칙 (Invariants)
+# Invariants
 
-> 프로젝트가 다시 시작해도 깨지 않을 핵심 결정. 새로운 결정은 이 문서를 위반하지 않는 선에서 한다.
+> Core decisions that must not break even if the project starts over. New decisions are made only insofar as they do not violate this document.
 
 ---
 
 ## I-1. Local-first, single SQLite DB
 
-모든 데이터는 `<repo>/.parallax/impact.db` 하나에 저장한다. 외부 서비스(graph DB, hosted vector store, cloud sync) 의존 없음. 첫 부팅 시 fresh DB 생성, schema migration은 DB 열 때 자동 수행.
+All data is stored in a single `<repo>/.parallax/impact.db`. No dependency on external services (graph DB, hosted vector store, cloud sync). On first boot a fresh DB is created, and schema migration runs automatically when the DB is opened.
 
-**왜 깨면 안 되는가:**
+**Why this must not break:**
 
-- 코드 구조를 외부 서비스에 보내는 것은 많은 팀에 non-starter다.
-- 외부 의존 하나가 설치 마찰을 두 배로 만든다. SQLite는 어디든 이미 있다.
-- 비행기/SCIF/방화벽 뒤에서도 작동해야 한다.
-- 단일 파일은 복사·diff·archive·sandbox가 쉽다.
+- Sending code structure to an external service is a non-starter for many teams.
+- A single external dependency doubles installation friction. SQLite is already everywhere.
+- It must work on a plane, in a SCIF, or behind a firewall.
+- A single file is easy to copy, diff, archive, and sandbox.
 
 ## I-2. Content-addressable fact id (SHA-256)
 
-`fact.id = SHA-256(entity || attribute || value_blob || op)`. 같은 (entity, attribute, value, op) 튜플은 항상 같은 id. dedup 비용 0.
+`fact.id = SHA-256(entity || attribute || value_blob || op)`. The same (entity, attribute, value, op) tuple always yields the same id. Dedup cost is zero.
 
 ## I-3. ADD-only schema migration
 
-기존 컬럼을 변경/삭제하지 않는다. 항상 새 컬럼/테이블을 추가하는 방식. 과거 schema로 열린 DB도 계속 읽을 수 있어야 한다.
+Existing columns are never changed or deleted. The approach is always to add new columns/tables. A DB opened with an older schema must still be readable.
 
 ## I-4. Redact-then-embed (zero-row policy)
 
-secret 패턴이 감지된 값은 redaction 후에만 embedding 파이프라인에 들어간다. 원본은 fact value에도 redact된 상태로 저장. 외부 모델 호출 전 redaction이 무조건 선행.
+A value in which a secret pattern is detected enters the embedding pipeline only after redaction. The original is also stored in the fact value in its redacted form. Redaction unconditionally precedes any external model call.
 
 ## I-5. Async work outside SQLite transaction
 
-LLM 호출, embedding 계산, 네트워크 fetch 등 long-running 작업은 SQLite transaction 바깥에서 한다. DB 잠금 시간을 ms 단위로 유지.
+Long-running work such as LLM calls, embedding computation, and network fetches happens outside the SQLite transaction. DB lock time is kept to the millisecond range.
 
 ## I-6. Explicit triggers, no daemon
 
-reflect/index/gc 같은 정리 작업은 명시적인 CLI/MCP 호출로만 실행된다. background worker나 데몬을 만들지 않는다. 사용자가 언제 어떤 작업이 도는지 항상 안다.
+Maintenance work like reflect/index/gc runs only via explicit CLI/MCP calls. No background worker or daemon is created. The user always knows when and which work is running.
 
 ## I-7. No LLM/embedding SDKs (fetch only)
 
-OpenAI/Anthropic/HuggingFace SDK를 의존성에 추가하지 않는다. 필요하면 `fetch`로 직접 호출. SDK 업데이트가 프로젝트의 의존성 무게를 좌우하지 않도록.
+OpenAI/Anthropic/HuggingFace SDKs are not added as dependencies. When needed, call them directly with `fetch`. This keeps SDK updates from dictating the project's dependency weight.
 
 ## I-8. Read-only agent surface first
 
-MCP는 안전한 read-only 분석 표면을 먼저 안정화한다. write 권한은 별도 모델과 리뷰를 거친 뒤 추가한다. agent가 실수로 destructive 작업을 못 하게 기본값으로 막는다.
+MCP stabilizes a safe read-only analysis surface first. Write permissions are added only after a separate model and review. By default an agent is blocked from accidentally performing destructive operations.
 
 ## I-9. Actions are recommendations
 
-테스트나 리뷰 command를 자동 실행하지 않는다. `command + args` 구조로 추천만 한다. 실행 책임은 사람 또는 상위 agent에 있다.
+Test or review commands are not run automatically. They are only recommended in a `command + args` structure. Responsibility for execution rests with a human or a higher-level agent.
 
 ## I-10. Evidence first, no silent certainty
 
-모든 영향도 판단은 evidence + provenance + confidence를 같이 가져야 한다. 모르는 것은 `unknown` / coverage gap / missing adapter로 명시적으로 드러낸다. 추정값을 사실처럼 반환하지 않는다.
-분석 리포트는 adapter run 단위의 confidence와 known gap도 함께 노출해서, parser-backed 결과와 broad heuristic coverage를 agent와 사람이 구분할 수 있어야 한다.
+Every impact judgment must carry evidence + provenance + confidence together. What is unknown is surfaced explicitly as `unknown` / coverage gap / missing adapter. Estimated values are not returned as if they were facts.
+Analysis reports also expose per-adapter-run confidence and known gaps, so that agents and people can distinguish parser-backed results from broad heuristic coverage.

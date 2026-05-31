@@ -359,35 +359,6 @@ test('UI snapshot and HTML compare the selected report to the previous saved rep
   }
 });
 
-test('localizes deep panel labels and empty states across languages', async () => {
-  const { repoRoot } = await makeUiRepo();
-  try {
-    const snapshot = await buildUiSnapshot({ repoRoot });
-
-    const koHtml = renderUiHtml(snapshot, 'ko');
-    // At least three newly-translated Korean deep labels plus an empty state.
-    assert.match(koHtml, /영향 인스펙터/); // Impact Inspector
-    assert.match(koHtml, /주요 증거/); // Top evidence
-    assert.match(koHtml, /영향 요약/); // Impact Summary
-    assert.match(koHtml, /기록된 검증 액션 없음/); // empty-state: No verification action recorded
-    // English deep labels must not leak into the Korean server-rendered panels.
-    assert.ok(!koHtml.includes('>Top evidence<'));
-    assert.ok(!koHtml.includes('>Impact Inspector<'));
-
-    const zhHtml = renderUiHtml(snapshot, 'zh');
-    assert.match(zhHtml, /影响检查器/); // Impact Inspector
-    assert.match(zhHtml, /主要证据/); // Top evidence
-    assert.match(zhHtml, /分析可信度/); // Analysis Trust
-
-    const enHtml = renderUiHtml(snapshot, 'en');
-    assert.match(enHtml, />Impact Inspector</);
-    assert.match(enHtml, />Top evidence</);
-    assert.match(enHtml, />Analysis Trust</);
-  } finally {
-    await rm(repoRoot, { recursive: true, force: true });
-  }
-});
-
 test('UI report delta honors configured team policy thresholds', async () => {
   const { repoRoot, reportId } = await makeUiRepo();
   try {

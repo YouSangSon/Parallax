@@ -1685,7 +1685,79 @@ function shortenMiddle(value: string, maxLength: number): string {
   return `${value.slice(0, prefixLength)}…${value.slice(value.length - suffixLength)}`;
 }
 
-export function renderUiHtml(snapshot: UiSnapshot): string {
+export type UiLanguage = 'en' | 'ko' | 'zh';
+
+const UI_LANGUAGES: readonly UiLanguage[] = ['en', 'ko', 'zh'];
+const UI_LANGUAGE_LABELS: Record<UiLanguage, string> = { en: 'English', ko: '한국어', zh: '中文' };
+
+type UiMessageKey =
+  | 'eyebrow' | 'workbench' | 'controls' | 'reportSelector' | 'noReports' | 'selectReport'
+  | 'filterPlaceholder' | 'filterRows' | 'metrics' | 'indexStatus' | 'changed' | 'affected'
+  | 'evidence' | 'actions' | 'coverageGapsMetric' | 'workArtifactsMetric' | 'workspacesMetric'
+  | 'changeSet' | 'verificationQueue' | 'impactPaths' | 'evidencePanel' | 'workArtifacts'
+  | 'doctorFindings' | 'contextPacks' | 'adapterConfidence' | 'workspaceContracts'
+  | 'workspaceResources' | 'coverageGaps' | 'resourceContract' | 'language';
+
+const UI_MESSAGES: Record<UiLanguage, Record<UiMessageKey, string>> = {
+  en: {
+    eyebrow: 'Parallax local impact intelligence', workbench: 'Impact Workbench',
+    controls: 'Workbench controls', reportSelector: 'Report selector', noReports: 'No reports',
+    selectReport: 'Select a report', filterPlaceholder: 'Filter paths, evidence, actions',
+    filterRows: 'Filter workbench rows', metrics: 'Repository and report metrics',
+    indexStatus: 'Index status', changed: 'Changed', affected: 'Affected', evidence: 'Evidence',
+    actions: 'Actions', coverageGapsMetric: 'Coverage gaps', workArtifactsMetric: 'Work artifacts',
+    workspacesMetric: 'Workspaces', changeSet: 'Change Set', verificationQueue: 'Verification Queue',
+    impactPaths: 'Impact Paths', evidencePanel: 'Evidence', workArtifacts: 'Work Artifacts',
+    doctorFindings: 'Doctor Findings', contextPacks: 'Context Packs',
+    adapterConfidence: 'Adapter Confidence', workspaceContracts: 'Workspace Contracts',
+    workspaceResources: 'Workspace Resources', coverageGaps: 'Coverage Gaps',
+    resourceContract: 'Resource Contract', language: 'Language',
+  },
+  ko: {
+    eyebrow: 'Parallax 로컬 임팩트 인텔리전스', workbench: 'Impact Workbench',
+    controls: '워크벤치 컨트롤', reportSelector: '리포트 선택기', noReports: '리포트 없음',
+    selectReport: '리포트 선택', filterPlaceholder: '경로·증거·액션 필터',
+    filterRows: '워크벤치 행 필터', metrics: '저장소 및 리포트 지표',
+    indexStatus: '인덱스 상태', changed: '변경됨', affected: '영향받음', evidence: '증거',
+    actions: '액션', coverageGapsMetric: '커버리지 갭', workArtifactsMetric: '작업 산출물',
+    workspacesMetric: '워크스페이스', changeSet: '변경 세트', verificationQueue: '검증 큐',
+    impactPaths: '영향 경로', evidencePanel: '증거', workArtifacts: '작업 산출물',
+    doctorFindings: 'Doctor 점검 결과', contextPacks: 'Context Pack',
+    adapterConfidence: 'Adapter 신뢰도', workspaceContracts: '워크스페이스 계약',
+    workspaceResources: '워크스페이스 리소스', coverageGaps: '커버리지 갭',
+    resourceContract: '리소스 계약', language: '언어',
+  },
+  zh: {
+    eyebrow: 'Parallax 本地影响力情报', workbench: 'Impact Workbench',
+    controls: '工作台控件', reportSelector: '报告选择器', noReports: '暂无报告',
+    selectReport: '选择一个报告', filterPlaceholder: '筛选路径、证据、操作',
+    filterRows: '筛选工作台行', metrics: '仓库与报告指标',
+    indexStatus: '索引状态', changed: '已变更', affected: '受影响', evidence: '证据',
+    actions: '操作', coverageGapsMetric: '覆盖缺口', workArtifactsMetric: '工作产物',
+    workspacesMetric: '工作区', changeSet: '变更集', verificationQueue: '验证队列',
+    impactPaths: '影响路径', evidencePanel: '证据', workArtifacts: '工作产物',
+    doctorFindings: 'Doctor 检查结果', contextPacks: 'Context Pack',
+    adapterConfidence: 'Adapter 置信度', workspaceContracts: '工作区契约',
+    workspaceResources: '工作区资源', coverageGaps: '覆盖缺口',
+    resourceContract: '资源契约', language: '语言',
+  },
+};
+
+export function normalizeUiLanguage(value: string | null | undefined): UiLanguage {
+  return UI_LANGUAGES.includes(value as UiLanguage) ? (value as UiLanguage) : 'en';
+}
+
+function renderLanguageSwitcher(active: UiLanguage): string {
+  const links = UI_LANGUAGES.map((lang) => {
+    const current = lang === active ? ' aria-current="true"' : '';
+    return `<a class="lang-link${lang === active ? ' active' : ''}" data-lang="${lang}" href="?lang=${lang}"${current}>${escapeHtml(UI_LANGUAGE_LABELS[lang])}</a>`;
+  }).join('');
+  return `<nav class="lang-switcher" aria-label="${escapeHtml(UI_MESSAGES[active].language)}">${links}</nav>`;
+}
+
+export function renderUiHtml(snapshot: UiSnapshot, language: UiLanguage = 'en'): string {
+  const lang = normalizeUiLanguage(language);
+  const m = UI_MESSAGES[lang];
   const report = snapshot.selectedReport;
   const doctor = snapshot.doctor;
   const title = report ? `Impact Workbench - ${report.id}` : 'Impact Workbench';
@@ -1802,7 +1874,7 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
   const dataJson = JSON.stringify(snapshot).replaceAll('<', '\\u003c');
 
   return `<!doctype html>
-<html lang="en">
+<html lang="${lang}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -3496,25 +3568,26 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
 <body>
   <header class="topbar">
     <div class="title">
-      <span class="eyebrow">Parallax local impact intelligence</span>
-      <h1>Impact Workbench</h1>
+      <span class="eyebrow">${escapeHtml(m.eyebrow)}</span>
+      <h1>${escapeHtml(m.workbench)}</h1>
       <p>${escapeHtml(snapshot.repoRoot)} · schema ${escapeHtml(String(doctor.database.schemaVersion ?? 'missing'))} · generated ${escapeHtml(snapshot.generatedAt)}</p>
     </div>
-    <div class="toolbar" aria-label="Workbench controls">
-      <select id="reportSelect" aria-label="Report selector">${reportOptions || '<option value="">No reports</option>'}</select>
-      <input id="filterInput" type="search" placeholder="Filter paths, evidence, actions" aria-label="Filter workbench rows">
+    <div class="toolbar" aria-label="${escapeHtml(m.controls)}">
+      ${renderLanguageSwitcher(lang)}
+      <select id="reportSelect" aria-label="${escapeHtml(m.reportSelector)}">${reportOptions || `<option value="">${escapeHtml(m.noReports)}</option>`}</select>
+      <input id="filterInput" type="search" placeholder="${escapeHtml(m.filterPlaceholder)}" aria-label="${escapeHtml(m.filterRows)}">
     </div>
   </header>
   <main class="shell">
-    <section class="metrics" aria-label="Repository and report metrics">
-      <div class="metric"><span>Index status</span><strong>${escapeHtml(doctor.index.latestCompletedRun?.status ?? 'missing')}</strong></div>
-      <div class="metric"><span>Changed</span><strong>${escapeHtml(String(report?.changedCount ?? 0))}</strong></div>
-      <div class="metric"><span>Affected</span><strong>${escapeHtml(String(report?.affectedCount ?? 0))}</strong></div>
-      <div class="metric"><span>Evidence</span><strong>${escapeHtml(String(report?.evidenceCount ?? 0))}</strong></div>
-      <div class="metric"><span>Actions</span><strong>${escapeHtml(String(report?.actionCount ?? 0))}</strong></div>
-      <div class="metric"><span>Coverage gaps</span><strong>${escapeHtml(String(doctor.index.coverage?.skippedPaths ?? 0))}</strong></div>
-      <div class="metric"><span>Work artifacts</span><strong>${escapeHtml(String(snapshot.workArtifacts.length))}</strong></div>
-      <div class="metric"><span>Workspaces</span><strong>${escapeHtml(String(snapshot.workspaces.length))}</strong></div>
+    <section class="metrics" aria-label="${escapeHtml(m.metrics)}">
+      <div class="metric"><span>${escapeHtml(m.indexStatus)}</span><strong>${escapeHtml(doctor.index.latestCompletedRun?.status ?? 'missing')}</strong></div>
+      <div class="metric"><span>${escapeHtml(m.changed)}</span><strong>${escapeHtml(String(report?.changedCount ?? 0))}</strong></div>
+      <div class="metric"><span>${escapeHtml(m.affected)}</span><strong>${escapeHtml(String(report?.affectedCount ?? 0))}</strong></div>
+      <div class="metric"><span>${escapeHtml(m.evidence)}</span><strong>${escapeHtml(String(report?.evidenceCount ?? 0))}</strong></div>
+      <div class="metric"><span>${escapeHtml(m.actions)}</span><strong>${escapeHtml(String(report?.actionCount ?? 0))}</strong></div>
+      <div class="metric"><span>${escapeHtml(m.coverageGapsMetric)}</span><strong>${escapeHtml(String(doctor.index.coverage?.skippedPaths ?? 0))}</strong></div>
+      <div class="metric"><span>${escapeHtml(m.workArtifactsMetric)}</span><strong>${escapeHtml(String(snapshot.workArtifacts.length))}</strong></div>
+      <div class="metric"><span>${escapeHtml(m.workspacesMetric)}</span><strong>${escapeHtml(String(snapshot.workspaces.length))}</strong></div>
     </section>
     ${impactTriageStrip}
     <section class="impact-overview" aria-label="Impact overview">
@@ -3525,50 +3598,50 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
     <section class="workbench" aria-label="Impact report workbench">
       <div class="stacked-pane">
         <section class="panel">
-          <h2>Change Set</h2>
+          <h2>${escapeHtml(m.changeSet)}</h2>
           <ul class="list filterable">${changedRows || `<li class="empty">Run ${PACKAGE_NAME} analyze to create a report.</li>`}</ul>
         </section>
         <section class="panel">
-          <h2>Verification Queue</h2>
+          <h2>${escapeHtml(m.verificationQueue)}</h2>
           <ul class="list filterable">${actionRows || '<li class="empty">No recommended actions in this report.</li>'}</ul>
         </section>
       </div>
       <div class="stacked-pane">
         <section class="panel">
-          <h2>Impact Paths</h2>
+          <h2>${escapeHtml(m.impactPaths)}</h2>
           <ul class="list filterable">${affectedRows || '<li class="empty">No affected paths in the selected report.</li>'}</ul>
         </section>
       </div>
       <section class="panel evidence-panel">
-        <h2>Evidence</h2>
+        <h2>${escapeHtml(m.evidencePanel)}</h2>
         <ul class="list filterable">${evidenceRows || '<li class="empty">No evidence in the selected report.</li>'}</ul>
       </section>
     </section>
     <section class="panel wide-panel">
-      <h2>Work Artifacts</h2>
+      <h2>${escapeHtml(m.workArtifacts)}</h2>
       <ul class="list filterable">${workArtifactRows || '<li class="empty">No policy, decision, PRD, requirement, or proposal impact in the selected report.</li>'}</ul>
     </section>
     <section class="bottom">
       <section class="panel">
-        <h2>Doctor Findings</h2>
+        <h2>${escapeHtml(m.doctorFindings)}</h2>
         <ul class="list">${errors}${findings || (!errors ? '<li class="empty">No doctor findings.</li>' : '')}</ul>
       </section>
       <section class="panel">
-        <h2>Context Packs</h2>
+        <h2>${escapeHtml(m.contextPacks)}</h2>
         <ul class="list">${contextPackRows || '<li class="empty">No reusable context packs yet.</li>'}</ul>
       </section>
     </section>
     <section class="panel wide-panel">
-      <h2>Adapter Confidence</h2>
+      <h2>${escapeHtml(m.adapterConfidence)}</h2>
       <ul class="list filterable">${adapterInsightRows || '<li class="empty">No adapter confidence metadata in the selected report.</li>'}</ul>
     </section>
     <section class="bottom">
       <section class="panel">
-        <h2>Workspace Contracts</h2>
+        <h2>${escapeHtml(m.workspaceContracts)}</h2>
         <ul class="list filterable">${workspaceRows || '<li class="empty">No workspace contract links available.</li>'}</ul>
       </section>
       <section class="panel">
-        <h2>Workspace Resources</h2>
+        <h2>${escapeHtml(m.workspaceResources)}</h2>
         <ul class="list">
           ${snapshot.workspaces.map((workspace) => `
             <li class="pack-row">
@@ -3581,11 +3654,11 @@ export function renderUiHtml(snapshot: UiSnapshot): string {
     </section>
     <section class="bottom">
       <section class="panel">
-        <h2>Coverage Gaps</h2>
+        <h2>${escapeHtml(m.coverageGaps)}</h2>
         <ul class="list">${coverageRows || '<li class="empty">No coverage rows available.</li>'}</ul>
       </section>
       <section class="panel">
-        <h2>Resource Contract</h2>
+        <h2>${escapeHtml(m.resourceContract)}</h2>
         <ul class="list">
           <li class="pack-row"><strong>/api/bootstrap</strong><span>DoctorReport, reports, selected report, graph, coverage, context packs</span></li>
           <li class="pack-row"><strong>/api/reports/{id}</strong><span>Persisted ImpactReport JSON shape</span></li>
@@ -4050,7 +4123,7 @@ export async function startUiServer(options: UiServerOptions): Promise<{ server:
       }
       if (url.pathname === '/' || url.pathname === '/index.html') {
         response.writeHead(200, htmlHeaders());
-        response.end(renderUiHtml(snapshot));
+        response.end(renderUiHtml(snapshot, normalizeUiLanguage(url.searchParams.get('lang'))));
         return;
       }
       response.writeHead(404, textHeaders());

@@ -216,7 +216,12 @@ export async function analyzeDiff(options: AnalyzeOptions): Promise<ImpactReport
     evidence.push(makeEvidence(repoRoot, changedFile, 'changed-file', 'proven'));
   }
 
-  const affectedFiles = [...affected.values()].sort((a, b) => a.path.localeCompare(b.path));
+  const affectedFiles = [...affected.values()].sort((a, b) => {
+    const byConfidence = confidenceRank(b.confidence) - confidenceRank(a.confidence);
+    if (byConfidence !== 0) return byConfidence;
+    if (a.depth !== b.depth) return a.depth - b.depth;
+    return a.path.localeCompare(b.path);
+  });
   const changed = changedFiles.map((file) => entityForPath(file));
   const affectedTargets: ImpactTarget[] = affectedFiles.map((file) => ({
     target: file.target,

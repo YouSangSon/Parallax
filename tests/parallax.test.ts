@@ -5223,3 +5223,39 @@ test('CLI branch --abandon refuses to abandon main', async () => {
   assert.notEqual(run.status, 0);
   assert.match(run.stderr, /cannot abandon protected branch/);
 });
+
+test('analyzeDiff ranks proven code impact above heuristic doc mentions', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-impact-ranking-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await mkdir(path.join(repoRoot, 'docs'), { recursive: true });
+
+  // core.ts is imported by zeta.ts (proven) and merely mentioned by a doc (heuristic).
+  // Alphabetically 'docs/guide.md' < 'src/zeta.ts', so a path-only sort would list the
+  // low-confidence doc first; confidence-first ranking must surface the proven edge first.
+  await writeFile(path.join(repoRoot, 'src/core.ts'), 'export const core = 1;\n');
+  await writeFile(
+    path.join(repoRoot, 'src/zeta.ts'),
+    'import { core } from "./core.js";\nexport const zeta = core;\n'
+  );
+  await writeFile(
+    path.join(repoRoot, 'docs/guide.md'),
+    '# Guide\n\nSee `src/core.ts` for the core constant.\n'
+  );
+
+  await initProject({ repoRoot });
+  await indexProject({ repoRoot });
+
+  const report = await analyzeDiff({ repoRoot, changedFiles: ['src/core.ts'], maxDepth: 1 });
+
+  const provenIndex = report.affectedFiles.findIndex((file) => file.path === 'src/zeta.ts');
+  const docIndex = report.affectedFiles.findIndex((file) => file.path === 'docs/guide.md');
+
+  assert.notEqual(provenIndex, -1, 'proven code dependent should be present');
+  assert.notEqual(docIndex, -1, 'heuristic doc mention should be present');
+  assert.equal(report.affectedFiles[provenIndex]?.confidence, 'proven');
+  assert.equal(report.affectedFiles[docIndex]?.confidence, 'heuristic');
+  assert.ok(
+    provenIndex < docIndex,
+    `proven code impact (idx ${provenIndex}) must rank before heuristic doc mention (idx ${docIndex})`
+  );
+});

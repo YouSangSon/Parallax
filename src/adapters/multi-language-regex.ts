@@ -23,7 +23,7 @@ import type {
 } from './types.js';
 
 export const MULTI_LANG_REGEX_ADAPTER_ID = 'multi-language-regex-mvp';
-export const MULTI_LANG_REGEX_ADAPTER_VERSION = '32';
+export const MULTI_LANG_REGEX_ADAPTER_VERSION = '35';
 export const TS_JS_SEMANTIC_ADAPTER_ID = 'typescript-javascript-semantic-v0';
 export const JVM_SPRING_SEMANTIC_ADAPTER_ID = 'jvm-spring-semantic-v0';
 export const PYTHON_SEMANTIC_ADAPTER_ID = 'python-semantic-v0';
@@ -2247,6 +2247,7 @@ function unwrapTypeScriptJavaScriptReceiverExpression(node: ts.Expression): ts.E
     || ts.isAsExpression(current)
     || ts.isTypeAssertionExpression(current)
     || ts.isSatisfiesExpression(current)
+    || ts.isAwaitExpression(current)
   ) {
     current = current.expression;
   }
@@ -3096,7 +3097,7 @@ function collectTypeScriptJavaScriptFactoryReturnTypes(
 
   const addReturnType = (name: string | undefined, type: ts.TypeNode | undefined): void => {
     if (!name) return;
-    const className = classNameFromTypeReference(type, typeReferenceAliases);
+    const className = classNameFromTypeReference(unwrapPromiseTypeNode(type), typeReferenceAliases);
     if (!className) return;
     factoryReturnTypes.set(name, className);
   };
@@ -3471,6 +3472,15 @@ function collectTypeScriptJavaScriptLocalInstanceBindings(
         );
       const scope = enclosingLocalCaller(node, localCallables);
       if (binding && scope) addBinding(scope.name, node.name.text, binding);
+      if (scope) {
+        const elementBinding = typeBindingFromTypeNode(
+          arrayElementTypeNode(node.type),
+          typeReferenceAliases,
+          typeUnionAliases,
+          typeParameterConstraints
+        );
+        if (elementBinding) addBinding(scope.name, `${node.name.text}[]`, elementBinding);
+      }
     } else if (ts.isVariableDeclaration(node) && ts.isObjectBindingPattern(node.name)) {
       const scope = enclosingLocalCaller(node, localCallables);
       if (scope) {
@@ -3482,14 +3492,24 @@ function collectTypeScriptJavaScriptLocalInstanceBindings(
         );
       }
     } else if (ts.isParameter(node) && ts.isIdentifier(node.name)) {
+      const parameterConstraints = typeParameterConstraintBindingsForNode(node, typeReferenceAliases, typeUnionAliases);
       const binding = typeBindingFromTypeNode(
         node.type,
         typeReferenceAliases,
         typeUnionAliases,
-        typeParameterConstraintBindingsForNode(node, typeReferenceAliases, typeUnionAliases)
+        parameterConstraints
       );
       const scope = enclosingLocalCaller(node, localCallables);
       if (binding && scope) addBinding(scope.name, node.name.text, binding);
+      if (scope) {
+        const elementBinding = typeBindingFromTypeNode(
+          arrayElementTypeNode(node.type),
+          typeReferenceAliases,
+          typeUnionAliases,
+          parameterConstraints
+        );
+        if (elementBinding) addBinding(scope.name, `${node.name.text}[]`, elementBinding);
+      }
     } else if (ts.isParameter(node) && ts.isObjectBindingPattern(node.name)) {
       const scope = enclosingLocalCaller(node, localCallables);
       if (scope) {
@@ -3734,6 +3754,33 @@ function classNameFromTypeReference(
   return typeName ? resolveTypeReferenceAlias(typeName, typeReferenceAliases, seen) : undefined;
 }
 
+function unwrapPromiseTypeNode(node: ts.TypeNode | undefined): ts.TypeNode | undefined {
+  if (
+    node
+    && ts.isTypeReferenceNode(node)
+    && ts.isIdentifier(node.typeName)
+    && node.typeName.text === 'Promise'
+    && node.typeArguments?.length === 1
+  ) {
+    return node.typeArguments[0];
+  }
+  return node;
+}
+
+function arrayElementTypeNode(node: ts.TypeNode | undefined): ts.TypeNode | undefined {
+  if (!node) return undefined;
+  if (ts.isArrayTypeNode(node)) return node.elementType;
+  if (
+    ts.isTypeReferenceNode(node)
+    && ts.isIdentifier(node.typeName)
+    && (node.typeName.text === 'Array' || node.typeName.text === 'ReadonlyArray')
+    && node.typeArguments?.length === 1
+  ) {
+    return node.typeArguments[0];
+  }
+  return undefined;
+}
+
 function typeReferenceNameText(node: ts.EntityName): string | undefined {
   if (ts.isIdentifier(node)) return node.text;
   const left = typeReferenceNameText(node.left);
@@ -3850,6 +3897,19 @@ function receiverTypeBindingFromExpression(
     return receiverTypeBindingFromExpression(node.expression, typeReferenceAliases, typeUnionAliases);
   }
   return undefined;
+}
+
+function arrayElementReceiverBinding(
+  expression: ts.Expression,
+  localInstanceBindings: ReadonlyMap<string, TsLocalInstanceBinding>,
+  sourceScopeName: string
+): TsLocalInstanceBinding | undefined {
+  const unwrapped = unwrapTypeScriptJavaScriptReceiverExpression(expression);
+  if (!ts.isElementAccessExpression(unwrapped)) return undefined;
+  if (elementAccessMemberName(unwrapped)) return undefined;
+  const baseName = expressionIdentifierName(unwrapped.expression);
+  if (!baseName) return undefined;
+  return localInstanceBindings.get(scopedLocalName(sourceScopeName, `${baseName}[]`));
 }
 
 function expressionIdentifierName(node: ts.Expression): string | undefined {
@@ -4122,7 +4182,8 @@ function localCallTargetsForExpression(
       typeUnionAliases
     ) ?? (receiverName
       ? localInstanceBindings.get(scopedLocalName(sourceScopeName, receiverName))
-      : undefined);
+      : undefined)
+    ?? arrayElementReceiverBinding(access.expression, localInstanceBindings, sourceScopeName);
     if (instance) {
       return localTypeMemberCallablesForBinding(
         localCallables,
@@ -4607,7 +4668,13 @@ function resolveImportPath(
         `src/main/kotlin/${specifier.replace(/\./g, '/')}`,
         ...(importResolver?.(sourcePath, specifier) ?? [])
       ];
-  const candidates = bases.flatMap((base) => [
+  // NodeNext/ESM: an explicit JS-family extension (./dep.js) refers to its TypeScript
+  // source (dep.ts). Try each base both as written and with that extension stripped.
+  const expandedBases = bases.flatMap((base) => {
+    const stripped = base.replace(/\.(js|jsx|mjs|cjs)$/, '');
+    return stripped === base ? [base] : [base, stripped];
+  });
+  const candidates = expandedBases.flatMap((base) => [
     base,
     `${base}.ts`,
     `${base}.tsx`,

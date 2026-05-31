@@ -23,7 +23,7 @@ import type {
 } from './types.js';
 
 export const MULTI_LANG_REGEX_ADAPTER_ID = 'multi-language-regex-mvp';
-export const MULTI_LANG_REGEX_ADAPTER_VERSION = '32';
+export const MULTI_LANG_REGEX_ADAPTER_VERSION = '33';
 export const TS_JS_SEMANTIC_ADAPTER_ID = 'typescript-javascript-semantic-v0';
 export const JVM_SPRING_SEMANTIC_ADAPTER_ID = 'jvm-spring-semantic-v0';
 export const PYTHON_SEMANTIC_ADAPTER_ID = 'python-semantic-v0';
@@ -2247,6 +2247,7 @@ function unwrapTypeScriptJavaScriptReceiverExpression(node: ts.Expression): ts.E
     || ts.isAsExpression(current)
     || ts.isTypeAssertionExpression(current)
     || ts.isSatisfiesExpression(current)
+    || ts.isAwaitExpression(current)
   ) {
     current = current.expression;
   }
@@ -3096,7 +3097,7 @@ function collectTypeScriptJavaScriptFactoryReturnTypes(
 
   const addReturnType = (name: string | undefined, type: ts.TypeNode | undefined): void => {
     if (!name) return;
-    const className = classNameFromTypeReference(type, typeReferenceAliases);
+    const className = classNameFromTypeReference(unwrapPromiseTypeNode(type), typeReferenceAliases);
     if (!className) return;
     factoryReturnTypes.set(name, className);
   };
@@ -3732,6 +3733,19 @@ function classNameFromTypeReference(
   if (!node || !ts.isTypeReferenceNode(node)) return undefined;
   const typeName = typeReferenceNameText(node.typeName);
   return typeName ? resolveTypeReferenceAlias(typeName, typeReferenceAliases, seen) : undefined;
+}
+
+function unwrapPromiseTypeNode(node: ts.TypeNode | undefined): ts.TypeNode | undefined {
+  if (
+    node
+    && ts.isTypeReferenceNode(node)
+    && ts.isIdentifier(node.typeName)
+    && node.typeName.text === 'Promise'
+    && node.typeArguments?.length === 1
+  ) {
+    return node.typeArguments[0];
+  }
+  return node;
 }
 
 function typeReferenceNameText(node: ts.EntityName): string | undefined {

@@ -1,60 +1,63 @@
 # Security Policy
 
-Parallax는 로컬 저장소를 읽고 분석하는 도구입니다. 보안 이슈는 일반 버그보다
-우선순위가 높습니다.
+Parallax is a tool that reads and analyzes local repositories. Security issues take
+higher priority than ordinary bugs.
 
-## 지원 범위
+## Supported Scope
 
-현재 보안 지원 범위:
+Current security support scope:
 
 - `main` branch
-- 최신 npm package 기준 코드
+- Code as of the latest npm package
 
-## 신고 방법
+## How to Report
 
-GitHub Security Advisory를 사용해 비공개로 신고해 주세요.
+Please report privately using a GitHub Security Advisory.
 
 Repository: https://github.com/YouSangSon/Parallax
 
-Security-sensitive 예시:
+Examples of security-sensitive issues:
 
-- repo root 밖 파일을 읽는 path traversal
+- path traversal that reads files outside the repo root
 - symlink escape
-- MCP write capability가 의도치 않게 노출되는 문제
-- redaction 우회로 secret이 report/MCP output에 노출되는 문제
-- `.parallax/` 내부 DB나 report에 raw secret이 저장되는 문제
+- MCP write capability being unintentionally exposed
+- secrets being exposed in report/MCP output by bypassing redaction
+- raw secrets being stored in the DB or reports inside `.parallax/`
 
-공개 issue에는 실제 secret, private repository path, exploit payload를 올리지
-말아 주세요.
+Please do not post real secrets, private repository paths, or exploit payloads in
+public issues.
 
-## 보안 원칙
+## Security Principles
 
-- MCP는 source/external write를 하지 않습니다. 예외적으로 agent memory facts,
-  branch lifecycle, reflection/repair, context telemetry 같은 `.parallax/`
-  내부 repo-local writes는 명시된 tool에서만 허용합니다.
-- Impact report와 context pack은 기본적으로 tool 응답에서 compact하게 반환하고,
-  큰 payload는 resource-on-demand로 읽습니다.
-- project command execution은 MVP 범위 밖입니다.
-- 모든 file input은 realpath containment check를 거쳐야 합니다.
-- evidence는 저장 또는 출력 전에 redaction되어야 합니다.
-- docs lint는 local machine path와 secret-like content를 차단해야 합니다.
+- MCP does not perform source/external writes. As exceptions, repo-local writes
+  inside `.parallax/` such as agent memory facts, branch lifecycle,
+  reflection/repair, and context telemetry are allowed only from explicitly
+  designated tools.
+- Impact reports and context packs are returned compactly in tool responses by
+  default, and large payloads are read resource-on-demand.
+- project command execution is out of scope for the MVP.
+- All file input must pass a realpath containment check.
+- evidence must be redacted before it is stored or output.
+- docs lint must block local machine paths and secret-like content.
 
-## 외부 memory platform에서 배운 guardrail
+## Guardrails Learned from External Memory Platforms
 
-`rohitg00/agentmemory` 적용성 검토 중 viewer XSS, shell installer RCE,
-default HTTP bind, unauthenticated mesh, export traversal, redaction gap 같은
-upstream advisory를 확인했습니다. Parallax는 해당 platform을 가져오지
-않지만, 다음 원칙은 core guardrail로 유지합니다.
+While evaluating the applicability of `rohitg00/agentmemory`, we identified upstream
+advisories such as viewer XSS, shell installer RCE, default HTTP bind,
+unauthenticated mesh, export traversal, and redaction gaps. Parallax does not pull in
+that platform, but we keep the following principles as core guardrails.
 
-- 기본 실행 경로는 CLI와 MCP stdio입니다. HTTP server, stream server,
-  WebSocket, proxy, background daemon은 core에 암묵적으로 추가하지 않습니다.
-- `curl | sh` 형태 installer는 문서나 자동화의 기본 경로로 쓰지 않습니다.
-- local UI가 추가되면 opt-in이어야 하며, CSP nonce, no inline handler,
-  escaped text rendering, raw secret 미표시를 기본으로 둡니다.
-- 외부 export/write 기능이 추가되면 lexical path check만으로는 부족합니다.
-  realpath/lstat 기반 containment와 symlink escape 테스트가 필수입니다.
-- MCP `tools/list`는 exact surface test로 고정하고, list에 없는 agentmemory식
-  export/write/mesh/team 도구가 `tools/call`로 직접 호출되어도 실패해야 합니다.
-- automatic hook capture와 context injection은 기본 기능이 아닙니다. 향후 hook
-  adapter를 만들더라도 opt-in, bounded payload, fire-and-forget telemetry,
-  short timeout을 요구합니다.
+- The default execution paths are CLI and MCP stdio. HTTP server, stream server,
+  WebSocket, proxy, and background daemon are not added implicitly to the core.
+- `curl | sh` style installers are not used as a default path in documentation or
+  automation.
+- If a local UI is added, it must be opt-in, with CSP nonce, no inline handlers,
+  escaped text rendering, and no display of raw secrets as defaults.
+- If external export/write features are added, a lexical path check alone is not
+  enough. realpath/lstat-based containment and symlink escape tests are mandatory.
+- MCP `tools/list` is pinned with an exact surface test, and any agentmemory-style
+  export/write/mesh/team tool not present in the list must fail even if invoked
+  directly via `tools/call`.
+- automatic hook capture and context injection are not default features. Even if a
+  hook adapter is built in the future, it must require opt-in, bounded payloads,
+  fire-and-forget telemetry, and short timeouts.

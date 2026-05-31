@@ -23,7 +23,7 @@ import type {
 } from './types.js';
 
 export const MULTI_LANG_REGEX_ADAPTER_ID = 'multi-language-regex-mvp';
-export const MULTI_LANG_REGEX_ADAPTER_VERSION = '34';
+export const MULTI_LANG_REGEX_ADAPTER_VERSION = '35';
 export const TS_JS_SEMANTIC_ADAPTER_ID = 'typescript-javascript-semantic-v0';
 export const JVM_SPRING_SEMANTIC_ADAPTER_ID = 'jvm-spring-semantic-v0';
 export const PYTHON_SEMANTIC_ADAPTER_ID = 'python-semantic-v0';
@@ -4668,7 +4668,13 @@ function resolveImportPath(
         `src/main/kotlin/${specifier.replace(/\./g, '/')}`,
         ...(importResolver?.(sourcePath, specifier) ?? [])
       ];
-  const candidates = bases.flatMap((base) => [
+  // NodeNext/ESM: an explicit JS-family extension (./dep.js) refers to its TypeScript
+  // source (dep.ts). Try each base both as written and with that extension stripped.
+  const expandedBases = bases.flatMap((base) => {
+    const stripped = base.replace(/\.(js|jsx|mjs|cjs)$/, '');
+    return stripped === base ? [base] : [base, stripped];
+  });
+  const candidates = expandedBases.flatMap((base) => [
     base,
     `${base}.ts`,
     `${base}.tsx`,

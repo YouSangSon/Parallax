@@ -6105,6 +6105,68 @@ test('TypeScript JavaScript adapter records parser-backed array element typed re
   }
 });
 
+test('TypeScript JavaScript adapter resolves NodeNext .js-extension local imports to their TypeScript source', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-nodenext-import-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+
+  await writeFile(path.join(repoRoot, 'src/dep.ts'), [
+    'export function helper(token: string): boolean {',
+    '  return token.length > 0;',
+    '}',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/consumer.ts'), [
+    "import { helper } from './dep.js';",
+    'export const ok = helper("x");',
+    ''
+  ].join('\n'));
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const rows = db
+      .prepare(`
+        SELECT
+          r.kind,
+          source.path AS source_path,
+          target.kind AS target_kind,
+          target.path AS target_path,
+          ev.snippet,
+          ev.start_line,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities source ON source.id = r.source_entity_id
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        LEFT JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind = 'DEPENDS_ON'
+          AND source.path = 'src/consumer.ts'
+          AND target.path = 'src/dep.ts'
+      `)
+      .all(index.indexRunId) as Array<{
+        kind: string;
+        source_path: string;
+        target_kind: string;
+        target_path: string;
+        snippet: string | null;
+        start_line: number | null;
+        adapter_id: string | null;
+      }>;
+
+    assert.equal(rows.length, 1, '.js import should resolve to the local .ts source as a DEPENDS_ON edge');
+    const row = rows[0]!;
+    assert.equal(row.target_kind, 'file');
+    assert.equal(row.adapter_id, TS_JS_SEMANTIC_ADAPTER_ID);
+    assert.equal(row.start_line, 1);
+    assert.ok((row.snippet ?? '').includes('./dep.js'));
+  } finally {
+    db.close();
+  }
+});
+
 function findEvidence(rows: readonly EvidenceRow[], kind: string, sourcePath: string): EvidenceRow {
   const row = rows.find((item) => item.kind === kind && item.source_path === sourcePath);
   assert.ok(row, `missing ${kind} evidence for ${sourcePath}`);

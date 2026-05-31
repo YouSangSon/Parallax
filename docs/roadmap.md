@@ -15,6 +15,7 @@
 - [ ] JVM/Spring Boot endpoint·DI·persistence relation을 parser 기반으로 승격
 - [ ] Python/Go/Rust call/import resolution을 declaration-only에서 parser-backed로 확장
 - [x] adapter run마다 confidence label과 known-gap을 report에 명시
+- [x] NodeNext/ESM `.js` 확장자 local import을 TypeScript source(`.ts`)로 resolve — 내부 import 의존성 그래프가 전부 `external_entity`로 빠지던 문제 수정
 
 ## 2. Workspace / Contract
 

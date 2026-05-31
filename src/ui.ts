@@ -402,13 +402,13 @@ export async function buildUiSnapshot(options: UiOptions): Promise<UiSnapshot> {
   }
 }
 
-function renderImpactSummaryPanel(snapshot: UiSnapshot): string {
+function renderImpactSummaryPanel(snapshot: UiSnapshot, m: UiMessages): string {
   const report = snapshot.selectedReport;
   if (!report) {
     return `
       <section class="panel impact-summary-panel">
-        <h2>Impact Summary</h2>
-        <div class="empty">Run ${PACKAGE_NAME} analyze to see the current blast radius.</div>
+        <h2>${escapeHtml(m.impactSummary)}</h2>
+        <div class="empty">${escapeHtml(m.emptyRunAnalyzeBlast)}</div>
       </section>
     `;
   }
@@ -418,7 +418,7 @@ function renderImpactSummaryPanel(snapshot: UiSnapshot): string {
   const blast = blastRadiusLabel(report.affectedCount);
   const displayedPathCount = buildImpactMap(snapshot.graph, report).edges.length;
   const impactLanes = buildImpactLanes(report, snapshot.workArtifacts);
-  const trustSummary = renderAnalysisTrustSummary(snapshot, report);
+  const trustSummary = renderAnalysisTrustSummary(snapshot, report, m);
   const confidenceRows = ['proven', 'inferred', 'heuristic', 'unknown'].map((confidence) => {
     const count = report.affectedFiles.filter((item) => item.confidence === confidence).length;
     return `<span class="confidence-meter confidence-${escapeHtml(confidence)}"><b>${count}</b>${escapeHtml(confidence)}</span>`;
@@ -455,30 +455,30 @@ function renderImpactSummaryPanel(snapshot: UiSnapshot): string {
 
   return `
     <section class="panel impact-summary-panel">
-      <h2>Impact Summary</h2>
+      <h2>${escapeHtml(m.impactSummary)}</h2>
       <div class="blast-card">
-        <span>Blast radius</span>
+        <span>${escapeHtml(m.blastRadius)}</span>
         <strong>${escapeHtml(blast)}</strong>
         <small>${escapeHtml(primaryChange)} touches ${report.affectedCount} targets through ${displayedPathCount} displayed paths.</small>
       </div>
       ${trustSummary}
-      <div class="confidence-strip" aria-label="Affected files by confidence">${confidenceRows}</div>
-      <ul class="impact-lanes filterable" aria-label="Affected targets by product lane">${laneRows}</ul>
+      <div class="confidence-strip" aria-label="${escapeHtml(m.ariaAffectedByConfidence)}">${confidenceRows}</div>
+      <ul class="impact-lanes filterable" aria-label="${escapeHtml(m.ariaAffectedByLane)}">${laneRows}</ul>
       <div class="summary-columns">
         <div class="summary-section summary-section-top-impact">
-          <h3>Top Impact</h3>
-          <ul class="summary-list filterable">${affectedPreview || '<li class="empty">No affected targets.</li>'}</ul>
+          <h3>${escapeHtml(m.topImpact)}</h3>
+          <ul class="summary-list filterable">${affectedPreview || `<li class="empty">${escapeHtml(m.emptyNoAffectedTargets)}</li>`}</ul>
         </div>
         <div class="summary-section summary-section-changed">
-          <h3>Changed</h3>
-          <ul class="summary-list">${changedPreview || '<li class="empty">No changed entities.</li>'}</ul>
+          <h3>${escapeHtml(m.changed)}</h3>
+          <ul class="summary-list">${changedPreview || `<li class="empty">${escapeHtml(m.emptyNoChangedEntities)}</li>`}</ul>
         </div>
       </div>
     </section>
   `;
 }
 
-function renderAnalysisTrustSummary(snapshot: UiSnapshot, report: UiReportPreview): string {
+function renderAnalysisTrustSummary(snapshot: UiSnapshot, report: UiReportPreview, m: UiMessages): string {
   const coverage = snapshot.doctor.index.coverage;
   const fallbackCoverageRows = snapshot.coverage?.coverage ?? [];
   const indexedPaths = coverage?.indexedPaths ?? fallbackCoverageRows.filter((item) => item.status === 'indexed').length;
@@ -493,50 +493,50 @@ function renderAnalysisTrustSummary(snapshot: UiSnapshot, report: UiReportPrevie
   const adapterTone = failedAdapterCount > 0 ? 'red' : weakAdapterCount > 0 ? 'amber' : adapterCount > 0 ? 'green' : 'blue';
   const gapTone = knownGaps.length > 0 ? 'amber' : 'green';
   const stateTone = skippedPaths > 0 || failedAdapterCount > 0 ? 'red' : knownGaps.length > 0 || weakAdapterCount > 0 ? 'amber' : 'green';
-  const stateLabel = stateTone === 'red' ? 'Review gaps' : stateTone === 'amber' ? 'Use with gaps' : 'Ready to use';
+  const stateLabel = stateTone === 'red' ? m.reviewGaps : stateTone === 'amber' ? m.useWithGaps : m.readyToUse;
   const gapPreview = knownGaps.slice(0, 2).map((gap) => `<li title="${escapeHtml(gap)}">${escapeHtml(shortenMiddle(gap, 88))}</li>`).join('');
 
   return `
-    <section class="analysis-trust" aria-label="Analysis trust signals">
+    <section class="analysis-trust" aria-label="${escapeHtml(m.ariaTrustSignals)}">
       <div class="analysis-trust-heading">
-        <h3>Analysis Trust</h3>
+        <h3>${escapeHtml(m.analysisTrust)}</h3>
         <span class="trust-state-${escapeHtml(stateTone)}">${escapeHtml(stateLabel)}</span>
       </div>
       <ul class="trust-signals">
         <li class="trust-signal trust-signal-${escapeHtml(coverageTone)}">
-          <span>Coverage</span>
+          <span>${escapeHtml(m.coverage)}</span>
           <strong>${escapeHtml(String(indexedPaths))}/${escapeHtml(String(totalRows))}</strong>
-          <small>${escapeHtml(skippedPaths > 0 ? `${skippedPaths} skipped path${skippedPaths === 1 ? '' : 's'}` : 'No skipped paths')}</small>
+          <small>${escapeHtml(skippedPaths > 0 ? `${skippedPaths} skipped path${skippedPaths === 1 ? '' : 's'}` : m.noSkippedPaths)}</small>
         </li>
         <li class="trust-signal trust-signal-${escapeHtml(adapterTone)}">
-          <span>Adapters</span>
+          <span>${escapeHtml(m.adapters)}</span>
           <strong>${escapeHtml(String(adapterCount))}</strong>
-          <small>${escapeHtml(failedAdapterCount > 0 ? `${failedAdapterCount} incomplete` : weakAdapterCount > 0 ? `${weakAdapterCount} heuristic/unknown` : 'Confidence metadata present')}</small>
+          <small>${escapeHtml(failedAdapterCount > 0 ? `${failedAdapterCount} incomplete` : weakAdapterCount > 0 ? `${weakAdapterCount} heuristic/unknown` : m.confidenceMetadataPresent)}</small>
         </li>
         <li class="trust-signal trust-signal-${escapeHtml(gapTone)}">
-          <span>Known gaps</span>
+          <span>${escapeHtml(m.knownGaps)}</span>
           <strong>${escapeHtml(String(knownGaps.length))}</strong>
-          <small>${escapeHtml(knownGaps.length > 0 ? 'Open limitations' : 'None reported')}</small>
+          <small>${escapeHtml(knownGaps.length > 0 ? m.openLimitations : m.noneReported)}</small>
         </li>
       </ul>
-      ${gapPreview ? `<ul class="trust-gap-preview" aria-label="Known gap preview">${gapPreview}</ul>` : ''}
+      ${gapPreview ? `<ul class="trust-gap-preview" aria-label="${escapeHtml(m.ariaKnownGapPreview)}">${gapPreview}</ul>` : ''}
     </section>
   `;
 }
 
-function renderImpactTriageStrip(snapshot: UiSnapshot): string {
+function renderImpactTriageStrip(snapshot: UiSnapshot, m: UiMessages): string {
   const report = snapshot.selectedReport;
   if (!report) {
     return `
-      <section class="impact-triage impact-triage-empty" aria-label="Impact triage">
+      <section class="impact-triage impact-triage-empty" aria-label="${escapeHtml(m.ariaImpactTriage)}">
         <div class="triage-head">
-          <h2>Impact Triage</h2>
-          <p>No selected report.</p>
+          <h2>${escapeHtml(m.impactTriage)}</h2>
+          <p>${escapeHtml(m.noSelectedReport)}</p>
         </div>
         <ol class="triage-flow">
-          <li class="triage-step"><span>Changed root</span><strong>None</strong><small>Run ${PACKAGE_NAME} analyze.</small></li>
-          <li class="triage-step"><span>Affected targets</span><strong>0 targets</strong><small>No displayed paths.</small></li>
-          <li class="triage-step"><span>Next verification</span><strong>None</strong><small>No verification action recorded.</small></li>
+          <li class="triage-step"><span>${escapeHtml(m.changedRoot)}</span><strong>${escapeHtml(m.none)}</strong><small>${escapeHtml(`Run ${PACKAGE_NAME} analyze.`)}</small></li>
+          <li class="triage-step"><span>${escapeHtml(m.affectedTargets)}</span><strong>${escapeHtml(m.noTargets)}</strong><small>${escapeHtml(m.noDisplayedPaths)}</small></li>
+          <li class="triage-step"><span>${escapeHtml(m.nextVerification)}</span><strong>${escapeHtml(m.none)}</strong><small>${escapeHtml(m.noVerificationActionShort)}</small></li>
         </ol>
       </section>
     `;
@@ -546,14 +546,14 @@ function renderImpactTriageStrip(snapshot: UiSnapshot): string {
   const affectedFiles = [...report.affectedFiles].sort(compareAffectedFilesForUi);
   const primaryChange = report.changed[0] ? entityLabel(report.changed[0]) : report.changedFiles[0] ?? 'unknown change';
   const topTargetPath = affectedFiles[0]?.path;
-  const topTarget = topTargetPath ?? 'No affected target';
+  const topTarget = topTargetPath ?? m.noAffectedTargetInline;
   const actionsByPath = actionByTargetPath(report.actions);
   const actionableTarget = affectedFiles.find((item) => actionsByPath.has(item.path));
   const nextAction = (actionableTarget ? actionsByPath.get(actionableTarget.path) : undefined) ?? report.actions[0];
   const nextActionPath = nextAction?.target.path;
   const nextActionLabel = nextAction
     ? nextActionPath ?? nextAction.target.displayName ?? nextAction.target.symbol ?? nextAction.target.id
-    : 'No verification target';
+    : m.noVerificationTarget;
   const nextCommand = nextAction ? actionCommandText(nextAction) : undefined;
   const topTargetAttrs = topTargetPath
     ? ` tabindex="0" role="button" data-impact-path="${escapeHtml(topTargetPath)}" data-filter-text="${escapeHtml(`${topTargetPath} ${affectedFiles[0]?.reason ?? ''}`)}"`
@@ -572,46 +572,46 @@ function renderImpactTriageStrip(snapshot: UiSnapshot): string {
   ].filter((item): item is string => Boolean(item)).join(' · ');
 
   return `
-    <section class="impact-triage impact-triage-${escapeHtml(blast)}" aria-label="Impact triage">
+    <section class="impact-triage impact-triage-${escapeHtml(blast)}" aria-label="${escapeHtml(m.ariaImpactTriage)}">
       <div class="triage-head">
-        <h2>Impact Triage</h2>
+        <h2>${escapeHtml(m.impactTriage)}</h2>
         <strong>${escapeHtml(blast)}</strong>
         <p>${escapeHtml(riskDetail)}</p>
       </div>
       <ol class="triage-flow">
         <li class="triage-step triage-step-changed">
-          <span>Changed root</span>
+          <span>${escapeHtml(m.changedRoot)}</span>
           <strong title="${escapeHtml(primaryChange)}">${escapeHtml(shortenMiddle(primaryChange, 44))}</strong>
           <small>${escapeHtml(String(report.changedCount))} changed input</small>
         </li>
         <li class="triage-step triage-step-affected${topTargetPath ? ' selectable-impact' : ''}"${topTargetAttrs}>
-          <span>Affected targets</span>
+          <span>${escapeHtml(m.affectedTargets)}</span>
           <strong>${escapeHtml(String(report.affectedCount))} targets</strong>
           <small title="${escapeHtml(topTarget)}">${escapeHtml(shortenMiddle(topTarget, 58))}</small>
         </li>
         <li class="triage-step triage-step-action${nextActionPath ? ' selectable-impact' : ''}"${nextActionAttrs}>
-          <span>Next verification</span>
+          <span>${escapeHtml(m.nextVerification)}</span>
           <strong title="${escapeHtml(nextActionLabel)}">${escapeHtml(shortenMiddle(nextActionLabel, 44))}</strong>
-          <small title="${escapeHtml(nextCommand ?? '')}">${escapeHtml(nextCommand ? shortenMiddle(nextCommand, 64) : 'No verification action recorded.')}</small>
+          <small title="${escapeHtml(nextCommand ?? '')}">${escapeHtml(nextCommand ? shortenMiddle(nextCommand, 64) : m.noVerificationActionShort)}</small>
         </li>
       </ol>
     </section>
   `;
 }
 
-function renderReportDeltaPanel(comparison: UiReportComparison | null): string {
+function renderReportDeltaPanel(comparison: UiReportComparison | null, m: UiMessages): string {
   if (!comparison) return '';
   const headline = comparison.summary === 'wider'
-    ? 'Impact widened'
+    ? m.impactWidened
     : comparison.summary === 'narrower'
-      ? 'Impact narrowed'
-      : 'Impact unchanged';
+      ? m.impactNarrowed
+      : m.impactUnchanged;
   const headlineDetail = comparison.policyReason;
   const metricRows = [
-    { label: 'Review load', value: String(comparison.reviewLoadCurrent), meta: formatSignedDelta(comparison.reviewLoadDelta), delta: comparison.reviewLoadDelta },
-    { label: 'Affected paths', value: formatSignedDelta(comparison.affectedDelta), meta: 'delta', delta: comparison.affectedDelta },
-    { label: 'Evidence', value: formatSignedDelta(comparison.evidenceDelta), meta: 'delta', delta: comparison.evidenceDelta },
-    { label: 'Actions', value: formatSignedDelta(comparison.actionDelta), meta: 'delta', delta: comparison.actionDelta }
+    { label: m.reviewLoad, value: String(comparison.reviewLoadCurrent), meta: formatSignedDelta(comparison.reviewLoadDelta), delta: comparison.reviewLoadDelta },
+    { label: m.affectedPaths, value: formatSignedDelta(comparison.affectedDelta), meta: m.delta, delta: comparison.affectedDelta },
+    { label: m.evidence, value: formatSignedDelta(comparison.evidenceDelta), meta: m.delta, delta: comparison.evidenceDelta },
+    { label: m.actions, value: formatSignedDelta(comparison.actionDelta), meta: m.delta, delta: comparison.actionDelta }
   ].map((item) => `
     <li class="${escapeHtml(deltaClass(item.delta))}">
       <span>${escapeHtml(item.label)}</span>
@@ -636,22 +636,22 @@ function renderReportDeltaPanel(comparison: UiReportComparison | null): string {
         <b>${escapeHtml(formatSignedDelta(item.delta))}</b>${escapeHtml(item.label)}
       </span>
     `).join('');
-  const addedRows = renderDeltaPathRows(comparison.addedAffectedPaths, 'added');
-  const removedRows = renderDeltaPathRows(comparison.removedAffectedPaths, 'removed');
+  const addedRows = renderDeltaPathRows(comparison.addedAffectedPaths, 'added', m);
+  const removedRows = renderDeltaPathRows(comparison.removedAffectedPaths, 'removed', m);
   const presetRows = comparison.policyPresets.map((preset) => `
     <li class="delta-preset delta-preset-${escapeHtml(preset.summary)}">
       <strong>${escapeHtml(preset.label)}</strong>
       <span>${escapeHtml(preset.summary)}</span>
       <b>${escapeHtml(formatSignedDelta(preset.reviewLoadDelta))}</b>
       <small>+${escapeHtml(String(preset.widenThreshold))}/-${escapeHtml(String(preset.narrowThreshold))} · ${escapeHtml(policyWeightsLabel(preset.weights))}</small>
-      <button class="copy-command" type="button" ${copyCommandAttribute(reportDeltaPolicyConfigPatch(preset))} aria-label="Copy ${escapeHtml(preset.label)} report delta policy config">Copy config</button>
+      <button class="copy-command" type="button" ${copyCommandAttribute(reportDeltaPolicyConfigPatch(preset))} aria-label="${escapeHtml(`${m.ariaCopyConfigPrefix} ${preset.label}`)}">${escapeHtml(m.copyConfig)}</button>
     </li>
   `).join('');
 
   return `
-    <section class="panel report-delta-panel" aria-label="Saved report comparison">
+    <section class="panel report-delta-panel" aria-label="${escapeHtml(m.ariaSavedReportComparison)}">
       <div class="panel-heading">
-        <h2>Report Delta</h2>
+        <h2>${escapeHtml(m.reportDelta)}</h2>
         <div class="panel-chips">
           <span>vs ${escapeHtml(comparison.baseReportId)}</span>
           <span>policy ${escapeHtml(comparison.policy.source)}</span>
@@ -662,28 +662,28 @@ function renderReportDeltaPanel(comparison: UiReportComparison | null): string {
       </div>
       <div class="delta-content">
         <div class="delta-hero delta-hero-${escapeHtml(comparison.summary)}">
-          <span>Saved report comparison</span>
+          <span>${escapeHtml(m.savedReportComparison)}</span>
           <strong>${escapeHtml(headline)}</strong>
           <small>${escapeHtml(headlineDetail)}</small>
         </div>
-        <ul class="delta-metrics">${metricRows}</ul>
+        <ul class="delta-metrics" aria-label="${escapeHtml(m.ariaDeltaMetricsList)}">${metricRows}</ul>
         <div class="delta-detail">
-          <div class="delta-confidence" aria-label="Confidence delta">${confidenceRows || '<span><b>0</b>stable confidence</span>'}</div>
+          <div class="delta-confidence" aria-label="${escapeHtml(m.ariaConfidenceDelta)}">${confidenceRows || `<span><b>0</b>${escapeHtml(m.stableConfidence)}</span>`}</div>
           <ul class="delta-lanes">${laneRows}</ul>
-          <div class="delta-policy" aria-label="Report delta policy weights">
-            <span>Affected weight ${escapeHtml(String(comparison.policy.weights.affected))}</span>
-            <span>Action weight ${escapeHtml(String(comparison.policy.weights.actions))}</span>
-            <span>Evidence weight ${escapeHtml(String(comparison.policy.weights.evidence))}</span>
+          <div class="delta-policy" aria-label="${escapeHtml(m.ariaPolicyWeights)}">
+            <span>${escapeHtml(m.affectedWeight)} ${escapeHtml(String(comparison.policy.weights.affected))}</span>
+            <span>${escapeHtml(m.actionWeight)} ${escapeHtml(String(comparison.policy.weights.actions))}</span>
+            <span>${escapeHtml(m.evidenceWeight)} ${escapeHtml(String(comparison.policy.weights.evidence))}</span>
           </div>
-          <ul class="delta-presets" aria-label="Report delta policy preset comparison">${presetRows}</ul>
+          <ul class="delta-presets" aria-label="${escapeHtml(m.ariaPresetComparison)}">${presetRows}</ul>
           <div class="delta-paths">
             <section>
-              <h3>Added impact</h3>
-              <ul>${addedRows || '<li>None</li>'}</ul>
+              <h3>${escapeHtml(m.addedImpact)}</h3>
+              <ul>${addedRows || `<li>${escapeHtml(m.none)}</li>`}</ul>
             </section>
             <section>
-              <h3>Removed impact</h3>
-              <ul>${removedRows || '<li>None</li>'}</ul>
+              <h3>${escapeHtml(m.removedImpact)}</h3>
+              <ul>${removedRows || `<li>${escapeHtml(m.none)}</li>`}</ul>
             </section>
           </div>
         </div>
@@ -722,14 +722,14 @@ function copyCommandAttribute(value: string): string {
   return `data-command="${escapeHtml(value).replaceAll('\n', '&#10;')}"`;
 }
 
-function renderDeltaPathRows(paths: readonly string[], mode: 'added' | 'removed'): string {
+function renderDeltaPathRows(paths: readonly string[], mode: 'added' | 'removed', m: UiMessages): string {
   return paths.slice(0, 4).map((pathValue) => {
-    const sourceLink = `<a class="source-link" href="${escapeHtml(sourceHref(pathValue, 1))}" target="_blank" rel="noreferrer">Source</a>`;
+    const sourceLink = `<a class="source-link" href="${escapeHtml(sourceHref(pathValue, 1))}" target="_blank" rel="noreferrer">${escapeHtml(m.source)}</a>`;
     if (mode === 'added') {
       return `
         <li class="delta-path-row selectable-impact" tabindex="0" role="button" data-impact-path="${escapeHtml(pathValue)}" data-filter-text="${escapeHtml(`added impact ${pathValue}`)}">
           <span>${escapeHtml(pathValue)}</span>
-          <small>Inspect impact</small>
+          <small>${escapeHtml(m.inspectImpact)}</small>
           ${sourceLink}
         </li>
       `;
@@ -737,7 +737,7 @@ function renderDeltaPathRows(paths: readonly string[], mode: 'added' | 'removed'
     return `
       <li class="delta-path-row" data-filter-text="${escapeHtml(`removed impact ${pathValue}`)}">
         <span>${escapeHtml(pathValue)}</span>
-        <small>No longer affected</small>
+        <small>${escapeHtml(m.noLongerAffected)}</small>
         ${sourceLink}
       </li>
     `;
@@ -1074,7 +1074,7 @@ function isUiConfigPath(pathLower: string): boolean {
     || /(^|\/)(package\.json|pom\.xml|build\.gradle(?:\.kts)?|go\.mod|cargo\.toml|pyproject\.toml)$/.test(pathLower);
 }
 
-function renderImpactMapPanel(graph: UiGraphPreview | null, report: UiReportPreview | null): string {
+function renderImpactMapPanel(graph: UiGraphPreview | null, report: UiReportPreview | null, m: UiMessages): string {
   const map = buildImpactMap(graph, report);
   const firstImpact = report ? initialImpactForUi(report) : undefined;
   const displayedPathCount = map.edges.length;
@@ -1087,19 +1087,19 @@ function renderImpactMapPanel(graph: UiGraphPreview | null, report: UiReportPrev
     return `
       <section class="panel map-panel">
         <div class="panel-heading">
-          <h2>Impact Map</h2>
+          <h2>${escapeHtml(m.impactMap)}</h2>
           <div class="panel-chips">${chips}</div>
         </div>
-        <div class="empty">No graph nodes available.</div>
+        <div class="empty">${escapeHtml(m.emptyNoGraphNodes)}</div>
       </section>
     `;
   }
 
   const selectedPath = firstImpact?.path;
-  const svg = renderImpactMapSvg(map, selectedPath);
+  const svg = renderImpactMapSvg(map, selectedPath, m);
   const selectedAction = selectedPath && report ? actionByTargetPath(report.actions).get(selectedPath) : undefined;
-  const insight = renderImpactMapInsight(map, displayedPathCount, firstImpact?.path, selectedAction);
-  const routeStrip = renderImpactRouteStrip(map, selectedPath);
+  const insight = renderImpactMapInsight(map, displayedPathCount, m, firstImpact?.path, selectedAction);
+  const routeStrip = renderImpactRouteStrip(map, m, selectedPath);
   const edgeRows = map.edges.slice(0, 6).map((edge) => {
     const from = map.nodeById.get(edge.from);
     const to = map.nodeById.get(edge.to);
@@ -1120,7 +1120,7 @@ function renderImpactMapPanel(graph: UiGraphPreview | null, report: UiReportPrev
   return `
     <section class="panel map-panel">
       <div class="panel-heading">
-        <h2>Impact Map</h2>
+        <h2>${escapeHtml(m.impactMap)}</h2>
         <div class="panel-chips">${chips}</div>
       </div>
       <div class="map-content">
@@ -1129,21 +1129,21 @@ function renderImpactMapPanel(graph: UiGraphPreview | null, report: UiReportPrev
           ${routeStrip}
           ${svg}
         </div>
-        <aside class="map-legend" aria-label="Impact map legend">
-          ${renderImpactInspector(firstImpact, report)}
-          <div class="map-legend-key" aria-label="Impact map symbols">
-            <span><b class="legend-swatch changed"></b>Changed root</span>
-            <span><b class="legend-swatch affected"></b>Affected target</span>
-            <span><b class="legend-swatch context"></b>Context node</span>
+        <aside class="map-legend" aria-label="${escapeHtml(m.ariaImpactMapLegend)}">
+          ${renderImpactInspector(firstImpact, report, m)}
+          <div class="map-legend-key" aria-label="${escapeHtml(m.ariaImpactMapSymbols)}">
+            <span><b class="legend-swatch changed"></b>${escapeHtml(m.changedRoot)}</span>
+            <span><b class="legend-swatch affected"></b>${escapeHtml(m.affectedTargetRole)}</span>
+            <span><b class="legend-swatch context"></b>${escapeHtml(m.contextNode)}</span>
           </div>
-          <ol class="map-route-list" aria-label="Visible impact routes">${edgeRows || '<li>No visible impact paths.</li>'}</ol>
+          <ol class="map-route-list" aria-label="${escapeHtml(m.ariaVisibleRoutes)}">${edgeRows || `<li>${escapeHtml(m.emptyNoVisiblePaths)}</li>`}</ol>
         </aside>
       </div>
     </section>
   `;
 }
 
-function renderImpactRouteStrip(map: ReturnType<typeof buildImpactMap>, selectedPath?: string): string {
+function renderImpactRouteStrip(map: ReturnType<typeof buildImpactMap>, m: UiMessages, selectedPath?: string): string {
   const rows = map.affectedNodes.slice(0, 4).map((node, index) => {
     const edge = map.edges.find((item) => item.to === node.id);
     const pathValue = node.path ?? node.label;
@@ -1160,50 +1160,51 @@ function renderImpactRouteStrip(map: ReturnType<typeof buildImpactMap>, selected
       </li>
     `;
   }).join('');
-  return `<ol class="impact-route-strip" aria-label="Ranked impact route summary">${rows}</ol>`;
+  return `<ol class="impact-route-strip" aria-label="${escapeHtml(m.ariaRankedRoutes)}">${rows}</ol>`;
 }
 
 function renderImpactMapInsight(
   map: ReturnType<typeof buildImpactMap>,
   displayedPathCount: number,
+  m: UiMessages,
   selectedPath?: string,
   action?: ImpactAction
 ): string {
-  const primaryChange = map.changedNodes[0]?.label ?? 'Changed root';
+  const primaryChange = map.changedNodes[0]?.label ?? m.changedRoot;
   const primaryTarget = selectedPath
     ? map.affectedNodes.find((node) => node.path === selectedPath) ?? map.affectedNodes[0]
     : map.affectedNodes[0];
-  const primaryTargetLabel = primaryTarget?.label ?? 'No affected target';
+  const primaryTargetLabel = primaryTarget?.label ?? m.affectedTargetEmpty;
   const primaryEdge = map.edges.find((edge) => edge.from === map.changedNodes[0]?.id && edge.to === primaryTarget?.id) ?? map.edges[0];
   const relation = primaryEdge?.label ?? 'IMPACTS';
   const confidence = primaryTarget?.confidence ?? primaryEdge?.confidence ?? 'unknown';
   return `
-    <div class="map-insight" aria-label="Primary impact flow" data-primary-change="${escapeHtml(primaryChange)}" data-affected-count="${escapeHtml(String(map.affectedNodes.length))}" data-displayed-path-count="${escapeHtml(String(displayedPathCount))}">
+    <div class="map-insight" aria-label="${escapeHtml(m.ariaPrimaryImpactFlow)}" data-primary-change="${escapeHtml(primaryChange)}" data-affected-count="${escapeHtml(String(map.affectedNodes.length))}" data-displayed-path-count="${escapeHtml(String(displayedPathCount))}">
       <div class="map-flow-text">
-        <span>Primary impact flow</span>
+        <span>${escapeHtml(m.primaryImpactFlow)}</span>
         <strong id="mapFlowPath">${escapeHtml(shortenMiddle(primaryChange, 34))} <em>&rarr;</em> ${escapeHtml(shortenMiddle(primaryTargetLabel, 34))}</strong>
         <small id="mapFlowMeta">${escapeHtml(relation)} · ${escapeHtml(String(map.affectedNodes.length))} targets · ${escapeHtml(String(displayedPathCount))} displayed paths · ${escapeHtml(confidence)} confidence</small>
       </div>
-      ${renderMapNextAction(action)}
+      ${renderMapNextAction(action, m)}
     </div>
   `;
 }
 
-function renderMapNextAction(action: ImpactAction | undefined): string {
+function renderMapNextAction(action: ImpactAction | undefined, m: UiMessages): string {
   const command = action ? actionCommandText(action) : undefined;
   if (!command) {
     return `
-      <div id="mapNextAction" class="map-next-action map-next-action-empty" aria-label="Next verification command">
-        <span>Next verification</span>
-        <small>No verification action recorded.</small>
+      <div id="mapNextAction" class="map-next-action map-next-action-empty" aria-label="${escapeHtml(m.ariaNextVerificationCommand)}">
+        <span>${escapeHtml(m.nextVerification)}</span>
+        <small>${escapeHtml(m.noVerificationActionShort)}</small>
       </div>
     `;
   }
   return `
-    <div id="mapNextAction" class="map-next-action" aria-label="Next verification command">
-      <span>Next verification</span>
+    <div id="mapNextAction" class="map-next-action" aria-label="${escapeHtml(m.ariaNextVerificationCommand)}">
+      <span>${escapeHtml(m.nextVerification)}</span>
       <code>${escapeHtml(command)}</code>
-      <button class="copy-command" type="button" data-command="${escapeHtml(command)}" aria-label="Copy map verification command">Copy</button>
+      <button class="copy-command" type="button" data-command="${escapeHtml(command)}" aria-label="${escapeHtml(m.ariaCopyMapCommand)}">${escapeHtml(m.copy)}</button>
     </div>
   `;
 }
@@ -1280,7 +1281,7 @@ function buildImpactMap(
   return { changedNodes, affectedNodes, edges: edges.slice(0, 12), nodeById };
 }
 
-function renderImpactMapSvg(map: ReturnType<typeof buildImpactMap>, selectedPath?: string): string {
+function renderImpactMapSvg(map: ReturnType<typeof buildImpactMap>, selectedPath: string | undefined, m: UiMessages): string {
   const width = 760;
   const leftX = 38;
   const rightX = 462;
@@ -1304,7 +1305,7 @@ function renderImpactMapSvg(map: ReturnType<typeof buildImpactMap>, selectedPath
     const labelY = Math.min(height - 32, Math.max(78, (fromY + toY) / 2 - 8));
     const edgeClass = `map-edge-group${edge.targetPath ? ' selectable-impact' : ''}${edge.targetPath === selectedPath ? ' selected-impact' : ''}`;
     const edgeAttrs = edge.targetPath
-      ? ` class="${escapeHtml(edgeClass)}" data-impact-path="${escapeHtml(edge.targetPath)}" tabindex="0" role="button" aria-label="Inspect ${escapeHtml(edge.targetPath)} impact path"`
+      ? ` class="${escapeHtml(edgeClass)}" data-impact-path="${escapeHtml(edge.targetPath)}" tabindex="0" role="button" aria-label="${escapeHtml(`${m.ariaInspectImpactPath}: ${edge.targetPath}`)}"`
       : ' class="map-edge-group"';
     return `
       <g${edgeAttrs}>
@@ -1314,14 +1315,14 @@ function renderImpactMapSvg(map: ReturnType<typeof buildImpactMap>, selectedPath
     `;
   }).join('');
   const changedNodes = map.changedNodes.map((node, index) =>
-    renderImpactMapNode(node, leftX, (changedPositions[index] ?? 92) - nodeHeight / 2, nodeWidth, nodeHeight, selectedPath)
+    renderImpactMapNode(node, leftX, (changedPositions[index] ?? 92) - nodeHeight / 2, nodeWidth, nodeHeight, m, selectedPath)
   ).join('');
   const affectedNodes = map.affectedNodes.map((node, index) =>
-    renderImpactMapNode(node, rightX, (affectedPositions[index] ?? 92) - nodeHeight / 2, nodeWidth, nodeHeight, selectedPath)
+    renderImpactMapNode(node, rightX, (affectedPositions[index] ?? 92) - nodeHeight / 2, nodeWidth, nodeHeight, m, selectedPath)
   ).join('');
 
   return `
-    <svg class="impact-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMin meet" role="img" aria-label="Changed entities connected to affected targets">
+    <svg class="impact-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMin meet" role="img" aria-label="${escapeHtml(m.ariaMapSvg)}">
       <defs>
         <marker id="impactArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
           <path class="map-arrow" d="M 0 0 L 10 5 L 0 10 z" />
@@ -1329,9 +1330,9 @@ function renderImpactMapSvg(map: ReturnType<typeof buildImpactMap>, selectedPath
       </defs>
       <rect class="map-stage map-stage-changed" x="24" y="58" width="290" height="${height - 86}" rx="16" />
       <rect class="map-stage map-stage-affected" x="438" y="58" width="290" height="${height - 86}" rx="16" />
-      <text class="map-column-label" x="${leftX}" y="36">Changed root</text>
-      <text class="map-route-label" x="${(leftX + nodeWidth + rightX) / 2}" y="36" text-anchor="middle">Impact path</text>
-      <text class="map-column-label" x="${rightX}" y="36">Affected targets</text>
+      <text class="map-column-label" x="${leftX}" y="36">${escapeHtml(m.changedRoot)}</text>
+      <text class="map-route-label" x="${(leftX + nodeWidth + rightX) / 2}" y="36" text-anchor="middle">${escapeHtml(m.impactPathLabel)}</text>
+      <text class="map-column-label" x="${rightX}" y="36">${escapeHtml(m.affectedTargets)}</text>
       <g>${edges}</g>
       <g>${changedNodes}</g>
       <g>${affectedNodes}</g>
@@ -1339,19 +1340,19 @@ function renderImpactMapSvg(map: ReturnType<typeof buildImpactMap>, selectedPath
   `;
 }
 
-function renderImpactMapNode(node: ImpactMapNode, x: number, y: number, width: number, height: number, selectedPath?: string): string {
+function renderImpactMapNode(node: ImpactMapNode, x: number, y: number, width: number, height: number, m: UiMessages, selectedPath?: string): string {
   const label = compactMapLabel(node.label, 42);
   const roleLabel = node.group === 'affected'
-    ? (node.laneLabel ?? 'Affected target')
+    ? (node.laneLabel ?? m.affectedTargetRole)
     : node.group === 'changed'
-      ? 'Changed input'
+      ? m.changedInput
       : node.kind;
   const confidenceLabel = node.group === 'affected' ? (node.confidence ?? 'unknown') : '';
   const confidenceText = confidenceLabel
     ? `<text class="map-node-confidence confidence-text-${escapeHtml(node.confidence ?? 'unknown')}" x="${width - 14}" y="47" text-anchor="end">${escapeHtml(confidenceLabel)}</text>`
     : '';
   const impactAttrs = node.group === 'affected' && node.path
-    ? ` data-impact-path="${escapeHtml(node.path)}" tabindex="0" role="button" aria-label="Inspect ${escapeHtml(node.path)}"`
+    ? ` data-impact-path="${escapeHtml(node.path)}" tabindex="0" role="button" aria-label="${escapeHtml(`${m.ariaInspectImpactPath}: ${node.path}`)}"`
     : '';
   const selectableClass = impactAttrs ? ` selectable-impact${node.path === selectedPath ? ' selected-impact' : ''}` : '';
   const laneClass = node.laneTone ? ` map-node-lane-${escapeHtml(node.laneTone)}` : '';
@@ -1462,64 +1463,65 @@ function entityLabel(entity: ImpactReport['changed'][number]): string {
 
 function renderImpactInspector(
   item: UiReportPreview['affectedFiles'][number] | undefined,
-  report: UiReportPreview | null
+  report: UiReportPreview | null,
+  m: UiMessages
 ): string {
   const evidence = item && report ? impactEvidenceForPath(report.evidence, item.path) : [];
   const action = item && report ? actionByTargetPath(report.actions).get(item.path) : undefined;
   return `
-    <section class="impact-inspector" aria-live="polite">
-      <h3>Impact Inspector</h3>
-      <strong id="inspectorPath">${escapeHtml(item?.path ?? 'No affected target selected')}</strong>
-      <span id="inspectorReason">${escapeHtml(item?.reason ?? 'Select an affected target in the map or impact list.')}</span>
+    <section class="impact-inspector" aria-live="polite" aria-label="${escapeHtml(m.ariaImpactInspector)}">
+      <h3>${escapeHtml(m.impactInspector)}</h3>
+      <strong id="inspectorPath">${escapeHtml(item?.path ?? m.noAffectedTargetSelected)}</strong>
+      <span id="inspectorReason">${escapeHtml(item?.reason ?? m.selectAffectedTarget)}</span>
       <section class="inspector-action">
-        <h4>Next verification</h4>
-        <div id="inspectorAction">${renderInspectorAction(action)}</div>
+        <h4>${escapeHtml(m.nextVerification)}</h4>
+        <div id="inspectorAction">${renderInspectorAction(action, m)}</div>
       </section>
       <dl>
         <div>
-          <dt>Confidence</dt>
+          <dt>${escapeHtml(m.confidence)}</dt>
           <dd id="inspectorConfidence">${escapeHtml(item?.confidence ?? 'unknown')}</dd>
         </div>
         <div>
-          <dt>Relation path</dt>
-          <dd id="inspectorRelation">${escapeHtml(item?.relationPath?.join(' -> ') ?? 'direct or not recorded')}</dd>
+          <dt>${escapeHtml(m.relationPath)}</dt>
+          <dd id="inspectorRelation">${escapeHtml(item?.relationPath?.join(' -> ') ?? m.directOrNotRecorded)}</dd>
         </div>
         <div>
-          <dt>Evidence hits</dt>
+          <dt>${escapeHtml(m.evidenceHits)}</dt>
           <dd id="inspectorEvidence">${escapeHtml(String(evidence.length))}</dd>
         </div>
         <div>
-          <dt>Source</dt>
-          <dd id="inspectorSource">${renderInspectorSource(evidence[0])}</dd>
+          <dt>${escapeHtml(m.source)}</dt>
+          <dd id="inspectorSource">${renderInspectorSource(evidence[0], m)}</dd>
         </div>
       </dl>
       <section class="inspector-evidence">
-        <h4>Top evidence</h4>
-        <ul id="inspectorEvidenceList">${renderInspectorEvidenceList(evidence)}</ul>
+        <h4>${escapeHtml(m.topEvidence)}</h4>
+        <ul id="inspectorEvidenceList">${renderInspectorEvidenceList(evidence, m)}</ul>
       </section>
     </section>
   `;
 }
 
-function renderInspectorAction(action: ImpactAction | undefined): string {
-  if (!action) return '<span class="inspector-empty">No verification action recorded.</span>';
+function renderInspectorAction(action: ImpactAction | undefined, m: UiMessages): string {
+  if (!action) return `<span class="inspector-empty">${escapeHtml(m.noVerificationActionRecorded)}</span>`;
   const command = actionCommandText(action);
-  if (!command) return '<span class="inspector-empty">No command recorded for this action.</span>';
+  if (!command) return `<span class="inspector-empty">${escapeHtml(m.noCommandRecorded)}</span>`;
   return `
     <code>${escapeHtml(command)}</code>
-    <button class="copy-command" type="button" data-command="${escapeHtml(command)}" aria-label="Copy inspector verification command">Copy</button>
+    <button class="copy-command" type="button" data-command="${escapeHtml(command)}" aria-label="${escapeHtml(m.ariaCopyInspectorCommand)}">${escapeHtml(m.copy)}</button>
   `;
 }
 
-function renderInspectorSource(evidence: UiEvidencePreview | undefined): string {
-  if (!evidence) return 'No source span recorded';
+function renderInspectorSource(evidence: UiEvidencePreview | undefined, m: UiMessages): string {
+  if (!evidence) return escapeHtml(m.noSourceSpanRecorded);
   const source = evidenceSourceLocation(evidence);
-  if (!source) return 'No source span recorded';
-  return `<a class="source-link" href="${escapeHtml(source.href)}" target="_blank" rel="noreferrer">Open source ${escapeHtml(source.label)}</a>`;
+  if (!source) return escapeHtml(m.noSourceSpanRecorded);
+  return `<a class="source-link" href="${escapeHtml(source.href)}" target="_blank" rel="noreferrer">${escapeHtml(`${m.ariaOpenSourceLabel} ${source.label}`)}</a>`;
 }
 
-function renderInspectorEvidenceList(evidence: readonly UiEvidencePreview[]): string {
-  if (evidence.length === 0) return '<li class="inspector-empty">No matching evidence recorded.</li>';
+function renderInspectorEvidenceList(evidence: readonly UiEvidencePreview[], m: UiMessages): string {
+  if (evidence.length === 0) return `<li class="inspector-empty">${escapeHtml(m.noMatchingEvidence)}</li>`;
   return evidence.slice(0, 3).map((item) => {
     const source = evidenceSourceLocation(item);
     return `
@@ -1553,30 +1555,35 @@ function evidenceSourceLocation(item: UiEvidencePreview): SourceLocation | undef
   };
 }
 
-function renderActionRow(item: ImpactAction): string {
+function actionKindLabel(kind: ImpactAction['kind'], m: UiMessages): string {
+  return kind === 'verify' ? m.verify : m.review;
+}
+
+function renderActionRow(item: ImpactAction, m: UiMessages): string {
   const command = actionCommandText(item);
   const targetPath = item.target.path && !item.target.path.includes('\0') ? item.target.path : undefined;
   const targetLabel = targetPath ?? item.target.displayName ?? item.target.symbol ?? item.target.id;
-  const heading = item.kind === 'verify' && targetLabel ? `Verify ${targetLabel}` : item.display;
+  const kindLabel = actionKindLabel(item.kind, m);
+  const heading = item.kind === 'verify' && targetLabel ? `${m.verify} ${targetLabel}` : item.display;
   const meta = [
     item.runnerId ? `runner ${item.runnerId}` : undefined,
     targetLabel ? `target ${targetLabel}` : undefined,
     `${item.confidence} confidence`
   ].filter((value): value is string => Boolean(value)).join(' · ');
   const sourceLink = targetPath
-    ? `<a class="source-link" href="${escapeHtml(sourceHref(targetPath, 1))}" target="_blank" rel="noreferrer">Target</a>`
+    ? `<a class="source-link" href="${escapeHtml(sourceHref(targetPath, 1))}" target="_blank" rel="noreferrer">${escapeHtml(m.target)}</a>`
     : '';
 
   return `
     <li class="action-row" data-filter-text="${escapeHtml(`${item.kind} ${heading} ${item.display} ${command ?? ''} ${targetLabel} ${item.confidence}`)}">
-      <span class="kind">${escapeHtml(item.kind)}</span>
+      <span class="kind">${escapeHtml(kindLabel)}</span>
       <div class="action-main">
         <strong>${escapeHtml(heading)}</strong>
         <span>${escapeHtml(meta)}</span>
         ${command ? `<code>${escapeHtml(command)}</code>` : `<span>${escapeHtml(item.display)}</span>`}
       </div>
       <div class="action-controls">
-        ${command ? `<button class="copy-command" type="button" data-command="${escapeHtml(command)}" aria-label="Copy ${escapeHtml(item.kind)} command">Copy</button>` : ''}
+        ${command ? `<button class="copy-command" type="button" data-command="${escapeHtml(command)}" aria-label="${escapeHtml(`${m.ariaCopyConfigPrefix} ${kindLabel} ${m.ariaCopyCommandSuffix}`)}">${escapeHtml(m.copy)}</button>` : ''}
         ${sourceLink}
       </div>
     </li>
@@ -1605,7 +1612,8 @@ function sourceHref(file: string, line: number): string {
 function renderImpactPathRow(
   item: UiReportPreview['affectedFiles'][number],
   evidenceCount: number,
-  action: ImpactAction | undefined
+  action: ImpactAction | undefined,
+  m: UiMessages
 ): string {
   const trail = impactTrailParts(item).map((part) => `<span>${escapeHtml(part)}</span>`).join('');
   const actionCommand = action ? actionCommandText(action) : undefined;
@@ -1623,13 +1631,13 @@ function renderImpactPathRow(
       <div class="impact-path-main">
         <strong>${escapeHtml(item.path)}</strong>
         <span>${escapeHtml(item.reason)}</span>
-        <div class="relation-trail" aria-label="Relation trail">${trail}</div>
+        <div class="relation-trail" aria-label="${escapeHtml(m.ariaRelationTrail)}">${trail}</div>
       </div>
       <div class="impact-path-meta">
         <span class="badge confidence-${escapeHtml(item.confidence)}">${escapeHtml(item.confidence)}</span>
-        <span class="evidence-pill">${escapeHtml(String(evidenceCount))} evidence</span>
-        <a class="source-link" href="${escapeHtml(sourceHref(item.path, 1))}" target="_blank" rel="noreferrer">Source</a>
-        ${actionCommand ? `<button class="copy-command" type="button" data-command="${escapeHtml(actionCommand)}" aria-label="Copy verification command for ${escapeHtml(item.path)}">Copy verify</button>` : ''}
+        <span class="evidence-pill">${escapeHtml(String(evidenceCount))} ${escapeHtml(m.evidence)}</span>
+        <a class="source-link" href="${escapeHtml(sourceHref(item.path, 1))}" target="_blank" rel="noreferrer">${escapeHtml(m.source)}</a>
+        ${actionCommand ? `<button class="copy-command" type="button" data-command="${escapeHtml(actionCommand)}" aria-label="${escapeHtml(`${m.ariaCopyVerifyForPrefix} ${item.path}`)}">${escapeHtml(m.copyVerify)}</button>` : ''}
       </div>
     </li>
   `;
@@ -1696,9 +1704,55 @@ type UiMessageKey =
   | 'evidence' | 'actions' | 'coverageGapsMetric' | 'workArtifactsMetric' | 'workspacesMetric'
   | 'changeSet' | 'verificationQueue' | 'impactPaths' | 'evidencePanel' | 'workArtifacts'
   | 'doctorFindings' | 'contextPacks' | 'adapterConfidence' | 'workspaceContracts'
-  | 'workspaceResources' | 'coverageGaps' | 'resourceContract' | 'language';
+  | 'workspaceResources' | 'coverageGaps' | 'resourceContract' | 'language'
+  // Sub-headings and section titles
+  | 'impactSummary' | 'topImpact' | 'analysisTrust' | 'coverage' | 'adapters' | 'knownGaps'
+  | 'impactTriage' | 'reportDelta' | 'addedImpact' | 'removedImpact' | 'policyPresets'
+  | 'impactMap' | 'topRoutes' | 'primaryImpactFlow' | 'impactInspector' | 'confidence'
+  | 'relationPath' | 'evidenceHits' | 'topEvidence'
+  // Inline labels
+  | 'blastRadius' | 'changedRoot' | 'affectedTargets' | 'nextVerification' | 'affectedTargetEmpty'
+  | 'contextNode' | 'source' | 'target' | 'affectedTargetRole' | 'changedInput'
+  // Buttons / actions
+  | 'copy' | 'copyConfig' | 'copyVerify' | 'verify' | 'review'
+  // Trust state labels
+  | 'reviewGaps' | 'useWithGaps' | 'readyToUse'
+  | 'noSkippedPaths' | 'confidenceMetadataPresent' | 'openLimitations' | 'noneReported'
+  // Impact triage empty / labels
+  | 'noSelectedReport' | 'none' | 'noTargets' | 'noDisplayedPaths' | 'noVerificationActionShort'
+  | 'noVerificationTarget' | 'noAffectedTargetInline'
+  // Report delta headlines
+  | 'impactWidened' | 'impactNarrowed' | 'impactUnchanged'
+  | 'reviewLoad' | 'affectedPaths' | 'delta' | 'savedReportComparison'
+  | 'stableConfidence' | 'affectedWeight' | 'actionWeight' | 'evidenceWeight'
+  | 'inspectImpact' | 'noLongerAffected' | 'vsPrevious'
+  // Empty states
+  | 'emptyRunAnalyzeBlast' | 'emptyNoAffectedTargets' | 'emptyNoChangedEntities'
+  | 'emptyNoGraphNodes' | 'emptyNoVisiblePaths' | 'emptyRunAnalyzeReport'
+  | 'emptyNoActionsQueued' | 'emptyNoImpactPaths' | 'emptyNoEvidence'
+  | 'emptyNoWorkArtifacts' | 'emptyNoDoctorFindings' | 'emptyNoContextPacks'
+  | 'emptyNoAdapterConfidence' | 'emptyNoWorkspaceContracts' | 'emptyNoWorkspaceResources'
+  | 'emptyNoCoverageRows'
+  // Inspector empty / placeholders
+  | 'noAffectedTargetSelected' | 'selectAffectedTarget' | 'noVerificationActionRecorded'
+  | 'noCommandRecorded' | 'noSourceSpanRecorded' | 'noMatchingEvidence'
+  | 'directOrNotRecorded'
+  // Map roles / labels
+  | 'impactPathLabel' | 'changedRootLabel'
+  // aria-labels
+  | 'ariaImpactSummary' | 'ariaAffectedByConfidence' | 'ariaAffectedByLane' | 'ariaTrustSignals'
+  | 'ariaKnownGapPreview' | 'ariaImpactTriage' | 'ariaSavedReportComparison'
+  | 'ariaConfidenceDelta' | 'ariaPolicyWeights' | 'ariaPresetComparison' | 'ariaDeltaMetricsList'
+  | 'ariaImpactMap' | 'ariaImpactMapLegend' | 'ariaImpactMapSymbols' | 'ariaVisibleRoutes'
+  | 'ariaRankedRoutes' | 'ariaPrimaryImpactFlow' | 'ariaNextVerificationCommand'
+  | 'ariaCopyMapCommand' | 'ariaImpactInspector' | 'ariaCopyInspectorCommand'
+  | 'ariaRelationTrail' | 'ariaMapSvg' | 'ariaInspectImpactPath' | 'ariaOpenSourceLabel'
+  | 'ariaCopyConfigPrefix' | 'ariaCopyCommandSuffix' | 'ariaCopyVerifyForPrefix'
+  | 'ariaImpactOverview' | 'ariaImpactWorkbench';
 
-const UI_MESSAGES: Record<UiLanguage, Record<UiMessageKey, string>> = {
+export type UiMessages = Record<UiMessageKey, string>;
+
+const UI_MESSAGES: Record<UiLanguage, UiMessages> = {
   en: {
     eyebrow: 'Parallax local impact intelligence', workbench: 'Impact Workbench',
     controls: 'Workbench controls', reportSelector: 'Report selector', noReports: 'No reports',
@@ -1712,6 +1766,64 @@ const UI_MESSAGES: Record<UiLanguage, Record<UiMessageKey, string>> = {
     adapterConfidence: 'Adapter Confidence', workspaceContracts: 'Workspace Contracts',
     workspaceResources: 'Workspace Resources', coverageGaps: 'Coverage Gaps',
     resourceContract: 'Resource Contract', language: 'Language',
+    impactSummary: 'Impact Summary', topImpact: 'Top Impact', analysisTrust: 'Analysis Trust',
+    coverage: 'Coverage', adapters: 'Adapters', knownGaps: 'Known gaps',
+    impactTriage: 'Impact Triage', reportDelta: 'Report Delta', addedImpact: 'Added impact',
+    removedImpact: 'Removed impact', policyPresets: 'Policy presets', impactMap: 'Impact Map',
+    topRoutes: 'Top routes', primaryImpactFlow: 'Primary impact flow',
+    impactInspector: 'Impact Inspector', confidence: 'Confidence', relationPath: 'Relation path',
+    evidenceHits: 'Evidence hits', topEvidence: 'Top evidence',
+    blastRadius: 'Blast radius', changedRoot: 'Changed root', affectedTargets: 'Affected targets',
+    nextVerification: 'Next verification', affectedTargetEmpty: 'No affected target',
+    contextNode: 'Context node', source: 'Source', target: 'Target',
+    affectedTargetRole: 'Affected target', changedInput: 'Changed input',
+    copy: 'Copy', copyConfig: 'Copy config', copyVerify: 'Copy verify',
+    verify: 'Verify', review: 'Review',
+    reviewGaps: 'Review gaps', useWithGaps: 'Use with gaps', readyToUse: 'Ready to use',
+    noSkippedPaths: 'No skipped paths', confidenceMetadataPresent: 'Confidence metadata present',
+    openLimitations: 'Open limitations', noneReported: 'None reported',
+    noSelectedReport: 'No selected report.', none: 'None', noTargets: '0 targets',
+    noDisplayedPaths: 'No displayed paths.', noVerificationActionShort: 'No verification action recorded.',
+    noVerificationTarget: 'No verification target', noAffectedTargetInline: 'No affected target',
+    impactWidened: 'Impact widened', impactNarrowed: 'Impact narrowed', impactUnchanged: 'Impact unchanged',
+    reviewLoad: 'Review load', affectedPaths: 'Affected paths', delta: 'delta',
+    savedReportComparison: 'Saved report comparison', stableConfidence: 'stable confidence',
+    affectedWeight: 'Affected weight', actionWeight: 'Action weight', evidenceWeight: 'Evidence weight',
+    inspectImpact: 'Inspect impact', noLongerAffected: 'No longer affected', vsPrevious: 'vs previous report',
+    emptyRunAnalyzeBlast: `Run ${PACKAGE_NAME} analyze to see the current blast radius.`,
+    emptyNoAffectedTargets: 'No affected targets.', emptyNoChangedEntities: 'No changed entities.',
+    emptyNoGraphNodes: 'No graph nodes available.', emptyNoVisiblePaths: 'No visible impact paths.',
+    emptyRunAnalyzeReport: `Run ${PACKAGE_NAME} analyze to create a report.`,
+    emptyNoActionsQueued: 'No actions queued.', emptyNoImpactPaths: 'No impact paths in this report.',
+    emptyNoEvidence: 'No evidence in the selected report.',
+    emptyNoWorkArtifacts: 'No linked work artifacts in this report.',
+    emptyNoDoctorFindings: 'No doctor findings.', emptyNoContextPacks: 'No reusable context packs yet.',
+    emptyNoAdapterConfidence: 'No adapter confidence metadata in the selected report.',
+    emptyNoWorkspaceContracts: 'No workspace contract links available.',
+    emptyNoWorkspaceResources: 'No workspace resources available.',
+    emptyNoCoverageRows: 'No coverage rows available.',
+    noAffectedTargetSelected: 'No affected target selected',
+    selectAffectedTarget: 'Select an affected target in the map or impact list.',
+    noVerificationActionRecorded: 'No verification action recorded.',
+    noCommandRecorded: 'No command recorded for this action.',
+    noSourceSpanRecorded: 'No source span recorded', noMatchingEvidence: 'No matching evidence recorded.',
+    directOrNotRecorded: 'direct or not recorded',
+    impactPathLabel: 'Impact path', changedRootLabel: 'Changed root',
+    ariaImpactSummary: 'Impact summary', ariaAffectedByConfidence: 'Affected files by confidence',
+    ariaAffectedByLane: 'Affected targets by product lane', ariaTrustSignals: 'Analysis trust signals',
+    ariaKnownGapPreview: 'Known gap preview', ariaImpactTriage: 'Impact triage',
+    ariaSavedReportComparison: 'Saved report comparison', ariaConfidenceDelta: 'Confidence delta',
+    ariaPolicyWeights: 'Report delta policy weights', ariaPresetComparison: 'Report delta policy preset comparison',
+    ariaDeltaMetricsList: 'Report delta metrics', ariaImpactMap: 'Impact map',
+    ariaImpactMapLegend: 'Impact map legend', ariaImpactMapSymbols: 'Impact map symbols',
+    ariaVisibleRoutes: 'Visible impact routes', ariaRankedRoutes: 'Ranked impact route summary',
+    ariaPrimaryImpactFlow: 'Primary impact flow', ariaNextVerificationCommand: 'Next verification command',
+    ariaCopyMapCommand: 'Copy map verification command', ariaImpactInspector: 'Impact inspector',
+    ariaCopyInspectorCommand: 'Copy inspector verification command', ariaRelationTrail: 'Relation trail',
+    ariaMapSvg: 'Changed entities connected to affected targets', ariaInspectImpactPath: 'Inspect impact path',
+    ariaOpenSourceLabel: 'Open source', ariaCopyConfigPrefix: 'Copy', ariaCopyCommandSuffix: 'command',
+    ariaCopyVerifyForPrefix: 'Copy verification command for',
+    ariaImpactOverview: 'Impact overview', ariaImpactWorkbench: 'Impact report workbench',
   },
   ko: {
     eyebrow: 'Parallax 로컬 임팩트 인텔리전스', workbench: 'Impact Workbench',
@@ -1726,6 +1838,64 @@ const UI_MESSAGES: Record<UiLanguage, Record<UiMessageKey, string>> = {
     adapterConfidence: 'Adapter 신뢰도', workspaceContracts: '워크스페이스 계약',
     workspaceResources: '워크스페이스 리소스', coverageGaps: '커버리지 갭',
     resourceContract: '리소스 계약', language: '언어',
+    impactSummary: '영향 요약', topImpact: '주요 영향', analysisTrust: '분석 신뢰도',
+    coverage: '커버리지', adapters: 'Adapter', knownGaps: '알려진 갭',
+    impactTriage: '영향 분류', reportDelta: '리포트 델타', addedImpact: '추가된 영향',
+    removedImpact: '제거된 영향', policyPresets: '정책 프리셋', impactMap: '영향 맵',
+    topRoutes: '주요 경로', primaryImpactFlow: '주요 영향 흐름',
+    impactInspector: '영향 인스펙터', confidence: '신뢰도', relationPath: '관계 경로',
+    evidenceHits: '증거 적중', topEvidence: '주요 증거',
+    blastRadius: '영향 범위', changedRoot: '변경 루트', affectedTargets: '영향받은 대상',
+    nextVerification: '다음 검증', affectedTargetEmpty: '영향받은 대상 없음',
+    contextNode: '컨텍스트 노드', source: '소스', target: '대상',
+    affectedTargetRole: '영향받은 대상', changedInput: '변경 입력',
+    copy: '복사', copyConfig: '설정 복사', copyVerify: '검증 복사',
+    verify: '검증', review: '검토',
+    reviewGaps: '갭 검토', useWithGaps: '갭 있음', readyToUse: '사용 가능',
+    noSkippedPaths: '건너뛴 경로 없음', confidenceMetadataPresent: '신뢰도 메타데이터 존재',
+    openLimitations: '미해결 제한', noneReported: '보고 없음',
+    noSelectedReport: '선택된 리포트 없음.', none: '없음', noTargets: '대상 0개',
+    noDisplayedPaths: '표시된 경로 없음.', noVerificationActionShort: '기록된 검증 액션 없음.',
+    noVerificationTarget: '검증 대상 없음', noAffectedTargetInline: '영향받은 대상 없음',
+    impactWidened: '영향 확대', impactNarrowed: '영향 축소', impactUnchanged: '영향 변동 없음',
+    reviewLoad: '검토 부하', affectedPaths: '영향 경로', delta: '델타',
+    savedReportComparison: '저장된 리포트 비교', stableConfidence: '신뢰도 안정',
+    affectedWeight: '영향 가중치', actionWeight: '액션 가중치', evidenceWeight: '증거 가중치',
+    inspectImpact: '영향 점검', noLongerAffected: '더 이상 영향 없음', vsPrevious: '이전 리포트 대비',
+    emptyRunAnalyzeBlast: `${PACKAGE_NAME} analyze를 실행해 현재 영향 범위를 확인하세요.`,
+    emptyNoAffectedTargets: '영향받은 대상 없음.', emptyNoChangedEntities: '변경된 엔티티 없음.',
+    emptyNoGraphNodes: '사용 가능한 그래프 노드 없음.', emptyNoVisiblePaths: '표시된 영향 경로 없음.',
+    emptyRunAnalyzeReport: `${PACKAGE_NAME} analyze를 실행해 리포트를 생성하세요.`,
+    emptyNoActionsQueued: '대기 중인 액션 없음.', emptyNoImpactPaths: '이 리포트에 영향 경로 없음.',
+    emptyNoEvidence: '선택한 리포트에 증거 없음.',
+    emptyNoWorkArtifacts: '이 리포트에 연결된 작업 산출물 없음.',
+    emptyNoDoctorFindings: 'Doctor 점검 결과 없음.', emptyNoContextPacks: '재사용 가능한 Context Pack 없음.',
+    emptyNoAdapterConfidence: '선택한 리포트에 Adapter 신뢰도 메타데이터 없음.',
+    emptyNoWorkspaceContracts: '사용 가능한 워크스페이스 계약 링크 없음.',
+    emptyNoWorkspaceResources: '사용 가능한 워크스페이스 리소스 없음.',
+    emptyNoCoverageRows: '사용 가능한 커버리지 행 없음.',
+    noAffectedTargetSelected: '선택된 영향 대상 없음',
+    selectAffectedTarget: '맵 또는 영향 목록에서 영향받은 대상을 선택하세요.',
+    noVerificationActionRecorded: '기록된 검증 액션 없음.',
+    noCommandRecorded: '이 액션에 기록된 명령 없음.',
+    noSourceSpanRecorded: '기록된 소스 범위 없음', noMatchingEvidence: '일치하는 증거 기록 없음.',
+    directOrNotRecorded: '직접 또는 미기록',
+    impactPathLabel: '영향 경로', changedRootLabel: '변경 루트',
+    ariaImpactSummary: '영향 요약', ariaAffectedByConfidence: '신뢰도별 영향 파일',
+    ariaAffectedByLane: '제품 레인별 영향 대상', ariaTrustSignals: '분석 신뢰도 시그널',
+    ariaKnownGapPreview: '알려진 갭 미리보기', ariaImpactTriage: '영향 분류',
+    ariaSavedReportComparison: '저장된 리포트 비교', ariaConfidenceDelta: '신뢰도 델타',
+    ariaPolicyWeights: '리포트 델타 정책 가중치', ariaPresetComparison: '리포트 델타 정책 프리셋 비교',
+    ariaDeltaMetricsList: '리포트 델타 지표', ariaImpactMap: '영향 맵',
+    ariaImpactMapLegend: '영향 맵 범례', ariaImpactMapSymbols: '영향 맵 기호',
+    ariaVisibleRoutes: '표시된 영향 경로', ariaRankedRoutes: '순위별 영향 경로 요약',
+    ariaPrimaryImpactFlow: '주요 영향 흐름', ariaNextVerificationCommand: '다음 검증 명령',
+    ariaCopyMapCommand: '맵 검증 명령 복사', ariaImpactInspector: '영향 인스펙터',
+    ariaCopyInspectorCommand: '인스펙터 검증 명령 복사', ariaRelationTrail: '관계 경로',
+    ariaMapSvg: '변경 엔티티와 영향받은 대상 연결', ariaInspectImpactPath: '영향 경로 점검',
+    ariaOpenSourceLabel: '소스 열기', ariaCopyConfigPrefix: '복사', ariaCopyCommandSuffix: '명령',
+    ariaCopyVerifyForPrefix: '검증 명령 복사 대상',
+    ariaImpactOverview: '영향 개요', ariaImpactWorkbench: 'Impact 리포트 워크벤치',
   },
   zh: {
     eyebrow: 'Parallax 本地影响力情报', workbench: 'Impact Workbench',
@@ -1740,6 +1910,64 @@ const UI_MESSAGES: Record<UiLanguage, Record<UiMessageKey, string>> = {
     adapterConfidence: 'Adapter 置信度', workspaceContracts: '工作区契约',
     workspaceResources: '工作区资源', coverageGaps: '覆盖缺口',
     resourceContract: '资源契约', language: '语言',
+    impactSummary: '影响摘要', topImpact: '主要影响', analysisTrust: '分析可信度',
+    coverage: '覆盖率', adapters: 'Adapter', knownGaps: '已知缺口',
+    impactTriage: '影响分类', reportDelta: '报告差异', addedImpact: '新增影响',
+    removedImpact: '移除影响', policyPresets: '策略预设', impactMap: '影响图',
+    topRoutes: '主要路径', primaryImpactFlow: '主要影响流',
+    impactInspector: '影响检查器', confidence: '置信度', relationPath: '关系路径',
+    evidenceHits: '证据命中', topEvidence: '主要证据',
+    blastRadius: '影响范围', changedRoot: '变更根', affectedTargets: '受影响目标',
+    nextVerification: '下一步验证', affectedTargetEmpty: '无受影响目标',
+    contextNode: '上下文节点', source: '源', target: '目标',
+    affectedTargetRole: '受影响目标', changedInput: '变更输入',
+    copy: '复制', copyConfig: '复制配置', copyVerify: '复制验证',
+    verify: '验证', review: '审查',
+    reviewGaps: '审查缺口', useWithGaps: '存在缺口', readyToUse: '可使用',
+    noSkippedPaths: '无跳过路径', confidenceMetadataPresent: '存在置信度元数据',
+    openLimitations: '未解决限制', noneReported: '无报告',
+    noSelectedReport: '未选择报告。', none: '无', noTargets: '0 个目标',
+    noDisplayedPaths: '无显示路径。', noVerificationActionShort: '无记录的验证操作。',
+    noVerificationTarget: '无验证目标', noAffectedTargetInline: '无受影响目标',
+    impactWidened: '影响扩大', impactNarrowed: '影响缩小', impactUnchanged: '影响无变化',
+    reviewLoad: '审查负载', affectedPaths: '影响路径', delta: '差异',
+    savedReportComparison: '已保存报告对比', stableConfidence: '置信度稳定',
+    affectedWeight: '影响权重', actionWeight: '操作权重', evidenceWeight: '证据权重',
+    inspectImpact: '检查影响', noLongerAffected: '不再受影响', vsPrevious: '对比上一个报告',
+    emptyRunAnalyzeBlast: `运行 ${PACKAGE_NAME} analyze 查看当前影响范围。`,
+    emptyNoAffectedTargets: '无受影响目标。', emptyNoChangedEntities: '无变更实体。',
+    emptyNoGraphNodes: '无可用图节点。', emptyNoVisiblePaths: '无可见影响路径。',
+    emptyRunAnalyzeReport: `运行 ${PACKAGE_NAME} analyze 创建报告。`,
+    emptyNoActionsQueued: '无排队操作。', emptyNoImpactPaths: '本报告中无影响路径。',
+    emptyNoEvidence: '所选报告中无证据。',
+    emptyNoWorkArtifacts: '本报告中无关联工作产物。',
+    emptyNoDoctorFindings: '无 Doctor 检查结果。', emptyNoContextPacks: '暂无可复用的 Context Pack。',
+    emptyNoAdapterConfidence: '所选报告中无 Adapter 置信度元数据。',
+    emptyNoWorkspaceContracts: '无可用工作区契约链接。',
+    emptyNoWorkspaceResources: '无可用工作区资源。',
+    emptyNoCoverageRows: '无可用覆盖率行。',
+    noAffectedTargetSelected: '未选择受影响目标',
+    selectAffectedTarget: '在图或影响列表中选择受影响目标。',
+    noVerificationActionRecorded: '无记录的验证操作。',
+    noCommandRecorded: '此操作无记录命令。',
+    noSourceSpanRecorded: '无记录的源范围', noMatchingEvidence: '无匹配的证据记录。',
+    directOrNotRecorded: '直接或未记录',
+    impactPathLabel: '影响路径', changedRootLabel: '变更根',
+    ariaImpactSummary: '影响摘要', ariaAffectedByConfidence: '按置信度划分的影响文件',
+    ariaAffectedByLane: '按产品通道划分的影响目标', ariaTrustSignals: '分析可信度信号',
+    ariaKnownGapPreview: '已知缺口预览', ariaImpactTriage: '影响分类',
+    ariaSavedReportComparison: '已保存报告对比', ariaConfidenceDelta: '置信度差异',
+    ariaPolicyWeights: '报告差异策略权重', ariaPresetComparison: '报告差异策略预设对比',
+    ariaDeltaMetricsList: '报告差异指标', ariaImpactMap: '影响图',
+    ariaImpactMapLegend: '影响图图例', ariaImpactMapSymbols: '影响图符号',
+    ariaVisibleRoutes: '可见影响路径', ariaRankedRoutes: '排序影响路径摘要',
+    ariaPrimaryImpactFlow: '主要影响流', ariaNextVerificationCommand: '下一步验证命令',
+    ariaCopyMapCommand: '复制图验证命令', ariaImpactInspector: '影响检查器',
+    ariaCopyInspectorCommand: '复制检查器验证命令', ariaRelationTrail: '关系路径',
+    ariaMapSvg: '变更实体连接到受影响目标', ariaInspectImpactPath: '检查影响路径',
+    ariaOpenSourceLabel: '打开源', ariaCopyConfigPrefix: '复制', ariaCopyCommandSuffix: '命令',
+    ariaCopyVerifyForPrefix: '复制验证命令，目标',
+    ariaImpactOverview: '影响概览', ariaImpactWorkbench: 'Impact 报告工作台',
   },
 };
 
@@ -1762,7 +1990,7 @@ export function renderUiHtml(snapshot: UiSnapshot, language: UiLanguage = 'en'):
   const doctor = snapshot.doctor;
   const title = report ? `Impact Workbench - ${report.id}` : 'Impact Workbench';
   const missingReportOption = snapshot.selectedReportId === null && snapshot.reports.length > 0
-    ? '<option value="" selected>Select a report</option>'
+    ? `<option value="" selected>${escapeHtml(m.selectReport)}</option>`
     : '';
   const reportOptions = missingReportOption + snapshot.reports.map((item) =>
     `<option value="${escapeHtml(item.id)}"${item.id === snapshot.selectedReportId ? ' selected' : ''}>${escapeHtml(item.id)}</option>`
@@ -1789,7 +2017,7 @@ export function renderUiHtml(snapshot: UiSnapshot, language: UiLanguage = 'en'):
   const evidenceCountsByPath = evidenceCountByImpactPath(report?.affectedFiles ?? [], report?.evidence ?? []);
   const actionByPath = actionByTargetPath(report?.actions ?? []);
   const affectedRows = (report?.affectedFiles ?? []).slice(0, 40).map((item) =>
-    renderImpactPathRow(item, evidenceCountsByPath.get(item.path) ?? 0, actionByPath.get(item.path))
+    renderImpactPathRow(item, evidenceCountsByPath.get(item.path) ?? 0, actionByPath.get(item.path), m)
   ).join('');
   const evidenceRows = (report?.evidence ?? []).slice(0, 30).map((item) => {
     const source = evidenceSourceLocation(item);
@@ -1798,14 +2026,14 @@ export function renderUiHtml(snapshot: UiSnapshot, language: UiLanguage = 'en'):
       <div class="evidence-meta">
         <strong>${escapeHtml(item.file)}</strong>
         <span>${escapeHtml(item.kind)} · ${escapeHtml(item.confidence)}</span>
-        ${source ? `<a class="source-link" href="${escapeHtml(source.href)}" target="_blank" rel="noreferrer">Open source ${escapeHtml(source.label)}</a>` : ''}
+        ${source ? `<a class="source-link" href="${escapeHtml(source.href)}" target="_blank" rel="noreferrer">${escapeHtml(`${m.ariaOpenSourceLabel} ${source.label}`)}</a>` : ''}
         ${item.resourceUri ? `<small>${escapeHtml(item.resourceUri)}</small>` : ''}
       </div>
       <pre>${escapeHtml(item.snippet)}</pre>
     </li>
   `;
   }).join('');
-  const actionRows = (report?.actions ?? []).slice(0, 20).map(renderActionRow).join('');
+  const actionRows = (report?.actions ?? []).slice(0, 20).map((item) => renderActionRow(item, m)).join('');
   const adapterInsightRows = (report?.adapterInsights ?? []).map((adapter) => `
     <li class="pack-row" data-filter-text="${escapeHtml(`${adapter.id} ${adapter.status} ${adapter.confidence} ${adapter.languageIds.join(' ')} ${adapter.knownGaps.join(' ')}`)}">
       <strong>${escapeHtml(adapter.id)}</strong>
@@ -1867,10 +2095,10 @@ export function renderUiHtml(snapshot: UiSnapshot, language: UiLanguage = 'en'):
       </li>
     `)
   ]).join('');
-  const impactSummaryPanel = renderImpactSummaryPanel(snapshot);
-  const impactTriageStrip = renderImpactTriageStrip(snapshot);
-  const impactMapPanel = renderImpactMapPanel(snapshot.graph, report);
-  const reportDeltaPanel = renderReportDeltaPanel(snapshot.comparison);
+  const impactSummaryPanel = renderImpactSummaryPanel(snapshot, m);
+  const impactTriageStrip = renderImpactTriageStrip(snapshot, m);
+  const impactMapPanel = renderImpactMapPanel(snapshot.graph, report, m);
+  const reportDeltaPanel = renderReportDeltaPanel(snapshot.comparison, m);
   const dataJson = JSON.stringify(snapshot).replaceAll('<', '\\u003c');
 
   return `<!doctype html>
@@ -3590,55 +3818,55 @@ export function renderUiHtml(snapshot: UiSnapshot, language: UiLanguage = 'en'):
       <div class="metric"><span>${escapeHtml(m.workspacesMetric)}</span><strong>${escapeHtml(String(snapshot.workspaces.length))}</strong></div>
     </section>
     ${impactTriageStrip}
-    <section class="impact-overview" aria-label="Impact overview">
+    <section class="impact-overview" aria-label="${escapeHtml(m.ariaImpactOverview)}">
       ${impactMapPanel}
       ${impactSummaryPanel}
     </section>
     ${reportDeltaPanel}
-    <section class="workbench" aria-label="Impact report workbench">
+    <section class="workbench" aria-label="${escapeHtml(m.ariaImpactWorkbench)}">
       <div class="stacked-pane">
         <section class="panel">
           <h2>${escapeHtml(m.changeSet)}</h2>
-          <ul class="list filterable">${changedRows || `<li class="empty">Run ${PACKAGE_NAME} analyze to create a report.</li>`}</ul>
+          <ul class="list filterable">${changedRows || `<li class="empty">${escapeHtml(m.emptyRunAnalyzeReport)}</li>`}</ul>
         </section>
         <section class="panel">
           <h2>${escapeHtml(m.verificationQueue)}</h2>
-          <ul class="list filterable">${actionRows || '<li class="empty">No recommended actions in this report.</li>'}</ul>
+          <ul class="list filterable">${actionRows || `<li class="empty">${escapeHtml(m.emptyNoActionsQueued)}</li>`}</ul>
         </section>
       </div>
       <div class="stacked-pane">
         <section class="panel">
           <h2>${escapeHtml(m.impactPaths)}</h2>
-          <ul class="list filterable">${affectedRows || '<li class="empty">No affected paths in the selected report.</li>'}</ul>
+          <ul class="list filterable">${affectedRows || `<li class="empty">${escapeHtml(m.emptyNoImpactPaths)}</li>`}</ul>
         </section>
       </div>
       <section class="panel evidence-panel">
         <h2>${escapeHtml(m.evidencePanel)}</h2>
-        <ul class="list filterable">${evidenceRows || '<li class="empty">No evidence in the selected report.</li>'}</ul>
+        <ul class="list filterable">${evidenceRows || `<li class="empty">${escapeHtml(m.emptyNoEvidence)}</li>`}</ul>
       </section>
     </section>
     <section class="panel wide-panel">
       <h2>${escapeHtml(m.workArtifacts)}</h2>
-      <ul class="list filterable">${workArtifactRows || '<li class="empty">No policy, decision, PRD, requirement, or proposal impact in the selected report.</li>'}</ul>
+      <ul class="list filterable">${workArtifactRows || `<li class="empty">${escapeHtml(m.emptyNoWorkArtifacts)}</li>`}</ul>
     </section>
     <section class="bottom">
       <section class="panel">
         <h2>${escapeHtml(m.doctorFindings)}</h2>
-        <ul class="list">${errors}${findings || (!errors ? '<li class="empty">No doctor findings.</li>' : '')}</ul>
+        <ul class="list">${errors}${findings || (!errors ? `<li class="empty">${escapeHtml(m.emptyNoDoctorFindings)}</li>` : '')}</ul>
       </section>
       <section class="panel">
         <h2>${escapeHtml(m.contextPacks)}</h2>
-        <ul class="list">${contextPackRows || '<li class="empty">No reusable context packs yet.</li>'}</ul>
+        <ul class="list">${contextPackRows || `<li class="empty">${escapeHtml(m.emptyNoContextPacks)}</li>`}</ul>
       </section>
     </section>
     <section class="panel wide-panel">
       <h2>${escapeHtml(m.adapterConfidence)}</h2>
-      <ul class="list filterable">${adapterInsightRows || '<li class="empty">No adapter confidence metadata in the selected report.</li>'}</ul>
+      <ul class="list filterable">${adapterInsightRows || `<li class="empty">${escapeHtml(m.emptyNoAdapterConfidence)}</li>`}</ul>
     </section>
     <section class="bottom">
       <section class="panel">
         <h2>${escapeHtml(m.workspaceContracts)}</h2>
-        <ul class="list filterable">${workspaceRows || '<li class="empty">No workspace contract links available.</li>'}</ul>
+        <ul class="list filterable">${workspaceRows || `<li class="empty">${escapeHtml(m.emptyNoWorkspaceContracts)}</li>`}</ul>
       </section>
       <section class="panel">
         <h2>${escapeHtml(m.workspaceResources)}</h2>
@@ -3648,14 +3876,14 @@ export function renderUiHtml(snapshot: UiSnapshot, language: UiLanguage = 'en'):
               <strong>${escapeHtml(workspace.name)}</strong>
               <span>${escapeHtml(workspace.resources.workspace)} · ${escapeHtml(workspace.resources.contracts)} · ${escapeHtml(workspace.resources.crossRepoLinks)}</span>
             </li>
-          `).join('') || '<li class="empty">No workspace resources available.</li>'}
+          `).join('') || `<li class="empty">${escapeHtml(m.emptyNoWorkspaceResources)}</li>`}
         </ul>
       </section>
     </section>
     <section class="bottom">
       <section class="panel">
         <h2>${escapeHtml(m.coverageGaps)}</h2>
-        <ul class="list">${coverageRows || '<li class="empty">No coverage rows available.</li>'}</ul>
+        <ul class="list">${coverageRows || `<li class="empty">${escapeHtml(m.emptyNoCoverageRows)}</li>`}</ul>
       </section>
       <section class="panel">
         <h2>${escapeHtml(m.resourceContract)}</h2>

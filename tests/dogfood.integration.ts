@@ -50,11 +50,15 @@ test('dogfood: analyzeDiff reports proven src dependents for store.ts', async ()
       provenSrcDependents.length >= MIN_PROVEN_SRC_DEPENDENTS,
       `expected >= ${MIN_PROVEN_SRC_DEPENDENTS} proven src dependents for src/store.ts, got ${provenSrcDependents.length}`
     );
+    // Distinct from the count above: the report ranks proven > inferred >
+    // heuristic, so the top-ranked affected file must itself be a proven src
+    // dependent. This also guards the confidence-first ordering from regressing.
+    const top = report.affectedFiles[0];
+    assert.ok(top, 'expected at least one affected file for src/store.ts');
+    assert.equal(top.confidence, 'proven', `expected top affected file to be proven, got ${top.confidence}`);
     assert.ok(
-      report.affectedFiles.some(
-        (file) => file.confidence === 'proven' && file.path.startsWith('src/')
-      ),
-      'expected at least one proven affected file under src/'
+      top.path.startsWith('src/'),
+      `expected top affected file under src/, got ${top.path}`
     );
   });
 });

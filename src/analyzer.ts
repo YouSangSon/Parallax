@@ -4,6 +4,7 @@ import path from 'node:path';
 
 import { entityKindForMarkdownPath } from './artifacts.js';
 import { PRODUCT_NAME } from './branding.js';
+import { asConfidence } from './confidence.js';
 import { readGitSnapshot } from './git-snapshot.js';
 import { ensureRepo, getRepoId, impactDir, latestCompletedIndexRun, openDatabase } from './store.js';
 import { normalizeRepoRoot, redactSecrets, resolveInsideRoot, toRelativePath } from './security.js';
@@ -317,7 +318,7 @@ function loadAdapterInsights(
 
   return rows.map((row) => {
     const confidence = schemaFeatures.adapterRunMetadataColumns
-      ? normalizeConfidence(row.confidence ?? 'unknown')
+      ? asConfidence(row.confidence ?? 'unknown')
       : 'unknown';
     const knownGaps = schemaFeatures.adapterRunMetadataColumns
       ? parseStringArray(row.known_gaps_json ?? '[]')
@@ -342,13 +343,6 @@ function parseStringArray(value: string): string[] {
   } catch {
     return [];
   }
-}
-
-function normalizeConfidence(value: string): Confidence {
-  if (value === 'proven' || value === 'inferred' || value === 'heuristic' || value === 'unknown') {
-    return value;
-  }
-  return 'unknown';
 }
 
 function appendGitSnapshotWarnings(
@@ -724,12 +718,6 @@ function reasonForLegacyRelation(kind: string, changedFile: string): string {
   if (kind === 'GOVERNS') return `governs ${changedFile}`;
   if (kind === 'IMPLEMENTS') return `implements ${changedFile}`;
   return `${kind.toLowerCase()} ${changedFile}`;
-}
-
-function asConfidence(value: string): Confidence {
-  return value === 'proven' || value === 'inferred' || value === 'heuristic' || value === 'unknown'
-    ? value
-    : 'unknown';
 }
 
 function isEntityKind(value: string): value is EntityKind {

@@ -8,6 +8,7 @@ import { createBranch, mergeBranches, recallOnRepo, rememberOnRepo, trace } from
 import type { RememberValue } from './agent_memory.js';
 import { abandonBranch, gcBranches, restoreBranch } from './branch_gc.js';
 import { envValue } from './branding.js';
+import { asConfidence } from './confidence.js';
 import type { EventTopologyProvenance } from './contract_diff.js';
 import { doctorProject, redactDoctorReportForMcp } from './doctor.js';
 import { computeEmbedding, selectedEmbeddingModel } from './embeddings.js';
@@ -4064,9 +4065,4 @@ function withWritableDb<T>(
 function parseGraphFormat(value: string): GraphExportFormat {
   if (value === 'json' || value === 'mermaid' || value === 'dot') return value;
   throw typedMcpError(new Error('graph resource format must be mermaid, json, or dot'), 'invalid_resource_format');
-}
-
-function asConfidence(value: string): Confidence {
-  if (value === 'proven' || value === 'inferred' || value === 'heuristic' || value === 'unknown') return value;
-  return 'unknown';
 }

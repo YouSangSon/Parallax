@@ -33,6 +33,10 @@ ENTITY ←──── FACT ────→ TRANSACTION
 | v5 | transaction_parents | Multi-parent merge transactions |
 | v6 | fact_embeddings (model-agnostic, composite PK) | Phase 2 — model swap freedom |
 | v7 | branches.state, transactions.archived, fact_provenance.kind, reflections | Phase 3 — reflection + branch GC |
+| v8-v9 | (version markers applied with the v7 reflection/branch-GC migration; no standalone DDL) | Phase 3/4 GC sequencing |
+| v10 | context_tool_runs, context_resource_accesses | Local MCP context access telemetry (append-only) |
+| v11-v14 | search_entities_fts, search_relation_evidence_fts, search_facts_fts + sync triggers | Persistent FTS5 search projections for read-only context search |
+| v15 | context_packs | Persisted MCP context packs (content-addressed reuse) |
 | v16 | adapter_runs.confidence, adapter_runs.known_gaps_json | Report adapter-level confidence and known gaps |
 
 All migrations are **ADD-only**. The `tryAddColumn` helper in `src/store.ts` enforces an allowlist of `(table, column, definition)` triples so future ALTER calls cannot expand DDL surface accidentally.
@@ -137,7 +141,7 @@ Soft-delete only. `gcBranches()` finds branches where `state='abandoned' AND nam
 2. **Embedding** (`reembed`/`computeEmbedding` callers): redacted facts are excluded from embedding input.
 3. **LLM** (`reflection`): redaction runs on system prompt + user prompt before fetch, and on the LLM raw output before storing it as a summary fact.
 
-11 secret families: OpenAI / Stripe / GitHub / Slack / AWS access key / AWS secret / Google API / npm / JWT / Bearer / DB URL / Private key block.
+12 secret families: OpenAI / Stripe / GitHub / Slack / AWS access key / AWS secret / Google API / npm / JWT / Bearer / DB URL / Private key block.
 
 ## LLM provider abstraction
 

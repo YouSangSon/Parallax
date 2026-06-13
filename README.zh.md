@@ -128,7 +128,7 @@ parallax workspace contract-diff --contract openapi.yaml --name platform --json
 
 | 命令 | 作用 |
 | :--- | :--- |
-| `remember` | 存储关于某 entity 的决策/观察 fact；用 `supersedes` 替换陈旧 fact |
+| `remember` | 存储关于某 entity 的决策/观察 fact；用 `--supersedes-fact-ids` 替换陈旧 fact |
 | `recall` | 按 entity、attribute、关键词或语义查询检索 fact |
 | `branch` / `merge` | 无需复制数据即可对多个 plan 进行 fork/merge |
 | `trace` | 沿 `fact_provenance` 边追溯某决策的推理链 |
@@ -137,7 +137,7 @@ parallax workspace contract-diff --contract openapi.yaml --name platform --json
 
 ```bash
 parallax remember --entity src/auth/session.ts \
-  --attribute decision --value "允许 JWT 60s 时钟偏移" --confidence 0.9
+  --attribute decision --value "允许 JWT 60s 时钟偏移"
 parallax recall --entity src/auth/session.ts --json
 parallax profile --entity src/auth/session.ts
 ```
@@ -167,11 +167,14 @@ parallax mcp serve
 
 | MCP 工具 | 作用 |
 | :--- | :--- |
-| `impact_analyze` | 接收被改文件/diff，返回 impact 报告 |
-| `context_for_change` | 按 budget 返回某次变更的 context pack |
-| `impact_graph_export` | 以图格式导出已保存的报告 |
-| `memory_remember` / `memory_recall` | 写入/读取智能体记忆 |
-| `memory_profile` / `memory_trace` | 查询 entity 画像与其推理链 |
+| `parallax_analyze_diff` | 接收被改文件，返回 impact 报告 |
+| `parallax_context_for_change` | 按 budget 返回某次变更的 context pack |
+| `parallax_search_context` | 按 keyword/path/symbol/relation/evidence 搜索最新 index |
+| `parallax_contract_diff` | 将 OpenAPI contract 与已索引的 workspace baseline 对比 |
+| `parallax_remember` / `parallax_recall` | 写入/读取智能体记忆 fact |
+| `parallax_profile` / `parallax_trace` | 查询 entity 画像与其推理链 |
+
+总共注册了 18 个 tool（见 `skills/parallax/SKILL.md`）。图导出不是 tool 而是 MCP **resource**：读取 `parallax://reports/{reportId}/graph/{format}`（`mermaid`、`json` 或 `dot`）。
 
 > 在 Claude Code、Codex 等 MCP 客户端中将其登记为 stdio 服务器即可直接使用。
 

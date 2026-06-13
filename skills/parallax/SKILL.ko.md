@@ -75,13 +75,14 @@ MCP 클라이언트 설정에 추가한다:
 claude mcp add --transport stdio parallax -- parallax mcp serve
 ```
 
-## MCP tools surfaced (15)
+## MCP tools surfaced (18)
 
 | Tool | Read-only? | What it does |
 |---|---|---|
 | `parallax_analyze_diff` | ✅ | 변경된 파일 목록에 대해 impact analysis 실행 |
 | `parallax_context_for_change` | ✅ | 변경된 파일에 대한 budget이 적용된 compact context pack 반환 |
 | `parallax_search_context` | ✅ | keyword/path/symbol/relation/evidence로 최신 인덱싱된 entity를 검색하고, resource link와 함께 순위가 매겨진 context 반환 |
+| `parallax_contract_diff` | ❌ | 현재 OpenAPI contract 파일을 최신 인덱싱된 workspace baseline과 비교해 compact한 breaking-change impact 반환 |
 | `parallax_remember` | ❌ | agent fact(entity, attribute, value)를 branch에 저장 |
 | `parallax_recall` | ✅ | branch / entity / attribute / semantic query로 fact 조회 (brute-force fallback이 있는 sqlite-vec ANN) |
 | `parallax_profile` | ✅ | entity별 three-bucket view (static / dynamic / summary) —  |
@@ -94,6 +95,8 @@ claude mcp add --transport stdio parallax -- parallax mcp serve
 | `parallax_reflect` | ❌ | entity별로 오래된 fact를 LLM으로 summary fact로 요약 |
 | `parallax_repair_reflections` | ❌ | SAVEPOINT atomicity gap으로 남은 orphan summary fact를 정합화 () |
 | `parallax_trace` | ✅ | fact_provenance edge를 따라 evidence source까지 거슬러 탐색 |
+| `parallax_context_telemetry` | ✅ | 최근 local MCP context tool 실행과 resource read를 반환해, 어떤 compact context가 실제로 확장됐는지 agent와 UI가 측정 |
+| `parallax_doctor` | ✅ | schema, 최신 index, coverage, adapter run, vector 상태, context telemetry 가용성을 다루는 read-only local health report |
 
 Read-only resources: `parallax://reports/{id}`, `parallax://entities/{id}`, `parallax://evidence/{id}`, `parallax://reports/{id}/graph/{format}`, `parallax://coverage/latest`.
 

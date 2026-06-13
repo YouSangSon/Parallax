@@ -75,13 +75,14 @@ parallax gc-branches
 claude mcp add --transport stdio parallax -- parallax mcp serve
 ```
 
-## MCP tools surfaced (15)
+## MCP tools surfaced (18)
 
 | Tool | Read-only? | What it does |
 |---|---|---|
 | `parallax_analyze_diff` | ✅ | 对一组变更文件运行 impact analysis |
 | `parallax_context_for_change` | ✅ | 为变更文件返回一个受预算约束的紧凑 context pack |
 | `parallax_search_context` | ✅ | 按 keyword/path/symbol/relation/evidence 搜索最新已索引的 entity，并返回带 resource link 的排序后 context |
+| `parallax_contract_diff` | ❌ | 将当前 OpenAPI contract 文件与最新已索引的 workspace baseline 对比，返回紧凑的 breaking-change impact |
 | `parallax_remember` | ❌ | 在某个 branch 上持久化一条 agent fact (entity, attribute, value) |
 | `parallax_recall` | ✅ | 按 branch / entity / attribute / 语义查询检索 fact (sqlite-vec ANN，brute-force 兜底) |
 | `parallax_profile` | ✅ | 三桶式的 per-entity 视图 (static / dynamic / summary) —  |
@@ -94,6 +95,8 @@ claude mcp add --transport stdio parallax -- parallax mcp serve
 | `parallax_reflect` | ❌ | 用 LLM 按 entity 将较旧的 fact 总结为 summary fact |
 | `parallax_repair_reflections` | ❌ | 协调由 SAVEPOINT 原子性缺口遗留的孤立 summary fact () |
 | `parallax_trace` | ✅ | 沿 fact_provenance 边回溯到 evidence 源 |
+| `parallax_context_telemetry` | ✅ | 返回最近的 local MCP context tool 运行与 resource 读取，便于 agent 与 UI 衡量实际展开了哪个紧凑 context |
+| `parallax_doctor` | ✅ | 只读的 local health report，涵盖 schema、最新 index、coverage、adapter run、vector 状态与 context telemetry 可用性 |
 
 只读 resource: `parallax://reports/{id}`、`parallax://entities/{id}`、`parallax://evidence/{id}`、`parallax://reports/{id}/graph/{format}`、`parallax://coverage/latest`。
 

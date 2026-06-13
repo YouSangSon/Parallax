@@ -33,6 +33,10 @@ ENTITY ←──── FACT ────→ TRANSACTION
 | v5 | transaction_parents | Multi-parent merge transactions |
 | v6 | fact_embeddings (model-agnostic, composite PK) | Phase 2 — model swap freedom |
 | v7 | branches.state, transactions.archived, fact_provenance.kind, reflections | Phase 3 — reflection + branch GC |
+| v8-v9 | (v7 reflection/branch-GC migration과 함께 적용된 버전 마커. 독립 DDL 없음) | Phase 3/4 GC 시퀀싱 |
+| v10 | context_tool_runs, context_resource_accesses | local MCP context access telemetry (append-only) |
+| v11-v14 | search_entities_fts, search_relation_evidence_fts, search_facts_fts + sync trigger | read-only context search를 위한 영속 FTS5 search projection |
+| v15 | context_packs | 영속 MCP context pack (content-addressed 재사용) |
 | v16 | adapter_runs.confidence, adapter_runs.known_gaps_json | Report adapter-level confidence and known gaps |
 
 모든 migration은 **ADD-only**다. `src/store.ts`의 `tryAddColumn` 헬퍼는 `(table, column, definition)` 트리플의 allowlist를 강제하여, 향후 ALTER 호출이 실수로 DDL 표면을 확장하지 못하게 한다.
@@ -137,7 +141,7 @@ Soft-delete만 한다. `gcBranches()`는 `state='abandoned' AND name != 'main'`�
 2. **Embedding** (`reembed`/`computeEmbedding` 호출자): redacted된 fact는 embedding 입력에서 제외된다.
 3. **LLM** (`reflection`): redaction은 fetch 전 system prompt + user prompt에 대해, 그리고 LLM raw output을 summary fact로 저장하기 전 그것에 대해 실행된다.
 
-11개 secret family: OpenAI / Stripe / GitHub / Slack / AWS access key / AWS secret / Google API / npm / JWT / Bearer / DB URL / Private key block.
+12개 secret family: OpenAI / Stripe / GitHub / Slack / AWS access key / AWS secret / Google API / npm / JWT / Bearer / DB URL / Private key block.
 
 ## LLM provider abstraction
 

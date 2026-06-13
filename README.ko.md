@@ -128,7 +128,7 @@ parallax workspace contract-diff --contract openapi.yaml --name platform --json
 
 | 명령 | 역할 |
 | :--- | :--- |
-| `remember` | entity에 대한 결정/관찰 fact 저장. `supersedes`로 오래된 fact 대체 |
+| `remember` | entity에 대한 결정/관찰 fact 저장. `--supersedes-fact-ids`로 오래된 fact 대체 |
 | `recall` | entity, attribute, keyword, semantic query로 fact 조회 |
 | `branch` / `merge` | 여러 plan을 데이터 복사 없이 fork/merge |
 | `trace` | fact_provenance edge를 따라 결정의 근거 사슬 추적 |
@@ -137,7 +137,7 @@ parallax workspace contract-diff --contract openapi.yaml --name platform --json
 
 ```bash
 parallax remember --entity src/auth/session.ts \
-  --attribute decision --value "JWT clock skew 60s로 허용" --confidence 0.9
+  --attribute decision --value "JWT clock skew 60s로 허용"
 parallax recall --entity src/auth/session.ts --json
 parallax profile --entity src/auth/session.ts
 ```
@@ -167,11 +167,14 @@ parallax mcp serve
 
 | MCP tool | 역할 |
 | :--- | :--- |
-| `impact_analyze` | 변경 파일/diff를 받아 impact report 반환 |
-| `context_for_change` | 변경에 대한 context pack을 budget에 맞춰 반환 |
-| `impact_graph_export` | 저장된 report를 그래프 포맷으로 export |
-| `memory_remember` / `memory_recall` | agent memory 쓰기/읽기 |
-| `memory_profile` / `memory_trace` | entity 프로파일과 근거 사슬 조회 |
+| `parallax_analyze_diff` | 변경 파일을 받아 impact report 반환 |
+| `parallax_context_for_change` | 변경에 대한 context pack을 budget에 맞춰 반환 |
+| `parallax_search_context` | keyword/path/symbol/relation/evidence로 최신 index 검색 |
+| `parallax_contract_diff` | OpenAPI contract를 인덱싱된 workspace baseline과 비교 |
+| `parallax_remember` / `parallax_recall` | agent memory fact 쓰기/읽기 |
+| `parallax_profile` / `parallax_trace` | entity 프로파일과 근거 사슬 조회 |
+
+전체 18개 tool이 등록되어 있다(`skills/parallax/SKILL.md` 참고). 그래프 export는 tool이 아니라 MCP **resource**다: `parallax://reports/{reportId}/graph/{format}` (`mermaid`, `json`, `dot`)를 읽는다.
 
 > Claude Code, Codex 같은 MCP 클라이언트에 stdio 서버로 등록하면 바로 쓸 수 있다.
 

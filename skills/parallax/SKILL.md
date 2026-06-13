@@ -75,13 +75,14 @@ Or via the Claude Code CLI:
 claude mcp add --transport stdio parallax -- parallax mcp serve
 ```
 
-## MCP tools surfaced (15)
+## MCP tools surfaced (18)
 
 | Tool | Read-only? | What it does |
 |---|---|---|
 | `parallax_analyze_diff` | ✅ | Run impact analysis for a list of changed files |
 | `parallax_context_for_change` | ✅ | Return a budgeted compact context pack for changed files |
 | `parallax_search_context` | ✅ | Search latest indexed entities by keyword/path/symbol/relation/evidence and return ranked context with resource links |
+| `parallax_contract_diff` | ❌ | Compare a current OpenAPI contract file against the latest indexed workspace baseline and return compact breaking-change impact |
 | `parallax_remember` | ❌ | Persist an agent fact (entity, attribute, value) on a branch |
 | `parallax_recall` | ✅ | Retrieve facts by branch / entity / attribute / semantic query (sqlite-vec ANN with brute-force fallback) |
 | `parallax_profile` | ✅ | Three-bucket per-entity view (static / dynamic / summary) —  |
@@ -94,6 +95,8 @@ claude mcp add --transport stdio parallax -- parallax mcp serve
 | `parallax_reflect` | ❌ | LLM-summarize older facts per-entity into summary facts |
 | `parallax_repair_reflections` | ❌ | Reconcile orphan summary facts left by SAVEPOINT atomicity gap () |
 | `parallax_trace` | ✅ | Walk fact_provenance edges back to evidence sources |
+| `parallax_context_telemetry` | ✅ | Return recent local MCP context tool runs and resource reads so agents and UI can measure which compact context was expanded |
+| `parallax_doctor` | ✅ | Read-only local health report covering schema, latest index, coverage, adapter runs, vector state, and context telemetry availability |
 
 Read-only resources: `parallax://reports/{id}`, `parallax://entities/{id}`, `parallax://evidence/{id}`, `parallax://reports/{id}/graph/{format}`, `parallax://coverage/latest`.
 

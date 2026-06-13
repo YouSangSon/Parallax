@@ -263,6 +263,10 @@ npm audit --audit-level=high
 | [`docs/roadmap.zh.md`](docs/roadmap.zh.md) | 当前 backlog 与下一批切片 |
 | [`docs/invariants.zh.md`](docs/invariants.zh.md) | local-first、脱敏、权限模型等不变量 |
 | [`docs/glossary.zh.md`](docs/glossary.zh.md) | 术语表 |
+| [`docs/README.zh.md`](docs/README.zh.md) | 文档索引 |
+| [`docs/mcp.zh.md`](docs/mcp.zh.md) | MCP 服务器、tool 与 resource |
+| [`docs/cli-reference.zh.md`](docs/cli-reference.zh.md) | 每个 CLI 命令、标志与 exit code |
+| [`docs/extending-adapters.zh.md`](docs/extending-adapters.zh.md) | 编写 semantic adapter |
 | [`skills/parallax/SKILL.zh.md`](skills/parallax/SKILL.zh.md) | 面向 Claude Code / Codex 用户的 skill |
 | [`skills/parallax/references/architecture.zh.md`](skills/parallax/references/architecture.zh.md) | 内部架构深入解析 |
 

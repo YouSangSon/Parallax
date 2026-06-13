@@ -263,6 +263,10 @@ npm audit --audit-level=high
 | [`docs/roadmap.ko.md`](docs/roadmap.ko.md) | 현재 backlog와 다음 슬라이스 |
 | [`docs/invariants.ko.md`](docs/invariants.ko.md) | local-first, redaction, 권한 모델 같은 불변 원칙 |
 | [`docs/glossary.ko.md`](docs/glossary.ko.md) | 용어집 |
+| [`docs/README.ko.md`](docs/README.ko.md) | 문서 인덱스 |
+| [`docs/mcp.ko.md`](docs/mcp.ko.md) | MCP 서버, tool, resource |
+| [`docs/cli-reference.ko.md`](docs/cli-reference.ko.md) | 모든 CLI 명령, 플래그, exit code |
+| [`docs/extending-adapters.ko.md`](docs/extending-adapters.ko.md) | semantic adapter 작성 |
 | [`skills/parallax/SKILL.ko.md`](skills/parallax/SKILL.ko.md) | Claude Code/Codex 사용자용 skill |
 | [`skills/parallax/references/architecture.ko.md`](skills/parallax/references/architecture.ko.md) | 내부 아키텍처 심화 |
 

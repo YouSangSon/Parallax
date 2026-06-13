@@ -1,5 +1,7 @@
 # Parallax 架构
 
+[English](architecture.md) · [한국어](architecture.ko.md) · **中文**
+
 深入剖析 Parallax 底层的工作原理。当你需要扩展系统、调试出乎意料的查询结果，或理解某个 invariant 背后的设计理由时，请阅读本文。
 
 ## 核心概念：构建在 SQLite 之上的代码感知 fact graph
@@ -33,6 +35,10 @@ ENTITY ←──── FACT ────→ TRANSACTION
 | v5 | transaction_parents | 多 parent 的 merge transaction |
 | v6 | fact_embeddings (model-agnostic, composite PK) | Phase 2 —— 自由切换模型 |
 | v7 | branches.state, transactions.archived, fact_provenance.kind, reflections | Phase 3 —— reflection + branch GC |
+| v8-v9 | (与 v7 reflection/branch-GC migration 一同应用的版本标记，无独立 DDL) | Phase 3/4 GC 排序 |
+| v10 | context_tool_runs, context_resource_accesses | 本地 MCP context access telemetry（append-only） |
+| v11-v14 | search_entities_fts, search_relation_evidence_fts, search_facts_fts + sync trigger | 用于 read-only context search 的持久化 FTS5 search projection |
+| v15 | context_packs | 持久化的 MCP context pack（content-addressed 复用） |
 | v16 | adapter_runs.confidence, adapter_runs.known_gaps_json | 在 adapter 级别报告 confidence 与已知 gap |
 
 所有 migration 都是 **ADD-only**（只新增）。`src/store.ts` 中的 `tryAddColumn` helper 强制执行一份 `(table, column, definition)` 三元组的 allowlist，使未来的 ALTER 调用无法意外扩大 DDL 的影响面。
@@ -137,7 +143,7 @@ reflectFacts(repoRoot, options)
 2. **Embedding**（`reembed`/`computeEmbedding` 的调用方）：被脱敏的 fact 会被排除在 embedding 输入之外。
 3. **LLM**（`reflection`）：脱敏在 fetch 之前对 system prompt + user prompt 运行，并在将 LLM 原始输出存为 summary fact 之前对其运行。
 
-11 个 secret family：OpenAI / Stripe / GitHub / Slack / AWS access key / AWS secret / Google API / npm / JWT / Bearer / DB URL / Private key block。
+12 个 secret family：OpenAI / Stripe / GitHub / Slack / AWS access key / AWS secret / Google API / npm / JWT / Bearer / DB URL / Private key block。
 
 ## LLM provider 抽象
 

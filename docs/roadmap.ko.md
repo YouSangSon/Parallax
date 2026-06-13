@@ -1,8 +1,10 @@
 # Roadmap
 
+[English](roadmap.md) · **한국어** · [中文](roadmap.zh.md)
+
 > 앞으로 해야 할 일을 thematic으로 정리한다. 진행 상황 추적은 git log 와 PR 단위로 유지한다.
 
-이 문서는 *지금 막힘없이 갈 방향*만 적는다. 큰 결정은 [invariants.md](invariants.md)를 깨지 않는 선에서 한다.
+이 문서는 *지금 막힘없이 갈 방향*만 적는다. 큰 결정은 [invariants.ko.md](invariants.ko.md)를 깨지 않는 선에서 한다.
 
 ---
 
@@ -41,7 +43,7 @@ MCP는 read-only로 안정화됐다. 다음은 agent 사용성을 깊게 보는 
 
 - [ ] `context_for_change`의 budget tuning (brief/standard/deep)을 사용 텔레메트리로 검증
 - [ ] context pack 결과의 hit/miss 측정 harness
-- [ ] write surface를 별도 권한 모델로 분리해 도입 검토 ([invariants.md](invariants.md) I-8 준수)
+- [ ] write surface를 별도 권한 모델로 분리해 도입 검토 ([invariants.ko.md](invariants.ko.md) I-8 준수)
 
 ## 5. UI Explorer
 

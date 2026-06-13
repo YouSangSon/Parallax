@@ -923,7 +923,10 @@ async function indexProjectInternal(
   }
 }
 
-function createDefaultRegistry(): AdapterRegistry {
+// Registration order is load-bearing: pickAdapter is first-match-wins, and the
+// MultiLanguageRegexAdapter catch-all (supports() always returns true) MUST stay
+// registered last. Any adapter registered after it would be unreachable.
+export function createDefaultRegistry(): AdapterRegistry {
   const registry = new AdapterRegistry();
   registry.register(new BuildSystemPackageAdapter());
   registry.register(new ConfigInfraSemanticAdapter());

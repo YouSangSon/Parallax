@@ -5,6 +5,8 @@ description: Local-first code impact analyzer + agent memory layer for Claude Co
 
 # Parallax Skill
 
+[English](SKILL.md) · [한국어](SKILL.ko.md) · **中文**
+
 Parallax 是面向 AI 编码 agent 的 local-first、代码感知的 memory 层。它将一个仓库索引为 entity 和 relation，以 content-addressable fact 的形式在 transaction DAG 上接收 agent 的 observation，并通过 MCP 工具和 CLI 暴露这个组合视图。
 
 ## When to invoke
@@ -75,13 +77,14 @@ parallax gc-branches
 claude mcp add --transport stdio parallax -- parallax mcp serve
 ```
 
-## MCP tools surfaced (15)
+## MCP tools surfaced (18)
 
 | Tool | Read-only? | What it does |
 |---|---|---|
 | `parallax_analyze_diff` | ✅ | 对一组变更文件运行 impact analysis |
 | `parallax_context_for_change` | ✅ | 为变更文件返回一个受预算约束的紧凑 context pack |
 | `parallax_search_context` | ✅ | 按 keyword/path/symbol/relation/evidence 搜索最新已索引的 entity，并返回带 resource link 的排序后 context |
+| `parallax_contract_diff` | ❌ | 将当前 OpenAPI contract 文件与最新已索引的 workspace baseline 对比，返回紧凑的 breaking-change impact |
 | `parallax_remember` | ❌ | 在某个 branch 上持久化一条 agent fact (entity, attribute, value) |
 | `parallax_recall` | ✅ | 按 branch / entity / attribute / 语义查询检索 fact (sqlite-vec ANN，brute-force 兜底) |
 | `parallax_profile` | ✅ | 三桶式的 per-entity 视图 (static / dynamic / summary) —  |
@@ -94,6 +97,8 @@ claude mcp add --transport stdio parallax -- parallax mcp serve
 | `parallax_reflect` | ❌ | 用 LLM 按 entity 将较旧的 fact 总结为 summary fact |
 | `parallax_repair_reflections` | ❌ | 协调由 SAVEPOINT 原子性缺口遗留的孤立 summary fact () |
 | `parallax_trace` | ✅ | 沿 fact_provenance 边回溯到 evidence 源 |
+| `parallax_context_telemetry` | ✅ | 返回最近的 local MCP context tool 运行与 resource 读取，便于 agent 与 UI 衡量实际展开了哪个紧凑 context |
+| `parallax_doctor` | ✅ | 只读的 local health report，涵盖 schema、最新 index、coverage、adapter run、vector 状态与 context telemetry 可用性 |
 
 只读 resource: `parallax://reports/{id}`、`parallax://entities/{id}`、`parallax://evidence/{id}`、`parallax://reports/{id}/graph/{format}`、`parallax://coverage/latest`。
 
@@ -103,7 +108,7 @@ claude mcp add --transport stdio parallax -- parallax mcp serve
 - **Content-addressable fact id。** `id = SHA-256(entity || attribute || value || op)`。相同的 observation 永远不会重复。
 - **ADD-only schema migration。** 列和表只会被添加；任何东西都不会被删除。在 `src/store.ts` 中由 allowlist 守护的 `tryAddColumn` 辅助函数。
 - **Soft-delete only。** Fact 永远不会被 DELETE。Branch GC 归档的是 *transaction* (`transactions.archived = 1`)，从而让 recall 不再展示它们，但底层的 fact 行仍然存在，并且可能被其他 branch 引用。
-- **Redact-then-prompt gate。** 所有 LLM 的输入/输出都会经过 `redactSecrets()` (11 个 secret 家族: OpenAI/Stripe/GitHub/Slack/AWS/Google/npm/JWT/Bearer/DB URL/Private key)。被 redact 的 fact 会得到 value_blob='[REDACTED]' 和零 embedding 行。
+- **Redact-then-prompt gate。** 所有 LLM 的输入/输出都会经过 `redactSecrets()` (12 个 secret 家族: OpenAI/Stripe/GitHub/Slack/AWS access key/AWS secret/Google/npm/JWT/Bearer/DB URL/Private key)。被 redact 的 fact 会得到 value_blob='[REDACTED]' 和零 embedding 行。
 - **async-outside-tx pattern。** Embedding 和 LLM 计算发生在 SQLite transaction 打开 *之前*；同步的 `withAgentMemoryDb` 回调只负责写入。
 
 ## Lifecycle of a fact

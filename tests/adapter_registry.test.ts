@@ -3,6 +3,11 @@ import assert from 'node:assert/strict';
 
 import { AdapterRegistry } from '../src/adapters/registry.js';
 import type { AdapterRun, ExtractCtx, IndexEvent, SemanticAdapter } from '../src/adapters/types.js';
+import {
+  MULTI_LANG_REGEX_ADAPTER_ID,
+  TS_JS_SEMANTIC_ADAPTER_ID
+} from '../src/adapters/multi-language-regex.js';
+import { createDefaultRegistry } from '../src/indexer.js';
 import type { ScannedFile } from '../src/types.js';
 
 function makeAdapter(id: string, supportedLang: string): SemanticAdapter {
@@ -84,4 +89,15 @@ test('list returns adapters in registration order', () => {
     registry.list().map((a) => a.id),
     ['a', 'b']
   );
+});
+
+test('default registry keeps the catch-all adapter registered last', () => {
+  const registry = createDefaultRegistry();
+  assert.strictEqual(registry.list().at(-1)?.id, MULTI_LANG_REGEX_ADAPTER_ID);
+});
+
+test('default registry picks the parser-backed adapter over the catch-all for TypeScript', () => {
+  const registry = createDefaultRegistry();
+  const picked = registry.pickAdapter(makeFile('typescript', 'a.ts'));
+  assert.strictEqual(picked?.id, TS_JS_SEMANTIC_ADAPTER_ID);
 });

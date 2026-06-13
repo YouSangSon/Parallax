@@ -128,7 +128,7 @@ Stores an agent's decisions, observations, and rationale as content-addressable 
 
 | Command | Role |
 | :--- | :--- |
-| `remember` | Store a decision/observation fact about an entity; supersede stale facts with `supersedes` |
+| `remember` | Store a decision/observation fact about an entity; supersede stale facts with `--supersedes-fact-ids` |
 | `recall` | Query facts by entity, attribute, keyword, or semantic query |
 | `branch` / `merge` | Fork/merge multiple plans without copying data |
 | `trace` | Follow `fact_provenance` edges to trace a decision's chain of reasoning |
@@ -137,7 +137,7 @@ Stores an agent's decisions, observations, and rationale as content-addressable 
 
 ```bash
 parallax remember --entity src/auth/session.ts \
-  --attribute decision --value "Allow JWT clock skew of 60s" --confidence 0.9
+  --attribute decision --value "Allow JWT clock skew of 60s"
 parallax recall --entity src/auth/session.ts --json
 parallax profile --entity src/auth/session.ts
 ```
@@ -167,11 +167,14 @@ parallax mcp serve
 
 | MCP tool | Role |
 | :--- | :--- |
-| `impact_analyze` | Takes changed files/diff and returns an impact report |
-| `context_for_change` | Returns a budget-fit context pack for a change |
-| `impact_graph_export` | Exports a saved report in a graph format |
-| `memory_remember` / `memory_recall` | Write/read agent memory |
-| `memory_profile` / `memory_trace` | Query an entity profile and its reasoning chain |
+| `parallax_analyze_diff` | Takes changed files and returns an impact report |
+| `parallax_context_for_change` | Returns a budget-fit context pack for a change |
+| `parallax_search_context` | Searches the latest index by keyword/path/symbol/relation/evidence |
+| `parallax_contract_diff` | Compares an OpenAPI contract against the indexed workspace baseline |
+| `parallax_remember` / `parallax_recall` | Write/read agent memory facts |
+| `parallax_profile` / `parallax_trace` | Query an entity profile and its reasoning chain |
+
+18 tools are registered in total (see `skills/parallax/SKILL.md`). Graph export is an MCP **resource**, not a tool: read `parallax://reports/{reportId}/graph/{format}` (`mermaid`, `json`, or `dot`).
 
 > Register it as a stdio server with an MCP client like Claude Code or Codex and it's ready to use.
 
@@ -260,7 +263,12 @@ The detailed backlog is tracked against [`docs/roadmap.md`](docs/roadmap.md).
 | [`docs/roadmap.md`](docs/roadmap.md) | Current backlog and next slices |
 | [`docs/invariants.md`](docs/invariants.md) | Invariants like local-first, redaction, and the permission model |
 | [`docs/glossary.md`](docs/glossary.md) | Glossary |
+| [`docs/README.md`](docs/README.md) | Documentation index |
+| [`docs/mcp.md`](docs/mcp.md) | MCP server, tools, and resources |
+| [`docs/cli-reference.md`](docs/cli-reference.md) | Every CLI command, flag, and exit code |
+| [`docs/extending-adapters.md`](docs/extending-adapters.md) | Authoring semantic adapters |
 | [`skills/parallax/SKILL.md`](skills/parallax/SKILL.md) | Skill for Claude Code / Codex users |
+| [`skills/parallax/references/architecture.md`](skills/parallax/references/architecture.md) | Deep dive into the internal architecture |
 
 ---
 

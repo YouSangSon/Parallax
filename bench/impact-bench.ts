@@ -158,6 +158,7 @@ const expectedRelations: readonly ExpectedRelation[] = [
   languageRelation('DEPENDS_ON', 'src/ts/static-widget.tsx', 'src/ts/session.ts', 'TSX static import reaches session'),
   languageRelation('CALLS', 'src/ts/static-widget.tsx', 'src/ts/session.ts', 'TSX static widget calls session validator'),
   languageRelation('DEPENDS_ON', 'src/ts/barrel.ts', 'src/ts/session.ts', 'TS re-export barrel reaches session'),
+  languageRelation('DEPENDS_ON', 'src/ts/nodenext-barrel.ts', 'src/ts/session.ts', 'TS NodeNext .js re-export barrel reaches session'),
   languageRelation('DEPENDS_ON', 'src/ts/alias-consumer.ts', 'src/ts/session.ts', 'TS path alias import reaches session'),
   languageRelation('CALLS', 'src/ts/alias-consumer.ts', 'src/ts/session.ts', 'TS path alias consumer calls session validator'),
   languageRelation('DEPENDS_ON', 'src/js/legacy.js', 'src/ts/session.ts', 'JS require reaches TS session'),
@@ -234,6 +235,7 @@ const expectedAffectedFiles = [
   'src/ts/alias-consumer.ts',
   'src/ts/barrel.ts',
   'src/ts/namespace-consumer.ts',
+  'src/ts/nodenext-barrel.ts',
   'src/ts/private.ts',
   'src/ts/static-widget.tsx',
   'src/ts/type-only.ts',
@@ -943,6 +945,10 @@ async function writeFixture(repoRoot: string): Promise<void> {
     ''
   ].join('\n'));
   await writeFile(path.join(repoRoot, 'src/ts/barrel.ts'), 'export { validateSession } from "./session";\n');
+  await writeFile(
+    path.join(repoRoot, 'src/ts/nodenext-barrel.ts'),
+    'export { validateSession } from "./session.js";\n'
+  );
   await writeFile(path.join(repoRoot, 'src/ts/alias-consumer.ts'), [
     'import { validateSession } from "@app/session";',
     'export function aliasConsumer(): boolean {',

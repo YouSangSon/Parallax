@@ -1,5 +1,7 @@
 # Contributing to Parallax
 
+**English** · [한국어](CONTRIBUTING.ko.md) · [中文](CONTRIBUTING.zh.md)
+
 Contributions are welcome. Parallax is a local-first tool that helps agentic
 coding tools see the impact scope and test candidates more accurately before
 they change code.

@@ -5,6 +5,8 @@ description: Local-first code impact analyzer + agent memory layer for Claude Co
 
 # Parallax Skill
 
+**English** · [한국어](SKILL.ko.md) · [中文](SKILL.zh.md)
+
 Parallax is the local-first code-aware memory layer for AI coding agents. It indexes a repository into entities and relations, accepts agent observations as content-addressable facts on a transaction DAG, and exposes the combined view through MCP tools and a CLI.
 
 ## When to invoke
@@ -75,13 +77,14 @@ Or via the Claude Code CLI:
 claude mcp add --transport stdio parallax -- parallax mcp serve
 ```
 
-## MCP tools surfaced (15)
+## MCP tools surfaced (18)
 
 | Tool | Read-only? | What it does |
 |---|---|---|
 | `parallax_analyze_diff` | ✅ | Run impact analysis for a list of changed files |
 | `parallax_context_for_change` | ✅ | Return a budgeted compact context pack for changed files |
 | `parallax_search_context` | ✅ | Search latest indexed entities by keyword/path/symbol/relation/evidence and return ranked context with resource links |
+| `parallax_contract_diff` | ❌ | Compare a current OpenAPI contract file against the latest indexed workspace baseline and return compact breaking-change impact |
 | `parallax_remember` | ❌ | Persist an agent fact (entity, attribute, value) on a branch |
 | `parallax_recall` | ✅ | Retrieve facts by branch / entity / attribute / semantic query (sqlite-vec ANN with brute-force fallback) |
 | `parallax_profile` | ✅ | Three-bucket per-entity view (static / dynamic / summary) —  |
@@ -94,6 +97,8 @@ claude mcp add --transport stdio parallax -- parallax mcp serve
 | `parallax_reflect` | ❌ | LLM-summarize older facts per-entity into summary facts |
 | `parallax_repair_reflections` | ❌ | Reconcile orphan summary facts left by SAVEPOINT atomicity gap () |
 | `parallax_trace` | ✅ | Walk fact_provenance edges back to evidence sources |
+| `parallax_context_telemetry` | ✅ | Return recent local MCP context tool runs and resource reads so agents and UI can measure which compact context was expanded |
+| `parallax_doctor` | ✅ | Read-only local health report covering schema, latest index, coverage, adapter runs, vector state, and context telemetry availability |
 
 Read-only resources: `parallax://reports/{id}`, `parallax://entities/{id}`, `parallax://evidence/{id}`, `parallax://reports/{id}/graph/{format}`, `parallax://coverage/latest`.
 
@@ -103,7 +108,7 @@ Read-only resources: `parallax://reports/{id}`, `parallax://entities/{id}`, `par
 - **Content-addressable fact id.** `id = SHA-256(entity || attribute || value || op)`. Same observation never duplicates.
 - **ADD-only schema migration.** Columns and tables are added; nothing is dropped. Allowlist-guarded `tryAddColumn` helper in `src/store.ts`.
 - **Soft-delete only.** Facts are never DELETED. Branch GC archives *transactions* (`transactions.archived = 1`) so recall stops surfacing them, but the underlying fact rows survive and may be referenced from other branches.
-- **Redact-then-prompt gate.** All LLM input/output passes through `redactSecrets()` (11 secret families: OpenAI/Stripe/GitHub/Slack/AWS/Google/npm/JWT/Bearer/DB URL/Private key). Redacted facts get value_blob='[REDACTED]' and zero embedding row.
+- **Redact-then-prompt gate.** All LLM input/output passes through `redactSecrets()` (12 secret families: OpenAI/Stripe/GitHub/Slack/AWS access key/AWS secret/Google/npm/JWT/Bearer/DB URL/Private key). Redacted facts get value_blob='[REDACTED]' and zero embedding row.
 - **async-outside-tx pattern.** Embedding and LLM compute happen *before* the SQLite transaction opens; the sync `withAgentMemoryDb` callback only writes.
 
 ## Lifecycle of a fact

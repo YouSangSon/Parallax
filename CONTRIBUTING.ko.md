@@ -1,5 +1,7 @@
 # Contributing to Parallax
 
+[English](CONTRIBUTING.md) · **한국어** · [中文](CONTRIBUTING.zh.md)
+
 기여를 환영합니다. Parallax는 에이전트 코딩 도구가 코드를 바꾸기 전에
 영향 범위와 테스트 후보를 더 정확히 볼 수 있게 만드는 local-first 도구입니다.
 

@@ -1,5 +1,7 @@
 # 不变原则 (Invariants)
 
+[English](invariants.md) · [한국어](invariants.ko.md) · **中文**
+
 > 即使项目重新开始也不会被打破的核心决策。新的决策须在不违反本文档的前提下做出。
 
 ---

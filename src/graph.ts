@@ -1,4 +1,5 @@
 import { entityKindForMarkdownPath } from './artifacts.js';
+import { asConfidence } from './confidence.js';
 import { getRepoId, openDatabase } from './store.js';
 import { normalizeRepoRoot } from './security.js';
 import type {
@@ -275,12 +276,6 @@ function escapeDotId(value: string): string {
 
 function escapeDotLabel(value: string): string {
   return escapeDotId(value).replace(/\n/g, ' ').replace(/\r/g, ' ');
-}
-
-function asConfidence(value: string): Confidence {
-  return value === 'proven' || value === 'inferred' || value === 'heuristic' || value === 'unknown'
-    ? value
-    : 'unknown';
 }
 
 function kindForPath(path: string): EntityKind {

@@ -1,5 +1,7 @@
 # 불변 원칙 (Invariants)
 
+[English](invariants.md) · **한국어** · [中文](invariants.zh.md)
+
 > 프로젝트가 다시 시작해도 깨지 않을 핵심 결정. 새로운 결정은 이 문서를 위반하지 않는 선에서 한다.
 
 ---

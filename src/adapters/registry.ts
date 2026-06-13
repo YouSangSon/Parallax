@@ -11,6 +11,9 @@ export class AdapterRegistry {
     this.adapters.push(adapter);
   }
 
+  // First-match-wins in registration order. A catch-all adapter whose supports()
+  // always returns true (e.g. MultiLanguageRegexAdapter) MUST be registered last;
+  // any adapter registered after such a catch-all is unreachable here.
   pickAdapter(file: ScannedFile): SemanticAdapter | undefined {
     for (const adapter of this.adapters) {
       if (adapter.supports(file)) {

@@ -1,5 +1,7 @@
 # Security Policy
 
+[English](SECURITY.md) · [한국어](SECURITY.ko.md) · **中文**
+
 Parallax 是一款读取并分析本地仓库的工具。安全问题的优先级高于普通 bug。
 
 ## 支持范围

@@ -36,6 +36,7 @@
     "test:security": "tsx --test tests/security.test.ts",
     "test:mcp": "tsx --test tests/mcp.test.ts",
     "test:ui": "tsx --test tests/ui.test.ts",
+    "test:dogfood": "tsx --test tests/dogfood.test.ts",
     "test:benchmark": "npm run bench",
     "test:install-smoke": "npm run build && node dist/src/cli.js --help",
     "docs:lint": "node scripts/docs-lint.js",

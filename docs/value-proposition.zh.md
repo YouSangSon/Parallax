@@ -1,11 +1,13 @@
 # Parallax — 价值主张文档
 
+[English](value-proposition.md) · [한국어](value-proposition.ko.md) · **中文**
+
 > **本文档的作用：** 一份压缩成一页的活文档，让公司内部开发大赛的评委能在 5 分钟内抓住 *是什么、为什么、有何不同*。随开发进展持续完善。
 >
 > **最后更新：** 2026-04-30
 >
 > **建议一并阅读的文档：**
-> - 面向用户的 README: [`README.md`](../README.md)
+> - 面向用户的 README: [`README.zh.md`](../README.zh.md)
 > - 整体设计笔记: [`docs/agent-db-exploration.ko.md`](agent-db-exploration.ko.md)
 > - 使用流程·示例: [`docs/agent-memory-cookbook.ko.md`]
 > - 进展现状: [`docs/progress.ko.md`]

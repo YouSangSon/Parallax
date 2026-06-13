@@ -237,7 +237,7 @@ npm audit --audit-level=high
 | **UI Explorer** | changed → affected → evidence → action 흐름을 한 화면에서 더 직접적으로 탐색 |
 | **Measurement** | fixture bench delta와 recall 품질 회귀 detection |
 
-자세한 backlog는 [`docs/roadmap.md`](docs/roadmap.md)를 기준으로 관리한다.
+자세한 backlog는 [`docs/roadmap.ko.md`](docs/roadmap.ko.md)를 기준으로 관리한다.
 
 ---
 
@@ -260,10 +260,11 @@ npm audit --audit-level=high
 | :--- | :--- |
 | [`docs/vision.ko.md`](docs/vision.ko.md) | 프로젝트 비전 |
 | [`docs/value-proposition.ko.md`](docs/value-proposition.ko.md) | 가치 제안과 차별성 |
-| [`docs/roadmap.md`](docs/roadmap.md) | 현재 backlog와 다음 슬라이스 |
-| [`docs/invariants.md`](docs/invariants.md) | local-first, redaction, 권한 모델 같은 불변 원칙 |
-| [`docs/glossary.md`](docs/glossary.md) | 용어집 |
-| [`skills/parallax/SKILL.md`](skills/parallax/SKILL.md) | Claude Code/Codex 사용자용 skill |
+| [`docs/roadmap.ko.md`](docs/roadmap.ko.md) | 현재 backlog와 다음 슬라이스 |
+| [`docs/invariants.ko.md`](docs/invariants.ko.md) | local-first, redaction, 권한 모델 같은 불변 원칙 |
+| [`docs/glossary.ko.md`](docs/glossary.ko.md) | 용어집 |
+| [`skills/parallax/SKILL.ko.md`](skills/parallax/SKILL.ko.md) | Claude Code/Codex 사용자용 skill |
+| [`skills/parallax/references/architecture.ko.md`](skills/parallax/references/architecture.ko.md) | 내부 아키텍처 심화 |
 
 ---
 

@@ -1,5 +1,7 @@
 # Parallax Glossary
 
+**English** · [한국어](glossary.ko.md) · [中文](glossary.zh.md)
+
 This project has two axes (impact analysis + agent memory) that live on top of the same SQLite database and use *overlapping vocabulary*. This document resolves that ambiguity. For a quick answer, look at the table below; for the precise definition, read the sections that follow.
 
 | Term | Impact analysis axis | Agent memory axis |

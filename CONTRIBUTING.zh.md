@@ -1,5 +1,7 @@
 # Contributing to Parallax
 
+[English](CONTRIBUTING.md) · [한국어](CONTRIBUTING.ko.md) · **中文**
+
 欢迎贡献。Parallax 是一个 local-first 工具，让 agent 编码工具在改动代码之前
 能够更准确地看到影响范围和测试候选。
 

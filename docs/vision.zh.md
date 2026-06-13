@@ -1,5 +1,7 @@
 # Parallax — 愿景
 
+[English](vision.md) · [한국어](vision.ko.md) · **中文**
+
 **一句话：** Parallax 是一个 **local-first impact context layer**，让 Claude Code、Codex 这样的 *AI 编码 agent* 和人看到同一张关系图谱——它连接代码、文档、政策、提案、决策，在减少 agent 反复读取 repo 所耗费的 context 的同时，通过 MCP 和 UI 告诉你代码变更前后*哪些会受到影响*。
 
 
@@ -52,7 +54,7 @@ Local-first 是根基——所有数据都在 `<repo>/.parallax/impact.db`。无
 
 ## 身份 invariants（没有新的决定就不会重新考虑的原则）
 
-在提出大的变更之前先读 [invariants.md](invariants.md)。核心：local-first 单一 SQLite、content-addressable fact、ADD-only migration、redact-then-embed、fetch-only (no SDK)、explicit triggers (no daemon)、read-only agent surface first、actions are recommendations、evidence first。
+在提出大的变更之前先读 [invariants.md](invariants.zh.md)。核心：local-first 单一 SQLite、content-addressable fact、ADD-only migration、redact-then-embed、fetch-only (no SDK)、explicit triggers (no daemon)、read-only agent surface first、actions are recommendations、evidence first。
 
 ## 三年愿景
 
@@ -64,7 +66,7 @@ Local-first 是根基——所有数据都在 `<repo>/.parallax/impact.db`。无
 
 ## *不会*去做的事
 
-这些条目经过审议后被否决——context 见 [invariants.md](invariants.md)。要重新提议需要另行讨论。
+这些条目经过审议后被否决——context 见 [invariants.md](invariants.zh.md)。要重新提议需要另行讨论。
 
 - **强制 graph DB。** Source of truth 保持为 SQLite。
 - **强制 cloud sync。** Local-first 是身份，而非某个 phase。
@@ -77,6 +79,6 @@ Local-first 是根基——所有数据都在 `<repo>/.parallax/impact.db`。无
 
 | 如果你是 ... | 起点 |
 |---|---|
-| 初次进入的 AI agent/工程师 | [README.md](../README.md) → 本文件 → [invariants.md](invariants.md) |
-| 寻找下一项工作的 contributor | [roadmap.md](roadmap.md) |
-| 对术语感到困惑的人 | [glossary.md](glossary.md) |
+| 初次进入的 AI agent/工程师 | [README.zh.md](../README.zh.md) → 本文件 → [invariants.md](invariants.zh.md) |
+| 寻找下一项工作的 contributor | [roadmap.zh.md](roadmap.zh.md) |
+| 对术语感到困惑的人 | [glossary.zh.md](glossary.zh.md) |

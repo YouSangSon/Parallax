@@ -1,5 +1,7 @@
 # Parallax — Vision
 
+**English** · [한국어](vision.ko.md) · [中文](vision.zh.md)
+
 **In one sentence:** Parallax is a **local-first impact context layer** that lets *AI coding agents* like Claude Code and Codex and humans see the same relation graph — connecting code, docs, policies, proposals, and decisions, reducing the context an agent spends re-reading the repo, and using MCP and a UI to tell you *what is affected* before and after a code change.
 
 

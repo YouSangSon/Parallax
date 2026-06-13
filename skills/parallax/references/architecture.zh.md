@@ -1,5 +1,7 @@
 # Parallax 架构
 
+[English](architecture.md) · [한국어](architecture.ko.md) · **中文**
+
 深入剖析 Parallax 底层的工作原理。当你需要扩展系统、调试出乎意料的查询结果，或理解某个 invariant 背后的设计理由时，请阅读本文。
 
 ## 核心概念：构建在 SQLite 之上的代码感知 fact graph

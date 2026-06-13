@@ -1,5 +1,7 @@
 # Roadmap
 
+**English** · [한국어](roadmap.ko.md) · [中文](roadmap.zh.md)
+
 > Organize upcoming work thematically. Progress tracking stays at the git log and PR level.
 
 This document records only the *direction we can move on without friction right now*. Big decisions are made without breaking [invariants.md](invariants.md).

@@ -5,6 +5,8 @@ description: Local-first code impact analyzer + agent memory layer for Claude Co
 
 # Parallax Skill
 
+[English](SKILL.md) · **한국어** · [中文](SKILL.zh.md)
+
 Parallax는 AI 코딩 에이전트를 위한 local-first code-aware memory layer다. 저장소를 entity와 relation으로 인덱싱하고, agent observation을 transaction DAG 위의 content-addressable fact로 받아들이며, 그 통합된 view를 MCP tool과 CLI를 통해 노출한다.
 
 ## When to invoke
@@ -106,7 +108,7 @@ Read-only resources: `parallax://reports/{id}`, `parallax://entities/{id}`, `par
 - **Content-addressable fact id.** `id = SHA-256(entity || attribute || value || op)`. 동일한 observation은 절대 중복되지 않는다.
 - **ADD-only schema migration.** column과 table은 추가되며, 아무것도 drop되지 않는다. `src/store.ts`에 있는 allowlist로 보호되는 `tryAddColumn` helper.
 - **Soft-delete only.** fact는 절대 DELETE되지 않는다. Branch GC는 *transaction*을 archive해서(`transactions.archived = 1`) recall이 더 이상 그것을 surface하지 않도록 하지만, 기저의 fact row는 살아남으며 다른 branch에서 참조될 수 있다.
-- **Redact-then-prompt gate.** 모든 LLM input/output은 `redactSecrets()`를 거친다 (11개 secret family: OpenAI/Stripe/GitHub/Slack/AWS/Google/npm/JWT/Bearer/DB URL/Private key). Redact된 fact는 value_blob='[REDACTED]'와 빈 embedding row를 갖는다.
+- **Redact-then-prompt gate.** 모든 LLM input/output은 `redactSecrets()`를 거친다 (12개 secret family: OpenAI/Stripe/GitHub/Slack/AWS access key/AWS secret/Google/npm/JWT/Bearer/DB URL/Private key). Redact된 fact는 value_blob='[REDACTED]'와 빈 embedding row를 갖는다.
 - **async-outside-tx pattern.** Embedding과 LLM 연산은 SQLite transaction이 열리기 *전에* 일어난다. 동기 `withAgentMemoryDb` 콜백은 쓰기만 수행한다.
 
 ## Lifecycle of a fact

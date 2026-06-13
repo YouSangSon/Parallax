@@ -264,6 +264,7 @@ The detailed backlog is tracked against [`docs/roadmap.md`](docs/roadmap.md).
 | [`docs/invariants.md`](docs/invariants.md) | Invariants like local-first, redaction, and the permission model |
 | [`docs/glossary.md`](docs/glossary.md) | Glossary |
 | [`skills/parallax/SKILL.md`](skills/parallax/SKILL.md) | Skill for Claude Code / Codex users |
+| [`skills/parallax/references/architecture.md`](skills/parallax/references/architecture.md) | Deep dive into the internal architecture |
 
 ---
 

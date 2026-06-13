@@ -1,5 +1,7 @@
 # Parallax — Value Proposition
 
+**English** · [한국어](value-proposition.ko.md) · [中文](value-proposition.zh.md)
+
 > **What this document is for:** A living one-pager, compressed so that an internal hackathon judge can grasp *what it is, why it matters, and how it's different* in 5 minutes. It keeps getting refined as development progresses.
 >
 > **Last updated:** 2026-04-30

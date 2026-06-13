@@ -237,7 +237,7 @@ npm audit --audit-level=high
 | **UI Explorer** | 在单一界面更直接地探索 changed → affected → evidence → action 流程 |
 | **Measurement** | fixture bench 增量与召回质量回归检测 |
 
-详细 backlog 以 [`docs/roadmap.md`](docs/roadmap.md) 为准进行管理。
+详细 backlog 以 [`docs/roadmap.zh.md`](docs/roadmap.zh.md) 为准进行管理。
 
 ---
 
@@ -258,12 +258,13 @@ npm audit --audit-level=high
 
 | 文档 | 内容 |
 | :--- | :--- |
-| [`docs/vision.md`](docs/vision.md) | 项目愿景 |
-| [`docs/value-proposition.md`](docs/value-proposition.md) | 价值主张与差异化 |
-| [`docs/roadmap.md`](docs/roadmap.md) | 当前 backlog 与下一批切片 |
-| [`docs/invariants.md`](docs/invariants.md) | local-first、脱敏、权限模型等不变量 |
-| [`docs/glossary.md`](docs/glossary.md) | 术语表 |
-| [`skills/parallax/SKILL.md`](skills/parallax/SKILL.md) | 面向 Claude Code / Codex 用户的 skill |
+| [`docs/vision.zh.md`](docs/vision.zh.md) | 项目愿景 |
+| [`docs/value-proposition.zh.md`](docs/value-proposition.zh.md) | 价值主张与差异化 |
+| [`docs/roadmap.zh.md`](docs/roadmap.zh.md) | 当前 backlog 与下一批切片 |
+| [`docs/invariants.zh.md`](docs/invariants.zh.md) | local-first、脱敏、权限模型等不变量 |
+| [`docs/glossary.zh.md`](docs/glossary.zh.md) | 术语表 |
+| [`skills/parallax/SKILL.zh.md`](skills/parallax/SKILL.zh.md) | 面向 Claude Code / Codex 用户的 skill |
+| [`skills/parallax/references/architecture.zh.md`](skills/parallax/references/architecture.zh.md) | 内部架构深入解析 |
 
 ---
 

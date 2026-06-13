@@ -1,5 +1,7 @@
 # Parallax Architecture
 
+**English** · [한국어](architecture.ko.md) · [中文](architecture.zh.md)
+
 Deep dive into how Parallax works under the hood. Read this when you need to extend the system, debug an unexpected query result, or understand the rationale behind an invariant.
 
 ## Core concept: a code-aware fact graph on SQLite

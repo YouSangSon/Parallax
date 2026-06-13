@@ -5,6 +5,8 @@ description: Local-first code impact analyzer + agent memory layer for Claude Co
 
 # Parallax Skill
 
+**English** · [한국어](SKILL.ko.md) · [中文](SKILL.zh.md)
+
 Parallax is the local-first code-aware memory layer for AI coding agents. It indexes a repository into entities and relations, accepts agent observations as content-addressable facts on a transaction DAG, and exposes the combined view through MCP tools and a CLI.
 
 ## When to invoke
@@ -106,7 +108,7 @@ Read-only resources: `parallax://reports/{id}`, `parallax://entities/{id}`, `par
 - **Content-addressable fact id.** `id = SHA-256(entity || attribute || value || op)`. Same observation never duplicates.
 - **ADD-only schema migration.** Columns and tables are added; nothing is dropped. Allowlist-guarded `tryAddColumn` helper in `src/store.ts`.
 - **Soft-delete only.** Facts are never DELETED. Branch GC archives *transactions* (`transactions.archived = 1`) so recall stops surfacing them, but the underlying fact rows survive and may be referenced from other branches.
-- **Redact-then-prompt gate.** All LLM input/output passes through `redactSecrets()` (11 secret families: OpenAI/Stripe/GitHub/Slack/AWS/Google/npm/JWT/Bearer/DB URL/Private key). Redacted facts get value_blob='[REDACTED]' and zero embedding row.
+- **Redact-then-prompt gate.** All LLM input/output passes through `redactSecrets()` (12 secret families: OpenAI/Stripe/GitHub/Slack/AWS access key/AWS secret/Google/npm/JWT/Bearer/DB URL/Private key). Redacted facts get value_blob='[REDACTED]' and zero embedding row.
 - **async-outside-tx pattern.** Embedding and LLM compute happen *before* the SQLite transaction opens; the sync `withAgentMemoryDb` callback only writes.
 
 ## Lifecycle of a fact

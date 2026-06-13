@@ -1,5 +1,7 @@
 # Security Policy
 
+[English](SECURITY.md) · **한국어** · [中文](SECURITY.zh.md)
+
 Parallax는 로컬 저장소를 읽고 분석하는 도구입니다. 보안 이슈는 일반 버그보다
 우선순위가 높습니다.
 

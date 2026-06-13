@@ -1,11 +1,13 @@
 # Parallax — 가치 제안 문서
 
+[English](value-proposition.md) · **한국어** · [中文](value-proposition.zh.md)
+
 > **이 문서의 역할:** 사내 개발공모전 평가자가 5분 안에 *무엇을·왜·어떻게 다른가*를 잡을 수 있도록 한 페이지로 압축한 살아있는 문서. 개발 진행에 따라 계속 보완한다.
 >
 > **마지막 갱신:** 2026-04-30
 >
 > **함께 보면 좋은 문서:**
-> - 사용자 대상 README: [`README.md`](../README.md)
+> - 사용자 대상 README: [`README.ko.md`](../README.ko.md)
 > - 큰 그림 설계 노트: [`docs/agent-db-exploration.ko.md`](agent-db-exploration.ko.md)
 > - 사용 흐름·예시: [`docs/agent-memory-cookbook.ko.md`]
 > - 진행 현황: [`docs/progress.ko.md`]

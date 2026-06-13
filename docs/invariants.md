@@ -1,5 +1,7 @@
 # Invariants
 
+**English** · [한국어](invariants.ko.md) · [中文](invariants.zh.md)
+
 > Core decisions that must not break even if the project starts over. New decisions are made only insofar as they do not violate this document.
 
 ---

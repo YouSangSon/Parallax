@@ -1,5 +1,7 @@
 # Security Policy
 
+**English** · [한국어](SECURITY.ko.md) · [中文](SECURITY.zh.md)
+
 Parallax is a tool that reads and analyzes local repositories. Security issues take
 higher priority than ordinary bugs.
 

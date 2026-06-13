@@ -95,8 +95,26 @@ function checkParity(zoneFiles) {
 
 // --- Markdown link extraction ---
 
+// Removes fenced code blocks (``` or ~~~) so that markdown link *examples*
+// inside documentation are not mistaken for real navigation links. Forbidden-
+// content scanning runs on the raw text separately, so secrets in code blocks
+// are still caught.
+function stripFencedCode(content) {
+  const out = [];
+  let inFence = false;
+  for (const line of content.split('\n')) {
+    if (/^\s*(```|~~~)/.test(line)) {
+      inFence = !inFence;
+      continue;
+    }
+    if (!inFence) out.push(line);
+  }
+  return out.join('\n');
+}
+
 // Yields { isImage, target } for every markdown link, with anchors/urls handled.
-function* iterLinks(content) {
+function* iterLinks(rawContent) {
+  const content = stripFencedCode(rawContent);
   const linkRe = /(!?)\[[^\]]*\]\(([^)]+)\)/g;
   let match;
   while ((match = linkRe.exec(content)) !== null) {
@@ -136,25 +154,31 @@ function checkSameLanguageLinks(file, content) {
   const { base: ownBase, lang } = parseVariant(file);
   if (!lang) return; // canonical files are not checked
   const fileDir = dirname(file);
-  const twinSuffix = `.${lang}.md`;
+  const own = siblingPaths(ownBase);
+  // The file's own switcher links (English canonical + the other-language twin)
+  // are always allowed; they are how a reader hops languages.
+  const ownSiblings = new Set([own.canonical, own.ko, own.zh]);
 
   for (const { isImage, target } of iterLinks(content)) {
     if (isImage) continue;
     if (!target.endsWith('.md')) continue;
-    // Only flag links to a canonical T.md, not an already-localized variant.
-    if (target.endsWith('.ko.md') || target.endsWith('.zh.md')) continue;
 
     // Resolve the target relative to the linking file's own directory.
     const resolved = posix.normalize(join(fileDir, target));
+    if (ownSiblings.has(resolved)) continue;
 
-    // Exempt switcher self-references: links to this file's own base variant.
-    if (resolved === ownBase) continue;
-
-    // Same-language twin path for the (canonical) target.
-    const twin = `${resolved.slice(0, -'.md'.length)}${twinSuffix}`;
-    if (trackedSet.has(twin)) {
-      report(file, `same-language link leak: links to canonical ${target} but ${basename(twin)} twin exists`);
-    }
+    // The same-language variant the link *should* point to for this target.
+    const { base: targetBase } = parseVariant(resolved);
+    const sameLangVariant = siblingPaths(targetBase)[lang];
+    // Only enforce when a same-language twin actually exists for that target.
+    if (!trackedSet.has(sameLangVariant)) continue;
+    // Correct already: the link points at the same-language variant.
+    if (resolved === sameLangVariant) continue;
+    // Otherwise it leaks to a different language (canonical or the wrong language).
+    report(
+      file,
+      `cross-language link leak: links to ${target} but same-language ${basename(sameLangVariant)} exists`
+    );
   }
 }
 

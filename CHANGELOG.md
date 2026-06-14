@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Extracted the MCP search subsystem (keyword/FTS/semantic/graph-proximity ranking and row queries) out of `src/mcp.ts` into `src/mcp_search.ts`, with the DB helpers shared by both surfaces in `src/mcp_shared.ts` (search-tool output unchanged), reducing `mcp.ts` from ~3583 to ~2263 lines.
 - Extracted the impact-map and report-delta-policy rendering out of `src/ui.ts` into `src/ui/impact_map.ts`, `src/ui/report_delta.ts`, and `src/ui/shared.ts` (rendered HTML byte-for-byte unchanged), reducing `ui.ts` from ~3056 to ~2237 lines.
 - Consolidated the work-artifact freshness helpers that `src/ui.ts` and `src/context_pack.ts` each duplicated into a shared `src/work_artifacts.ts` (only byte-identical helpers merged; drifted copies left in place; behavior unchanged).
+- Split `src/cross_repo_resolver.ts` into per-protocol consumer-matcher modules under `src/cross_repo/` (HTTP/Spring, GraphQL, Protobuf, AsyncAPI) plus shared helpers/types (`resolveCrossRepoContracts` output unchanged), reducing `cross_repo_resolver.ts` from ~1401 to ~534 lines.
 
 ### Fixed
 

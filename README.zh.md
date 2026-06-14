@@ -267,6 +267,7 @@ npm audit --audit-level=high
 | [`docs/mcp.zh.md`](docs/mcp.zh.md) | MCP 服务器、tool 与 resource |
 | [`docs/cli-reference.zh.md`](docs/cli-reference.zh.md) | 每个 CLI 命令、标志与 exit code |
 | [`docs/extending-adapters.zh.md`](docs/extending-adapters.zh.md) | 编写 semantic adapter |
+| [`docs/verification.zh.md`](docs/verification.zh.md) | 验证层、测试 script 与 dogfood guard |
 | [`skills/parallax/SKILL.zh.md`](skills/parallax/SKILL.zh.md) | 面向 Claude Code / Codex 用户的 skill |
 | [`skills/parallax/references/architecture.zh.md`](skills/parallax/references/architecture.zh.md) | 内部架构深入解析 |
 

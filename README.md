@@ -267,6 +267,7 @@ The detailed backlog is tracked against [`docs/roadmap.md`](docs/roadmap.md).
 | [`docs/mcp.md`](docs/mcp.md) | MCP server, tools, and resources |
 | [`docs/cli-reference.md`](docs/cli-reference.md) | Every CLI command, flag, and exit code |
 | [`docs/extending-adapters.md`](docs/extending-adapters.md) | Authoring semantic adapters |
+| [`docs/verification.md`](docs/verification.md) | Verification layers, test scripts, and the dogfood guard |
 | [`skills/parallax/SKILL.md`](skills/parallax/SKILL.md) | Skill for Claude Code / Codex users |
 | [`skills/parallax/references/architecture.md`](skills/parallax/references/architecture.md) | Deep dive into the internal architecture |
 

@@ -267,6 +267,7 @@ npm audit --audit-level=high
 | [`docs/mcp.ko.md`](docs/mcp.ko.md) | MCP 서버, tool, resource |
 | [`docs/cli-reference.ko.md`](docs/cli-reference.ko.md) | 모든 CLI 명령, 플래그, exit code |
 | [`docs/extending-adapters.ko.md`](docs/extending-adapters.ko.md) | semantic adapter 작성 |
+| [`docs/verification.ko.md`](docs/verification.ko.md) | 검증 계층, 테스트 script, dogfood guard |
 | [`skills/parallax/SKILL.ko.md`](skills/parallax/SKILL.ko.md) | Claude Code/Codex 사용자용 skill |
 | [`skills/parallax/references/architecture.ko.md`](skills/parallax/references/architecture.ko.md) | 내부 아키텍처 심화 |
 

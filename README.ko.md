@@ -213,6 +213,7 @@ npm run docs:lint
 | `npm run test:mcp` | MCP impact/context/memory/telemetry/path validation 검증 |
 | `npm run test:security` | path containment와 redaction 검증 |
 | `npm run test:ui` | local UI snapshot, server, JSON resource endpoints 검증 |
+| `npm run test:dogfood` | Parallax를 자기 자신에 인덱싱해 내부 의존성 그래프가 유지되는지 검증 ([`docs/verification.ko.md`](docs/verification.ko.md) 참고) |
 
 릴리스 전 권장 체크:
 

@@ -213,6 +213,7 @@ Key scripts:
 | `npm run test:mcp` | Verify MCP impact/context/memory/telemetry/path validation |
 | `npm run test:security` | Verify path containment and redaction |
 | `npm run test:ui` | Verify local UI snapshot, server, and JSON resource endpoints |
+| `npm run test:dogfood` | Self-index Parallax and assert the internal dependency graph survives (see [`docs/verification.md`](docs/verification.md)) |
 
 Recommended pre-release checks:
 

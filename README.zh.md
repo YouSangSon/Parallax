@@ -213,6 +213,7 @@ npm run docs:lint
 | `npm run test:mcp` | 验证 MCP impact/context/memory/telemetry/路径校验 |
 | `npm run test:security` | 验证路径包含约束与脱敏 |
 | `npm run test:ui` | 验证本地 UI 快照、服务器与 JSON 资源端点 |
+| `npm run test:dogfood` | 对 Parallax 自身建立索引并验证内部依赖图未坍缩（参见 [`docs/verification.zh.md`](docs/verification.zh.md)） |
 
 发布前建议的检查：
 

@@ -183,11 +183,99 @@ reflectFacts(repoRoot, options)
 
 承重原则参见 `docs/invariants.md`。
 
+## 代码库布局
+
+`src/` 按职责组织。这张地图展示每个关注点所在的位置，便于你知道该阅读或扩展哪个文件。
+
+**Entry & orchestration**
+
+| Path | 职责 |
+|---|---|
+| `src/index.ts` | Public API barrel —— 重新导出受支持的编程接口 |
+| `src/cli.ts` | CLI dispatch（命令 if-chain、flag 解析、帮助文本） |
+| `src/indexer.ts` | 索引流水线 + `createDefaultRegistry`（按顺序接线各 adapter） |
+| `src/analyzer.ts` | 在已索引图上计算 impact |
+| `src/graph.ts` | 图 export |
+| `src/store.ts` | SQLite schema、ADD-only 迁移与 DB 访问辅助函数 |
+| `src/types.ts` | 共享类型定义 |
+| `src/confidence.ts` | 共享 confidence 守卫（`asConfidence`，强制转换为合法的 `Confidence`） |
+
+**MCP surface**
+
+| Path | 职责 |
+|---|---|
+| `src/mcp.ts` | MCP 服务器：tool/resource 注册 + context-pack 粘合 |
+| `src/mcp_search.ts` | 搜索子系统 —— keyword/FTS/semantic/graph-proximity 排序 + 行查询 |
+| `src/mcp_shared.ts` | `mcp.ts` 与 `mcp_search.ts` 共享的 DB 辅助函数 |
+| `src/context_pack.ts` | Context-pack 构建 / freshness / compaction 流水线 |
+
+**Adapters**（`src/adapters/`）
+
+| Path | 职责 |
+|---|---|
+| `src/adapters/registry.ts` | First-match-wins 派发，catch-all 置于最后 |
+| `src/adapters/types.ts` | `SemanticAdapter` 契约（descriptor、pending entity/relation/evidence） |
+| `src/adapters/multi-language-regex.ts` | 宽泛的 multi-language catch-all adapter |
+| `src/adapters/config-infra.ts` | Config / infrastructure 文件 adapter |
+| `src/adapters/build-system-package.ts` | Build-system / package-manifest adapter 入口 |
+| `src/adapters/build-system/{npm,maven,gradle,go,cargo,python}.ts` | 各生态系统的 manifest 解析器 |
+| `src/adapters/build-system/{shared,types}.ts` | 各生态系统解析器共享的辅助函数与类型 |
+
+**Contracts**
+
+| Path | 职责 |
+|---|---|
+| `src/contract_diff.ts` | 编排器 —— 派发到各格式的分类器 |
+| `src/contract_diff/{openapi,asyncapi,protobuf,graphql}.ts` | 各格式的兼容性分类器（生成 diff 变更） |
+| `src/contract_diff/{shared,types}.ts` | 分类器共享的辅助函数与类型 |
+| `src/{openapi,graphql,protobuf,asyncapi}_compat.ts` | 抽取结构化兼容性签名（供分类器消费）的低层解析器 |
+
+**Agent memory**
+
+| Path | 职责 |
+|---|---|
+| `src/agent_memory.ts` | remember/recall/trace + branch + `withAgentMemoryDb` |
+| `src/reflection.ts` | Phase 3 LLM 整合流水线（summary fact） |
+| `src/profile.ts` | Phase 4 聚合的 entity 快照（构建在 recall 之上） |
+| `src/branch_gc.ts` | Soft-delete branch GC（`gcBranches`） |
+| `src/session_import.ts` | 将 Codex/Claude 会话记录导入为 fact |
+| `src/embeddings.ts` | Embedding provider 抽象（prefix-sentinel） |
+| `src/llm.ts` | LLM provider 抽象（`summarize`，prefix-sentinel） |
+
+**Workspace & cross-repo**
+
+| Path | 职责 |
+|---|---|
+| `src/workspace.ts` | Workspace 目录（具名的 multi-repo 成员关系 + trust policy） |
+| `src/cross_repo_resolver.ts` | 在 workspace 范围内解析 cross-repo 契约链接（例如 `CONSUMES_HTTP_ENDPOINT`） |
+
+**UI**（`src/ui.ts` + `src/ui/`）
+
+| Path | 职责 |
+|---|---|
+| `src/ui.ts` | UI 服务器 + `renderUiHtml` 组合 + 快照构建 |
+| `src/ui/styles.ts`、`src/ui/client.ts` | 抽取出的静态 CSS / 客户端 JS |
+| `src/ui/impact_map.ts` | Impact-map 渲染 |
+| `src/ui/report_delta.ts` | Report-delta 策略 + 渲染 |
+| `src/ui/shared.ts` | 共享的 UI 呈现辅助函数 |
+
+**Supporting**
+
+| Path | 职责 |
+|---|---|
+| `src/security.ts` | 秘密 redaction + 边界处的 path/root 归一化 |
+| `src/artifacts.ts` | Work-artifact（markdown doc/policy/proposal/…）分类 |
+| `src/git-snapshot.ts` | Git commit/branch/dirty 快照捕获 |
+| `src/doctor.ts` | 环境/健康诊断 |
+| `src/init.ts` | 项目初始化（`.parallax/` config + DB） |
+| `src/branding.ts` | 产品/包名称、`.parallax` 数据目录、`PARALLAX_*` env 读取器 |
+
 ## 扩展时首先该看哪里
 
 - 新表 → `src/store.ts:migrate()`（并更新 tryAddColumn 的 allowlist）
 - 新 CLI 命令 → `src/cli.ts` 的 if-chain + `valueFlags` Set + `printHelp`
 - 新 MCP tool → `src/mcp.ts` 的 `server.registerTool` 块（如实标注 readOnlyHint/destructiveHint）
+- 新 adapter → 实现 `src/adapters/types.ts` 中的 `SemanticAdapter` 契约，并在 `src/indexer.ts:createDefaultRegistry` 中注册（顺序很重要 —— catch-all 保持最后）；多文件 adapter 可参照 `src/adapters/build-system/`
 - 类似 profile 的新聚合 API → 考虑构建在 `recall`/`recallSemantic`/`trace` 之上，而不是复制粘贴它们的 SQL
 - 新的外部集成（LLM、embedding 等）→ 仿照 `src/llm.ts` 或 `src/embeddings.ts` 中的 prefix-sentinel 模式
 - 改变 invariant 的新行为 → 先在 `docs/invariants.md` 中更新并附上设计理由

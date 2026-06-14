@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Extracted the context-pack pipeline (build, reuse-persistence reference, work-artifact freshness, evidence compaction) out of `src/mcp.ts` into a dedicated `src/context_pack.ts` module (tool output byte-for-byte unchanged), reducing `mcp.ts` from ~4068 to ~3583 lines.
 - Split `src/contract_diff.ts` into per-format modules under `src/contract_diff/` (OpenAPI, AsyncAPI, Protobuf, GraphQL) plus shared types and helpers (`analyzeContractDiff` output unchanged), reducing `contract_diff.ts` from ~2279 to ~937 lines.
 - Split the build-system package adapter into per-ecosystem modules under `src/adapters/build-system/` (npm, Maven, Gradle, Go, Cargo, Python) plus shared helpers/types (emitted index events unchanged, adapter version unchanged), reducing `build-system-package.ts` from ~1777 to ~402 lines.
+- Extracted the MCP search subsystem (keyword/FTS/semantic/graph-proximity ranking and row queries) out of `src/mcp.ts` into `src/mcp_search.ts`, with the DB helpers shared by both surfaces in `src/mcp_shared.ts` (search-tool output unchanged), reducing `mcp.ts` from ~3583 to ~2263 lines.
 
 ### Fixed
 

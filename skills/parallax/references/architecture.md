@@ -183,11 +183,99 @@ All providers use Node 24+ native `fetch` — no SDK dependencies (D-012). Anthr
 
 See `docs/invariants.md` for the load-bearing principles.
 
+## Codebase layout
+
+`src/` is organized by responsibility. This map shows where each concern lives so you know which file to read or extend.
+
+**Entry & orchestration**
+
+| Path | Responsibility |
+|---|---|
+| `src/index.ts` | Public API barrel — re-exports the supported programmatic surface |
+| `src/cli.ts` | CLI dispatch (the command if-chain, flag parsing, help text) |
+| `src/indexer.ts` | The indexing pipeline + `createDefaultRegistry` (wiring adapters in order) |
+| `src/analyzer.ts` | Impact computation over the indexed graph |
+| `src/graph.ts` | Graph export |
+| `src/store.ts` | SQLite schema, ADD-only migrations, and DB access helpers |
+| `src/types.ts` | Shared type definitions |
+| `src/confidence.ts` | The shared confidence guard (`asConfidence` coercion to a valid `Confidence`) |
+
+**MCP surface**
+
+| Path | Responsibility |
+|---|---|
+| `src/mcp.ts` | MCP server: tool/resource registration + context-pack glue |
+| `src/mcp_search.ts` | Search subsystem — keyword/FTS/semantic/graph-proximity ranking + row queries |
+| `src/mcp_shared.ts` | DB helpers shared by `mcp.ts` and `mcp_search.ts` |
+| `src/context_pack.ts` | Context-pack build / freshness / compaction pipeline |
+
+**Adapters** (`src/adapters/`)
+
+| Path | Responsibility |
+|---|---|
+| `src/adapters/registry.ts` | First-match-wins dispatch, catch-all last |
+| `src/adapters/types.ts` | The `SemanticAdapter` contract (descriptors, pending entities/relations/evidence) |
+| `src/adapters/multi-language-regex.ts` | The broad multi-language catch-all adapter |
+| `src/adapters/config-infra.ts` | Config / infrastructure file adapter |
+| `src/adapters/build-system-package.ts` | Build-system / package-manifest adapter entry point |
+| `src/adapters/build-system/{npm,maven,gradle,go,cargo,python}.ts` | Per-ecosystem manifest parsers |
+| `src/adapters/build-system/{shared,types}.ts` | Helpers and types shared across the ecosystem parsers |
+
+**Contracts**
+
+| Path | Responsibility |
+|---|---|
+| `src/contract_diff.ts` | Orchestrator — dispatches to the per-format classifiers |
+| `src/contract_diff/{openapi,asyncapi,protobuf,graphql}.ts` | Per-format compatibility classifiers (produce diff changes) |
+| `src/contract_diff/{shared,types}.ts` | Shared helpers and types for the classifiers |
+| `src/{openapi,graphql,protobuf,asyncapi}_compat.ts` | Low-level parsers that extract structured compatibility signatures consumed by the classifiers |
+
+**Agent memory**
+
+| Path | Responsibility |
+|---|---|
+| `src/agent_memory.ts` | remember/recall/trace + branch + `withAgentMemoryDb` |
+| `src/reflection.ts` | Phase 3 LLM consolidation pipeline (summary facts) |
+| `src/profile.ts` | Phase 4 aggregated entity snapshot (built on top of recall) |
+| `src/branch_gc.ts` | Soft-delete branch GC (`gcBranches`) |
+| `src/session_import.ts` | Import Codex/Claude session transcripts into facts |
+| `src/embeddings.ts` | Embedding provider abstraction (prefix-sentinel) |
+| `src/llm.ts` | LLM provider abstraction (`summarize`, prefix-sentinel) |
+
+**Workspace & cross-repo**
+
+| Path | Responsibility |
+|---|---|
+| `src/workspace.ts` | Workspace catalog (named multi-repo membership + trust policy) |
+| `src/cross_repo_resolver.ts` | Resolves cross-repo contract links (e.g. `CONSUMES_HTTP_ENDPOINT`) across a workspace |
+
+**UI** (`src/ui.ts` + `src/ui/`)
+
+| Path | Responsibility |
+|---|---|
+| `src/ui.ts` | UI server + `renderUiHtml` composition + snapshot building |
+| `src/ui/styles.ts`, `src/ui/client.ts` | Extracted static CSS / client JS |
+| `src/ui/impact_map.ts` | Impact-map rendering |
+| `src/ui/report_delta.ts` | Report-delta policy + rendering |
+| `src/ui/shared.ts` | Shared UI presentation helpers |
+
+**Supporting**
+
+| Path | Responsibility |
+|---|---|
+| `src/security.ts` | Secret redaction + path/root normalization at boundaries |
+| `src/artifacts.ts` | Work-artifact (markdown doc/policy/proposal/…) classification |
+| `src/git-snapshot.ts` | Git commit/branch/dirty snapshot capture |
+| `src/doctor.ts` | Environment/health diagnostics |
+| `src/init.ts` | Project initialization (`.parallax/` config + DB) |
+| `src/branding.ts` | Product/package names, `.parallax` data dir, `PARALLAX_*` env reader |
+
 ## Where to look first when extending
 
 - New table → `src/store.ts:migrate()` (and update tryAddColumn allowlists)
 - New CLI command → `src/cli.ts` if-chain + `valueFlags` Set + `printHelp`
 - New MCP tool → `src/mcp.ts` `server.registerTool` block (annotate readOnlyHint/destructiveHint honestly)
+- New adapter → implement the `SemanticAdapter` contract in `src/adapters/types.ts`, register it in `src/indexer.ts:createDefaultRegistry` (order matters — catch-all stays last); for a multi-file adapter, follow `src/adapters/build-system/`
 - New aggregation API like profile → consider building on top of `recall`/`recallSemantic`/`trace` rather than copy-pasting their SQL
 - New external integration (LLM, embedding, etc.) → mirror the prefix-sentinel pattern in `src/llm.ts` or `src/embeddings.ts`
 - New behavior that changes invariants → update `docs/invariants.md` first with a rationale

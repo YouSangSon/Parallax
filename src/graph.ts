@@ -208,8 +208,16 @@ function upsertRowNode(
 ): void {
   const existing = nodes.get(id);
   if (existing) {
-    if (existing.group !== 'changed' && group === 'changed') existing.group = 'changed';
-    if (!existing.confidence && confidence) existing.confidence = confidence;
+    // Immutable upgrade: rebuild the node instead of mutating it in place.
+    const upgradeGroup = existing.group !== 'changed' && group === 'changed';
+    const addConfidence = !existing.confidence && confidence;
+    if (upgradeGroup || addConfidence) {
+      nodes.set(id, {
+        ...existing,
+        ...(upgradeGroup ? { group: 'changed' as const } : {}),
+        ...(addConfidence ? { confidence } : {})
+      });
+    }
     return;
   }
   nodes.set(id, {

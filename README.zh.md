@@ -213,6 +213,7 @@ npm run docs:lint
 | `npm run test:mcp` | 验证 MCP impact/context/memory/telemetry/路径校验 |
 | `npm run test:security` | 验证路径包含约束与脱敏 |
 | `npm run test:ui` | 验证本地 UI 快照、服务器与 JSON 资源端点 |
+| `npm run test:dogfood` | 对 Parallax 自身建立索引并验证内部依赖图未坍缩（参见 [`docs/verification.zh.md`](docs/verification.zh.md)） |
 
 发布前建议的检查：
 
@@ -267,6 +268,7 @@ npm audit --audit-level=high
 | [`docs/mcp.zh.md`](docs/mcp.zh.md) | MCP 服务器、tool 与 resource |
 | [`docs/cli-reference.zh.md`](docs/cli-reference.zh.md) | 每个 CLI 命令、标志与 exit code |
 | [`docs/extending-adapters.zh.md`](docs/extending-adapters.zh.md) | 编写 semantic adapter |
+| [`docs/verification.zh.md`](docs/verification.zh.md) | 验证层、测试 script 与 dogfood guard |
 | [`skills/parallax/SKILL.zh.md`](skills/parallax/SKILL.zh.md) | 面向 Claude Code / Codex 用户的 skill |
 | [`skills/parallax/references/architecture.zh.md`](skills/parallax/references/architecture.zh.md) | 内部架构深入解析 |
 

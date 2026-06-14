@@ -12,6 +12,30 @@ import { databasePath, getRepoId, impactDir, latestCompletedIndexRun, openDataba
 import { normalizeRepoRoot, resolveInsideRoot } from './security.js';
 import type { GraphExport, ImpactAction, ImpactReport } from './types.js';
 import { UI_CLIENT_JS } from './ui/client.js';
+import { buildImpactMap, renderImpactMapPanel } from './ui/impact_map.js';
+import {
+  comparisonBucket,
+  defaultReportDeltaPolicy,
+  policyNumberAt,
+  renderReportDeltaPanel,
+  reportDeltaPolicyPresets,
+  reportDeltaPolicyReason,
+  reportDeltaSummary,
+  reportReviewLoad
+} from './ui/report_delta.js';
+import {
+  actionByTargetPath,
+  actionCommandText,
+  classifyImpactLane,
+  compareAffectedFilesForUi,
+  entityLabel,
+  escapeHtml,
+  evidenceSourceLocation,
+  impactEvidenceMatchesPath,
+  shortenMiddle,
+  sourceHref,
+  topAffectedFilesForSummary
+} from './ui/shared.js';
 import { UI_STYLES_MAIN, UI_STYLES_SOURCE_VIEWER } from './ui/styles.js';
 
 export type UiOptions = {
@@ -24,8 +48,8 @@ export type UiServerOptions = UiOptions & {
   port?: number;
 };
 
-type ImpactLaneId = 'code' | 'tests' | 'knowledge' | 'contracts' | 'config';
-type ImpactLaneTone = 'green' | 'amber' | 'teal' | 'blue' | 'red';
+export type ImpactLaneId = 'code' | 'tests' | 'knowledge' | 'contracts' | 'config';
+export type ImpactLaneTone = 'green' | 'amber' | 'teal' | 'blue' | 'red';
 type ReportDeltaSummary = 'wider' | 'narrower' | 'unchanged';
 
 export type UiSnapshot = {
@@ -291,7 +315,7 @@ type WorkspaceLinkRow = {
   target_service: string | null;
 };
 
-type ImpactMapNode = {
+export type ImpactMapNode = {
   id: string;
   label: string;
   kind: string;
@@ -302,7 +326,7 @@ type ImpactMapNode = {
   path?: string;
 };
 
-type ImpactMapEdge = {
+export type ImpactMapEdge = {
   from: string;
   to: string;
   label: string;
@@ -310,7 +334,7 @@ type ImpactMapEdge = {
   targetPath?: string;
 };
 
-type ImpactLane = {
+export type ImpactLane = {
   id: ImpactLaneId;
   label: string;
   count: number;
@@ -601,156 +625,6 @@ function renderImpactTriageStrip(snapshot: UiSnapshot, m: UiMessages): string {
   `;
 }
 
-function renderReportDeltaPanel(comparison: UiReportComparison | null, m: UiMessages): string {
-  if (!comparison) return '';
-  const headline = comparison.summary === 'wider'
-    ? m.impactWidened
-    : comparison.summary === 'narrower'
-      ? m.impactNarrowed
-      : m.impactUnchanged;
-  const headlineDetail = comparison.policyReason;
-  const metricRows = [
-    { label: m.reviewLoad, value: String(comparison.reviewLoadCurrent), meta: formatSignedDelta(comparison.reviewLoadDelta), delta: comparison.reviewLoadDelta },
-    { label: m.affectedPaths, value: formatSignedDelta(comparison.affectedDelta), meta: m.delta, delta: comparison.affectedDelta },
-    { label: m.evidence, value: formatSignedDelta(comparison.evidenceDelta), meta: m.delta, delta: comparison.evidenceDelta },
-    { label: m.actions, value: formatSignedDelta(comparison.actionDelta), meta: m.delta, delta: comparison.actionDelta }
-  ].map((item) => `
-    <li class="${escapeHtml(deltaClass(item.delta))}">
-      <span>${escapeHtml(item.label)}</span>
-      <strong>${escapeHtml(item.value)}</strong>
-      <em>${escapeHtml(item.meta)}</em>
-    </li>
-  `).join('');
-  const laneRows = comparison.laneDeltas.map((lane) => {
-    const detail = lane.delta === 0 ? `${lane.current} current` : lane.topPath ?? `${lane.current} current`;
-    return `
-      <li class="delta-lane delta-lane-${escapeHtml(lane.tone)} ${escapeHtml(deltaClass(lane.delta))}">
-        <span>${escapeHtml(lane.label)}</span>
-        <b>${escapeHtml(formatSignedDelta(lane.delta))}</b>
-        <small>${escapeHtml(detail)}</small>
-      </li>
-    `;
-  }).join('');
-  const confidenceRows = comparison.confidenceDeltas
-    .filter((item) => item.current > 0 || item.previous > 0 || item.delta !== 0)
-    .map((item) => `
-      <span class="${escapeHtml(deltaClass(item.delta))}">
-        <b>${escapeHtml(formatSignedDelta(item.delta))}</b>${escapeHtml(item.label)}
-      </span>
-    `).join('');
-  const addedRows = renderDeltaPathRows(comparison.addedAffectedPaths, 'added', m);
-  const removedRows = renderDeltaPathRows(comparison.removedAffectedPaths, 'removed', m);
-  const presetRows = comparison.policyPresets.map((preset) => `
-    <li class="delta-preset delta-preset-${escapeHtml(preset.summary)}">
-      <strong>${escapeHtml(preset.label)}</strong>
-      <span>${escapeHtml(preset.summary)}</span>
-      <b>${escapeHtml(formatSignedDelta(preset.reviewLoadDelta))}</b>
-      <small>+${escapeHtml(String(preset.widenThreshold))}/-${escapeHtml(String(preset.narrowThreshold))} · ${escapeHtml(policyWeightsLabel(preset.weights))}</small>
-      <button class="copy-command" type="button" ${copyCommandAttribute(reportDeltaPolicyConfigPatch(preset))} aria-label="${escapeHtml(`${m.ariaCopyConfigPrefix} ${preset.label}`)}">${escapeHtml(m.copyConfig)}</button>
-    </li>
-  `).join('');
-
-  return `
-    <section class="panel report-delta-panel" aria-label="${escapeHtml(m.ariaSavedReportComparison)}">
-      <div class="panel-heading">
-        <h2>${escapeHtml(m.reportDelta)}</h2>
-        <div class="panel-chips">
-          <span>vs ${escapeHtml(comparison.baseReportId)}</span>
-          <span>policy ${escapeHtml(comparison.policy.source)}</span>
-          <span>widen +${escapeHtml(String(comparison.policy.widenThreshold))}</span>
-          <span>narrow -${escapeHtml(String(comparison.policy.narrowThreshold))}</span>
-          <span>${escapeHtml(comparison.baseCreatedAt)}</span>
-        </div>
-      </div>
-      <div class="delta-content">
-        <div class="delta-hero delta-hero-${escapeHtml(comparison.summary)}">
-          <span>${escapeHtml(m.savedReportComparison)}</span>
-          <strong>${escapeHtml(headline)}</strong>
-          <small>${escapeHtml(headlineDetail)}</small>
-        </div>
-        <ul class="delta-metrics" aria-label="${escapeHtml(m.ariaDeltaMetricsList)}">${metricRows}</ul>
-        <div class="delta-detail">
-          <div class="delta-confidence" aria-label="${escapeHtml(m.ariaConfidenceDelta)}">${confidenceRows || `<span><b>0</b>${escapeHtml(m.stableConfidence)}</span>`}</div>
-          <ul class="delta-lanes">${laneRows}</ul>
-          <div class="delta-policy" aria-label="${escapeHtml(m.ariaPolicyWeights)}">
-            <span>${escapeHtml(m.affectedWeight)} ${escapeHtml(String(comparison.policy.weights.affected))}</span>
-            <span>${escapeHtml(m.actionWeight)} ${escapeHtml(String(comparison.policy.weights.actions))}</span>
-            <span>${escapeHtml(m.evidenceWeight)} ${escapeHtml(String(comparison.policy.weights.evidence))}</span>
-          </div>
-          <ul class="delta-presets" aria-label="${escapeHtml(m.ariaPresetComparison)}">${presetRows}</ul>
-          <div class="delta-paths">
-            <section>
-              <h3>${escapeHtml(m.addedImpact)}</h3>
-              <ul>${addedRows || `<li>${escapeHtml(m.none)}</li>`}</ul>
-            </section>
-            <section>
-              <h3>${escapeHtml(m.removedImpact)}</h3>
-              <ul>${removedRows || `<li>${escapeHtml(m.none)}</li>`}</ul>
-            </section>
-          </div>
-        </div>
-      </div>
-    </section>
-  `;
-}
-
-function deltaClass(delta: number): string {
-  if (delta > 0) return 'delta-positive';
-  if (delta < 0) return 'delta-negative';
-  return 'delta-neutral';
-}
-
-function policyWeightsLabel(weights: UiReportDeltaPolicy['weights']): string {
-  return `aff${weights.affected}/act${weights.actions}/ev${weights.evidence}`;
-}
-
-function reportDeltaPolicyConfigPatch(policy: Pick<UiReportDeltaPolicyPreset, 'widenThreshold' | 'narrowThreshold' | 'weights'>): string {
-  return JSON.stringify(
-    {
-      ui: {
-        reportDeltaPolicy: {
-          widenThreshold: policy.widenThreshold,
-          narrowThreshold: policy.narrowThreshold,
-          weights: policy.weights
-        }
-      }
-    },
-    null,
-    2
-  );
-}
-
-function copyCommandAttribute(value: string): string {
-  return `data-command="${escapeHtml(value).replaceAll('\n', '&#10;')}"`;
-}
-
-function renderDeltaPathRows(paths: readonly string[], mode: 'added' | 'removed', m: UiMessages): string {
-  return paths.slice(0, 4).map((pathValue) => {
-    const sourceLink = `<a class="source-link" href="${escapeHtml(sourceHref(pathValue, 1))}" target="_blank" rel="noreferrer">${escapeHtml(m.source)}</a>`;
-    if (mode === 'added') {
-      return `
-        <li class="delta-path-row selectable-impact" tabindex="0" role="button" data-impact-path="${escapeHtml(pathValue)}" data-filter-text="${escapeHtml(`added impact ${pathValue}`)}">
-          <span>${escapeHtml(pathValue)}</span>
-          <small>${escapeHtml(m.inspectImpact)}</small>
-          ${sourceLink}
-        </li>
-      `;
-    }
-    return `
-      <li class="delta-path-row" data-filter-text="${escapeHtml(`removed impact ${pathValue}`)}">
-        <span>${escapeHtml(pathValue)}</span>
-        <small>${escapeHtml(m.noLongerAffected)}</small>
-        ${sourceLink}
-      </li>
-    `;
-  }).join('');
-}
-
-function formatSignedDelta(delta: number): string {
-  if (delta > 0) return `+${delta}`;
-  return String(delta);
-}
-
 function buildImpactLanes(report: UiReportPreview, workArtifacts: readonly UiWorkArtifactImpact[]): ImpactLane[] {
   const lanes: ImpactLane[] = [
     { id: 'code', label: 'Runtime code', count: 0, summary: 'No source files affected', tone: 'green' },
@@ -818,31 +692,6 @@ function readReportDeltaPolicy(repoRoot: string): UiReportDeltaPolicy {
       evidence: rawWeights ? policyNumberAt(rawWeights, 'evidence', 0, 1_000) ?? fallback.weights.evidence : fallback.weights.evidence
     }
   };
-}
-
-function defaultReportDeltaPolicy(): UiReportDeltaPolicy {
-  return {
-    source: 'default',
-    widenThreshold: 1,
-    narrowThreshold: 1,
-    weights: {
-      affected: 3,
-      actions: 5,
-      evidence: 1
-    }
-  };
-}
-
-function policyNumberAt(
-  value: Record<string, unknown>,
-  key: string,
-  min: number,
-  max: number
-): number | undefined {
-  const candidate = value[key];
-  if (typeof candidate !== 'number' || !Number.isFinite(candidate)) return undefined;
-  if (candidate < min || candidate > max) return undefined;
-  return candidate;
 }
 
 function readReportComparison(
@@ -924,99 +773,6 @@ function reportComparisonFromRows(
   };
 }
 
-function reportDeltaPolicyPresets(
-  current: UiReportPreview,
-  previous: UiReportPreview,
-  activePolicy: UiReportDeltaPolicy
-): UiReportDeltaPolicyPreset[] {
-  const presets: Array<{ id: string; label: string; policy: UiReportDeltaPolicy }> = [
-    { id: 'active', label: 'Active', policy: activePolicy },
-    { id: 'strict', label: 'Strict', policy: strictReportDeltaPolicy() },
-    { id: 'relaxed', label: 'Relaxed', policy: relaxedReportDeltaPolicy() },
-    { id: 'action-heavy', label: 'Action-heavy', policy: actionHeavyReportDeltaPolicy() }
-  ];
-  return presets.map((item) => {
-    const currentLoad = reportReviewLoad(current, item.policy);
-    const previousLoad = reportReviewLoad(previous, item.policy);
-    const reviewLoadDelta = currentLoad - previousLoad;
-    return {
-      id: item.id,
-      label: item.label,
-      summary: reportDeltaSummary(reviewLoadDelta, item.policy),
-      reviewLoadDelta,
-      widenThreshold: item.policy.widenThreshold,
-      narrowThreshold: item.policy.narrowThreshold,
-      weights: item.policy.weights
-    };
-  });
-}
-
-function strictReportDeltaPolicy(): UiReportDeltaPolicy {
-  return {
-    source: 'default',
-    widenThreshold: 6,
-    narrowThreshold: 6,
-    weights: {
-      affected: 4,
-      actions: 7,
-      evidence: 1
-    }
-  };
-}
-
-function relaxedReportDeltaPolicy(): UiReportDeltaPolicy {
-  return {
-    source: 'default',
-    widenThreshold: 24,
-    narrowThreshold: 12,
-    weights: {
-      affected: 2,
-      actions: 3,
-      evidence: 1
-    }
-  };
-}
-
-function actionHeavyReportDeltaPolicy(): UiReportDeltaPolicy {
-  return {
-    source: 'default',
-    widenThreshold: 10,
-    narrowThreshold: 8,
-    weights: {
-      affected: 2,
-      actions: 8,
-      evidence: 1
-    }
-  };
-}
-
-function reportReviewLoad(report: UiReportPreview, policy: UiReportDeltaPolicy): number {
-  return report.affectedCount * policy.weights.affected
-    + report.actionCount * policy.weights.actions
-    + report.evidenceCount * policy.weights.evidence;
-}
-
-function reportDeltaSummary(delta: number, policy: UiReportDeltaPolicy): ReportDeltaSummary {
-  if (delta >= policy.widenThreshold) return 'wider';
-  if (delta <= -policy.narrowThreshold) return 'narrower';
-  return 'unchanged';
-}
-
-function reportDeltaPolicyReason(
-  summary: ReportDeltaSummary,
-  delta: number,
-  policy: UiReportDeltaPolicy
-): string {
-  const formattedDelta = formatSignedDelta(delta);
-  if (summary === 'wider') {
-    return `Review load changed by ${formattedDelta}; ${policy.source} policy marks wider at +${policy.widenThreshold}.`;
-  }
-  if (summary === 'narrower') {
-    return `Review load changed by ${formattedDelta}; ${policy.source} policy marks narrower at -${policy.narrowThreshold}.`;
-  }
-  return `Review load changed by ${formattedDelta}; ${policy.source} policy keeps it inside +${policy.widenThreshold}/-${policy.narrowThreshold}.`;
-}
-
 function actionTargetLabels(actions: readonly ImpactAction[]): Set<string> {
   return new Set(actions.map((action) =>
     action.target.path ?? action.target.displayName ?? action.target.symbol ?? action.target.id
@@ -1031,530 +787,11 @@ function uniqueSortedStrings(values: readonly string[]): string[] {
   return [...new Set(values.filter((value) => value.trim().length > 0))].sort((a, b) => a.localeCompare(b));
 }
 
-function comparisonBucket(label: string, current: number, previous: number): UiReportComparisonBucket {
-  return { label, current, previous, delta: current - previous };
-}
-
-function classifyImpactLane(pathValue: string, reason: string, actionTargets: ReadonlySet<string>): ImpactLane['id'] {
-  const pathLower = pathValue.toLowerCase();
-  const reasonLower = reason.toLowerCase();
-  if (actionTargets.has(pathValue) || isUiTestPath(pathLower)) return 'tests';
-  if (isUiKnowledgePath(pathLower) || /\b(governs|documents|requires|proposes)\b/.test(reasonLower)) return 'knowledge';
-  if (isUiContractPath(pathLower) || /\bcontract|endpoint|asyncapi|openapi|graphql|protobuf\b/.test(reasonLower)) return 'contracts';
-  if (isUiConfigPath(pathLower) || /\bconfigures|workflow|infra\b/.test(reasonLower)) return 'config';
-  return 'code';
-}
-
-function impactLaneDisplay(id: ImpactLaneId): Pick<ImpactLane, 'label' | 'tone'> {
-  if (id === 'tests') return { label: 'Tests to verify', tone: 'amber' };
-  if (id === 'knowledge') return { label: 'Docs & policy', tone: 'teal' };
-  if (id === 'contracts') return { label: 'Contracts', tone: 'red' };
-  if (id === 'config') return { label: 'Config & infra', tone: 'blue' };
-  return { label: 'Runtime code', tone: 'green' };
-}
-
-function isUiTestPath(pathLower: string): boolean {
-  return /(^|\/)(tests?|__tests__)\/|(^|\/)src\/test\//.test(pathLower)
-    || /(\.|-)(test|spec)\.[cm]?[tj]sx?$/.test(pathLower);
-}
-
-function isUiKnowledgePath(pathLower: string): boolean {
-  return pathLower.endsWith('.md')
-    || /(^|\/)(docs|doc|policies|policy|proposals|prd|requirements|decisions|adr)\//.test(pathLower);
-}
-
-function isUiContractPath(pathLower: string): boolean {
-  return /(^|\/)(contracts?|apis?)\//.test(pathLower)
-    || /(^|[-_.])(openapi|asyncapi)([-_.]|$)/.test(pathLower)
-    || /\.(proto|graphql|gql|avsc)$/.test(pathLower);
-}
-
-function isUiConfigPath(pathLower: string): boolean {
-  return /(^|\/)(\.github\/workflows|terraform|infra|deploy|k8s|helm)\//.test(pathLower)
-    || /(^|\/)(dockerfile|makefile|compose\.ya?ml)$/.test(pathLower)
-    || /\.(ya?ml|toml|json|jsonc|env|tf|tfvars|hcl|ini)$/.test(pathLower)
-    || /(^|\/)(package\.json|pom\.xml|build\.gradle(?:\.kts)?|go\.mod|cargo\.toml|pyproject\.toml)$/.test(pathLower);
-}
-
-function renderImpactMapPanel(graph: UiGraphPreview | null, report: UiReportPreview | null, m: UiMessages): string {
-  const map = buildImpactMap(graph, report);
-  const firstImpact = report ? initialImpactForUi(report) : undefined;
-  const displayedPathCount = map.edges.length;
-  const chips = `
-    <span>${map.changedNodes.length} changed</span>
-    <span>${map.affectedNodes.length} affected</span>
-    <span>${displayedPathCount} displayed paths</span>
-  `;
-  if (map.changedNodes.length === 0 && map.affectedNodes.length === 0) {
-    return `
-      <section class="panel map-panel">
-        <div class="panel-heading">
-          <h2>${escapeHtml(m.impactMap)}</h2>
-          <div class="panel-chips">${chips}</div>
-        </div>
-        <div class="empty">${escapeHtml(m.emptyNoGraphNodes)}</div>
-      </section>
-    `;
-  }
-
-  const selectedPath = firstImpact?.path;
-  const svg = renderImpactMapSvg(map, selectedPath, m);
-  const selectedAction = selectedPath && report ? actionByTargetPath(report.actions).get(selectedPath) : undefined;
-  const insight = renderImpactMapInsight(map, displayedPathCount, m, firstImpact?.path, selectedAction);
-  const routeStrip = renderImpactRouteStrip(map, m, selectedPath);
-  const edgeRows = map.edges.slice(0, 6).map((edge) => {
-    const from = map.nodeById.get(edge.from);
-    const to = map.nodeById.get(edge.to);
-    const targetPath = edge.targetPath ?? to?.path;
-    const edgeClasses = `map-legend-edge${targetPath ? ' selectable-impact' : ''}${targetPath === selectedPath ? ' selected-impact' : ''}`;
-    const edgeAttrs = targetPath
-      ? ` class="${escapeHtml(edgeClasses)}" tabindex="0" role="button" data-impact-path="${escapeHtml(targetPath)}" data-filter-text="${escapeHtml(`${from?.label ?? edge.from} ${edge.label} ${to?.label ?? edge.to}`)}"`
-      : ` class="${escapeHtml(edgeClasses)}"`;
-    return `
-      <li${edgeAttrs}>
-        <strong>${escapeHtml(from?.label ?? edge.from)}</strong>
-        <span>${escapeHtml(edge.label)}</span>
-        <strong>${escapeHtml(to?.label ?? edge.to)}</strong>
-      </li>
-    `;
-  }).join('');
-
-  return `
-    <section class="panel map-panel">
-      <div class="panel-heading">
-        <h2>${escapeHtml(m.impactMap)}</h2>
-        <div class="panel-chips">${chips}</div>
-      </div>
-      <div class="map-content">
-        <div class="map-frame">
-          ${insight}
-          ${routeStrip}
-          ${svg}
-        </div>
-        <aside class="map-legend" aria-label="${escapeHtml(m.ariaImpactMapLegend)}">
-          ${renderImpactInspector(firstImpact, report, m)}
-          <div class="map-legend-key" aria-label="${escapeHtml(m.ariaImpactMapSymbols)}">
-            <span><b class="legend-swatch changed"></b>${escapeHtml(m.changedRoot)}</span>
-            <span><b class="legend-swatch affected"></b>${escapeHtml(m.affectedTargetRole)}</span>
-            <span><b class="legend-swatch context"></b>${escapeHtml(m.contextNode)}</span>
-          </div>
-          <ol class="map-route-list" aria-label="${escapeHtml(m.ariaVisibleRoutes)}">${edgeRows || `<li>${escapeHtml(m.emptyNoVisiblePaths)}</li>`}</ol>
-        </aside>
-      </div>
-    </section>
-  `;
-}
-
-function renderImpactRouteStrip(map: ReturnType<typeof buildImpactMap>, m: UiMessages, selectedPath?: string): string {
-  const rows = map.affectedNodes.slice(0, 4).map((node, index) => {
-    const edge = map.edges.find((item) => item.to === node.id);
-    const pathValue = node.path ?? node.label;
-    const selectedClass = node.path === selectedPath ? ' selected-impact' : '';
-    const attrs = node.path
-      ? ` class="impact-route-card selectable-impact${selectedClass}" tabindex="0" role="button" data-impact-path="${escapeHtml(node.path)}" data-filter-text="${escapeHtml(`${node.label} ${edge?.label ?? ''} ${node.laneLabel ?? ''} ${node.confidence ?? ''}`)}"`
-      : ` class="impact-route-card"`;
-    return `
-      <li${attrs}>
-        <b>${escapeHtml(String(index + 1))}</b>
-        <strong>${escapeHtml(compactMapLabel(pathValue, 34))}</strong>
-        <span>${escapeHtml(edge?.label ?? 'IMPACTS')} · ${escapeHtml(node.laneLabel ?? node.kind)}</span>
-        <em class="confidence-${escapeHtml(node.confidence ?? 'unknown')}">${escapeHtml(node.confidence ?? 'unknown')}</em>
-      </li>
-    `;
-  }).join('');
-  return `<ol class="impact-route-strip" aria-label="${escapeHtml(m.ariaRankedRoutes)}">${rows}</ol>`;
-}
-
-function renderImpactMapInsight(
-  map: ReturnType<typeof buildImpactMap>,
-  displayedPathCount: number,
-  m: UiMessages,
-  selectedPath?: string,
-  action?: ImpactAction
-): string {
-  const primaryChange = map.changedNodes[0]?.label ?? m.changedRoot;
-  const primaryTarget = selectedPath
-    ? map.affectedNodes.find((node) => node.path === selectedPath) ?? map.affectedNodes[0]
-    : map.affectedNodes[0];
-  const primaryTargetLabel = primaryTarget?.label ?? m.affectedTargetEmpty;
-  const primaryEdge = map.edges.find((edge) => edge.from === map.changedNodes[0]?.id && edge.to === primaryTarget?.id) ?? map.edges[0];
-  const relation = primaryEdge?.label ?? 'IMPACTS';
-  const confidence = primaryTarget?.confidence ?? primaryEdge?.confidence ?? 'unknown';
-  return `
-    <div class="map-insight" aria-label="${escapeHtml(m.ariaPrimaryImpactFlow)}" data-primary-change="${escapeHtml(primaryChange)}" data-affected-count="${escapeHtml(String(map.affectedNodes.length))}" data-displayed-path-count="${escapeHtml(String(displayedPathCount))}">
-      <div class="map-flow-text">
-        <span>${escapeHtml(m.primaryImpactFlow)}</span>
-        <strong id="mapFlowPath">${escapeHtml(shortenMiddle(primaryChange, 34))} <em>&rarr;</em> ${escapeHtml(shortenMiddle(primaryTargetLabel, 34))}</strong>
-        <small id="mapFlowMeta">${escapeHtml(relation)} · ${escapeHtml(String(map.affectedNodes.length))} targets · ${escapeHtml(String(displayedPathCount))} displayed paths · ${escapeHtml(confidence)} confidence</small>
-      </div>
-      ${renderMapNextAction(action, m)}
-    </div>
-  `;
-}
-
-function renderMapNextAction(action: ImpactAction | undefined, m: UiMessages): string {
-  const command = action ? actionCommandText(action) : undefined;
-  if (!command) {
-    return `
-      <div id="mapNextAction" class="map-next-action map-next-action-empty" aria-label="${escapeHtml(m.ariaNextVerificationCommand)}">
-        <span>${escapeHtml(m.nextVerification)}</span>
-        <small>${escapeHtml(m.noVerificationActionShort)}</small>
-      </div>
-    `;
-  }
-  return `
-    <div id="mapNextAction" class="map-next-action" aria-label="${escapeHtml(m.ariaNextVerificationCommand)}">
-      <span>${escapeHtml(m.nextVerification)}</span>
-      <code>${escapeHtml(command)}</code>
-      <button class="copy-command" type="button" data-command="${escapeHtml(command)}" aria-label="${escapeHtml(m.ariaCopyMapCommand)}">${escapeHtml(m.copy)}</button>
-    </div>
-  `;
-}
-
-function buildImpactMap(
-  graph: UiGraphPreview | null,
-  report: UiReportPreview | null
-): {
-  changedNodes: ImpactMapNode[];
-  affectedNodes: ImpactMapNode[];
-  edges: ImpactMapEdge[];
-  nodeById: Map<string, ImpactMapNode>;
-} {
-  const changedNodes = uniqueImpactMapNodes([
-    ...(report?.changed ?? []).map((entity): ImpactMapNode => ({
-      id: entity.id,
-      label: entityLabel(entity),
-      kind: entity.kind,
-      group: 'changed'
-    })),
-    ...(graph?.nodes ?? []).filter((node) => node.group === 'changed').map(graphNodeForImpactMap)
-  ]).slice(0, 5);
-  const actionTargets = new Set((report?.actions ?? []).map((action) => action.target.path).filter((value): value is string => Boolean(value)));
-  const affectedNodes = uniqueImpactMapNodes([
-    ...(report ? topAffectedFilesForSummary(report) : []).map((item): ImpactMapNode => {
-      const lane = impactLaneDisplay(classifyImpactLane(item.path, item.reason, actionTargets));
-      return {
-        id: `file:${item.path}`,
-        label: item.path,
-        kind: 'file',
-        group: 'affected',
-        confidence: item.confidence,
-        laneLabel: lane.label,
-        laneTone: lane.tone,
-        path: item.path
-      };
-    }),
-    ...(graph?.nodes ?? []).filter((node) => node.group !== 'changed').map(graphNodeForImpactMap)
-  ]).slice(0, 8);
-  const nodeById = new Map([...changedNodes, ...affectedNodes].map((node) => [node.id, node]));
-  const changedIds = new Set(changedNodes.map((node) => node.id));
-  const affectedIds = new Set(affectedNodes.map((node) => node.id));
-  const affectedFilesByNodeId = new Map((report?.affectedFiles ?? []).map((item) => [`file:${item.path}`, item]));
-  const edges: ImpactMapEdge[] = [];
-  const seenEdges = new Set<string>();
-  for (const edge of graph?.edges ?? []) {
-    const oriented = orientImpactEdge(edge, changedIds, affectedIds);
-    if (!oriented) continue;
-    const key = `${oriented.from}:${oriented.to}:${oriented.label}`;
-    if (seenEdges.has(key)) continue;
-    seenEdges.add(key);
-    const targetPath = nodeById.get(oriented.to)?.path;
-    const affectedFile = affectedFilesByNodeId.get(oriented.to);
-    edges.push({
-      ...oriented,
-      label: affectedFile ? impactPathLabel(affectedFile, actionTargets) : oriented.label,
-      confidence: affectedFile?.confidence ?? oriented.confidence,
-      ...(targetPath ? { targetPath } : {})
-    });
-  }
-  if (changedNodes[0]) {
-    for (const node of affectedNodes) {
-      if (edges.some((edge) => edge.to === node.id)) continue;
-      const affectedFile = affectedFilesByNodeId.get(node.id);
-      edges.push({
-        from: changedNodes[0].id,
-        to: node.id,
-        label: affectedFile ? impactPathLabel(affectedFile, actionTargets) : 'IMPACTS',
-        confidence: node.confidence ?? affectedFile?.confidence ?? 'unknown',
-        ...(node.path ? { targetPath: node.path } : {})
-      });
-    }
-  }
-  return { changedNodes, affectedNodes, edges: edges.slice(0, 12), nodeById };
-}
-
-function renderImpactMapSvg(map: ReturnType<typeof buildImpactMap>, selectedPath: string | undefined, m: UiMessages): string {
-  const width = 760;
-  const leftX = 38;
-  const rightX = 462;
-  const nodeWidth = 238;
-  const nodeHeight = 66;
-  const rowCount = Math.max(map.changedNodes.length, map.affectedNodes.length, 1);
-  const height = Math.max(420, 160 + rowCount * 78);
-  const changedPositions = impactNodePositions(map.changedNodes, height);
-  const affectedPositions = impactNodePositions(map.affectedNodes, height);
-  const yByNode = new Map<string, number>([
-    ...map.changedNodes.map((node, index): [string, number] => [node.id, changedPositions[index] ?? 92]),
-    ...map.affectedNodes.map((node, index): [string, number] => [node.id, affectedPositions[index] ?? 92])
-  ]);
-  const edges = map.edges.map((edge) => {
-    const fromY = yByNode.get(edge.from);
-    const toY = yByNode.get(edge.to);
-    if (fromY === undefined || toY === undefined) return '';
-    const startX = leftX + nodeWidth;
-    const endX = rightX;
-    const controlX = (startX + endX) / 2;
-    const labelY = Math.min(height - 32, Math.max(78, (fromY + toY) / 2 - 8));
-    const edgeClass = `map-edge-group${edge.targetPath ? ' selectable-impact' : ''}${edge.targetPath === selectedPath ? ' selected-impact' : ''}`;
-    const edgeAttrs = edge.targetPath
-      ? ` class="${escapeHtml(edgeClass)}" data-impact-path="${escapeHtml(edge.targetPath)}" tabindex="0" role="button" aria-label="${escapeHtml(`${m.ariaInspectImpactPath}: ${edge.targetPath}`)}"`
-      : ' class="map-edge-group"';
-    return `
-      <g${edgeAttrs}>
-        <path class="map-edge confidence-${escapeHtml(edge.confidence)}" d="M ${startX} ${fromY} C ${controlX} ${fromY}, ${controlX} ${toY}, ${endX} ${toY}" marker-end="url(#impactArrow)" />
-        <text class="map-edge-label" x="${controlX}" y="${labelY}" text-anchor="middle">${escapeHtml(shortenMiddle(edge.label, 18))}</text>
-      </g>
-    `;
-  }).join('');
-  const changedNodes = map.changedNodes.map((node, index) =>
-    renderImpactMapNode(node, leftX, (changedPositions[index] ?? 92) - nodeHeight / 2, nodeWidth, nodeHeight, m, selectedPath)
-  ).join('');
-  const affectedNodes = map.affectedNodes.map((node, index) =>
-    renderImpactMapNode(node, rightX, (affectedPositions[index] ?? 92) - nodeHeight / 2, nodeWidth, nodeHeight, m, selectedPath)
-  ).join('');
-
-  return `
-    <svg class="impact-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMin meet" role="img" aria-label="${escapeHtml(m.ariaMapSvg)}">
-      <defs>
-        <marker id="impactArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
-          <path class="map-arrow" d="M 0 0 L 10 5 L 0 10 z" />
-        </marker>
-      </defs>
-      <rect class="map-stage map-stage-changed" x="24" y="58" width="290" height="${height - 86}" rx="16" />
-      <rect class="map-stage map-stage-affected" x="438" y="58" width="290" height="${height - 86}" rx="16" />
-      <text class="map-column-label" x="${leftX}" y="36">${escapeHtml(m.changedRoot)}</text>
-      <text class="map-route-label" x="${(leftX + nodeWidth + rightX) / 2}" y="36" text-anchor="middle">${escapeHtml(m.impactPathLabel)}</text>
-      <text class="map-column-label" x="${rightX}" y="36">${escapeHtml(m.affectedTargets)}</text>
-      <g>${edges}</g>
-      <g>${changedNodes}</g>
-      <g>${affectedNodes}</g>
-    </svg>
-  `;
-}
-
-function renderImpactMapNode(node: ImpactMapNode, x: number, y: number, width: number, height: number, m: UiMessages, selectedPath?: string): string {
-  const label = compactMapLabel(node.label, 42);
-  const roleLabel = node.group === 'affected'
-    ? (node.laneLabel ?? m.affectedTargetRole)
-    : node.group === 'changed'
-      ? m.changedInput
-      : node.kind;
-  const confidenceLabel = node.group === 'affected' ? (node.confidence ?? 'unknown') : '';
-  const confidenceText = confidenceLabel
-    ? `<text class="map-node-confidence confidence-text-${escapeHtml(node.confidence ?? 'unknown')}" x="${width - 14}" y="47" text-anchor="end">${escapeHtml(confidenceLabel)}</text>`
-    : '';
-  const impactAttrs = node.group === 'affected' && node.path
-    ? ` data-impact-path="${escapeHtml(node.path)}" tabindex="0" role="button" aria-label="${escapeHtml(`${m.ariaInspectImpactPath}: ${node.path}`)}"`
-    : '';
-  const selectableClass = impactAttrs ? ` selectable-impact${node.path === selectedPath ? ' selected-impact' : ''}` : '';
-  const laneClass = node.laneTone ? ` map-node-lane-${escapeHtml(node.laneTone)}` : '';
-  return `
-    <g class="map-node${selectableClass} map-node-${escapeHtml(node.group)} confidence-node-${escapeHtml(node.confidence ?? 'unknown')}${laneClass}" transform="translate(${x} ${y})"${impactAttrs}>
-      <title>${escapeHtml(node.label)}</title>
-      <rect width="${width}" height="${height}" rx="8" />
-      <circle cx="20" cy="26" r="5" />
-      <text class="map-node-label" x="36" y="25">${escapeHtml(label)}</text>
-      <text class="map-node-kind" x="36" y="47">${escapeHtml(roleLabel)}</text>
-      ${confidenceText}
-    </g>
-  `;
-}
-
-function impactNodePositions(nodes: ImpactMapNode[], height: number): number[] {
-  if (nodes.length === 0) return [];
-  const top = 110;
-  const bottom = height - 64;
-  if (nodes.length === 1) return [(top + bottom) / 2];
-  const step = (bottom - top) / (nodes.length - 1);
-  return nodes.map((_, index) => top + step * index);
-}
-
-function graphNodeForImpactMap(node: UiGraphPreview['nodes'][number]): ImpactMapNode {
-  return {
-    id: node.id,
-    label: node.label,
-    kind: node.kind,
-    group: node.group,
-    ...(node.path ? { path: node.path } : {}),
-    ...(node.confidence ? { confidence: node.confidence } : {})
-  };
-}
-
-function orientImpactEdge(
-  edge: UiGraphPreview['edges'][number],
-  changedIds: ReadonlySet<string>,
-  affectedIds: ReadonlySet<string>
-): ImpactMapEdge | null {
-  if (changedIds.has(edge.source) && affectedIds.has(edge.target)) {
-    return { from: edge.source, to: edge.target, label: edge.label, confidence: edge.confidence };
-  }
-  if (changedIds.has(edge.target) && affectedIds.has(edge.source)) {
-    return { from: edge.target, to: edge.source, label: edge.label, confidence: edge.confidence };
-  }
-  return null;
-}
-
-function uniqueImpactMapNodes(nodes: ImpactMapNode[]): ImpactMapNode[] {
-  const byId = new Map<string, ImpactMapNode>();
-  for (const node of nodes) {
-    if (byId.has(node.id)) continue;
-    byId.set(node.id, node);
-  }
-  return [...byId.values()];
-}
-
-function compareAffectedFilesForUi(left: UiReportPreview['affectedFiles'][number], right: UiReportPreview['affectedFiles'][number]): number {
-  return confidenceSortRank(left.confidence) - confidenceSortRank(right.confidence)
-    || (left.depth ?? 99) - (right.depth ?? 99)
-    || left.path.localeCompare(right.path);
-}
-
-function initialImpactForUi(report: UiReportPreview): UiReportPreview['affectedFiles'][number] | undefined {
-  const affectedFiles = [...report.affectedFiles].sort(compareAffectedFilesForUi);
-  const actionTargets = new Set(report.actions.map((action) => action.target.path).filter((pathValue): pathValue is string => Boolean(pathValue)));
-  return affectedFiles.find((item) => actionTargets.has(item.path)) ?? affectedFiles[0];
-}
-
-function topAffectedFilesForSummary(report: UiReportPreview): UiReportPreview['affectedFiles'] {
-  const actionTargets = new Set(report.actions.map((action) => action.target.path).filter((pathValue): pathValue is string => Boolean(pathValue)));
-  return [...report.affectedFiles].sort((left, right) => {
-    const leftActionable = actionTargets.has(left.path) ? 0 : 1;
-    const rightActionable = actionTargets.has(right.path) ? 0 : 1;
-    return leftActionable - rightActionable || compareAffectedFilesForUi(left, right);
-  });
-}
-
-function confidenceSortRank(confidence: string): number {
-  if (confidence === 'proven') return 0;
-  if (confidence === 'inferred') return 1;
-  if (confidence === 'heuristic') return 2;
-  return 3;
-}
-
 function blastRadiusLabel(count: number): string {
   if (count === 0) return 'clear';
   if (count <= 3) return 'contained';
   if (count <= 12) return 'expanding';
   return 'wide';
-}
-
-function impactPathLabel(item: UiReportPreview['affectedFiles'][number], actionTargets: ReadonlySet<string> = new Set()): string {
-  const lane = classifyImpactLane(item.path, item.reason, actionTargets);
-  if (lane === 'tests') return 'VERIFY';
-  if (lane === 'knowledge') return 'DOCUMENTS';
-  if (lane === 'contracts') return 'CONTRACT';
-  if (lane === 'config') return 'CONFIG';
-  const relationCount = item.relationPath?.length ?? 0;
-  if (relationCount > 1) return `${relationCount} hops`;
-  return item.reason.split(' ')[0]?.toUpperCase() ?? 'IMPACTS';
-}
-
-function entityLabel(entity: ImpactReport['changed'][number]): string {
-  return entity.displayName ?? entity.path ?? entity.symbol ?? entity.id;
-}
-
-function renderImpactInspector(
-  item: UiReportPreview['affectedFiles'][number] | undefined,
-  report: UiReportPreview | null,
-  m: UiMessages
-): string {
-  const evidence = item && report ? impactEvidenceForPath(report.evidence, item.path) : [];
-  const action = item && report ? actionByTargetPath(report.actions).get(item.path) : undefined;
-  return `
-    <section class="impact-inspector" aria-live="polite" aria-label="${escapeHtml(m.ariaImpactInspector)}">
-      <h3>${escapeHtml(m.impactInspector)}</h3>
-      <strong id="inspectorPath">${escapeHtml(item?.path ?? m.noAffectedTargetSelected)}</strong>
-      <span id="inspectorReason">${escapeHtml(item?.reason ?? m.selectAffectedTarget)}</span>
-      <section class="inspector-action">
-        <h4>${escapeHtml(m.nextVerification)}</h4>
-        <div id="inspectorAction">${renderInspectorAction(action, m)}</div>
-      </section>
-      <dl>
-        <div>
-          <dt>${escapeHtml(m.confidence)}</dt>
-          <dd id="inspectorConfidence">${escapeHtml(item?.confidence ?? 'unknown')}</dd>
-        </div>
-        <div>
-          <dt>${escapeHtml(m.relationPath)}</dt>
-          <dd id="inspectorRelation">${escapeHtml(item?.relationPath?.join(' -> ') ?? m.directOrNotRecorded)}</dd>
-        </div>
-        <div>
-          <dt>${escapeHtml(m.evidenceHits)}</dt>
-          <dd id="inspectorEvidence">${escapeHtml(String(evidence.length))}</dd>
-        </div>
-        <div>
-          <dt>${escapeHtml(m.source)}</dt>
-          <dd id="inspectorSource">${renderInspectorSource(evidence[0], m)}</dd>
-        </div>
-      </dl>
-      <section class="inspector-evidence">
-        <h4>${escapeHtml(m.topEvidence)}</h4>
-        <ul id="inspectorEvidenceList">${renderInspectorEvidenceList(evidence, m)}</ul>
-      </section>
-    </section>
-  `;
-}
-
-function renderInspectorAction(action: ImpactAction | undefined, m: UiMessages): string {
-  if (!action) return `<span class="inspector-empty">${escapeHtml(m.noVerificationActionRecorded)}</span>`;
-  const command = actionCommandText(action);
-  if (!command) return `<span class="inspector-empty">${escapeHtml(m.noCommandRecorded)}</span>`;
-  return `
-    <code>${escapeHtml(command)}</code>
-    <button class="copy-command" type="button" data-command="${escapeHtml(command)}" aria-label="${escapeHtml(m.ariaCopyInspectorCommand)}">${escapeHtml(m.copy)}</button>
-  `;
-}
-
-function renderInspectorSource(evidence: UiEvidencePreview | undefined, m: UiMessages): string {
-  if (!evidence) return escapeHtml(m.noSourceSpanRecorded);
-  const source = evidenceSourceLocation(evidence);
-  if (!source) return escapeHtml(m.noSourceSpanRecorded);
-  return `<a class="source-link" href="${escapeHtml(source.href)}" target="_blank" rel="noreferrer">${escapeHtml(`${m.ariaOpenSourceLabel} ${source.label}`)}</a>`;
-}
-
-function renderInspectorEvidenceList(evidence: readonly UiEvidencePreview[], m: UiMessages): string {
-  if (evidence.length === 0) return `<li class="inspector-empty">${escapeHtml(m.noMatchingEvidence)}</li>`;
-  return evidence.slice(0, 3).map((item) => {
-    const source = evidenceSourceLocation(item);
-    return `
-      <li>
-        <strong>${escapeHtml(item.file)}</strong>
-        <span>${escapeHtml(item.kind)} · ${escapeHtml(item.confidence)}</span>
-        ${source ? `<a class="source-link" href="${escapeHtml(source.href)}" target="_blank" rel="noreferrer">${escapeHtml(source.label)}</a>` : ''}
-        <pre>${escapeHtml(shortenMiddle(item.snippet, 120))}</pre>
-      </li>
-    `;
-  }).join('');
-}
-
-function impactEvidenceForPath(evidence: readonly UiEvidencePreview[], pathValue: string): UiEvidencePreview[] {
-  return evidence.filter((item) => impactEvidenceMatchesPath(item, pathValue));
-}
-
-function impactEvidenceMatchesPath(item: UiEvidencePreview, pathValue: string): boolean {
-  return item.file === pathValue || item.subject?.path === pathValue || item.snippet.includes(pathValue);
-}
-
-function evidenceSourceLocation(item: UiEvidencePreview): SourceLocation | undefined {
-  if (!item.file || item.file.includes('\0')) return undefined;
-  const line = item.startLine ?? 1;
-  if (!Number.isInteger(line) || line < 1) return undefined;
-  const endLine = item.endLine && item.endLine > line ? item.endLine : undefined;
-  return {
-    href: sourceHref(item.file, line),
-    label: endLine ? `L${line}-L${endLine}` : `L${line}`,
-    line
-  };
 }
 
 function actionKindLabel(kind: ImpactAction['kind'], m: UiMessages): string {
@@ -1590,25 +827,6 @@ function renderActionRow(item: ImpactAction, m: UiMessages): string {
       </div>
     </li>
   `;
-}
-
-function actionCommandText(item: ImpactAction): string | undefined {
-  if (!item.command) return undefined;
-  return [item.command, ...(item.args ?? [])].map(shellQuoteForUi).join(' ');
-}
-
-function shellQuoteForUi(value: string): string {
-  const displayValue = value
-    .replace(/\n/g, '\\n')
-    .replace(/\r/g, '\\r')
-    .replace(/\t/g, '\\t');
-  if (displayValue === '--') return displayValue;
-  if (/^[A-Za-z0-9_./:=@%+,-]+$/.test(displayValue) && !displayValue.startsWith('-')) return displayValue;
-  return `'${displayValue.replaceAll("'", `'\\''`)}'`;
-}
-
-function sourceHref(file: string, line: number): string {
-  return `/source?path=${encodeURIComponent(file)}&line=${line}`;
 }
 
 function renderImpactPathRow(
@@ -1665,34 +883,6 @@ function evidenceCountByImpactPath(
     }
   }
   return counts;
-}
-
-function actionByTargetPath(actions: readonly ImpactAction[]): Map<string, ImpactAction> {
-  const byPath = new Map<string, ImpactAction>();
-  for (const action of actions) {
-    const targetPath = action.target.path;
-    if (!targetPath || byPath.has(targetPath)) continue;
-    byPath.set(targetPath, action);
-  }
-  return byPath;
-}
-
-function compactMapLabel(value: string, maxLength: number): string {
-  if (value.length <= maxLength) return value;
-  const pathParts = value.split('/').filter(Boolean);
-  if (pathParts.length > 2) {
-    const tail = pathParts.slice(-2).join('/');
-    if (tail.length <= maxLength) return tail;
-  }
-  return shortenMiddle(value, maxLength);
-}
-
-function shortenMiddle(value: string, maxLength: number): string {
-  if (value.length <= maxLength) return value;
-  if (maxLength <= 5) return value.slice(0, maxLength);
-  const prefixLength = Math.ceil((maxLength - 1) / 2);
-  const suffixLength = Math.floor((maxLength - 1) / 2);
-  return `${value.slice(0, prefixLength)}…${value.slice(value.length - suffixLength)}`;
 }
 
 export type UiLanguage = 'en' | 'ko' | 'zh';
@@ -3044,13 +2234,4 @@ function listen(server: Server, host: string, port: number, allowFallback: boole
     server.once('listening', onListening);
     server.listen(port, host);
   });
-}
-
-function escapeHtml(value: unknown): string {
-  return String(value)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
 }

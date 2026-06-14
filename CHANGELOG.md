@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Extracted the MCP resource-serving and explain-entity handlers out of `src/mcp.ts` into `src/mcp_resources.ts` (sharing the error/JSON helpers via `src/mcp_shared.ts`), reducing `mcp.ts` to ~1338 lines (from ~4068 before the context-pack/search/resource extractions).
 - Extracted the impact-map and report-delta-policy rendering out of `src/ui.ts` into `src/ui/impact_map.ts`, `src/ui/report_delta.ts`, and `src/ui/shared.ts` (rendered HTML byte-for-byte unchanged), reducing `ui.ts` from ~3056 to ~2237 lines.
 - Extracted the top-panel renderers (impact summary, analysis trust, triage, action and path rows) out of `src/ui.ts` into `src/ui/panels.ts` (rendered HTML byte-for-byte unchanged), reducing `ui.ts` from ~2167 to ~1824 lines.
+- Extracted the UI data-access layer (row→preview converters and DB readers) out of `src/ui.ts` into `src/ui/data.ts` (rendered HTML and JSON API output byte-for-byte unchanged), reducing `ui.ts` from ~1824 to ~1303 lines.
 - Consolidated the work-artifact freshness helpers that `src/ui.ts` and `src/context_pack.ts` each duplicated into a shared `src/work_artifacts.ts` (only byte-identical helpers merged; drifted copies left in place; behavior unchanged).
 - Split `src/cross_repo_resolver.ts` into per-protocol consumer-matcher modules under `src/cross_repo/` (HTTP/Spring, GraphQL, Protobuf, AsyncAPI) plus shared helpers/types (`resolveCrossRepoContracts` output unchanged), reducing `cross_repo_resolver.ts` from ~1401 to ~534 lines.
 

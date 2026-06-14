@@ -135,3 +135,25 @@ export function evidenceSourceLocation(item: UiEvidencePreview): SourceLocation 
     line
   };
 }
+
+export function objectAt(value: unknown, key: string): Record<string, unknown> | undefined {
+  if (!isRecord(value)) return undefined;
+  const child = value[key];
+  return isRecord(child) ? child : undefined;
+}
+
+export function stringAt(value: unknown, key: string): string | undefined {
+  if (!isRecord(value)) return undefined;
+  const child = value[key];
+  return typeof child === 'string' && child.length > 0 ? child : undefined;
+}
+
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+export function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  return 'unknown error';
+}

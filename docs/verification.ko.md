@@ -13,7 +13,8 @@ Parallax는 정확성을 여러 계층으로 검증한다 — 빠른 unit suite,
 | `npm test` | `tsx --test`로 `tests/**/*.test.ts`에 대해 Node test runner 실행 | 모든 변경 후. 기본 빠른 suite |
 | `npm run check` | `tsc --noEmit` typecheck, 출력 없음 | commit 전. type 회귀를 잡음 |
 | `npm run lint` | `check` + `docs:lint`를 함께 실행 | commit / PR 전. 전체 static gate |
-| `npm run docs:lint` | tracked Markdown에 대해 `scripts/docs-lint.js` 실행 | 문서를 편집한 뒤 |
+| `npm run docs:lint` | tracked/untracked Markdown에 대해 `scripts/docs-lint.js` 실행, local `.md` link target 포함 | 문서를 편집한 뒤 |
+| `npm run verify` | canonical source-checkout release gate 실행: lint, install smoke, fast test, dogfood, bench, high-level audit | release 전과 CI |
 | `npm run build` | `tsc -p tsconfig.json`, `dist/`로 compile | 배포하거나 CLI를 smoke test하기 전 |
 | `npm run bench` | `bench/impact-bench.ts` 실행. accuracy 회귀 시 non-zero로 종료 | engine/adapter 변경 후 |
 | `npm run test:dogfood` | Parallax를 자기 source에 대해 인덱싱하고 내부 graph가 살아남는지 검증 | engine 변경 후(indexer/adapters/analyzer/store/graph) |
@@ -22,7 +23,7 @@ Parallax는 정확성을 여러 계층으로 검증한다 — 빠른 unit suite,
 | `npm run test:security` | `tests/security.test.ts` 실행(path containment + redaction) | store / path / redaction 변경 후 |
 | `npm run test:install-smoke` | `npm run build` 후 `node dist/src/cli.js --help` | 릴리스 전, 패키징된 CLI가 실행되는지 확인 |
 
-`test:fixtures`는 `npm test`의 alias이고, `test:benchmark`는 `npm run bench`의 alias다.
+`test:fixtures`는 `npm test`의 alias이고, `test:benchmark`는 `npm run bench`의 alias다. `npm run verify`에는 `npm audit --audit-level=high`가 포함되므로 마지막 audit 단계는 npm registry와 network 상태에 의존한다.
 
 ## dogfood guard — 진짜 안전망
 
@@ -53,19 +54,20 @@ dogfood guard는 그 틈을 메운다. 각 test에서:
 
 runner는 deterministic JSON 리포트를 쓰고, suite가 통과하지 못하면 non-zero exit code를 설정한다. surface는 둘이다:
 
-- `tests/impact-bench.test.ts`는 `npm test`의 일부로 bench를 실행하고, 리포트 형태와 pin된 **76**개의 기대 relation, 그리고 score/recall 임계값을 검증한다.
+- `tests/impact-bench.test.ts`는 `npm test`의 일부로 bench를 실행하고, 리포트 형태와 pin된 기대 relation 집합, 그리고 score/recall 임계값을 검증한다.
 - `npm run bench`는 `bench/impact-bench.ts`를 직접 실행하고 recall/score 회귀 시 non-zero로 종료한다 — CI가 쓰는 형태다.
 
 relation 추출, 랭킹, retrieval을 건드리는 변경 후에는 `npm run bench`를 실행하자.
 
 ## docs linter
 
-`scripts/docs-lint.js`(`npm run docs:lint`로 실행)는 tracked된 모든 `*.md` 파일에 대한 static gate다. 다음을 강제한다:
+`scripts/docs-lint.js`(`npm run docs:lint`로 실행)는 tracked Markdown과 ignore되지 않은 local untracked Markdown에 대한 static gate다. 다음을 강제한다:
 
-- **금지 콘텐츠 없음** — 로컬 머신 경로, restore-point 메타데이터, secret-like 문자열(private key, GitHub token, `sk-...` key). 이 스캔은 fenced code block을 포함한 raw 텍스트에서 실행된다.
+- **금지 콘텐츠 없음** — 로컬 머신 경로, restore-point 메타데이터, API key, service token, bearer/JWT credential, credential이 포함된 database URL, private key 같은 runtime redaction 대상 secret family. 이 스캔은 fenced code block을 포함한 raw 텍스트에서 실행된다.
 - **trilingual parity** — trilingual zone(`docs/`에서 `docs/assets/` 제외, `skills/`, 루트 `README`/`CONTRIBUTING`/`SECURITY`)의 모든 문서는 `X.md`, `X.ko.md`, `X.zh.md` 셋을 모두 가져야 한다.
 - **switcher 존재** — 각 파일은 다른 두 언어 변형으로 링크해야 한다(H1 아래의 언어 switcher).
 - **same-language 내부 링크** — `X.ko.md` 안에서는 같은 언어 twin이 존재하는 한 내부 `.md` 링크가 `.ko.md` 형제를 가리켜야 한다(`X.zh.md` 안에서는 `.zh.md`). switcher 줄만이 허용된 유일한 cross-language 예외다. 링크 검사에서 fenced code block은 무시되므로 code block 안의 markdown 링크 *예시* 는 안전하다.
+- **존재하는 local Markdown target** — image가 아닌 local `.md` 링크는 staged 전 새 untracked 문서를 포함해 working tree 안의 Markdown 파일로 resolve되어야 한다.
 
 ## 지속적 통합(CI)
 
@@ -73,14 +75,10 @@ relation 추출, 랭킹, retrieval을 건드리는 변경 후에는 `npm run ben
 
 ```bash
 npm ci
-npm run lint        # tsc --noEmit + docs-lint
-npm run build
-npm test            # 빠른 unit suite (dogfood guard 제외)
-npm run test:dogfood
-npm run bench
+npm run verify
 ```
 
-dogfood guard와 bench는 unit suite 뒤에 각자의 step으로 실행되므로, unit test가 놓치는 회귀도 여전히 CI를 실패시킨다.
+`npm run verify`는 canonical source-checkout gate다. lint를 먼저 실행한 뒤 install smoke(유일한 build를 담당), fast unit suite, dogfood, bench, 마지막으로 registry-dependent audit을 실행한다.
 
 ## 테스트를 추가하는 법
 
@@ -93,10 +91,7 @@ dogfood guard와 bench는 unit suite 뒤에 각자의 step으로 실행되므로
 PR을 열기 전에 전체 로컬 gate를 실행하자:
 
 ```bash
-npm run lint
-npm test
-npm run test:dogfood
-npm run bench
+npm run verify
 ```
 
 ## 함께 보기

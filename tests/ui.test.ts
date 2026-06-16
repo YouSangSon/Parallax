@@ -651,6 +651,41 @@ test('UI server exposes bootstrap and resource-shaped JSON endpoints', async () 
   }
 });
 
+test('UI graph JSON API rejects invalid pagination query params with structured JSON', async () => {
+  const { repoRoot, reportId } = await makeUiRepo();
+  const ui = await startUiServer({ repoRoot, port: 0 });
+  try {
+    const cases = [
+      { query: 'limit=abc', messagePattern: /limit/ },
+      { query: 'cursor=bad', messagePattern: /cursor/ },
+      { query: 'cursor=9007199254740992%3A0', messagePattern: /safe non-negative integer/ },
+      { query: 'cursor=999999%3A0', messagePattern: /outside/ }
+    ];
+
+    for (const item of cases) {
+      const response = await fetch(
+        new URL(`/api/reports/${encodeURIComponent(reportId)}/graph/json?${item.query}`, ui.url)
+      );
+      assert.equal(response.status, 400);
+      assert.match(response.headers.get('content-type') ?? '', /^application\/json/);
+      const body = await response.json() as {
+        error?: {
+          code?: string;
+          message?: string;
+        };
+      };
+      assert.ok(body.error);
+      assert.equal(body.error.code, 'invalid_request');
+      const message = body.error.message;
+      assert.ok(typeof message === 'string');
+      assert.match(message, item.messagePattern);
+    }
+  } finally {
+    await ui.close();
+    await rm(repoRoot, { recursive: true, force: true });
+  }
+});
+
 test('CLI ui prints a localhost URL and shuts down cleanly', async () => {
   const { repoRoot } = await makeUiRepo();
   let child: ChildProcess | null = null;

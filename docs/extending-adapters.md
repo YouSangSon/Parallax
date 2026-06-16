@@ -13,6 +13,7 @@ An adapter implements the `SemanticAdapter` interface (`src/adapters/types.ts`):
 - `capabilities` — the `AdapterCapability` values this adapter can produce.
 - `confidence?` — the adapter's default confidence label (falls back to `unknown` when omitted).
 - `knownGaps?` — human-readable notes on what this adapter does *not* resolve.
+- `selectionMode?` — `targeted` by default for bounded language/file adapters, or `catch-all` for terminal fallback adapters.
 - `supports(file)` — returns `true` if this adapter handles the file.
 - `start(ctx, files)` — returns an `AdapterRun` (or a `Promise<AdapterRun>`) for the index run.
 
@@ -43,7 +44,11 @@ This enforces invariant **I-10** (see [invariants.md](invariants.md)): every imp
 
 Adapters live in a registry (`src/adapters/registry.ts`) and are assembled by `createDefaultRegistry()` in `src/indexer.ts`. Selection is **first-match-wins** in registration order: `pickAdapter(file)` returns the first registered adapter whose `supports()` returns `true`.
 
-This makes registration order load-bearing. The default registry registers, in order: the build-system/package adapter, the config/infra adapter, the TypeScript/JavaScript adapter, the JVM/Spring adapter, the Python adapter, the Go adapter, the Rust adapter, and finally the multi-language regex adapter. That last adapter is a **catch-all** whose `supports()` always returns `true`, so it MUST be registered LAST — any adapter registered after a catch-all is unreachable. The registry's safety net documents and asserts this ordering.
+This makes registration order load-bearing. The default registry registers, in order: the build-system/package adapter, the config/infra adapter, the TypeScript/JavaScript adapter, the JVM/Spring adapter, the Python adapter, the Go adapter, the Rust adapter, and finally the multi-language regex adapter. That last adapter is a **catch-all** whose `supports()` always returns `true`, so it MUST be registered LAST — any adapter registered after a catch-all is unreachable. The registry enforces this ordering.
+
+The registry now makes that contract explicit. `selectionMode` is optional for source compatibility and defaults to `targeted`; adapters that intentionally serve as terminal fallback coverage set `selectionMode = 'catch-all'`. `AdapterRegistry.register()` rejects any adapter registered after an existing catch-all adapter, and the error names both the new adapter and the catch-all that blocks it. Duplicate `id` validation still runs first and keeps the existing duplicate-id error.
+
+Use `registry.manifest()` when reviewing or testing adapter registration. It returns an immutable snapshot in registration order. Each entry exposes `order`, `id`, `version`, `capabilities`, `confidence` (default `unknown`), `knownGaps` (default empty), and `selectionMode` (default `targeted`). Callers can inspect it without being able to mutate registry state.
 
 ## Versioning and re-extraction
 
@@ -70,6 +75,7 @@ export class ExampleAdapter implements SemanticAdapter {
   readonly version = '0.1.0';
   readonly capabilities = capabilities;
   readonly confidence = 'heuristic';
+  readonly selectionMode = 'targeted';
   readonly knownGaps = ['only resolves a single literal import form'];
 
   supports(file: ScannedFile): boolean {
@@ -109,6 +115,16 @@ export class ExampleAdapter implements SemanticAdapter {
 ```
 
 Register it in `createDefaultRegistry()` **before** the catch-all adapter so its `supports()` is consulted first.
+
+## Adapter checklist
+
+Before adding or changing an adapter:
+
+- Use a unique `id` and bump `version` whenever extraction output changes.
+- Prefer `selectionMode = 'targeted'` for language/file-specific adapters; reserve `catch-all` for the final fallback adapter.
+- Register every targeted adapter before any catch-all adapter.
+- Check `registry.manifest()` in focused tests or review notes to confirm order, capabilities, confidence, known gaps, and selection mode.
+- Keep `knownGaps` current so the manifest communicates where coverage is heuristic or incomplete.
 
 ## See also
 

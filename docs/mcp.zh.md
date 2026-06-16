@@ -18,11 +18,11 @@ parallax mcp serve
 
 ## read-only-first 不变量
 
-Parallax 遵循不变量 **I-8**（见 [invariants.zh.md](invariants.zh.md)）：agent surface 先稳定一个安全的 read-only 分析层，写权限只在单独的模型与评审之后才加入。每个 tool 都声明一个 MCP `readOnlyHint` 注解。五个 tool 被标注为 `readOnlyHint: true`——`parallax_recall`、`parallax_profile`、`parallax_context_telemetry`、`parallax_doctor`、`parallax_trace`——它们是纯读取。其余 tool 标注为 `readOnlyHint: false`；这包括分析 tool，因为它们在应答时会作为副作用持久化 context-pack 与 telemetry 行，也包括显式的内存写入与 branch 管理 tool。它们之中没有任何一个会修改你的源码树——action 只是建议（不变量 **I-9**）。
+Parallax 遵循不变量 **I-8**（见 [invariants.zh.md](invariants.zh.md)）：agent surface 先稳定一个安全的 read-only 分析层，写权限只在单独的模型与评审之后才加入。每个 tool 都声明一个 MCP `readOnlyHint` 注解。表中标注为 `readOnlyHint: true` 的 tool 是纯读取。标注为 `readOnlyHint: false` 的 tool 包括分析 tool（它们在应答时会作为副作用持久化 context-pack 与 telemetry 行），也包括显式的内存写入与 branch 管理 tool。它们之中没有任何一个会修改你的源码树——action 只是建议（不变量 **I-9**）。
 
 ## Tool
 
-全部 18 个 tool 都以 `parallax_` 前缀注册。*read-only* 列反映 tool 的 MCP `readOnlyHint` 注解。
+所有已注册的 tool 都使用 `parallax_` 前缀。此表会与 MCP `tools/list` 响应对照检查；*read-only* 列反映每个 tool 的 `readOnlyHint` 注解。
 
 | Tool | 角色 | read-only |
 | :--- | :--- | :--- |

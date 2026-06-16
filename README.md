@@ -174,7 +174,7 @@ parallax mcp serve
 | `parallax_remember` / `parallax_recall` | Write/read agent memory facts |
 | `parallax_profile` / `parallax_trace` | Query an entity profile and its reasoning chain |
 
-18 tools are registered in total (see `skills/parallax/SKILL.md`). Graph export is an MCP **resource**, not a tool: read `parallax://reports/{reportId}/graph/{format}` (`mermaid`, `json`, or `dot`).
+Registered tools are exposed through the MCP tool surface. Graph export is an MCP **resource**, not a tool: read `parallax://reports/{reportId}/graph/{format}` (`mermaid`, `json`, or `dot`).
 
 > Register it as a stdio server with an MCP client like Claude Code or Codex and it's ready to use.
 
@@ -187,7 +187,7 @@ parallax mcp serve
 | **Local-first** | All index and memory data is stored in the repo-local `.parallax/`. No external transfer |
 | **Explicit workspace** | Cross-repo covers only local repos the user registered. No clone/network |
 | **Redaction** | Secret-like strings are redacted before storage |
-| **Read-only by default** | MCP is read-only by default; writes happen only via explicit commands |
+| **Source-tree read-only by default** | MCP never edits source files; some analysis tools persist context-pack or telemetry rows in `.parallax/`, and explicit memory commands write facts |
 | **Deterministic output** | The same input yields the same report; reproducible in CI |
 
 ---
@@ -209,20 +209,20 @@ Key scripts:
 | `npm run check` | Typecheck without emit |
 | `npm test` | Run the Node test runner suite via `tsx` |
 | `npm run bench` | Deterministic bench over multi-language, Spring Boot, contract, and package-manifest fixtures |
-| `npm run docs:lint` | Check tracked Markdown for local metadata and secret-like content |
+| `npm run docs:lint` | Check tracked and untracked Markdown for forbidden content, trilingual parity, same-language links, and missing local `.md` targets |
+| `npm run verify` | Run the full source-checkout release gate |
 | `npm run test:mcp` | Verify MCP impact/context/memory/telemetry/path validation |
 | `npm run test:security` | Verify path containment and redaction |
 | `npm run test:ui` | Verify local UI snapshot, server, and JSON resource endpoints |
 | `npm run test:dogfood` | Self-index Parallax and assert the internal dependency graph survives (see [`docs/verification.md`](docs/verification.md)) |
 
-Recommended pre-release checks:
+Full source-checkout release gate:
 
 ```bash
-npm run check
-npm test
-npm run docs:lint
-npm audit --audit-level=high
+npm run verify
 ```
+
+`npm run verify` is the canonical pre-release command from a source checkout. It runs lint, install smoke (which owns the only build), the fast suite, dogfood, bench, and the high-level audit.
 
 ---
 
@@ -265,12 +265,13 @@ The detailed backlog is tracked against [`docs/roadmap.md`](docs/roadmap.md).
 | [`docs/invariants.md`](docs/invariants.md) | Invariants like local-first, redaction, and the permission model |
 | [`docs/glossary.md`](docs/glossary.md) | Glossary |
 | [`docs/README.md`](docs/README.md) | Documentation index |
+| [`docs/architecture.md`](docs/architecture.md) | Source-checkout runtime architecture and extension map |
 | [`docs/mcp.md`](docs/mcp.md) | MCP server, tools, and resources |
 | [`docs/cli-reference.md`](docs/cli-reference.md) | Every CLI command, flag, and exit code |
 | [`docs/extending-adapters.md`](docs/extending-adapters.md) | Authoring semantic adapters |
 | [`docs/verification.md`](docs/verification.md) | Verification layers, test scripts, and the dogfood guard |
-| [`skills/parallax/SKILL.md`](skills/parallax/SKILL.md) | Skill for Claude Code / Codex users |
-| [`skills/parallax/references/architecture.md`](skills/parallax/references/architecture.md) | Deep dive into the internal architecture |
+| [`docs/operations.md`](docs/operations.md) | Troubleshooting and operator runbook |
+| [`docs/release-checklist.md`](docs/release-checklist.md) | Source-checkout release, CI, audit, and package smoke checklist |
 
 ---
 

@@ -42,6 +42,18 @@ export type AdapterCapability =
   | 'tests'
   | 'packages';
 
+export type AdapterSelectionMode = 'targeted' | 'catch-all';
+
+export interface AdapterManifestEntry {
+  readonly order: number;
+  readonly id: string;
+  readonly version: string;
+  readonly capabilities: readonly AdapterCapability[];
+  readonly confidence: Confidence;
+  readonly knownGaps: readonly string[];
+  readonly selectionMode: AdapterSelectionMode;
+}
+
 export type IndexEvent =
   | { readonly kind: 'entity'; readonly entity: PendingEntity }
   | { readonly kind: 'relation'; readonly relation: PendingRelation }
@@ -71,6 +83,7 @@ export interface SemanticAdapter {
   readonly capabilities: readonly AdapterCapability[];
   readonly confidence?: Confidence;
   readonly knownGaps?: readonly string[];
+  readonly selectionMode?: AdapterSelectionMode;
   supports(file: ScannedFile): boolean;
   start(ctx: ExtractCtx, files: readonly ScannedFile[]): Promise<AdapterRun> | AdapterRun;
 }

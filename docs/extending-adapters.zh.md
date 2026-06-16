@@ -13,6 +13,7 @@ adapter 实现 `SemanticAdapter` 接口（`src/adapters/types.ts`）：
 - `capabilities` — 此 adapter 能产生的 `AdapterCapability` 值。
 - `confidence?` — adapter 的默认 confidence 标签（省略时回退为 `unknown`）。
 - `knownGaps?` — 关于此 adapter *不*解析什么的人类可读说明。
+- `selectionMode?` — 有边界的语言/文件 adapter 默认是 `targeted`，最后的 fallback adapter 使用 `catch-all`。
 - `supports(file)` — 若此 adapter 处理该文件则返回 `true`。
 - `start(ctx, files)` — 为该 index run 返回一个 `AdapterRun`（或 `Promise<AdapterRun>`）。
 
@@ -43,7 +44,11 @@ orchestrator 对每个 `EntityDescriptor` 做 content-hash 来计算其 entity i
 
 adapter 存放于 registry（`src/adapters/registry.ts`），由 `src/indexer.ts` 中的 `createDefaultRegistry()` 组装。选择在注册顺序中是 **first-match-wins**——`pickAdapter(file)` 返回首个 `supports()` 为 `true` 的已注册 adapter。
 
-这使注册顺序 load-bearing。默认 registry 按以下顺序注册：build-system/package adapter、config/infra adapter、TypeScript/JavaScript adapter、JVM/Spring adapter、Python adapter、Go adapter、Rust adapter，最后是 multi-language regex adapter。最后那个 adapter 是一个 `supports()` 永远返回 `true` 的 **catch-all**，因此必须 LAST 注册——任何注册在 catch-all 之后的 adapter 都不可达。registry 的安全网记录并 assert 了这一顺序。
+这使注册顺序 load-bearing。默认 registry 按以下顺序注册：build-system/package adapter、config/infra adapter、TypeScript/JavaScript adapter、JVM/Spring adapter、Python adapter、Go adapter、Rust adapter，最后是 multi-language regex adapter。最后那个 adapter 是一个 `supports()` 永远返回 `true` 的 **catch-all**，因此必须 LAST 注册——任何注册在 catch-all 之后的 adapter 都不可达。registry 会强制这一顺序。
+
+registry 现在显式强制这项契约。`selectionMode` 为了 source compatibility 是可选字段，省略时默认为 `targeted`；只有刻意作为最后 fallback coverage 的 adapter 才设置 `selectionMode = 'catch-all'`。如果已经存在 catch-all adapter，`AdapterRegistry.register()` 会拒绝在它之后注册任何 adapter，error 会同时命名新 adapter 与阻挡它的 catch-all adapter。重复 `id` 校验仍然先运行，并保留既有的重复 id error。
+
+审查或测试 adapter 注册时使用 `registry.manifest()`。它按注册顺序返回一个 immutable snapshot。每个 entry 暴露 `order`、`id`、`version`、`capabilities`、`confidence`（默认 `unknown`）、`knownGaps`（默认空数组）和 `selectionMode`（默认 `targeted`）。调用方可以检查这些信息，但不能改变 registry 状态。
 
 ## 版本管理与重新提取
 
@@ -70,6 +75,7 @@ export class ExampleAdapter implements SemanticAdapter {
   readonly version = '0.1.0';
   readonly capabilities = capabilities;
   readonly confidence = 'heuristic';
+  readonly selectionMode = 'targeted';
   readonly knownGaps = ['only resolves a single literal import form'];
 
   supports(file: ScannedFile): boolean {
@@ -109,6 +115,16 @@ export class ExampleAdapter implements SemanticAdapter {
 ```
 
 在 `createDefaultRegistry()` 中把它注册在 catch-all adapter **之前**，使其 `supports()` 先被参考。
+
+## adapter checklist
+
+添加或修改 adapter 前：
+
+- 使用唯一的 `id`，并在提取输出变化时提升 `version`。
+- 对语言/文件专用 adapter 优先使用 `selectionMode = 'targeted'`；只把 `catch-all` 留给最后的 fallback adapter。
+- 将所有 targeted adapter 注册在任何 catch-all adapter 之前。
+- 在 focused test 或 review note 中用 `registry.manifest()` 确认顺序、capability、confidence、known gap 和 selection mode。
+- 保持 `knownGaps` 最新，让 manifest 能说明哪些 coverage 是 heuristic 或不完整的。
 
 ## 另见
 

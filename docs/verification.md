@@ -13,7 +13,8 @@ Every command below is an `npm run` script defined in `package.json`.
 | `npm test` | Runs the Node test runner over `tests/**/*.test.ts` via `tsx --test` | After any change; the default fast suite |
 | `npm run check` | `tsc --noEmit` typecheck, no output emitted | Before commit; catches type regressions |
 | `npm run lint` | `check` + `docs:lint` together | Before commit / PR; the full static gate |
-| `npm run docs:lint` | Runs `scripts/docs-lint.js` over tracked Markdown | After editing any doc |
+| `npm run docs:lint` | Runs `scripts/docs-lint.js` over tracked and untracked Markdown, including local `.md` link targets | After editing any doc |
+| `npm run verify` | Runs the canonical source-checkout release gate: lint, install smoke, fast tests, dogfood, bench, and high-level audit | Before release and in CI |
 | `npm run build` | `tsc -p tsconfig.json`, compiles to `dist/` | Before publishing or smoke-testing the CLI |
 | `npm run bench` | Runs `bench/impact-bench.ts`; exits non-zero on accuracy regression | After engine/adapter changes |
 | `npm run test:dogfood` | Indexes Parallax on its own source and asserts the internal graph survives | After engine changes (indexer/adapters/analyzer/store/graph) |
@@ -22,7 +23,7 @@ Every command below is an `npm run` script defined in `package.json`.
 | `npm run test:security` | Runs `tests/security.test.ts` (path containment + redaction) | After store / path / redaction changes |
 | `npm run test:install-smoke` | `npm run build` then `node dist/src/cli.js --help` | Before release, to confirm the packaged CLI launches |
 
-`test:fixtures` is an alias for `npm test`, and `test:benchmark` is an alias for `npm run bench`.
+`test:fixtures` is an alias for `npm test`, and `test:benchmark` is an alias for `npm run bench`. `npm run verify` includes `npm audit --audit-level=high`, so its final audit stage depends on npm registry and network availability.
 
 ## The dogfood guard — the real safety net
 
@@ -53,19 +54,20 @@ The default suite globs `tests/**/*.test.ts`. The guard is named `tests/dogfood.
 
 The runner writes a deterministic JSON report and sets a non-zero exit code when the suite does not pass. There are two surfaces:
 
-- `tests/impact-bench.test.ts` runs the bench as part of `npm test` and asserts the report shape, the pinned **76** expected relations, and the score/recall thresholds.
+- `tests/impact-bench.test.ts` runs the bench as part of `npm test` and asserts the report shape, the pinned expected relations, and the score/recall thresholds.
 - `npm run bench` runs `bench/impact-bench.ts` directly and exits non-zero on any recall/score regression — this is the form CI uses.
 
 Run `npm run bench` after any change that touches relation extraction, ranking, or retrieval.
 
 ## The docs linter
 
-`scripts/docs-lint.js` (run via `npm run docs:lint`) is a static gate over every tracked `*.md` file. It enforces:
+`scripts/docs-lint.js` (run via `npm run docs:lint`) is a static gate over tracked Markdown plus local untracked Markdown that is not ignored. It enforces:
 
-- **No forbidden content** — local machine paths, restore-point metadata, and secret-like strings (private keys, GitHub tokens, `sk-...` keys). This scan runs on the raw text, including fenced code blocks.
+- **No forbidden content** — local machine paths, restore-point metadata, and runtime-redacted secret families such as API keys, service tokens, bearer/JWT credentials, database URLs with embedded credentials, and private keys. This scan runs on the raw text, including fenced code blocks.
 - **Trilingual parity** — every doc in the trilingual zone (`docs/` excluding `docs/assets/`, `skills/`, and root `README`/`CONTRIBUTING`/`SECURITY`) must have all three of `X.md`, `X.ko.md`, `X.zh.md`.
 - **Switcher presence** — each file must link to its other two language variants (the language switcher under the H1).
 - **Same-language internal links** — inside `X.ko.md`, internal `.md` links must point to the `.ko.md` sibling (and `.zh.md` inside `X.zh.md`) whenever that same-language twin exists. The switcher line is the only allowed cross-language exception. Fenced code blocks are ignored for link checking, so markdown link *examples* in code blocks are safe.
+- **Existing local Markdown targets** — non-image local `.md` links must resolve to a Markdown file in the working tree, including new untracked docs before they are staged.
 
 ## Continuous integration
 
@@ -73,14 +75,10 @@ Run `npm run bench` after any change that touches relation extraction, ranking, 
 
 ```bash
 npm ci
-npm run lint        # tsc --noEmit + docs-lint
-npm run build
-npm test            # fast unit suite (excludes the dogfood guard)
-npm run test:dogfood
-npm run bench
+npm run verify
 ```
 
-The dogfood guard and bench run as their own steps after the unit suite, so a regression that the unit tests miss still fails CI.
+`npm run verify` is the canonical source-checkout gate. It runs lint first, then install smoke (which owns the only build), the fast unit suite, dogfood, bench, and finally the registry-dependent audit.
 
 ## How to add tests
 
@@ -93,10 +91,7 @@ Tests live under `tests/` and follow the **Arrange-Act-Assert** pattern: set up 
 Before opening a PR, run the full local gate:
 
 ```bash
-npm run lint
-npm test
-npm run test:dogfood
-npm run bench
+npm run verify
 ```
 
 ## See also

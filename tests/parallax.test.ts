@@ -4741,6 +4741,79 @@ function runCli(repoRoot: string, args: string[]): { status: number | null; stdo
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
 }
 
+test('CLI integer flags reject malformed values', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-cli-integers-'));
+
+  const cases = [
+    {
+      args: ['analyze', '--changed', 'src/a.ts', '--depth', '2abc'],
+      expectedError: "--depth must be a non-negative integer; got '2abc'"
+    },
+    {
+      args: ['ui', '--port', '3717x'],
+      expectedError: "--port must be a non-negative integer; got '3717x'"
+    },
+    {
+      args: ['profile', '--entity', 'src/a.ts', '--k', '10x'],
+      expectedError: "--k must be a non-negative integer; got '10x'"
+    },
+    {
+      args: ['analyze', '--changed', 'src/a.ts', '--depth', ''],
+      expectedError: "--depth must be a non-negative integer; got ''"
+    },
+    {
+      args: ['ui', '--port'],
+      expectedError: "--port must be a non-negative integer; got ''"
+    },
+    {
+      args: ['profile', '--entity', 'src/a.ts', '--k', '-1'],
+      expectedError: "--k must be a non-negative integer; got '-1'"
+    },
+    {
+      args: ['profile', '--entity', 'src/a.ts', '--k', '01'],
+      expectedError: "--k must be a non-negative integer; got '01'"
+    },
+    {
+      args: ['profile', '--entity', 'src/a.ts', '--k', '1.5'],
+      expectedError: "--k must be a non-negative integer; got '1.5'"
+    },
+    {
+      args: ['profile', '--entity', 'src/a.ts', '--k', '1e2'],
+      expectedError: "--k must be a non-negative integer; got '1e2'"
+    }
+  ];
+
+  for (const testCase of cases) {
+    const result = spawnSync(
+      process.execPath,
+      ['--import', tsxLoaderPath, path.resolve('src/cli.ts'), ...testCase.args],
+      { cwd: repoRoot, encoding: 'utf8', timeout: 4000 }
+    );
+    assert.equal(
+      result.status,
+      2,
+      `${testCase.args.join(' ')} should fail with an integer parse error; signal=${result.signal ?? 'none'} stdout=${result.stdout} stderr=${result.stderr}`
+    );
+    assert.match(result.stderr, new RegExp(testCase.expectedError.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+});
+
+test('CLI integer flags accept zero', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-cli-integer-zero-'));
+
+  const result = spawnSync(
+    process.execPath,
+    ['--import', tsxLoaderPath, path.resolve('src/cli.ts'), 'trace', '--fact-id', 'missing', '--depth', '0'],
+    { cwd: repoRoot, encoding: 'utf8', timeout: 4000 }
+  );
+
+  assert.doesNotMatch(
+    result.stderr,
+    /--depth must be a non-negative integer/,
+    `--depth 0 should pass integer parsing; stderr=${result.stderr}`
+  );
+});
+
 test('CLI branch + trace + retract subcommands round-trip', async () => {
   const repoRoot = await makeFixtureRepo();
   await initProject({ repoRoot });

@@ -1,14 +1,19 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { basename, dirname, join, posix } from 'node:path';
+import { posix, resolve as resolveFsPath } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
-const files = execFileSync('git', ['ls-files', '*.md'], { encoding: 'utf8' })
-  .trim()
-  .split('\n')
-  .filter(Boolean);
+function gitFiles(args) {
+  return execFileSync('git', args, { encoding: 'utf8' })
+    .trim()
+    .split('\n')
+    .filter(Boolean);
+}
 
-const trackedSet = new Set(files);
+let trackedSet = new Set();
+let untrackedSet = new Set();
+let markdownSet = new Set();
 
 const violations = [];
 const report = (file, reason) => violations.push(`docs-lint: ${file}: ${reason}`);
@@ -16,19 +21,37 @@ const report = (file, reason) => violations.push(`docs-lint: ${file}: ${reason}`
 // --- Forbidden content (local metadata / secret-like strings) ---
 
 const forbidden = [
-  /\/Users\/[^\s)]+/,
-  /\.gstack/,
-  /restore point/i,
-  /BEGIN (RSA|OPENSSH|PRIVATE) KEY/,
-  /github_pat_[A-Za-z0-9_]+/,
-  /gho_[A-Za-z0-9_]+/,
-  /sk-[A-Za-z0-9]{20,}/
+  { label: 'local machine path', pattern: /\/Users\/[^\s)]+/ },
+  { label: 'local .gstack metadata', pattern: /\.gstack/ },
+  { label: 'restore-point metadata', pattern: /restore point/i },
+  { label: 'OpenAI API key', pattern: /sk-[A-Za-z0-9_-]{20,}/ },
+  { label: 'Stripe key', pattern: /(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{20,}/ },
+  { label: 'GitHub gh token', pattern: /gh[opsru]_[A-Za-z0-9_]+/ },
+  { label: 'GitHub fine-grained PAT', pattern: /github_pat_[A-Za-z0-9_]+/ },
+  { label: 'Slack token', pattern: /xox[baprs]-[A-Za-z0-9-]{20,}/ },
+  { label: 'AWS access key', pattern: /AKIA[0-9A-Z]{16}/ },
+  {
+    label: 'AWS secret access key assignment',
+    pattern: /AWS_SECRET_ACCESS_KEY\s*=\s*[A-Za-z0-9/+=]{32,}/
+  },
+  { label: 'Google API key', pattern: /AIza[0-9A-Za-z_-]{35}/ },
+  { label: 'npm token', pattern: /npm_[A-Za-z0-9]{36}/ },
+  { label: 'JWT', pattern: /eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/ },
+  { label: 'Bearer token', pattern: /Bearer\s+[A-Za-z0-9._~+/=-]{24,}/ },
+  {
+    label: 'database URL with credentials',
+    pattern: /(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis|amqps?):\/\/[^\s:@/]+:[^\s@/]+@[^\s/]+/
+  },
+  {
+    label: 'private key',
+    pattern: /BEGIN (?:(?:RSA|OPENSSH|EC|DSA) )?PRIVATE KEY|BEGIN (?:RSA|OPENSSH) KEY/
+  }
 ];
 
 function checkForbidden(file, content) {
-  for (const pattern of forbidden) {
+  for (const { label, pattern } of forbidden) {
     if (pattern.test(content)) {
-      report(file, `forbidden local metadata or secret-like content matched ${pattern}`);
+      report(file, `forbidden local metadata or secret-like content: ${label}`);
     }
   }
 }
@@ -49,10 +72,15 @@ function inTrilingualZone(file) {
 
 const LANG_SUFFIXES = ['.ko.md', '.zh.md'];
 
+function normalizeRepoPath(repoPath) {
+  return repoPath.replace(/\\/g, '/');
+}
+
 // Returns { base, lang } where base strips the .ko/.zh infix before .md.
 // Canonical "X.md" -> { base: "X.md", lang: "" }
 // "X.ko.md"        -> { base: "X.md", lang: "ko" }
-function parseVariant(file) {
+export function parseVariant(file) {
+  file = normalizeRepoPath(file);
   for (const suffix of LANG_SUFFIXES) {
     if (file.endsWith(suffix)) {
       const lang = suffix.slice(1, 3); // "ko" | "zh"
@@ -64,9 +92,10 @@ function parseVariant(file) {
 }
 
 // For a base path "dir/X.md" returns the three sibling variant paths.
-function siblingPaths(base) {
-  const dir = dirname(base);
-  const stem = basename(base, '.md');
+export function siblingPaths(base) {
+  base = normalizeRepoPath(base);
+  const dir = posix.dirname(base);
+  const stem = posix.basename(base, '.md');
   const make = (suffix) => (dir === '.' ? `${stem}${suffix}` : posix.join(dir, `${stem}${suffix}`));
   return {
     canonical: make('.md'),
@@ -77,19 +106,23 @@ function siblingPaths(base) {
 
 // --- (a) Trilingual parity ---
 
+function checkRequiredTrackedVariant(file, variantPath, missingReason) {
+  if (trackedSet.has(variantPath)) return;
+  const variantName = posix.basename(variantPath);
+  if (untrackedSet.has(variantPath)) {
+    report(file, `trilingual variant ${variantName} exists only as untracked and must be staged/tracked`);
+    return;
+  }
+  report(file, missingReason);
+}
+
 function checkParity(zoneFiles) {
   for (const file of zoneFiles) {
     const { base } = parseVariant(file);
     const { canonical, ko, zh } = siblingPaths(base);
-    if (!trackedSet.has(canonical)) {
-      report(file, `orphan translation: canonical ${basename(canonical)} is missing`);
-    }
-    if (!trackedSet.has(ko)) {
-      report(file, `missing trilingual variant ${basename(ko)}`);
-    }
-    if (!trackedSet.has(zh)) {
-      report(file, `missing trilingual variant ${basename(zh)}`);
-    }
+    checkRequiredTrackedVariant(file, canonical, `orphan translation: canonical ${posix.basename(canonical)} is missing`);
+    checkRequiredTrackedVariant(file, ko, `missing trilingual variant ${posix.basename(ko)}`);
+    checkRequiredTrackedVariant(file, zh, `missing trilingual variant ${posix.basename(zh)}`);
   }
 }
 
@@ -137,23 +170,28 @@ function checkSwitcher(file, content) {
   const targets = new Set();
   for (const { isImage, target } of iterLinks(content)) {
     if (isImage) continue;
-    targets.add(basename(target));
+    targets.add(posix.basename(target));
   }
   // The file must link to its other two language variants (need not link to itself).
   const required = [canonical, ko, zh].filter((p) => p !== file);
   for (const sibling of required) {
-    if (!targets.has(basename(sibling))) {
-      report(file, `missing switcher link to ${basename(sibling)}`);
+    if (!targets.has(posix.basename(sibling))) {
+      report(file, `missing switcher link to ${posix.basename(sibling)}`);
     }
   }
 }
 
 // --- (c) Same-language internal links ---
 
+export function resolveRepoMarkdownTarget(file, target) {
+  file = normalizeRepoPath(file);
+  target = normalizeRepoPath(target);
+  return posix.normalize(posix.join(posix.dirname(file), target));
+}
+
 function checkSameLanguageLinks(file, content) {
   const { base: ownBase, lang } = parseVariant(file);
   if (!lang) return; // canonical files are not checked
-  const fileDir = dirname(file);
   const own = siblingPaths(ownBase);
   // The file's own switcher links (English canonical + the other-language twin)
   // are always allowed; they are how a reader hops languages.
@@ -164,44 +202,80 @@ function checkSameLanguageLinks(file, content) {
     if (!target.endsWith('.md')) continue;
 
     // Resolve the target relative to the linking file's own directory.
-    const resolved = posix.normalize(join(fileDir, target));
+    const resolved = resolveRepoMarkdownTarget(file, target);
     if (ownSiblings.has(resolved)) continue;
 
     // The same-language variant the link *should* point to for this target.
     const { base: targetBase } = parseVariant(resolved);
     const sameLangVariant = siblingPaths(targetBase)[lang];
     // Only enforce when a same-language twin actually exists for that target.
-    if (!trackedSet.has(sameLangVariant)) continue;
+    if (!markdownSet.has(sameLangVariant)) continue;
     // Correct already: the link points at the same-language variant.
     if (resolved === sameLangVariant) continue;
     // Otherwise it leaks to a different language (canonical or the wrong language).
     report(
       file,
-      `cross-language link leak: links to ${target} but same-language ${basename(sameLangVariant)} exists`
+      `cross-language link leak: links to ${target} but same-language ${posix.basename(sameLangVariant)} exists`
     );
+  }
+}
+
+function checkMarkdownLinkTargets(file, content) {
+  for (const { isImage, target } of iterLinks(content)) {
+    if (isImage) continue;
+    if (!target.endsWith('.md')) continue;
+
+    const resolved = resolveRepoMarkdownTarget(file, target);
+    if (!markdownSet.has(resolved) && !existsSync(resolved)) {
+      report(file, `missing markdown link target ${target}`);
+    }
   }
 }
 
 // --- Run all checks ---
 
-const zoneFiles = files.filter(inTrilingualZone);
+function loadMarkdownFileSets() {
+  const trackedFiles = gitFiles(['ls-files', '*.md']);
+  const untrackedFiles = gitFiles(['ls-files', '--others', '--exclude-standard', '*.md']);
+  const files = [...new Set([...trackedFiles, ...untrackedFiles])];
+  return {
+    files,
+    trackedFiles,
+    untrackedFiles
+  };
+}
 
-checkParity(zoneFiles);
+function run() {
+  const { files, trackedFiles, untrackedFiles } = loadMarkdownFileSets();
+  trackedSet = new Set(trackedFiles);
+  untrackedSet = new Set(untrackedFiles);
+  markdownSet = new Set(files);
+  violations.length = 0;
 
-for (const file of files) {
-  if (!existsSync(file)) continue;
-  const content = readFileSync(file, 'utf8');
-  checkForbidden(file, content);
-  if (inTrilingualZone(file)) {
-    checkSwitcher(file, content);
-    checkSameLanguageLinks(file, content);
+  const trackedZoneFiles = trackedFiles.filter(inTrilingualZone);
+
+  checkParity(trackedZoneFiles);
+
+  for (const file of files) {
+    if (!existsSync(file)) continue;
+    const content = readFileSync(file, 'utf8');
+    checkForbidden(file, content);
+    checkMarkdownLinkTargets(file, content);
+    if (inTrilingualZone(file)) {
+      checkSwitcher(file, content);
+      checkSameLanguageLinks(file, content);
+    }
   }
+
+  if (violations.length > 0) {
+    for (const v of violations) console.error(v);
+    console.error(`\ndocs-lint: ${violations.length} violation(s) found`);
+    process.exit(1);
+  }
+
+  console.log('docs-lint: OK');
 }
 
-if (violations.length > 0) {
-  for (const v of violations) console.error(v);
-  console.error(`\ndocs-lint: ${violations.length} violation(s) found`);
-  process.exit(1);
+if (process.argv[1] && import.meta.url === pathToFileURL(resolveFsPath(process.argv[1])).href) {
+  run();
 }
-
-console.log('docs-lint: OK');

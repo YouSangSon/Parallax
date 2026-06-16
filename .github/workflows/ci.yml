@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   verify:
-    name: Lint, build, test, dogfood, bench
+    name: Release gate
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -31,22 +31,5 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # tsc --noEmit + docs-lint (parity / switcher / link / secret checks).
-      - name: Lint (typecheck + docs)
-        run: npm run lint
-
-      - name: Build
-        run: npm run build
-
-      # Fast unit suite (excludes the slow dogfood guard, run separately below).
-      - name: Unit tests
-        run: npm test
-
-      # Dogfood guard: index Parallax on itself and assert the internal
-      # DEPENDS_ON graph survives — catches regressions green unit tests miss.
-      - name: Dogfood guard
-        run: npm run test:dogfood
-
-      # Deterministic fixture bench; exits non-zero on recall/score regression.
-      - name: Impact bench
-        run: npm run bench
+      - name: Verify
+        run: npm run verify

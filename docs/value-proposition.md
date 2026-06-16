@@ -4,20 +4,19 @@
 
 > **What this document is for:** A living one-pager, compressed so that an internal hackathon judge can grasp *what it is, why it matters, and how it's different* in 5 minutes. It keeps getting refined as development progresses.
 >
-> **Last updated:** 2026-04-30
+> **Last updated:** 2026-06-16
 >
 > **Companion documents:**
 > - User-facing README: [`README.md`](../README.md)
-> - Big-picture design notes: [`docs/agent-db-exploration.ko.md`](agent-db-exploration.ko.md)
-> - Usage flows and examples: [`docs/agent-memory-cookbook.ko.md`]
-> - Current progress: [`docs/progress.ko.md`]
-> - Next milestone: [`docs/phase3-handoff.ko.md`](phase3-handoff.ko.md)
+> - Architecture map: [`architecture.md`](architecture.md)
+> - Verification gates: [`verification.md`](verification.md)
+> - Current roadmap: [`roadmap.md`](roadmap.md)
 
 ---
 
 ## 1. One-line summary
 
-> **A local tool that hands AI coding tools (Claude Code, Codex, etc.) both a "map of the codebase" and a "notebook of yesterday's thinking" at the same time. All in a single SQLite file, with no external dependencies.**
+> **A local tool that hands AI coding tools (Claude Code, Codex, etc.) both a "map of the codebase" and a "notebook of yesterday's thinking" at the same time. It uses a single SQLite store and does not require a hosted database or remote API.**
 
 ## 2. The problem we're solving — two frustrations
 
@@ -50,7 +49,7 @@ No graph DB, no vector DB, no external cache — one file.
 
 ## 4. Four core values
 
-### V1. Local-first, single file, zero external dependencies
+### V1. Local-first, single file, no hosted services
 
 Everything lives in one file: `.parallax/impact.db`.
 - Friendly to internal security policy — code and decision data never leave the user's PC
@@ -125,25 +124,21 @@ Parallax expresses the same essence with a single SQLite file + the sqlite-vec e
 ## 6. Current status — what works / what doesn't
 
 ### Works ✅
-- Accurately indexes TypeScript/JavaScript/Markdown
-- regex-heuristic indexing for 9 additional languages (Python, Go, Rust, Java, Kotlin, C#, C, C++)
-- Indexes infrastructure/contract files (Docker, Terraform, protobuf, GraphQL, CODEOWNERS, etc.)
-- "changed files → impacted files" bounded multi-hop analysis (cycle/fanout protection)
-- Persists AI decisions/observations as facts
-- Time travel (`as_of_tx`), retract dedup (`current_only`), semantic search (`semantic`)
-- branch fork/merge for simulating multiple hypotheses
-- Automatic secret redaction + zero-row embedding
-- MCP stdio server — connects to Claude Code and Codex immediately
+- Indexes TypeScript/JavaScript, Markdown work artifacts, config/infra files, package manifests, and broad multi-language source files through semantic adapters.
+- Produces bounded "changed files → affected files" reports with evidence, confidence labels, adapter insights, coverage warnings, and verification actions.
+- Tracks workspace catalogs and resolves local cross-repo contract links for registered repositories.
+- Classifies OpenAPI, GraphQL, Protobuf, and AsyncAPI contract diffs and reports impacted local consumers when links are known.
+- Persists AI decisions and observations as content-addressable facts with time travel, branch fork/merge, explicit supersession, semantic recall, profile, trace, reflection, and branch GC.
+- Redacts secret-like strings before storage, embedding, and LLM reflection.
+- Exposes the same local database through CLI, MCP stdio, and the local UI workbench.
 
 ### In progress / not yet implemented 🟡
-- TypeScript Compiler API semantic adapter (regex → precise syntactic analysis)
-- Analyzing multiple repositories together (workspace catalog) — schema is ready
-- API contract tracking (impact of OpenAPI/protobuf changes) — schema is ready
-- Visual web graph explorer
-- Automatic summarization of stale memory (reflective consolidation, )
-- Automatic cleanup of abandoned branches
+- Parser-backed precision is still uneven by language. TypeScript/JavaScript has the deepest coverage, while JVM/Python/Go/Rust and other languages still have known gaps.
+- Cross-repo and contract intelligence are active v0 features, not a complete enterprise dependency map. They only cover local repositories and contracts that the user registered.
+- Team-wide fact sync is still future work. Today the local `.parallax/impact.db` remains per checkout unless facts are explicitly moved by future tooling.
+- IDE extensions and automatic external-system sync remain roadmap items.
 
-Tests: 43 passing. 4,114 LOC TypeScript. 4 external dependencies (MCP SDK, transformers.js, sqlite-vec, zod).
+Current verification and dependency counts are intentionally not pinned here because they drift quickly. Use `npm test`, `npm run test:dogfood`, `npm run bench`, and `package.json` as the source of truth.
 
 ## 7. Expansion roadmap — directions that grow the value
 
@@ -153,7 +148,7 @@ Tests: 43 passing. 4,114 LOC TypeScript. 4 external dependencies (MCP SDK, trans
 - CodeQL adapter → tracing all the way down to data flow
 
 ### B. Expanding beyond code — essential for the microservice era
-- Bundling multiple repositories (`workspaces`/`workspace_repos`) — schema already exists
+- Deepening workspace catalogs beyond explicitly registered local repositories
 - API contracts (OpenAPI/protobuf/GraphQL/AsyncAPI) → automatically identify downstream consumers on change
 - Impact of CI/Docker/K8s/Terraform infrastructure changes
 

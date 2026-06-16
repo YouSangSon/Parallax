@@ -497,11 +497,12 @@ function parseOptionalWorkspaceArg(args: string[], name: string): string | undef
 }
 
 function parseIntegerArg(args: string[], name: string): number | undefined {
-  const value = parseOptionalArg(args, name);
-  if (!value) return undefined;
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isFinite(parsed)) {
-    throw new Error(`${name} must be an integer`);
+  const index = args.indexOf(name);
+  if (index < 0) return undefined;
+  const value = args[index + 1] ?? '';
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0 || String(parsed) !== value) {
+    throw new Error(`${name} must be a non-negative integer; got '${value}'`);
   }
   return parsed;
 }

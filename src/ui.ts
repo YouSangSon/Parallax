@@ -284,6 +284,15 @@ type GraphPageCursor = {
   edgeOffset: number;
 };
 
+class UiClientInputError extends Error {
+  readonly code = 'invalid_request';
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'UiClientInputError';
+  }
+}
+
 type SourceLocation = {
   href: string;
   label: string;
@@ -1145,6 +1154,11 @@ export async function startUiServer(options: UiServerOptions): Promise<{ server:
       response.writeHead(404, textHeaders());
       response.end('not found');
     } catch (error) {
+      if (error instanceof UiClientInputError) {
+        response.writeHead(400, jsonHeaders());
+        response.end(JSON.stringify({ error: { code: error.code, message: error.message } }));
+        return;
+      }
       response.writeHead(500, jsonHeaders());
       response.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
     }
@@ -1225,7 +1239,7 @@ function parseGraphPageLimit(value: string | null): number {
   if (value === null) return 100;
   const limit = Number(value);
   if (!Number.isInteger(limit) || limit < 1 || limit > 500) {
-    throw new Error('graph page limit must be an integer between 1 and 500');
+    throw new UiClientInputError('graph page limit must be an integer between 1 and 500');
   }
   return limit;
 }
@@ -1233,7 +1247,7 @@ function parseGraphPageLimit(value: string | null): number {
 function parseGraphPageCursor(value: string | null): GraphPageCursor {
   if (value === null) return { nodeOffset: 0, edgeOffset: 0 };
   const match = /^(\d+):(\d+)$/.exec(value);
-  if (!match) throw new Error('graph page cursor must be returned by a previous graph JSON page');
+  if (!match) throw new UiClientInputError('graph page cursor must be returned by a previous graph JSON page');
   return {
     nodeOffset: parseGraphCursorOffset(match[1]!, 'node'),
     edgeOffset: parseGraphCursorOffset(match[2]!, 'edge')
@@ -1243,14 +1257,14 @@ function parseGraphPageCursor(value: string | null): GraphPageCursor {
 function parseGraphCursorOffset(value: string, label: 'node' | 'edge'): number {
   const offset = Number(value);
   if (!Number.isSafeInteger(offset) || offset < 0) {
-    throw new Error(`graph page cursor ${label} offset must be a safe non-negative integer`);
+    throw new UiClientInputError(`graph page cursor ${label} offset must be a safe non-negative integer`);
   }
   return offset;
 }
 
 function validateGraphPageCursor(cursor: GraphPageCursor, graph: GraphExport): void {
   if (cursor.nodeOffset > graph.nodes.length || cursor.edgeOffset > graph.edges.length) {
-    throw new Error('graph page cursor is outside the current graph bounds');
+    throw new UiClientInputError('graph page cursor is outside the current graph bounds');
   }
 }
 

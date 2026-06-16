@@ -174,7 +174,7 @@ parallax mcp serve
 | `parallax_remember` / `parallax_recall` | 写入/读取智能体记忆 fact |
 | `parallax_profile` / `parallax_trace` | 查询 entity 画像与其推理链 |
 
-总共注册了 18 个 tool（见 `skills/parallax/SKILL.md`）。图导出不是 tool 而是 MCP **resource**：读取 `parallax://reports/{reportId}/graph/{format}`（`mermaid`、`json` 或 `dot`）。
+已注册的 tool 通过 MCP tool surface 暴露。图导出不是 tool 而是 MCP **resource**：读取 `parallax://reports/{reportId}/graph/{format}`（`mermaid`、`json` 或 `dot`）。
 
 > 在 Claude Code、Codex 等 MCP 客户端中将其登记为 stdio 服务器即可直接使用。
 
@@ -187,7 +187,7 @@ parallax mcp serve
 | **本地优先（Local-first）** | 所有索引与记忆数据都存储在仓库本地的 `.parallax/`，无外部传输 |
 | **显式工作区** | 跨仓库仅覆盖用户登记的本地仓库，无 clone/网络 |
 | **脱敏（Redaction）** | 类似密钥的字符串在存储前会被脱敏 |
-| **默认只读** | MCP 默认只读；写入仅通过显式命令进行 |
+| **默认不改 source tree** | MCP 不会编辑 source file；部分分析 tool 会在 `.parallax/` 中持久化 context-pack 或 telemetry 行，显式 memory 命令会写入 fact |
 | **确定性输出** | 相同输入产生相同报告，可在 CI 中复现 |
 
 ---
@@ -209,20 +209,20 @@ npm run docs:lint
 | `npm run check` | 仅类型检查，不产出文件 |
 | `npm test` | 通过 `tsx` 运行 Node test runner 套件 |
 | `npm run bench` | 基于多语言、Spring Boot、契约、包清单 fixture 的确定性 bench |
-| `npm run docs:lint` | 检查被跟踪的 Markdown 中的本地元数据与类似密钥的内容 |
+| `npm run docs:lint` | 检查 tracked/untracked Markdown 中的禁止内容、trilingual parity、same-language link 与缺失的本地 `.md` target |
+| `npm run verify` | 在 source checkout 中运行完整 release gate |
 | `npm run test:mcp` | 验证 MCP impact/context/memory/telemetry/路径校验 |
 | `npm run test:security` | 验证路径包含约束与脱敏 |
 | `npm run test:ui` | 验证本地 UI 快照、服务器与 JSON 资源端点 |
 | `npm run test:dogfood` | 对 Parallax 自身建立索引并验证内部依赖图未坍缩（参见 [`docs/verification.zh.md`](docs/verification.zh.md)） |
 
-发布前建议的检查：
+Source checkout 完整 release gate：
 
 ```bash
-npm run check
-npm test
-npm run docs:lint
-npm audit --audit-level=high
+npm run verify
 ```
+
+`npm run verify` 是 source checkout 中的 canonical pre-release command。它运行 lint、install smoke（唯一负责 build）、fast suite、dogfood、bench 和 high-level audit。
 
 ---
 
@@ -265,12 +265,13 @@ npm audit --audit-level=high
 | [`docs/invariants.zh.md`](docs/invariants.zh.md) | local-first、脱敏、权限模型等不变量 |
 | [`docs/glossary.zh.md`](docs/glossary.zh.md) | 术语表 |
 | [`docs/README.zh.md`](docs/README.zh.md) | 文档索引 |
+| [`docs/architecture.zh.md`](docs/architecture.zh.md) | Source-checkout runtime architecture 与扩展地图 |
 | [`docs/mcp.zh.md`](docs/mcp.zh.md) | MCP 服务器、tool 与 resource |
 | [`docs/cli-reference.zh.md`](docs/cli-reference.zh.md) | 每个 CLI 命令、标志与 exit code |
 | [`docs/extending-adapters.zh.md`](docs/extending-adapters.zh.md) | 编写 semantic adapter |
 | [`docs/verification.zh.md`](docs/verification.zh.md) | 验证层、测试 script 与 dogfood guard |
-| [`skills/parallax/SKILL.zh.md`](skills/parallax/SKILL.zh.md) | 面向 Claude Code / Codex 用户的 skill |
-| [`skills/parallax/references/architecture.zh.md`](skills/parallax/references/architecture.zh.md) | 内部架构深入解析 |
+| [`docs/operations.zh.md`](docs/operations.zh.md) | Troubleshooting 与运维 runbook |
+| [`docs/release-checklist.zh.md`](docs/release-checklist.zh.md) | Source-checkout release、CI、audit 与 package smoke 检查清单 |
 
 ---
 

@@ -4,20 +4,19 @@
 
 > **이 문서의 역할:** 사내 개발공모전 평가자가 5분 안에 *무엇을·왜·어떻게 다른가*를 잡을 수 있도록 한 페이지로 압축한 살아있는 문서. 개발 진행에 따라 계속 보완한다.
 >
-> **마지막 갱신:** 2026-04-30
+> **마지막 갱신:** 2026-06-16
 >
 > **함께 보면 좋은 문서:**
 > - 사용자 대상 README: [`README.ko.md`](../README.ko.md)
-> - 큰 그림 설계 노트: [`docs/agent-db-exploration.ko.md`](agent-db-exploration.ko.md)
-> - 사용 흐름·예시: [`docs/agent-memory-cookbook.ko.md`]
-> - 진행 현황: [`docs/progress.ko.md`]
-> - 다음 마일스톤: [`docs/phase3-handoff.ko.md`](phase3-handoff.ko.md)
+> - 아키텍처 맵: [`architecture.ko.md`](architecture.ko.md)
+> - 검증 gate: [`verification.ko.md`](verification.ko.md)
+> - 현재 로드맵: [`roadmap.ko.md`](roadmap.ko.md)
 
 ---
 
 ## 1. 한 줄 요약
 
-> **AI 코딩 도구(Claude Code, Codex 등)에게 "코드베이스 지도"와 "어제 한 생각 노트"를 같이 쥐어주는 로컬 도구. 단일 SQLite 파일 하나로 외부 의존 없이.**
+> **AI 코딩 도구(Claude Code, Codex 등)에게 "코드베이스 지도"와 "어제 한 생각 노트"를 같이 쥐어주는 로컬 도구. 단일 SQLite 저장소를 쓰며 호스팅 DB나 원격 API가 필요 없다.**
 
 ## 2. 풀려는 문제 — 두 가지 짜증
 
@@ -50,7 +49,7 @@ AI 코딩 도구를 실무에서 쓰면 두 가지가 거슬린다.
 
 ## 4. 핵심 가치 4가지
 
-### V1. Local-first, 단일 파일, 외부 의존 0
+### V1. Local-first, 단일 파일, 호스팅 서비스 불필요
 
 `.parallax/impact.db` 한 파일에 모든 것이 들어간다.
 - 사내 보안 정책 친화적 — 코드와 결정 데이터가 사용자 PC를 떠나지 않음
@@ -125,25 +124,21 @@ Parallax는 SQLite 한 파일 + sqlite-vec 확장으로 같은 본질을 표현.
 ## 6. 현재 상태 — 동작하는 것 / 안 되는 것
 
 ### 동작함 ✅
-- TypeScript/JavaScript/Markdown 정확하게 인덱싱
-- 9개 추가 언어(Python·Go·Rust·Java·Kotlin·C#·C·C++) regex 휴리스틱 인덱싱
-- 인프라/계약 파일(Docker·Terraform·protobuf·GraphQL·CODEOWNERS 등) 인덱싱
-- "변경 파일 → 영향받는 파일" bounded multi-hop 분석 (cycle/fanout 보호)
-- AI 결정/관찰을 fact로 영속화
-- 시간여행 (`as_of_tx`), retract dedup (`current_only`), 의미 검색 (`semantic`)
-- 여러 가설 시뮬레이션을 위한 branch fork/merge
-- 비밀 자동 redaction + zero-row 임베딩
-- MCP stdio 서버 — Claude Code·Codex 즉시 연결
+- TypeScript/JavaScript, Markdown 작업 산출물, config/infra 파일, package manifest, 넓은 multi-language source file을 semantic adapter로 인덱싱한다.
+- Evidence, confidence label, adapter insight, coverage warning, verification action이 붙은 bounded "changed files → affected files" report를 만든다.
+- 사용자가 등록한 local repository에 대해 workspace catalog와 local cross-repo contract link를 해석한다.
+- OpenAPI, GraphQL, Protobuf, AsyncAPI contract diff를 분류하고, link가 알려진 local consumer impact를 보고한다.
+- AI 결정과 관찰을 content-addressable fact로 저장하고, time travel, branch fork/merge, explicit supersession, semantic recall, profile, trace, reflection, branch GC를 제공한다.
+- Secret-like 문자열을 storage, embedding, LLM reflection 전에 redaction한다.
+- 같은 로컬 데이터베이스를 CLI, MCP stdio, local UI workbench로 노출한다.
 
 ### 진행 중 / 미구현 🟡
-- TypeScript Compiler API 의미 어댑터 (정규식 → 정확한 구문 분석)
-- 여러 저장소 묶어 분석 (workspace catalog) — 스키마는 준비됨
-- API 컨트랙트 추적 (OpenAPI/protobuf 변경 영향) — 스키마는 준비됨
-- 시각적 웹 그래프 탐색기
-- 오래된 메모리 자동 요약 (reflective consolidation, )
-- 버려진 branch 자동 정리
+- Parser-backed precision은 언어별로 아직 균일하지 않다. TypeScript/JavaScript coverage가 가장 깊고, JVM/Python/Go/Rust와 다른 언어에는 known gap이 남아 있다.
+- Cross-repo와 contract intelligence는 active v0 기능이다. 완성된 enterprise dependency map은 아니며, 사용자가 등록한 local repository와 contract만 다룬다.
+- Team-wide fact sync는 아직 future work다. 현재 local `.parallax/impact.db`는 future tooling으로 fact를 명시 이동하기 전까지 checkout별로 남는다.
+- IDE extension과 외부 시스템 자동 sync는 roadmap item이다.
 
-테스트: 43 passing. 4,114 LOC TypeScript. 외부 의존 4개(MCP SDK, transformers.js, sqlite-vec, zod).
+현재 검증 수치와 dependency 수는 빠르게 변하므로 여기에 고정하지 않는다. `npm test`, `npm run test:dogfood`, `npm run bench`, `package.json`을 source of truth로 둔다.
 
 ## 7. 확장 로드맵 — 가치를 키우는 방향
 
@@ -153,7 +148,7 @@ Parallax는 SQLite 한 파일 + sqlite-vec 확장으로 같은 본질을 표현.
 - CodeQL 어댑터 → 데이터 흐름까지 추적
 
 ### B. 코드 외부로 확장 — 마이크로서비스 시대 핵심
-- 여러 저장소 묶기 (`workspaces`/`workspace_repos`) — 이미 스키마 있음
+- 명시 등록된 local repository를 넘어서는 workspace catalog 고도화
 - API 컨트랙트(OpenAPI/protobuf/GraphQL/AsyncAPI) → 변경 시 다운스트림 컨슈머 자동 식별
 - CI/Docker/K8s/Terraform 인프라 변경 영향도
 

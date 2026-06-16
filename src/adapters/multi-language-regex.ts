@@ -249,6 +249,7 @@ export class MultiLanguageRegexAdapter implements SemanticAdapter {
   readonly version = MULTI_LANG_REGEX_ADAPTER_VERSION;
   readonly capabilities = capabilities;
   readonly confidence = 'heuristic';
+  readonly selectionMode = 'catch-all';
   readonly knownGaps = [
     'fallback extraction is broad but shallow and should be treated as coverage guidance, not semantic proof',
     'language-specific parser adapters should replace this path for high-risk changes'

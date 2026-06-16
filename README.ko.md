@@ -174,7 +174,7 @@ parallax mcp serve
 | `parallax_remember` / `parallax_recall` | agent memory fact 쓰기/읽기 |
 | `parallax_profile` / `parallax_trace` | entity 프로파일과 근거 사슬 조회 |
 
-전체 18개 tool이 등록되어 있다(`skills/parallax/SKILL.md` 참고). 그래프 export는 tool이 아니라 MCP **resource**다: `parallax://reports/{reportId}/graph/{format}` (`mermaid`, `json`, `dot`)를 읽는다.
+등록된 tool은 MCP tool surface를 통해 노출된다. 그래프 export는 tool이 아니라 MCP **resource**다: `parallax://reports/{reportId}/graph/{format}` (`mermaid`, `json`, `dot`)를 읽는다.
 
 > Claude Code, Codex 같은 MCP 클라이언트에 stdio 서버로 등록하면 바로 쓸 수 있다.
 
@@ -187,7 +187,7 @@ parallax mcp serve
 | **Local-first** | 모든 인덱스와 memory는 repo-local `.parallax/`에 저장. 외부 전송 없음 |
 | **명시적 workspace** | cross-repo는 사용자가 등록한 local repo만. clone/network 없음 |
 | **Redaction** | secret-like 문자열은 저장 전 redaction |
-| **Read-only 기본** | MCP는 기본 read-only. write는 명시적 명령으로만 |
+| **Source tree read-only 기본** | MCP는 source file을 수정하지 않음. 일부 분석 tool은 `.parallax/`에 context-pack 또는 telemetry row를 저장하고, 명시적 memory 명령은 fact를 기록 |
 | **결정론적 출력** | 같은 입력은 같은 report. CI에서 재현 가능 |
 
 ---
@@ -209,20 +209,20 @@ npm run docs:lint
 | `npm run check` | emit 없이 typecheck |
 | `npm test` | Node test runner suite를 `tsx`로 실행 |
 | `npm run bench` | multi-language, Spring Boot, contract, package manifest fixture 기반 deterministic bench |
-| `npm run docs:lint` | tracked Markdown에서 local metadata와 secret-like content 검사 |
+| `npm run docs:lint` | tracked/untracked Markdown의 금지 콘텐츠, trilingual parity, same-language link, 누락된 local `.md` target 검사 |
+| `npm run verify` | source checkout에서 전체 release gate 실행 |
 | `npm run test:mcp` | MCP impact/context/memory/telemetry/path validation 검증 |
 | `npm run test:security` | path containment와 redaction 검증 |
 | `npm run test:ui` | local UI snapshot, server, JSON resource endpoints 검증 |
 | `npm run test:dogfood` | Parallax를 자기 자신에 인덱싱해 내부 의존성 그래프가 유지되는지 검증 ([`docs/verification.ko.md`](docs/verification.ko.md) 참고) |
 
-릴리스 전 권장 체크:
+Source checkout 전체 release gate:
 
 ```bash
-npm run check
-npm test
-npm run docs:lint
-npm audit --audit-level=high
+npm run verify
 ```
+
+`npm run verify`는 source checkout에서 쓰는 canonical pre-release command다. lint, install smoke(유일한 build를 담당), fast suite, dogfood, bench, high-level audit을 실행한다.
 
 ---
 
@@ -265,12 +265,13 @@ npm audit --audit-level=high
 | [`docs/invariants.ko.md`](docs/invariants.ko.md) | local-first, redaction, 권한 모델 같은 불변 원칙 |
 | [`docs/glossary.ko.md`](docs/glossary.ko.md) | 용어집 |
 | [`docs/README.ko.md`](docs/README.ko.md) | 문서 인덱스 |
+| [`docs/architecture.ko.md`](docs/architecture.ko.md) | Source-checkout runtime architecture와 확장 맵 |
 | [`docs/mcp.ko.md`](docs/mcp.ko.md) | MCP 서버, tool, resource |
 | [`docs/cli-reference.ko.md`](docs/cli-reference.ko.md) | 모든 CLI 명령, 플래그, exit code |
 | [`docs/extending-adapters.ko.md`](docs/extending-adapters.ko.md) | semantic adapter 작성 |
 | [`docs/verification.ko.md`](docs/verification.ko.md) | 검증 계층, 테스트 script, dogfood guard |
-| [`skills/parallax/SKILL.ko.md`](skills/parallax/SKILL.ko.md) | Claude Code/Codex 사용자용 skill |
-| [`skills/parallax/references/architecture.ko.md`](skills/parallax/references/architecture.ko.md) | 내부 아키텍처 심화 |
+| [`docs/operations.ko.md`](docs/operations.ko.md) | Troubleshooting과 운영 runbook |
+| [`docs/release-checklist.ko.md`](docs/release-checklist.ko.md) | Source-checkout release, CI, audit, package smoke 체크리스트 |
 
 ---
 

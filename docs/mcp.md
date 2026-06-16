@@ -18,11 +18,11 @@ Register Parallax as a stdio server with any MCP client. Conceptually the client
 
 ## Read-only-first invariant
 
-Parallax follows invariant **I-8** (see [invariants.md](invariants.md)): the agent surface stabilizes a safe read-only analysis layer first, and write permissions are added only behind a separate model and review. Each tool declares an MCP `readOnlyHint` annotation. Five tools are annotated `readOnlyHint: true` — `parallax_recall`, `parallax_profile`, `parallax_context_telemetry`, `parallax_doctor`, and `parallax_trace` — and are pure reads. The remaining tools are annotated `readOnlyHint: false`; this includes the analysis tools, which persist context-pack and telemetry rows as a side effect of answering, as well as the explicit memory-write and branch-management tools. None of them modify your source tree — actions are recommendations only (invariant **I-9**).
+Parallax follows invariant **I-8** (see [invariants.md](invariants.md)): the agent surface stabilizes a safe read-only analysis layer first, and write permissions are added only behind a separate model and review. Each tool declares an MCP `readOnlyHint` annotation. Tools marked `readOnlyHint: true` in the table are pure reads. Tools marked `readOnlyHint: false` include analysis tools, which persist context-pack and telemetry rows as a side effect of answering, as well as explicit memory-write and branch-management tools. None of them modify your source tree — actions are recommendations only (invariant **I-9**).
 
 ## Tools
 
-All 18 tools are registered under the `parallax_` prefix. The *read-only* column reflects the tool's MCP `readOnlyHint` annotation.
+All registered tools use the `parallax_` prefix. This table is checked against the MCP `tools/list` response; the *read-only* column reflects each tool's `readOnlyHint` annotation.
 
 | Tool | Role | Read-only |
 | :--- | :--- | :--- |

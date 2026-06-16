@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -49,6 +49,89 @@ type JsonRpcMessage = {
     data?: unknown;
   };
 };
+
+type DocumentedMcpTool = {
+  name: string;
+  readOnly: boolean;
+};
+
+type McpDocsToolTable = {
+  filePath: string;
+  toolsHeading: string;
+  resourcesHeading: string;
+  yesLabel: string;
+  noLabel: string;
+};
+
+const mcpDocsToolTables: McpDocsToolTable[] = [
+  {
+    filePath: 'docs/mcp.md',
+    toolsHeading: '## Tools',
+    resourcesHeading: '## Resources',
+    yesLabel: 'Yes',
+    noLabel: 'No'
+  },
+  {
+    filePath: 'docs/mcp.ko.md',
+    toolsHeading: '## Tool',
+    resourcesHeading: '## Resource',
+    yesLabel: '예',
+    noLabel: '아니오'
+  },
+  {
+    filePath: 'docs/mcp.zh.md',
+    toolsHeading: '## Tool',
+    resourcesHeading: '## Resource',
+    yesLabel: '是',
+    noLabel: '否'
+  }
+];
+
+function documentedMcpTools(table: McpDocsToolTable): DocumentedMcpTool[] {
+  const markdown = readFileSync(path.resolve(table.filePath), 'utf8');
+  const lines = markdown.split('\n');
+  const toolsStart = lines.findIndex((line) => line.trim() === table.toolsHeading);
+  assert.notEqual(toolsStart, -1, `${table.filePath} must have a ${table.toolsHeading} section`);
+  const resourcesStart = lines.findIndex(
+    (line, index) => index > toolsStart && line.trim() === table.resourcesHeading
+  );
+  assert.notEqual(
+    resourcesStart,
+    -1,
+    `${table.filePath} must have a ${table.resourcesHeading} section after ${table.toolsHeading}`
+  );
+  const toolsSection = lines.slice(toolsStart + 1, resourcesStart);
+
+  const tools: DocumentedMcpTool[] = [];
+  for (const line of toolsSection) {
+    const cells = line.split('|').slice(1, -1).map((cell) => cell.trim());
+    const toolCell = cells[0];
+    const readOnlyCell = cells[2];
+    if (!toolCell || !readOnlyCell) {
+      continue;
+    }
+    const toolName = toolCell.match(/^`(parallax_[^`]+)`$/)?.[1];
+    if (!toolName) {
+      continue;
+    }
+    assert.ok(
+      readOnlyCell === table.yesLabel || readOnlyCell === table.noLabel,
+      `${table.filePath} Tools table row for ${toolName} must use ${table.yesLabel}/${table.noLabel} read-only labels`
+    );
+    tools.push({
+      name: toolName,
+      readOnly: readOnlyCell === table.yesLabel
+    });
+  }
+
+  assert.ok(tools.length > 0, `${table.filePath} Tools table must document parallax_* tools`);
+  assert.equal(
+    new Set(tools.map((tool) => tool.name)).size,
+    tools.length,
+    `${table.filePath} Tools table must not contain duplicate tools`
+  );
+  return tools;
+}
 
 class McpProcessClient {
   private readonly child: ChildProcessWithoutNullStreams;
@@ -1044,6 +1127,24 @@ test('MCP stdio server initializes and exposes the full agent memory tool surfac
     const toolByName = new Map<string, (typeof tools)[number]>(
       tools.map((tool) => [tool.name, tool])
     );
+    for (const table of mcpDocsToolTables) {
+      const documentedTools = documentedMcpTools(table);
+      const documentedToolByName = new Map(
+        documentedTools.map((tool) => [tool.name, tool])
+      );
+      assert.deepEqual(
+        [...documentedToolByName.keys()].sort(),
+        tools.map((tool) => tool.name).sort(),
+        `${table.filePath} Tools table must match tools/list`
+      );
+      for (const tool of tools) {
+        assert.equal(
+          documentedToolByName.get(tool.name)?.readOnly,
+          tool.annotations?.readOnlyHint,
+          `${table.filePath} read-only value must match readOnlyHint for ${tool.name}`
+        );
+      }
+    }
     const expectedTools = [
       'parallax_analyze_diff',
       'parallax_context_for_change',

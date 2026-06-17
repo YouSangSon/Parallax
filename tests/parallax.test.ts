@@ -5474,19 +5474,29 @@ test('analyzeDiff ranks proven code impact above heuristic doc mentions', async 
 test('analyzeDiff uses shared classification for build manifests', async () => {
   const repoRoot = await makeFixtureRepo();
   await writeFile(
-    path.join(repoRoot, 'package.json'),
-    `${JSON.stringify({ scripts: { test: 'vitest' } }, null, 2)}\n`
+    path.join(repoRoot, 'go.mod'),
+    [
+      'module example.com/parallax-fixture',
+      '',
+      'go 1.22',
+      ''
+    ].join('\n')
   );
   initGitRepo(repoRoot);
   await initProject({ repoRoot });
   await indexProject({ repoRoot });
 
   await writeFile(
-    path.join(repoRoot, 'package.json'),
-    `${JSON.stringify({ scripts: { test: 'vitest --run' } }, null, 2)}\n`
+    path.join(repoRoot, 'go.mod'),
+    [
+      'module example.com/parallax-fixture',
+      '',
+      'go 1.23',
+      ''
+    ].join('\n')
   );
 
-  const report = await analyzeDiff({ repoRoot, changedFiles: ['package.json'] });
-  const packageEntity = report.changed.find((entity) => entity.path === 'package.json');
-  assert.equal(packageEntity?.kind, 'config');
+  const report = await analyzeDiff({ repoRoot, changedFiles: ['go.mod'] });
+  const goModuleEntity = report.changed.find((entity) => entity.path === 'go.mod');
+  assert.equal(goModuleEntity?.kind, 'config');
 });

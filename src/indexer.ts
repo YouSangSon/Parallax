@@ -11,15 +11,10 @@ import {
   MultiLanguageRegexAdapter,
   PythonSemanticAdapter,
   RustSemanticAdapter,
-  TypeScriptJavaScriptSemanticAdapter,
-  isTestFile as isJavaScriptTestFile
+  TypeScriptJavaScriptSemanticAdapter
 } from './adapters/multi-language-regex.js';
 import { DATA_DIR } from './branding.js';
-import {
-  entityKindForPath,
-  isTestPath as isSharedTestPath,
-  languageIdForPath
-} from './entity_classification.js';
+import { entityKindForPath, languageIdForPath } from './entity_classification.js';
 import { readGitSnapshot } from './git-snapshot.js';
 import type {
   EntityDescriptor,

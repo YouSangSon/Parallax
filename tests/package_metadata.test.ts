@@ -31,6 +31,7 @@ test('package exports only the public module entrypoint and metadata', async () 
     './package.json': './package.json'
   });
   assert.equal(packageJson.bin?.['parallax'], './dist/src/cli.js');
+  assert.equal(packageJson.scripts?.prepack, 'npm run build');
   assert.equal(
     packageJson.scripts?.verify,
     'npm run lint && npm run test:install-smoke && npm test && npm run test:dogfood && npm run bench && npm audit --audit-level=high'

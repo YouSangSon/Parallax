@@ -6,6 +6,8 @@ Package를 publish하거나, release tag를 자르거나, engine behavior를 바
 
 Source checkout 참고: 이 gate들은 repository checkout이 필요하다. npm package는 compiled artifact를 싣지만, 이 script들이 호출하는 TypeScript source target인 `tests/**/*.test.ts`, `bench/impact-bench.ts`, `scripts/docs-lint.js`는 싣지 않는다.
 
+Package surface 참고: `package.json`은 `prepack`으로 `npm run build`를 실행하므로 `npm pack`과 `npm publish`는 `dist/src`를 package에 담기 전에 현재 source에서 `dist/`를 다시 build한다.
+
 ## 필수 로컬 gate
 
 Source checkout의 저장소 루트에서 실행한다.

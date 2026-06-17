@@ -6,6 +6,8 @@
 
 Source checkout 说明：这些 gate 需要 repository checkout。npm package 会发布 compiled artifact，但不发布这些 script 调用的 TypeScript source target，例如 `tests/**/*.test.ts`、`bench/impact-bench.ts` 和 `scripts/docs-lint.js`。
 
+Package surface 说明：`package.json` 会通过 `prepack` 运行 `npm run build`，因此 `npm pack` 和 `npm publish` 会先从当前 source 重新构建 `dist/`，再把 `dist/src` 打进 package。
+
 ## 必需本地 gate
 
 在 source checkout 的仓库根目录运行：

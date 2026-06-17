@@ -6,6 +6,8 @@ Use this checklist before publishing a package, cutting a release tag, or mergin
 
 Source checkout note: these gates require the repository checkout. The npm package ships compiled artifacts, but not the TypeScript source targets invoked by these scripts, such as `tests/**/*.test.ts`, `bench/impact-bench.ts`, and `scripts/docs-lint.js`.
 
+Package surface note: `package.json` runs `npm run build` through `prepack`, so `npm pack` and `npm publish` rebuild `dist/` from the current source before packaging `dist/src`.
+
 ## Required local gate
 
 Run from the repository root of a source checkout:

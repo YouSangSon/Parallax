@@ -18,7 +18,7 @@ parallax mcp serve
 
 ## read-only-first 不变量
 
-Parallax 遵循不变量 **I-8**（见 [invariants.zh.md](invariants.zh.md)）：agent surface 先稳定一个安全的 read-only 分析层，写权限只在单独的模型与评审之后才加入。每个 tool 都声明一个 MCP `readOnlyHint` 注解。表中标注为 `readOnlyHint: true` 的 tool 是纯读取。标注为 `readOnlyHint: false` 的 tool 包括分析 tool（它们在应答时会作为副作用持久化 context-pack 与 telemetry 行），也包括显式的内存写入与 branch 管理 tool。它们之中没有任何一个会修改你的源码树——action 只是建议（不变量 **I-9**）。
+Parallax 遵循不变量 **I-8**（见 [invariants.zh.md](invariants.zh.md)）：agent surface 先稳定一个安全的 read-only 分析层，写权限只在单独的模型与评审之后才加入。每个 tool 都声明一个 MCP `readOnlyHint` 注解。表中标注为 `readOnlyHint: true` 表示 source tree read-only，并不表示完全没有 local database write。analysis/search/context tool 在应答时可能向 `.parallax/impact.db` 追加 `context_tool_runs` telemetry row 与 context-pack row，MCP resource read 也可能追加 `context_resource_accesses` telemetry row。标注为 `readOnlyHint: false` 的 tool 包括显式 memory write 与 branch 管理 tool。它们之中没有任何一个会修改你的 source tree——action 只是建议（不变量 **I-9**）。
 
 ## Tool
 

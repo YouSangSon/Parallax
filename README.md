@@ -187,7 +187,7 @@ Registered tools are exposed through the MCP tool surface. Graph export is an MC
 | **Local-first** | All index and memory data is stored in the repo-local `.parallax/`. No external transfer |
 | **Explicit workspace** | Cross-repo covers only local repos the user registered. No clone/network |
 | **Redaction** | Secret-like strings are redacted before storage |
-| **Source-tree read-only by default** | MCP never edits source files; some analysis tools persist context-pack or telemetry rows in `.parallax/`, and explicit memory commands write facts |
+| **Source-tree read-only by default** | MCP never edits source files; analysis/search tools, context-pack reuse, and MCP resource reads may append context-pack or telemetry rows in `.parallax/impact.db`, while explicit memory commands write facts |
 | **Deterministic output** | The same input yields the same report; reproducible in CI |
 
 ---

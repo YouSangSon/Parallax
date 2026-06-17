@@ -120,7 +120,7 @@ parallax mcp serve
 
 4. Register the MCP server as a stdio command in the client. Use the same repository root the agent will edit.
 
-MCP does not modify source files. Some analysis and search calls do persist context-pack or telemetry rows in `.parallax/impact.db`.
+MCP does not modify source files. Analysis/search/context calls may persist context-pack or tool telemetry rows, and MCP resource reads may persist resource-access telemetry rows in `.parallax/impact.db`.
 
 ## Node 24 SQLite warning
 

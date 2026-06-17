@@ -18,7 +18,7 @@ Register Parallax as a stdio server with any MCP client. Conceptually the client
 
 ## Read-only-first invariant
 
-Parallax follows invariant **I-8** (see [invariants.md](invariants.md)): the agent surface stabilizes a safe read-only analysis layer first, and write permissions are added only behind a separate model and review. Each tool declares an MCP `readOnlyHint` annotation. Tools marked `readOnlyHint: true` in the table are pure reads. Tools marked `readOnlyHint: false` include analysis tools, which persist context-pack and telemetry rows as a side effect of answering, as well as explicit memory-write and branch-management tools. None of them modify your source tree — actions are recommendations only (invariant **I-9**).
+Parallax follows invariant **I-8** (see [invariants.md](invariants.md)): the agent surface stabilizes a safe read-only analysis layer first, and write permissions are added only behind a separate model and review. Each tool declares an MCP `readOnlyHint` annotation. Tools marked `readOnlyHint: true` in the table are source-tree read-only, not necessarily zero local database writes. Analysis/search/context tools may append `context_tool_runs` telemetry and context-pack rows in `.parallax/impact.db` as a side effect of answering, and MCP resource reads may append `context_resource_accesses` telemetry rows. Tools marked `readOnlyHint: false` include explicit memory-write and branch-management tools. None of them modify your source tree — actions are recommendations only (invariant **I-9**).
 
 ## Tools
 

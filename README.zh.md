@@ -187,7 +187,7 @@ parallax mcp serve
 | **本地优先（Local-first）** | 所有索引与记忆数据都存储在仓库本地的 `.parallax/`，无外部传输 |
 | **显式工作区** | 跨仓库仅覆盖用户登记的本地仓库，无 clone/网络 |
 | **脱敏（Redaction）** | 类似密钥的字符串在存储前会被脱敏 |
-| **默认不改 source tree** | MCP 不会编辑 source file；部分分析 tool 会在 `.parallax/` 中持久化 context-pack 或 telemetry 行，显式 memory 命令会写入 fact |
+| **默认不改 source tree** | MCP 不会编辑 source file；analysis/search tool、context-pack 复用和 MCP resource read 可能在 `.parallax/impact.db` 中追加 context-pack 或 telemetry row，显式 memory 命令会写入 fact |
 | **确定性输出** | 相同输入产生相同报告，可在 CI 中复现 |
 
 ---

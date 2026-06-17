@@ -187,7 +187,7 @@ parallax mcp serve
 | **Local-first** | 모든 인덱스와 memory는 repo-local `.parallax/`에 저장. 외부 전송 없음 |
 | **명시적 workspace** | cross-repo는 사용자가 등록한 local repo만. clone/network 없음 |
 | **Redaction** | secret-like 문자열은 저장 전 redaction |
-| **Source tree read-only 기본** | MCP는 source file을 수정하지 않음. 일부 분석 tool은 `.parallax/`에 context-pack 또는 telemetry row를 저장하고, 명시적 memory 명령은 fact를 기록 |
+| **Source tree read-only 기본** | MCP는 source file을 수정하지 않음. analysis/search tool, context-pack 재사용, MCP resource read는 `.parallax/impact.db`에 context-pack 또는 telemetry row를 추가할 수 있고, 명시적 memory 명령은 fact를 기록 |
 | **결정론적 출력** | 같은 입력은 같은 report. CI에서 재현 가능 |
 
 ---

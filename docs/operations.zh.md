@@ -120,7 +120,7 @@ parallax mcp serve
 
 4. 将 MCP server 作为 stdio command 注册到 client。使用 agent 将要编辑的同一个仓库根目录。
 
-MCP 不会修改 source file。部分 analysis/search 调用会在 `.parallax/impact.db` 中持久化 context-pack 或 telemetry row。
+MCP 不会修改 source file。analysis/search/context 调用可能在 `.parallax/impact.db` 中持久化 context-pack 或 tool telemetry row，MCP resource read 可能持久化 resource-access telemetry row。
 
 ## Node 24 SQLite warning
 

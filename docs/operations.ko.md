@@ -120,7 +120,7 @@ parallax mcp serve
 
 4. MCP server를 client에 stdio command로 등록한다. 에이전트가 수정할 저장소 루트를 그대로 사용한다.
 
-MCP는 source file을 수정하지 않는다. 일부 analysis/search 호출은 `.parallax/impact.db`에 context-pack 또는 telemetry row를 저장한다.
+MCP는 source file을 수정하지 않는다. analysis/search/context 호출은 `.parallax/impact.db`에 context-pack 또는 tool telemetry row를 저장할 수 있고, MCP resource read는 resource-access telemetry row를 저장할 수 있다.
 
 ## Node 24 SQLite warning
 

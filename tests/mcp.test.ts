@@ -3477,6 +3477,25 @@ test('MCP exposes report, entity, evidence, graph, and coverage resources', asyn
     assert.equal(graphResource.error, undefined);
     assert.match(graphResource.result.contents[0].text, /^digraph parallax/);
 
+    const unpagedGraphResource = await client.request('resources/read', {
+      uri: `parallax://reports/${report.id}/graph/json`
+    });
+    assert.equal(unpagedGraphResource.error, undefined);
+    const unpagedGraphJson = JSON.parse(unpagedGraphResource.result.contents[0].text) as {
+      reportId: string;
+      indexRunId: number;
+      format: string;
+      nodes: unknown[];
+      edges: unknown[];
+      page?: unknown;
+    };
+    assert.equal(unpagedGraphJson.reportId, report.id);
+    assert.equal(unpagedGraphJson.indexRunId, report.indexRunId);
+    assert.equal(unpagedGraphJson.format, 'json');
+    assert.equal('page' in unpagedGraphJson, false);
+    assert.ok(unpagedGraphJson.nodes.length > 0);
+    assert.ok(unpagedGraphJson.edges.length > 0);
+
     const firstGraphPage = await client.request('resources/read', {
       uri: `parallax://reports/${report.id}/graph/json?limit=1`
     });

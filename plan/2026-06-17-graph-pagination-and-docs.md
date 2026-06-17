@@ -301,6 +301,8 @@ git commit -m "docs: align MCP side effect and pagination docs"
 - Consumes: Tasks 1-3.
 - Produces: verified branch ready for user review.
 
+**Final-review follow-up note:** The post-review fix added direct MCP coverage for the no-query graph JSON resource and reran the targeted gates listed below. The broader final gates in Step 1 were not rerun after this follow-up change.
+
 - [ ] **Step 1: Run final gates**
 
 Run:
@@ -326,14 +328,28 @@ git merge-base main HEAD
 
 Expected: a review package path under `.git/sdd/`.
 
-- [ ] **Step 3: Final review**
+- [x] **Step 3: Final-review findings follow-up**
 
-Dispatch a reviewer over the full branch diff. Fix any Critical or Important findings and rerun the relevant tests.
+Fixed the final-review findings for this follow-up:
 
-- [ ] **Step 4: Completion summary**
+- Added a direct MCP regression assertion that `parallax://reports/${report.id}/graph/json` returns the original rendered JSON graph shape without pagination metadata.
+- Kept paged JSON resource assertions unchanged.
+- Reran the targeted commands requested for the follow-up:
+
+```bash
+npm exec -- tsx --test tests/mcp.test.ts
+npm run docs:lint
+npm run check
+```
+
+Expected: all pass.
+
+- [x] **Step 4: Completion summary**
 
 Summarize:
 
 - Changed files.
 - Test commands and results.
 - Any remaining non-blocking follow-ups, including lockfile/transitive package graph and dogfood performance budget.
+
+Follow-up completion is recorded in `.git/sdd/final-review-fix-report.md`.

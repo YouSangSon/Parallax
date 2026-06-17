@@ -301,9 +301,9 @@ git commit -m "docs: align MCP side effect and pagination docs"
 - Consumes: Tasks 1-3.
 - Produces: verified branch ready for user review.
 
-**Final-review follow-up note:** The post-review fix added direct MCP coverage for the no-query graph JSON resource and reran the targeted gates listed below. The broader final gates in Step 1 were not rerun after this follow-up change.
+**Final-review follow-up note:** The post-review fix added direct MCP coverage for the no-query graph JSON resource. A later verification fix relaxed the CLI integer flag test timeout to avoid false failures under full-suite load; product behavior was unchanged.
 
-- [ ] **Step 1: Run final gates**
+- [x] **Step 1: Run final gates**
 
 Run:
 
@@ -317,7 +317,17 @@ npm audit --audit-level=high
 
 Expected: all pass.
 
-- [ ] **Step 2: Generate final diff package**
+Observed final gate results:
+
+```bash
+npm run lint
+npm test                         # 474 passed
+npm run test:dogfood             # 2 passed
+npm run bench                    # passed, score 0.9987
+npm audit --audit-level=high     # 0 vulnerabilities
+```
+
+- [x] **Step 2: Generate final diff package**
 
 Run:
 
@@ -327,6 +337,8 @@ git merge-base main HEAD
 ```
 
 Expected: a review package path under `.git/sdd/`.
+
+Observed: review package generated under `.git/sdd/`; regenerate after final bookkeeping commits.
 
 - [x] **Step 3: Final-review findings follow-up**
 
@@ -340,6 +352,17 @@ Fixed the final-review findings for this follow-up:
 npm exec -- tsx --test tests/mcp.test.ts
 npm run docs:lint
 npm run check
+```
+
+Expected: all pass.
+
+Additional verification after the CLI timeout fix:
+
+```bash
+npm exec -- tsx --test tests/parallax.test.ts
+npm run check
+npm test
+npm run test:dogfood
 ```
 
 Expected: all pass.

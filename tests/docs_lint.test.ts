@@ -171,6 +171,57 @@ test('tracked docs cannot satisfy trilingual parity with only untracked variants
   assert.match(output, /topic\.zh\.md exists only as untracked and must be staged\/tracked/);
 });
 
+test('package-visible docs cannot link to unpackaged skill Markdown', async () => {
+  const repoRoot = await makeMarkdownRepo(
+    {
+      'README.md': '# Root\n\n**English** · [한국어](README.ko.md) · [中文](README.zh.md)\n',
+      'README.ko.md': '# Root\n\n[English](README.md) · **한국어** · [中文](README.zh.md)\n',
+      'README.zh.md': '# Root\n\n[English](README.md) · [한국어](README.ko.md) · **中文**\n',
+      'docs/topic.md': [
+        '# Topic',
+        '',
+        '**English** · [한국어](topic.ko.md) · [中文](topic.zh.md)',
+        '',
+        'See the private [skill](../skills/parallax/SKILL.md).',
+        ''
+      ].join('\n'),
+      'docs/topic.ko.md': [
+        '# Topic',
+        '',
+        '[English](topic.md) · **한국어** · [中文](topic.zh.md)',
+        '',
+        'See [root](../README.ko.md).',
+        ''
+      ].join('\n'),
+      'docs/topic.zh.md': [
+        '# Topic',
+        '',
+        '[English](topic.md) · [한국어](topic.ko.md) · **中文**',
+        '',
+        'See [root](../README.zh.md).',
+        ''
+      ].join('\n'),
+      'skills/parallax/SKILL.md': '# Skill\n'
+    },
+    [
+      'README.md',
+      'README.ko.md',
+      'README.zh.md',
+      'docs/topic.md',
+      'docs/topic.ko.md',
+      'docs/topic.zh.md',
+      'skills/parallax/SKILL.md'
+    ]
+  );
+
+  const result = runDocsLint(repoRoot);
+  const output = `${result.stdout}\n${result.stderr}`;
+
+  assert.notEqual(result.status, 0, output);
+  assert.match(output, /docs-lint: docs\/topic\.md:/);
+  assert.match(output, /package-visible Markdown links to unpackaged target \.\.\/skills\/parallax\/SKILL\.md/);
+});
+
 test('repo-relative Markdown helpers keep POSIX paths for Windows-host-safe link checks', async () => {
   const { resolveRepoMarkdownTarget, siblingPaths } = await import(docsLintModuleUrl) as {
     resolveRepoMarkdownTarget: (file: string, target: string) => string;

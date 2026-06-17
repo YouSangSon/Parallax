@@ -70,6 +70,18 @@ function inTrilingualZone(file) {
   return false;
 }
 
+function isRootReadmeVariant(file) {
+  return ['README.md', 'README.ko.md', 'README.zh.md'].includes(file);
+}
+
+function isPackageVisibleMarkdown(file) {
+  return isRootReadmeVariant(file) || (file.startsWith('docs/') && !file.startsWith('docs/assets/'));
+}
+
+function isPackageSurfaceMarkdownTarget(file) {
+  return isRootReadmeVariant(file) || (file.startsWith('docs/') && !file.startsWith('docs/assets/'));
+}
+
 const LANG_SUFFIXES = ['.ko.md', '.zh.md'];
 
 function normalizeRepoPath(repoPath) {
@@ -232,6 +244,18 @@ function checkMarkdownLinkTargets(file, content) {
   }
 }
 
+function checkPackageSurfaceLinks(file, content) {
+  if (!isPackageVisibleMarkdown(file)) return;
+  for (const { isImage, target } of iterLinks(content)) {
+    if (isImage) continue;
+    if (!target.endsWith('.md')) continue;
+    const resolved = resolveRepoMarkdownTarget(file, target);
+    if (!isPackageSurfaceMarkdownTarget(resolved)) {
+      report(file, `package-visible Markdown links to unpackaged target ${target}`);
+    }
+  }
+}
+
 // --- Run all checks ---
 
 function loadMarkdownFileSets() {
@@ -261,6 +285,7 @@ function run() {
     const content = readFileSync(file, 'utf8');
     checkForbidden(file, content);
     checkMarkdownLinkTargets(file, content);
+    checkPackageSurfaceLinks(file, content);
     if (inTrilingualZone(file)) {
       checkSwitcher(file, content);
       checkSameLanguageLinks(file, content);

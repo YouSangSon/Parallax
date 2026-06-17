@@ -58,32 +58,53 @@ type DocumentedMcpTool = {
 type McpDocsToolTable = {
   filePath: string;
   toolsHeading: string;
-  resourcesHeading: string;
   yesLabel: string;
   noLabel: string;
+  readOnlyColumnIndex: number;
 };
 
 const mcpDocsToolTables: McpDocsToolTable[] = [
   {
     filePath: 'docs/mcp.md',
     toolsHeading: '## Tools',
-    resourcesHeading: '## Resources',
     yesLabel: 'Yes',
-    noLabel: 'No'
+    noLabel: 'No',
+    readOnlyColumnIndex: 2
   },
   {
     filePath: 'docs/mcp.ko.md',
     toolsHeading: '## Tool',
-    resourcesHeading: '## Resource',
     yesLabel: '예',
-    noLabel: '아니오'
+    noLabel: '아니오',
+    readOnlyColumnIndex: 2
   },
   {
     filePath: 'docs/mcp.zh.md',
     toolsHeading: '## Tool',
-    resourcesHeading: '## Resource',
     yesLabel: '是',
-    noLabel: '否'
+    noLabel: '否',
+    readOnlyColumnIndex: 2
+  },
+  {
+    filePath: 'skills/parallax/SKILL.md',
+    toolsHeading: '## MCP tools surfaced (18)',
+    yesLabel: '✅',
+    noLabel: '❌',
+    readOnlyColumnIndex: 1
+  },
+  {
+    filePath: 'skills/parallax/SKILL.ko.md',
+    toolsHeading: '## MCP tools surfaced (18)',
+    yesLabel: '✅',
+    noLabel: '❌',
+    readOnlyColumnIndex: 1
+  },
+  {
+    filePath: 'skills/parallax/SKILL.zh.md',
+    toolsHeading: '## MCP tools surfaced (18)',
+    yesLabel: '✅',
+    noLabel: '❌',
+    readOnlyColumnIndex: 1
   }
 ];
 
@@ -92,21 +113,16 @@ function documentedMcpTools(table: McpDocsToolTable): DocumentedMcpTool[] {
   const lines = markdown.split('\n');
   const toolsStart = lines.findIndex((line) => line.trim() === table.toolsHeading);
   assert.notEqual(toolsStart, -1, `${table.filePath} must have a ${table.toolsHeading} section`);
-  const resourcesStart = lines.findIndex(
-    (line, index) => index > toolsStart && line.trim() === table.resourcesHeading
+  const sectionEnd = lines.findIndex(
+    (line, index) => index > toolsStart && line.startsWith('## ')
   );
-  assert.notEqual(
-    resourcesStart,
-    -1,
-    `${table.filePath} must have a ${table.resourcesHeading} section after ${table.toolsHeading}`
-  );
-  const toolsSection = lines.slice(toolsStart + 1, resourcesStart);
+  const toolsSection = lines.slice(toolsStart + 1, sectionEnd === -1 ? lines.length : sectionEnd);
 
   const tools: DocumentedMcpTool[] = [];
   for (const line of toolsSection) {
     const cells = line.split('|').slice(1, -1).map((cell) => cell.trim());
     const toolCell = cells[0];
-    const readOnlyCell = cells[2];
+    const readOnlyCell = cells[table.readOnlyColumnIndex];
     if (!toolCell || !readOnlyCell) {
       continue;
     }

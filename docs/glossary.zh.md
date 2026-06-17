@@ -20,6 +20,10 @@
 ### entity (impact)
 `entities` 表中的一行。是 file / symbol / module / package / test / doc / config / policy / workflow / resource / endpoint / contract / event / business_plan / ... 等 21 种中的一种。影响分析沿着 entity 之间的 relation graph 计算 blast radius。
 
+### Entity kind classification
+
+Parallax 在写入 report 或 graph export 之前，会通过一个 shared path policy 对 file-backed entity 进行分类。Test naming 最先匹配，Markdown work artifact 使用 artifact-specific kind，`CODEOWNERS` 是 policy，GitHub workflow YAML 是 workflow，OpenAPI/Swagger/AsyncAPI 文件以及 protobuf/GraphQL schema 是 contract，Dockerfile/Terraform 文件是 resource，package/build/config manifest 是 config。
+
 ### relation (impact)
 `relations` 表。`(source_entity_id, target_entity_id, kind, confidence, adapter_run_id)`。kind 是 `RelationKind` 中定义的值之一，如 `DEPENDS_ON`、`DECLARES`、`CALLS`、`REFERENCES`、`VERIFIES`、`DOCUMENTS`、`CONFIGURES`、`OWNS`、`GOVERNS`、`IMPLEMENTS`、`EXTENDS`、`BREAKS_COMPATIBILITY_WITH` 等。
 

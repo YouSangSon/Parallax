@@ -20,6 +20,10 @@
 ### entity (impact)
 `entities` 테이블의 한 행. file / symbol / module / package / test / doc / config / policy / workflow / resource / endpoint / contract / event / business_plan / ... 등 21종 중 하나. 영향 분석은 entity 사이의 relation graph를 따라 blast radius를 계산한다.
 
+### Entity kind classification
+
+Parallax는 report나 graph export를 쓰기 전에 file-backed entity를 하나의 shared path policy로 분류한다. Test naming이 가장 먼저 적용되고, Markdown work artifact는 artifact-specific kind를 사용하며, `CODEOWNERS`는 policy, GitHub workflow YAML은 workflow, OpenAPI/Swagger/AsyncAPI 파일과 protobuf/GraphQL schema는 contract, Dockerfile/Terraform 파일은 resource, package/build/config manifest는 config다.
+
 ### relation (impact)
 `relations` 테이블. `(source_entity_id, target_entity_id, kind, confidence, adapter_run_id)`. kind는 `DEPENDS_ON`, `DECLARES`, `CALLS`, `REFERENCES`, `VERIFIES`, `DOCUMENTS`, `CONFIGURES`, `OWNS`, `GOVERNS`, `IMPLEMENTS`, `EXTENDS`, `BREAKS_COMPATIBILITY_WITH` 등 `RelationKind`에 정의된 값 중 하나.
 

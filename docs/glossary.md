@@ -20,6 +20,10 @@ This project has two axes (impact analysis + agent memory) that live on top of t
 ### entity (impact)
 A row in the `entities` table. One of 21 kinds: file / symbol / module / package / test / doc / config / policy / workflow / resource / endpoint / contract / event / business_plan / ... and so on. Impact analysis computes the blast radius by following the relation graph between entities.
 
+### Entity kind classification
+
+Parallax classifies file-backed entities through one shared path policy before writing reports or graph exports. Test naming wins first, Markdown work artifacts use their artifact-specific kind, `CODEOWNERS` is policy, GitHub workflow YAML is workflow, OpenAPI/Swagger/AsyncAPI files plus protobuf/GraphQL schemas are contracts, Dockerfile/Terraform files are resources, and package/build/config manifests are config.
+
 ### relation (impact)
 The `relations` table. `(source_entity_id, target_entity_id, kind, confidence, adapter_run_id)`. kind is one of the values defined in `RelationKind`, such as `DEPENDS_ON`, `DECLARES`, `CALLS`, `REFERENCES`, `VERIFIES`, `DOCUMENTS`, `CONFIGURES`, `OWNS`, `GOVERNS`, `IMPLEMENTS`, `EXTENDS`, `BREAKS_COMPATIBILITY_WITH`.
 

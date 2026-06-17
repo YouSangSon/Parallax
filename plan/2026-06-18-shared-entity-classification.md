@@ -393,5 +393,8 @@ Commands run:
 - `npm test -- tests/entity_classification.test.ts tests/parallax.test.ts` — PASS (480 tests passed, 0 failed; the repository test script also expanded `tests/**/*.test.ts`)
 - `npm run check` — PASS (`tsc -p tsconfig.json --noEmit`)
 - `git diff --check -- docs/glossary.md docs/glossary.ko.md docs/glossary.zh.md plan/2026-06-18-shared-entity-classification.md` — PASS
-
-Full-suite/audit commands from the original task brief beyond the required Task 3 minimum were not run in this step.
+- `npm run lint` — PASS (`npm run check` and `npm run docs:lint`)
+- `npm test` — PASS (480 tests passed, 0 failed)
+- `npm run test:dogfood` — PASS (2 tests passed, 0 failed)
+- `npm run bench` — PASS (`passed: true`, score 0.9987, 76/76 expected relations matched)
+- `npm audit --audit-level=high` — PASS (0 vulnerabilities)

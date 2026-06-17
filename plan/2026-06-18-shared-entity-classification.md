@@ -32,7 +32,7 @@
 - Produces: `isObviousContractPath(relativePath: string): boolean`
 - Produces: `entityKindForPath(relativePath: string, languageId?: string): EntityKind`
 
-- [ ] **Step 1: Write the failing unit tests**
+- [x] **Step 1: Write the failing unit tests**
 
 Create `tests/entity_classification.test.ts`:
 
@@ -111,7 +111,7 @@ Run: `npm test -- tests/entity_classification.test.ts`
 
 Expected: FAIL because `src/entity_classification.ts` does not exist.
 
-- [ ] **Step 2: Add the shared utility**
+- [x] **Step 2: Add the shared utility**
 
 Create `src/entity_classification.ts`:
 
@@ -244,7 +244,7 @@ Run: `npm test -- tests/entity_classification.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/entity_classification.ts tests/entity_classification.test.ts
@@ -263,7 +263,7 @@ git commit -m "refactor: share entity classification rules"
 - Consumes: `entityKindForPath`, `languageIdForPath`, and `isTestPath` from `src/entity_classification.ts`
 - Preserves: existing `ScannedFile.language` values and graph export JSON schema
 
-- [ ] **Step 1: Replace duplicate imports and helpers**
+- [x] **Step 1: Replace duplicate imports and helpers**
 
 In `src/indexer.ts`:
 
@@ -293,7 +293,7 @@ In `src/analyzer.ts`, import `entityKindForPath` and `languageIdForPath` from `.
 
 In `src/graph.ts`, import `entityKindForPath` from `./entity_classification.js`, remove local `kindForPath`, and replace legacy graph fallback calls with `entityKindForPath(row.source_path)` and `entityKindForPath(row.target_path)`.
 
-- [ ] **Step 2: Add integration coverage for consistent changed entity kinds**
+- [x] **Step 2: Add integration coverage for consistent changed entity kinds**
 
 Append to `tests/parallax.test.ts`:
 
@@ -323,7 +323,7 @@ Run: `npm test -- tests/entity_classification.test.ts tests/parallax.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/indexer.ts src/analyzer.ts src/graph.ts tests/parallax.test.ts
@@ -342,7 +342,7 @@ git commit -m "refactor: reuse shared entity classification"
 - Consumes: final implementation from Tasks 1-2
 - Produces: public-facing kind classification explanation for maintainers
 
-- [ ] **Step 1: Update glossary docs**
+- [x] **Step 1: Update glossary docs**
 
 Add a short "Entity kind classification" paragraph to each glossary file. English text:
 
@@ -358,7 +358,7 @@ Run: `npm run docs:lint`
 
 Expected: PASS.
 
-- [ ] **Step 2: Run focused and full verification**
+- [x] **Step 2: Run focused and full verification**
 
 Run:
 
@@ -374,7 +374,7 @@ npm audit --audit-level=high
 
 Expected: all PASS and audit reports 0 high vulnerabilities.
 
-- [ ] **Step 3: Mark final status in this plan and commit**
+- [x] **Step 3: Mark final status in this plan and commit**
 
 After verification, append a "Final Verification Result" section with exact commands and outcomes.
 

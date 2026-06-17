@@ -1,4 +1,5 @@
-import type { MarkdownArtifactMetadata } from './artifacts.js';
+import { markdownArtifactMetadataFromContent, type MarkdownArtifactMetadata } from './artifacts.js';
+import type { Confidence, EntityRef, Evidence, ImpactReport } from './types.js';
 
 export type WorkArtifactFreshnessState = 'current' | 'stale' | 'unknown';
 
@@ -9,8 +10,115 @@ export type WorkArtifactFreshness = {
   ageDays?: number;
 };
 
+export type WorkArtifactProjection = {
+  kind: string;
+  path: string;
+  displayName: string;
+  reason: string;
+  confidence: Confidence;
+  relations: string[];
+  resourceUri: string;
+  depth?: number;
+  metadata?: MarkdownArtifactMetadata;
+  freshness: WorkArtifactFreshness;
+};
+
+const workArtifactKinds = new Set<string>([
+  'policy',
+  'proposal',
+  'prd',
+  'decision',
+  'business_plan',
+  'requirement',
+  'meeting_note',
+  'customer_artifact'
+]);
+
+type WorkArtifactProjectionOptions = {
+  asOfIso: string;
+  includeDepth?: boolean;
+};
+
 export function hasArtifactMetadata(metadata: MarkdownArtifactMetadata): boolean {
   return Boolean(metadata.title || metadata.owner || metadata.status || metadata.updatedAt);
+}
+
+export function isWorkArtifactKind(kind: string): boolean {
+  return workArtifactKinds.has(kind);
+}
+
+export function workArtifactPathSet(report: ImpactReport): Set<string> {
+  return new Set(
+    report.affected
+      .map((item) => item.target)
+      .filter((target) => target.path && isWorkArtifactKind(target.kind))
+      .map((target) => target.path!)
+  );
+}
+
+export function workArtifactEvidencePath(
+  evidence: Evidence,
+  workArtifactPaths: ReadonlySet<string>
+): string | undefined {
+  if (evidence.subject?.path && workArtifactPaths.has(evidence.subject.path)) {
+    return evidence.subject.path;
+  }
+  if (workArtifactPaths.has(evidence.file)) return evidence.file;
+  return undefined;
+}
+
+export function isWorkArtifactEvidence(evidence: Evidence, workArtifactPaths: ReadonlySet<string>): boolean {
+  return Boolean(
+    (evidence.subject && isWorkArtifactKind(evidence.subject.kind)) ||
+    (evidence.subject?.path && workArtifactPaths.has(evidence.subject.path)) ||
+    workArtifactPaths.has(evidence.file)
+  );
+}
+
+export function workArtifactEvidenceResourceUri(
+  evidence: Evidence,
+  workArtifactPaths: ReadonlySet<string>
+): string | undefined {
+  if (evidence.subject && isWorkArtifactKind(evidence.subject.kind)) {
+    return entityResourceUri(evidence.subject);
+  }
+  if (evidence.subject?.path && workArtifactPaths.has(evidence.subject.path)) {
+    return entityResourceUri(evidence.subject);
+  }
+  if (workArtifactPaths.has(evidence.file)) {
+    return `parallax://entities/${encodeURIComponent(`file:${evidence.file}`)}`;
+  }
+  return undefined;
+}
+
+export function workArtifactsFromImpactReport(
+  report: ImpactReport,
+  options: WorkArtifactProjectionOptions
+): WorkArtifactProjection[] {
+  const affectedByPath = new Map(report.affectedFiles.map((item) => [item.path, item]));
+  const metadataByPath = workArtifactMetadataByPath(report);
+  const byKey = new Map<string, WorkArtifactProjection>();
+  for (const item of report.affected) {
+    const targetPath = item.target.path;
+    if (!targetPath || !isWorkArtifactKind(item.target.kind)) continue;
+    const affectedFile = affectedByPath.get(targetPath);
+    const metadata = metadataByPath.get(targetPath);
+    const key = `${item.target.kind}:${targetPath}`;
+    if (byKey.has(key)) continue;
+    byKey.set(key, {
+      kind: item.target.kind,
+      path: targetPath,
+      displayName: metadata?.title ?? item.target.displayName ?? targetPath,
+      reason: affectedFile?.reason ?? item.relations.join(' -> '),
+      confidence: affectedFile?.confidence ?? item.confidence,
+      relations: item.relations,
+      resourceUri: entityResourceUri(item.target),
+      ...(options.includeDepth && affectedFile?.depth !== undefined ? { depth: affectedFile.depth } : {}),
+      ...(metadata && hasArtifactMetadata(metadata) ? { metadata } : {}),
+      freshness: workArtifactFreshness(item.target.kind, metadata, options.asOfIso)
+    });
+  }
+  return [...byKey.values()].sort((left, right) => compareWorkArtifactProjections(left, right, options.includeDepth === true));
 }
 
 export function workArtifactFreshness(
@@ -83,4 +191,31 @@ export function workArtifactKindRank(kind: string): number {
   if (kind === 'prd' || kind === 'requirement') return 2;
   if (kind === 'proposal') return 3;
   return 4;
+}
+
+function workArtifactMetadataByPath(report: ImpactReport): Map<string, MarkdownArtifactMetadata> {
+  const workArtifactPaths = workArtifactPathSet(report);
+  const out = new Map<string, MarkdownArtifactMetadata>();
+  for (const evidence of report.evidence) {
+    const path = workArtifactEvidencePath(evidence, workArtifactPaths);
+    if (!path || out.has(path)) continue;
+    const metadata = markdownArtifactMetadataFromContent(evidence.snippet);
+    if (hasArtifactMetadata(metadata)) out.set(path, metadata);
+  }
+  return out;
+}
+
+function compareWorkArtifactProjections(
+  left: WorkArtifactProjection,
+  right: WorkArtifactProjection,
+  includeDepth: boolean
+): number {
+  return workArtifactFreshnessRank(left.freshness.state) - workArtifactFreshnessRank(right.freshness.state)
+    || workArtifactKindRank(left.kind) - workArtifactKindRank(right.kind)
+    || (includeDepth ? (left.depth ?? 99) - (right.depth ?? 99) : 0)
+    || left.path.localeCompare(right.path);
+}
+
+function entityResourceUri(entity: Pick<EntityRef, 'id'>): string {
+  return `parallax://entities/${encodeURIComponent(entity.id)}`;
 }

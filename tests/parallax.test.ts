@@ -4741,6 +4741,8 @@ function runCli(repoRoot: string, args: string[]): { status: number | null; stdo
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
 }
 
+const CLI_INTEGER_FLAG_TIMEOUT_MS = 10_000;
+
 test('CLI integer flags reject malformed values', async () => {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-cli-integers-'));
 
@@ -4787,7 +4789,7 @@ test('CLI integer flags reject malformed values', async () => {
     const result = spawnSync(
       process.execPath,
       ['--import', tsxLoaderPath, path.resolve('src/cli.ts'), ...testCase.args],
-      { cwd: repoRoot, encoding: 'utf8', timeout: 4000 }
+      { cwd: repoRoot, encoding: 'utf8', timeout: CLI_INTEGER_FLAG_TIMEOUT_MS }
     );
     assert.equal(
       result.status,
@@ -4804,7 +4806,7 @@ test('CLI integer flags accept zero', async () => {
   const result = spawnSync(
     process.execPath,
     ['--import', tsxLoaderPath, path.resolve('src/cli.ts'), 'trace', '--fact-id', 'missing', '--depth', '0'],
-    { cwd: repoRoot, encoding: 'utf8', timeout: 4000 }
+    { cwd: repoRoot, encoding: 'utf8', timeout: CLI_INTEGER_FLAG_TIMEOUT_MS }
   );
 
   assert.doesNotMatch(

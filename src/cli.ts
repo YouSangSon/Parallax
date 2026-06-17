@@ -205,14 +205,16 @@ async function main(): Promise<void> {
 
   if (command === 'graph' && args[0] === 'export') {
     const { exportImpactGraph } = await import('./graph.js');
+    const reportId = parseRequiredArg(args, '--report');
+    const format = parseGraphFormat(args);
+    const limit = parseOptionalValueArg(args, '--limit');
+    const cursor = parseOptionalValueArg(args, '--cursor');
+    const requirePagination = limit !== undefined || cursor !== undefined;
     const graph = await exportImpactGraph({
       repoRoot,
-      reportId: parseRequiredArg(args, '--report'),
-      format: parseGraphFormat(args)
+      reportId,
+      format
     });
-    const limit = parseOptionalArg(args, '--limit');
-    const cursor = parseOptionalArg(args, '--cursor');
-    const requirePagination = limit !== undefined || cursor !== undefined;
     if (graph.format === 'json' && requirePagination) {
       try {
         console.log(JSON.stringify(
@@ -504,6 +506,19 @@ function parseOptionalArg(args: string[], name: string): string | undefined {
   const index = args.indexOf(name);
   if (index >= 0 && args[index + 1]) return args[index + 1]!;
   return undefined;
+}
+
+function parseOptionalValueArg(args: string[], name: string): string | undefined {
+  let parsed: string | undefined;
+  for (let index = 0; index < args.length; index++) {
+    if (args[index] !== name) continue;
+    const value = args[index + 1];
+    if (!value || value.startsWith('--')) {
+      throw new Error(`missing value for ${name}`);
+    }
+    parsed ??= value;
+  }
+  return parsed;
 }
 
 function parseOptionalWorkspaceArg(args: string[], name: string): string | undefined {

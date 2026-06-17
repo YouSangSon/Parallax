@@ -3486,6 +3486,59 @@ test('exportImpactGraph renders report graph from SQLite relations without graph
   assert.equal(invalidLimit.status, 2);
   assert.match(invalidLimit.stderr, /graph page limit/);
 
+  const missingLimit = spawnSync(process.execPath, [
+    '--import',
+    tsxLoaderPath,
+    path.resolve('src/cli.ts'),
+    'graph',
+    'export',
+    '--report',
+    report.id,
+    '--format',
+    'json',
+    '--limit'
+  ], {
+    cwd: repoRoot,
+    encoding: 'utf8'
+  });
+  assert.equal(missingLimit.status, 2);
+  assert.match(missingLimit.stderr, /missing value for --limit|graph page limit/);
+
+  const missingCursor = spawnSync(process.execPath, [
+    '--import',
+    tsxLoaderPath,
+    path.resolve('src/cli.ts'),
+    'graph',
+    'export',
+    '--report',
+    report.id,
+    '--format',
+    'json',
+    '--cursor'
+  ], {
+    cwd: repoRoot,
+    encoding: 'utf8'
+  });
+  assert.equal(missingCursor.status, 2);
+  assert.match(missingCursor.stderr, /missing value for --cursor|graph page cursor/);
+
+  const mermaidMissingLimit = spawnSync(process.execPath, [
+    '--import',
+    tsxLoaderPath,
+    path.resolve('src/cli.ts'),
+    'graph',
+    'export',
+    '--report',
+    report.id,
+    '--limit'
+  ], {
+    cwd: repoRoot,
+    encoding: 'utf8'
+  });
+  assert.equal(mermaidMissingLimit.status, 2);
+  assert.match(mermaidMissingLimit.stderr, /missing value for --limit|graph page limit/);
+  assert.equal(mermaidMissingLimit.stdout, '');
+
   const mermaidLimit = spawnSync(process.execPath, [
     '--import',
     tsxLoaderPath,

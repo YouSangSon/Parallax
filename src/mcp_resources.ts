@@ -1,6 +1,7 @@
 import { asConfidence } from './confidence.js';
 import { contextPackResourceUri, entityResourceUri, evidenceResourceUri } from './context_pack.js';
 import type { EventTopologyProvenance } from './contract_diff.js';
+import { GraphPaginationInputError, paginateGraph } from './graph_pagination.js';
 import { redactSecrets } from './security.js';
 import { getRepoId, latestCompletedIndexRun, openDatabase } from './store.js';
 import type { EntityRef, GraphExport, GraphExportFormat } from './types.js';
@@ -345,82 +346,22 @@ export function graphFormatVariable(value: string): string {
   return value.split(/[?#]/, 1)[0] ?? value;
 }
 
-type GraphPageCursor = {
-  nodeOffset: number;
-  edgeOffset: number;
-};
-
 export function graphResourceText(uri: URL, graph: GraphExport, format: GraphExportFormat): string {
   if (format !== 'json') return graph.rendered;
-  if (!uri.searchParams.has('limit') && !uri.searchParams.has('cursor')) return graph.rendered;
-
-  const limit = parseGraphPageLimit(uri.searchParams.get('limit'));
-  const cursorRaw = uri.searchParams.get('cursor');
-  const cursor = parseGraphPageCursor(cursorRaw);
-  validateGraphPageCursor(cursor, graph);
-  const nodes = graph.nodes.slice(cursor.nodeOffset, cursor.nodeOffset + limit);
-  const edges = graph.edges.slice(cursor.edgeOffset, cursor.edgeOffset + limit);
-  const nextNodeOffset = cursor.nodeOffset + nodes.length;
-  const nextEdgeOffset = cursor.edgeOffset + edges.length;
-  const nextCursor =
-    nextNodeOffset < graph.nodes.length || nextEdgeOffset < graph.edges.length
-      ? `${nextNodeOffset}:${nextEdgeOffset}`
-      : null;
-
-  return JSON.stringify(
-    {
-      reportId: graph.reportId,
-      indexRunId: graph.indexRunId,
-      format: graph.format,
-      nodes,
-      edges,
-      page: {
-        cursor: cursorRaw,
-        nextCursor,
-        limit,
-        totalNodes: graph.nodes.length,
-        totalEdges: graph.edges.length,
-        returnedNodes: nodes.length,
-        returnedEdges: edges.length
-      }
-    },
-    null,
-    2
-  );
-}
-
-function parseGraphPageLimit(value: string | null): number {
-  if (value === null) return 100;
-  const limit = Number(value);
-  if (!Number.isInteger(limit) || limit < 1 || limit > 500) {
-    throw typedMcpError(new Error('graph page limit must be an integer between 1 and 500'), 'invalid_pagination');
-  }
-  return limit;
-}
-
-function parseGraphPageCursor(value: string | null): GraphPageCursor {
-  if (value === null) return { nodeOffset: 0, edgeOffset: 0 };
-  const match = /^(\d+):(\d+)$/.exec(value);
-  if (!match) {
-    throw typedMcpError(new Error('graph page cursor must be returned by a previous graph JSON page'), 'invalid_pagination');
-  }
-  return {
-    nodeOffset: parseGraphCursorOffset(match[1]!, 'node'),
-    edgeOffset: parseGraphCursorOffset(match[2]!, 'edge')
-  };
-}
-
-function parseGraphCursorOffset(value: string, label: 'node' | 'edge'): number {
-  const offset = Number(value);
-  if (!Number.isSafeInteger(offset) || offset < 0) {
-    throw typedMcpError(new Error(`graph page cursor ${label} offset must be a safe non-negative integer`), 'invalid_pagination');
-  }
-  return offset;
-}
-
-function validateGraphPageCursor(cursor: GraphPageCursor, graph: GraphExport): void {
-  if (cursor.nodeOffset > graph.nodes.length || cursor.edgeOffset > graph.edges.length) {
-    throw typedMcpError(new Error('graph page cursor is outside the current graph bounds'), 'invalid_pagination');
+  const requirePagination = uri.searchParams.has('limit') || uri.searchParams.has('cursor');
+  try {
+    const payload = paginateGraph(graph, {
+      limit: uri.searchParams.get('limit'),
+      cursor: uri.searchParams.get('cursor'),
+      requirePagination
+    });
+    if (!requirePagination) return graph.rendered;
+    return JSON.stringify(payload, null, 2);
+  } catch (error) {
+    if (error instanceof GraphPaginationInputError) {
+      throw typedMcpError(error, 'invalid_pagination');
+    }
+    throw error;
   }
 }
 

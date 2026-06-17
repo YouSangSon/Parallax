@@ -3521,6 +3521,17 @@ test('MCP exposes report, entity, evidence, graph, and coverage resources', asyn
     assert.match(invalidCursorEnvelope.error.problem, /graph page cursor/);
     assert.ok(invalidCursorEnvelope.error.fix.length > 0);
 
+    const invalidLimit = await client.request('resources/read', {
+      uri: `parallax://reports/${report.id}/graph/json?limit=abc`
+    });
+    assert.ok(invalidLimit.error);
+    const invalidLimitEnvelope = JSON.parse(invalidLimit.error.message) as {
+      error: { code: string; problem: string; cause: string; fix: string; evidence: unknown[] };
+    };
+    assert.equal(invalidLimitEnvelope.error.code, 'invalid_pagination');
+    assert.match(invalidLimitEnvelope.error.problem, /graph page limit/);
+    assert.ok(invalidLimitEnvelope.error.fix.length > 0);
+
     const coverageResource = await client.request('resources/read', {
       uri: 'parallax://coverage/latest'
     });

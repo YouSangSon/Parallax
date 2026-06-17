@@ -8,6 +8,7 @@ import type { MarkdownArtifactMetadata } from './artifacts.js';
 import { PACKAGE_NAME } from './branding.js';
 import { doctorProject, type DoctorReport } from './doctor.js';
 import { exportImpactGraph } from './graph.js';
+import { GraphPaginationInputError, paginateGraph } from './graph_pagination.js';
 import { databasePath, getRepoId, impactDir, openDatabase } from './store.js';
 import { normalizeRepoRoot, resolveInsideRoot } from './security.js';
 import type { GraphExport, ImpactAction, ImpactReport } from './types.js';
@@ -277,11 +278,6 @@ export type ReportRow = {
   index_run_id: number;
   json: string;
   created_at: string;
-};
-
-type GraphPageCursor = {
-  nodeOffset: number;
-  edgeOffset: number;
 };
 
 class UiClientInputError extends Error {
@@ -1154,6 +1150,11 @@ export async function startUiServer(options: UiServerOptions): Promise<{ server:
       response.writeHead(404, textHeaders());
       response.end('not found');
     } catch (error) {
+      if (error instanceof GraphPaginationInputError) {
+        response.writeHead(400, jsonHeaders());
+        response.end(JSON.stringify({ error: { code: 'invalid_request', message: error.message } }));
+        return;
+      }
       if (error instanceof UiClientInputError) {
         response.writeHead(400, jsonHeaders());
         response.end(JSON.stringify({ error: { code: error.code, message: error.message } }));
@@ -1187,34 +1188,11 @@ async function uiApiResponse(repoRootInput: string, url: URL): Promise<unknown |
       reportId: decodeURIComponent(graphMatch[1]!),
       format: 'json'
     });
-    const limit = parseGraphPageLimit(url.searchParams.get('limit'));
-    const cursorRaw = url.searchParams.get('cursor');
-    const cursor = parseGraphPageCursor(cursorRaw);
-    validateGraphPageCursor(cursor, graph);
-    const nodes = graph.nodes.slice(cursor.nodeOffset, cursor.nodeOffset + limit);
-    const edges = graph.edges.slice(cursor.edgeOffset, cursor.edgeOffset + limit);
-    const nextNodeOffset = cursor.nodeOffset + nodes.length;
-    const nextEdgeOffset = cursor.edgeOffset + edges.length;
-    const nextCursor =
-      nextNodeOffset < graph.nodes.length || nextEdgeOffset < graph.edges.length
-        ? `${nextNodeOffset}:${nextEdgeOffset}`
-        : null;
-    return {
-      reportId: graph.reportId,
-      indexRunId: graph.indexRunId,
-      format: graph.format,
-      nodes,
-      edges,
-      page: {
-        cursor: cursorRaw,
-        nextCursor,
-        limit,
-        totalNodes: graph.nodes.length,
-        totalEdges: graph.edges.length,
-        returnedNodes: nodes.length,
-        returnedEdges: edges.length
-      }
-    };
+    return paginateGraph(graph, {
+      limit: url.searchParams.get('limit'),
+      cursor: url.searchParams.get('cursor'),
+      requirePagination: true
+    });
   }
   if (url.pathname === '/api/coverage/latest') {
     const db = openDatabase(repoRoot, { readOnly: true });
@@ -1233,39 +1211,6 @@ async function uiApiResponse(repoRootInput: string, url: URL): Promise<unknown |
     return readWorkspace(repoRoot, decodeURIComponent(workspaceMatch[1]!));
   }
   return null;
-}
-
-function parseGraphPageLimit(value: string | null): number {
-  if (value === null) return 100;
-  const limit = Number(value);
-  if (!Number.isInteger(limit) || limit < 1 || limit > 500) {
-    throw new UiClientInputError('graph page limit must be an integer between 1 and 500');
-  }
-  return limit;
-}
-
-function parseGraphPageCursor(value: string | null): GraphPageCursor {
-  if (value === null) return { nodeOffset: 0, edgeOffset: 0 };
-  const match = /^(\d+):(\d+)$/.exec(value);
-  if (!match) throw new UiClientInputError('graph page cursor must be returned by a previous graph JSON page');
-  return {
-    nodeOffset: parseGraphCursorOffset(match[1]!, 'node'),
-    edgeOffset: parseGraphCursorOffset(match[2]!, 'edge')
-  };
-}
-
-function parseGraphCursorOffset(value: string, label: 'node' | 'edge'): number {
-  const offset = Number(value);
-  if (!Number.isSafeInteger(offset) || offset < 0) {
-    throw new UiClientInputError(`graph page cursor ${label} offset must be a safe non-negative integer`);
-  }
-  return offset;
-}
-
-function validateGraphPageCursor(cursor: GraphPageCursor, graph: GraphExport): void {
-  if (cursor.nodeOffset > graph.nodes.length || cursor.edgeOffset > graph.edges.length) {
-    throw new UiClientInputError('graph page cursor is outside the current graph bounds');
-  }
 }
 
 function jsonHeaders(): Record<string, string> {

@@ -4,7 +4,7 @@
 
 `parallax` CLI 是进入 indexing、impact 分析、graph export、agent memory、workspace catalog、诊断、MCP 服务器与 UI 的本地入口。所有命令都针对当前工作目录中的 repo 运行，并读写 `<repo>/.parallax/impact.db`。运行 `parallax --help`（或 `-h`）查看内置摘要。
 
-除特别说明外，所有命令都向 stdout 输出 JSON。
+大多数 machine-oriented 命令可通过 command-specific flag 输出 JSON。`analyze` 默认输出人类可读摘要，`graph export` 默认输出 Mermaid 文本。
 
 ## Indexing
 
@@ -36,7 +36,9 @@
 
 | 命令 | 用途 |
 | :--- | :--- |
-| `parallax graph export --report <id> [--format mermaid\|json\|dot]` | 渲染某已存 report 的 relationship graph；默认格式为 `mermaid` |
+| `parallax graph export --report <id> [--format mermaid\|json\|dot] [--limit <n>] [--cursor <cursor>]` | 渲染某已存 report 的 relationship graph；默认格式为 `mermaid` |
+
+`--limit` 和 `--cursor` 仅在 `--format json` 下生效。它们使用与 MCP/UI graph JSON pagination 相同的 `nodeOffset:edgeOffset` cursor 和 `1..500` limit contract。
 
 ## Agent memory
 

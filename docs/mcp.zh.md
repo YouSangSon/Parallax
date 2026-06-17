@@ -63,7 +63,7 @@ Resource 通过 MCP resource URI 读取。模板 URI 会展开 `{...}` 段；`pa
 
 graph export 作为 `parallax_graphs` **resource** 而非 tool 提供：读取 `parallax://reports/{reportId}/graph/{format}`，其中 `format` 为 `mermaid`、`json` 或 `dot` 之一。等价的 CLI 形式是 `parallax graph export`（见 [cli-reference.zh.md](cli-reference.zh.md)）。
 
-JSON graph resource 可用 `?limit=100&cursor=nodeOffset:edgeOffset` 分页。对于 paged request，`limit` 默认是 `100`，且必须介于 `1` 到 `500`；下一页 cursor 会在 `page.nextCursor` 返回。无效 pagination 会返回 MCP `invalid_pagination`；UI 会将同一 validation 映射为 `invalid_request`。
+JSON graph resource 可用 `?limit=100&cursor=nodeOffset:edgeOffset` 分页，CLI JSON graph export 也通过 `parallax graph export --format json --limit 100 --cursor nodeOffset:edgeOffset` 使用同一 contract。对于 paged request，`limit` 默认是 `100`，且必须介于 `1` 到 `500`；下一页 cursor 会在 `page.nextCursor` 返回。无效 pagination 会返回 MCP `invalid_pagination`；UI 会将同一 validation 映射为 `invalid_request`，CLI 会输出同一 graph page validation error 并以 exit code `2` 退出。
 
 ## 另见
 

@@ -4,7 +4,7 @@
 
 The `parallax` CLI is the local entry point to indexing, impact analysis, graph export, agent memory, the workspace catalog, diagnostics, the MCP server, and the UI. Every command runs against the repo in the current working directory and reads/writes `<repo>/.parallax/impact.db`. Run `parallax --help` (or `-h`) for the built-in summary.
 
-All commands print JSON to stdout unless noted otherwise.
+Most machine-oriented commands can print JSON through command-specific flags. `analyze` defaults to a human summary, and `graph export` defaults to Mermaid text.
 
 ## Indexing
 
@@ -36,7 +36,9 @@ By default (no `--json`) the report is persisted and a short summary is printed;
 
 | Command | Purpose |
 | :--- | :--- |
-| `parallax graph export --report <id> [--format mermaid\|json\|dot]` | Render a stored report's relationship graph; default format is `mermaid` |
+| `parallax graph export --report <id> [--format mermaid\|json\|dot] [--limit <n>] [--cursor <cursor>]` | Render a stored report's relationship graph; default format is `mermaid` |
+
+`--limit` and `--cursor` apply only with `--format json`. They use the same `nodeOffset:edgeOffset` cursor and `1..500` limit contract as MCP/UI graph JSON pagination.
 
 ## Agent memory
 

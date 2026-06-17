@@ -3420,6 +3420,89 @@ test('exportImpactGraph renders report graph from SQLite relations without graph
     edges: Array<{ kind: string; source: string; target: string }>;
   };
   assert.equal(jsonGraph.format, 'json');
+  const firstPage = spawnSync(process.execPath, [
+    '--import',
+    tsxLoaderPath,
+    path.resolve('src/cli.ts'),
+    'graph',
+    'export',
+    '--report',
+    report.id,
+    '--format',
+    'json',
+    '--limit',
+    '1'
+  ], {
+    cwd: repoRoot,
+    encoding: 'utf8'
+  });
+  assert.equal(firstPage.status, 0, firstPage.stderr);
+  const firstPageJson = JSON.parse(firstPage.stdout) as {
+    page: { limit: number; returnedNodes: number; nextCursor: string | null };
+  };
+  assert.equal(firstPageJson.page.limit, 1);
+  assert.equal(firstPageJson.page.returnedNodes, 1);
+  assert.equal(typeof firstPageJson.page.nextCursor, 'string');
+
+  const secondPage = spawnSync(process.execPath, [
+    '--import',
+    tsxLoaderPath,
+    path.resolve('src/cli.ts'),
+    'graph',
+    'export',
+    '--report',
+    report.id,
+    '--format',
+    'json',
+    '--limit',
+    '1',
+    '--cursor',
+    firstPageJson.page.nextCursor!
+  ], {
+    cwd: repoRoot,
+    encoding: 'utf8'
+  });
+  assert.equal(secondPage.status, 0, secondPage.stderr);
+  const secondPageJson = JSON.parse(secondPage.stdout) as { page: { cursor: string | null; limit: number } };
+  assert.equal(secondPageJson.page.cursor, firstPageJson.page.nextCursor);
+  assert.equal(secondPageJson.page.limit, 1);
+
+  const invalidLimit = spawnSync(process.execPath, [
+    '--import',
+    tsxLoaderPath,
+    path.resolve('src/cli.ts'),
+    'graph',
+    'export',
+    '--report',
+    report.id,
+    '--format',
+    'json',
+    '--limit',
+    'abc'
+  ], {
+    cwd: repoRoot,
+    encoding: 'utf8'
+  });
+  assert.equal(invalidLimit.status, 2);
+  assert.match(invalidLimit.stderr, /graph page limit/);
+
+  const mermaidLimit = spawnSync(process.execPath, [
+    '--import',
+    tsxLoaderPath,
+    path.resolve('src/cli.ts'),
+    'graph',
+    'export',
+    '--report',
+    report.id,
+    '--limit',
+    '1'
+  ], {
+    cwd: repoRoot,
+    encoding: 'utf8'
+  });
+  assert.equal(mermaidLimit.status, 2);
+  assert.match(mermaidLimit.stderr, /require --format json/);
+
   assert.ok(parsed.nodes.some((node) => node.id === 'file:src/auth/session.ts' && node.group === 'changed'));
   assert.ok(parsed.nodes.some((node) => node.id === 'file:src/routes/private.ts' && node.group === 'affected'));
   assert.ok(parsed.edges.some((edge) => edge.kind === 'DEPENDS_ON'));

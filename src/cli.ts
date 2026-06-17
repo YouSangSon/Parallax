@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import process from 'node:process';
 
 import { PACKAGE_NAME, PRODUCT_NAME, envValue } from './branding.js';
+import { GraphPaginationInputError, paginateGraph } from './graph_pagination.js';
 
 async function main(): Promise<void> {
   const [command, ...args] = process.argv.slice(2);
@@ -209,6 +210,25 @@ async function main(): Promise<void> {
       reportId: parseRequiredArg(args, '--report'),
       format: parseGraphFormat(args)
     });
+    const limit = parseOptionalArg(args, '--limit');
+    const cursor = parseOptionalArg(args, '--cursor');
+    const requirePagination = limit !== undefined || cursor !== undefined;
+    if (graph.format === 'json' && requirePagination) {
+      try {
+        console.log(JSON.stringify(
+          paginateGraph(graph, { limit: limit ?? null, cursor: cursor ?? null, requirePagination: true }),
+          null,
+          2
+        ));
+      } catch (error) {
+        if (error instanceof GraphPaginationInputError) throw error;
+        throw error;
+      }
+      return;
+    }
+    if (requirePagination) {
+      throw new Error('graph export --limit/--cursor require --format json');
+    }
     console.log(graph.rendered);
     return;
   }
@@ -514,7 +534,7 @@ function parsePositionals(args: string[]): string[] {
     '--entity', '--attribute', '--value', '--branch', '--agent', '--evidence-fact-ids',
     '--name', '--from', '--fact-id', '--k', '--op', '--as-of-tx',
     '--target', '--source', '--query', '--model',
-    '--older-than-days', '--abandon', '--restore', '--max-age'
+    '--older-than-days', '--abandon', '--restore', '--max-age', '--limit', '--cursor'
   ]);
   const positionals: string[] = [];
   for (let index = 0; index < args.length; index++) {
@@ -555,6 +575,7 @@ Commands:
   ${PACKAGE_NAME} analyze --changed src/file.ts [--depth 2] [--json]
   ${PACKAGE_NAME} analyze --base main [--head HEAD] [--depth 2] [--json]
   ${PACKAGE_NAME} graph export --report <id> [--format mermaid|json|dot]
+                              [--limit 100] [--cursor nodeOffset:edgeOffset]
   ${PACKAGE_NAME} mcp serve
 
 Agent memory:

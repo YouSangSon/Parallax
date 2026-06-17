@@ -4,7 +4,7 @@
 
 `parallax` CLI는 indexing, impact 분석, graph export, agent memory, workspace catalog, 진단, MCP 서버, UI로 들어가는 로컬 진입점이다. 모든 명령은 현재 작업 디렉터리의 repo를 대상으로 실행되며 `<repo>/.parallax/impact.db`를 읽고 쓴다. 내장 요약은 `parallax --help`(또는 `-h`)로 본다.
 
-명시된 경우를 제외하고 모든 명령은 stdout에 JSON을 출력한다.
+대부분의 machine-oriented 명령은 command-specific flag로 JSON을 출력할 수 있다. `analyze`는 기본적으로 사람이 읽는 요약을 출력하고, `graph export`는 기본적으로 Mermaid 텍스트를 출력한다.
 
 ## Indexing
 
@@ -36,7 +36,9 @@
 
 | 명령 | 목적 |
 | :--- | :--- |
-| `parallax graph export --report <id> [--format mermaid\|json\|dot]` | 저장된 report의 relationship graph를 렌더; 기본 형식은 `mermaid` |
+| `parallax graph export --report <id> [--format mermaid\|json\|dot] [--limit <n>] [--cursor <cursor>]` | 저장된 report의 relationship graph를 렌더; 기본 형식은 `mermaid` |
+
+`--limit`와 `--cursor`는 `--format json`에서만 적용된다. MCP/UI graph JSON pagination과 같은 `nodeOffset:edgeOffset` cursor 및 `1..500` limit contract를 사용한다.
 
 ## Agent memory
 

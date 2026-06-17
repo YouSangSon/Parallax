@@ -5470,3 +5470,23 @@ test('analyzeDiff ranks proven code impact above heuristic doc mentions', async 
     `proven code impact (idx ${provenIndex}) must rank before heuristic doc mention (idx ${docIndex})`
   );
 });
+
+test('analyzeDiff uses shared classification for build manifests', async () => {
+  const repoRoot = await makeFixtureRepo();
+  await writeFile(
+    path.join(repoRoot, 'package.json'),
+    `${JSON.stringify({ scripts: { test: 'vitest' } }, null, 2)}\n`
+  );
+  initGitRepo(repoRoot);
+  await initProject({ repoRoot });
+  await indexProject({ repoRoot });
+
+  await writeFile(
+    path.join(repoRoot, 'package.json'),
+    `${JSON.stringify({ scripts: { test: 'vitest --run' } }, null, 2)}\n`
+  );
+
+  const report = await analyzeDiff({ repoRoot, changedFiles: ['package.json'] });
+  const packageEntity = report.changed.find((entity) => entity.path === 'package.json');
+  assert.equal(packageEntity?.kind, 'config');
+});

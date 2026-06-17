@@ -12,10 +12,14 @@ import {
   PythonSemanticAdapter,
   RustSemanticAdapter,
   TypeScriptJavaScriptSemanticAdapter,
-  isTestFile
+  isTestFile as isJavaScriptTestFile
 } from './adapters/multi-language-regex.js';
-import { entityKindForMarkdownPath } from './artifacts.js';
 import { DATA_DIR } from './branding.js';
+import {
+  entityKindForPath,
+  isTestPath as isSharedTestPath,
+  languageIdForPath
+} from './entity_classification.js';
 import { readGitSnapshot } from './git-snapshot.js';
 import type {
   EntityDescriptor,
@@ -41,60 +45,6 @@ const ignoredDirs = new Set([
   '.venv', 'venv', '__pycache__', 'site-packages',
   'target', 'vendor', 'build',
   '.tox', '.pytest_cache', '.mypy_cache', '.ruff_cache'
-]);
-const languageByExtension = new Map<string, string>([
-  ['.ts', 'typescript'],
-  ['.tsx', 'typescript'],
-  ['.js', 'javascript'],
-  ['.jsx', 'javascript'],
-  ['.mjs', 'javascript'],
-  ['.cjs', 'javascript'],
-  ['.md', 'markdown'],
-  ['.py', 'python'],
-  ['.go', 'go'],
-  ['.rs', 'rust'],
-  ['.java', 'java'],
-  ['.kt', 'kotlin'],
-  ['.kts', 'kotlin'],
-  ['.cs', 'csharp'],
-  ['.c', 'c'],
-  ['.h', 'c'],
-  ['.cpp', 'cpp'],
-  ['.cc', 'cpp'],
-  ['.cxx', 'cpp'],
-  ['.hpp', 'cpp'],
-  ['.hh', 'cpp'],
-  ['.hxx', 'cpp'],
-  ['.sh', 'shell'],
-  ['.bash', 'shell'],
-  ['.zsh', 'shell'],
-  ['.yaml', 'yaml'],
-  ['.yml', 'yaml'],
-  ['.json', 'json'],
-  ['.toml', 'toml'],
-  ['.properties', 'properties'],
-  ['.tf', 'terraform'],
-  ['.proto', 'protobuf'],
-  ['.graphql', 'graphql'],
-  ['.gql', 'graphql'],
-  ['.gradle', 'gradle']
-]);
-const languageByFileName = new Map<string, string>([
-  ['Dockerfile', 'dockerfile'],
-  ['Containerfile', 'dockerfile'],
-  ['Makefile', 'makefile'],
-  ['CODEOWNERS', 'policy'],
-  ['package.json', 'json'],
-  ['pnpm-workspace.yaml', 'yaml'],
-  ['pom.xml', 'xml'],
-  ['settings.gradle', 'gradle'],
-  ['settings.gradle.kts', 'gradle'],
-  ['build.gradle', 'gradle'],
-  ['build.gradle.kts', 'gradle'],
-  ['go.mod', 'go'],
-  ['go.work', 'go'],
-  ['Cargo.toml', 'toml'],
-  ['pyproject.toml', 'toml']
 ]);
 const defaultMaxFileBytes = 1_000_000;
 const skippedFileContentSampleBytes = 4_096;
@@ -757,7 +707,7 @@ async function indexProjectInternal(
       const row = stmts.selectFile.get(repoId, file.relativePath) as { id: number };
       persistCtx.fileIdByPath.set(file.relativePath, row.id);
       const fileEntId = fileEntityId(file.relativePath);
-      const kind = fileKind(file.relativePath, file.language);
+      const kind = entityKindForPath(file.relativePath, file.language);
       currentStateSnapshot.captureEntity(fileEntId);
       stmts.upsertEntity.run(
         fileEntId,
@@ -1274,7 +1224,7 @@ function diagnosticLanguageId(filePath: string, currentFile: ScannedFile): strin
   if (filePath === currentFile.relativePath) {
     return currentFile.language;
   }
-  return languageForPath(filePath) ?? null;
+  return languageIdForPath(filePath) ?? null;
 }
 
 function persistEntity(entity: PendingEntity, ctx: PersistContext): void {
@@ -1725,7 +1675,7 @@ function scanFiles(repoRoot: string, maxFileBytes: number): ScanResult {
       if (!entry.isFile()) continue;
       const absolutePath = path.join(dir, entry.name);
       const relativePath = toRelativePath(repoRoot, absolutePath);
-      const language = languageForPath(relativePath);
+      const language = languageIdForPath(relativePath);
       if (!language) continue;
       const size = statSync(absolutePath).size;
       if (size > maxFileBytes) {
@@ -1790,63 +1740,6 @@ function evidenceId(filePath: string, kind: string): string {
 
 function fileEntityId(relativePath: string): string {
   return `file:${relativePath}`;
-}
-
-function fileKind(relativePath: string, languageId: string): EntityKind {
-  if (isTestFile(relativePath)) return 'test';
-  if (languageId === 'markdown') return entityKindForMarkdownPath(relativePath);
-  if (languageId === 'policy') return 'policy';
-  if (languageId === 'yaml' && relativePath.startsWith('.github/workflows/')) return 'workflow';
-  if ((languageId === 'yaml' || languageId === 'json') && isPathObviousContract(relativePath)) return 'contract';
-  if (languageId === 'dockerfile' || languageId === 'terraform') return 'resource';
-  if (isBuildManifestPath(relativePath)) return 'config';
-  if (
-    languageId === 'yaml' ||
-    languageId === 'json' ||
-    languageId === 'toml' ||
-    languageId === 'properties' ||
-    languageId === 'shell' ||
-    languageId === 'makefile'
-  ) {
-    return 'config';
-  }
-  if (languageId === 'protobuf' || languageId === 'graphql') return 'contract';
-  return 'file';
-}
-
-function isBuildManifestPath(relativePath: string): boolean {
-  const basename = path.posix.basename(relativePath);
-  return (
-    basename === 'package.json' ||
-    basename === 'pnpm-workspace.yaml' ||
-    basename === 'pom.xml' ||
-    basename === 'settings.gradle' ||
-    basename === 'settings.gradle.kts' ||
-    basename === 'build.gradle' ||
-    basename === 'build.gradle.kts' ||
-    basename === 'go.mod' ||
-    basename === 'go.work' ||
-    basename === 'Cargo.toml' ||
-    basename === 'pyproject.toml'
-  );
-}
-
-function isPathObviousContract(relativePath: string): boolean {
-  const basename = path.posix.basename(relativePath);
-  const withoutExtension = basename.replace(/\.[^.]+$/, '').toLowerCase();
-  return (
-    withoutExtension.includes('openapi') ||
-    withoutExtension.includes('swagger') ||
-    withoutExtension.includes('asyncapi')
-  );
-}
-
-function languageForPath(relativePath: string): string | undefined {
-  const basename = path.posix.basename(relativePath);
-  const byName = languageByFileName.get(basename);
-  if (byName) return byName;
-  const ext = path.posix.extname(basename).toLowerCase();
-  return languageByExtension.get(ext);
 }
 
 function relationId(

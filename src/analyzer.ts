@@ -2,9 +2,13 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { entityKindForMarkdownPath } from './artifacts.js';
 import { PRODUCT_NAME } from './branding.js';
 import { asConfidence } from './confidence.js';
+import {
+  entityKindForPath,
+  isTestPath as isSharedTestPath,
+  languageIdForPath
+} from './entity_classification.js';
 import { readGitSnapshot } from './git-snapshot.js';
 import { ensureRepo, getRepoId, impactDir, latestCompletedIndexRun, openDatabase } from './store.js';
 import { normalizeRepoRoot, redactSecrets, resolveInsideRoot, toRelativePath } from './security.js';
@@ -881,74 +885,9 @@ function entityForPath(relativePath: string): EntityRef {
   };
 }
 
-function entityKindForPath(relativePath: string, languageId: string | undefined): EntityKind {
-  if (isTestPath(relativePath)) return 'test';
-  if (languageId === 'markdown') return entityKindForMarkdownPath(relativePath);
-  if (path.posix.basename(relativePath) === 'CODEOWNERS') return 'policy';
-  if (languageId === 'yaml' && relativePath.startsWith('.github/workflows/')) return 'workflow';
-  if ((languageId === 'yaml' || languageId === 'json') && isPathObviousContract(relativePath)) return 'contract';
-  if (languageId === 'dockerfile' || languageId === 'terraform') return 'resource';
-  if (languageId === 'yaml' || languageId === 'json' || languageId === 'toml' || languageId === 'properties' || languageId === 'shell' || languageId === 'makefile') return 'config';
-  if (languageId === 'protobuf' || languageId === 'graphql') return 'contract';
-  return 'file';
-}
-
-function isPathObviousContract(relativePath: string): boolean {
-  const basename = path.posix.basename(relativePath);
-  const withoutExtension = basename.replace(/\.[^.]+$/, '').toLowerCase();
-  return (
-    withoutExtension.includes('openapi') ||
-    withoutExtension.includes('swagger') ||
-    withoutExtension.includes('asyncapi')
-  );
-}
-
-function languageIdForPath(relativePath: string): string | undefined {
-  const basename = path.posix.basename(relativePath);
-  if (basename === 'Dockerfile' || basename === 'Containerfile') return 'dockerfile';
-  if (basename === 'Makefile') return 'makefile';
-  if (basename === 'CODEOWNERS') return 'policy';
-  const ext = path.posix.extname(relativePath).toLowerCase();
-  if (ext === '.ts' || ext === '.tsx') return 'typescript';
-  if (ext === '.js' || ext === '.jsx' || ext === '.mjs' || ext === '.cjs') return 'javascript';
-  if (ext === '.md') return 'markdown';
-  if (ext === '.py') return 'python';
-  if (ext === '.go') return 'go';
-  if (ext === '.rs') return 'rust';
-  if (ext === '.java') return 'java';
-  if (ext === '.kt' || ext === '.kts') return 'kotlin';
-  if (ext === '.cs') return 'csharp';
-  if (ext === '.c' || ext === '.h') return 'c';
-  if (ext === '.cpp' || ext === '.cc' || ext === '.cxx' || ext === '.hpp' || ext === '.hh' || ext === '.hxx') return 'cpp';
-  if (ext === '.sh' || ext === '.bash' || ext === '.zsh') return 'shell';
-  if (ext === '.yaml' || ext === '.yml') return 'yaml';
-  if (ext === '.json') return 'json';
-  if (ext === '.toml') return 'toml';
-  if (ext === '.properties') return 'properties';
-  if (ext === '.tf') return 'terraform';
-  if (ext === '.proto') return 'protobuf';
-  if (ext === '.graphql' || ext === '.gql') return 'graphql';
-  return undefined;
-}
-
-function isTestPath(relativePath: string): boolean {
-  const basename = path.posix.basename(relativePath);
-  return (
-    /(^|\/)(tests?|__tests__)\/|(^|\/)src\/test\//.test(relativePath) ||
-    /(\.|-)(test|spec)\.[cm]?[tj]sx?$/.test(basename) ||
-    /(?:Test|Tests|Spec)\.(?:java|kt)$/.test(basename) ||
-    /(?:^test_.*|.*_test)\.py$/.test(basename) ||
-    /_test\.go$/.test(basename) ||
-    /(?:_test|_spec)\.rs$/.test(basename)
-  );
-}
-
 function isJavaScriptTestPath(relativePath: string): boolean {
   const basename = path.posix.basename(relativePath);
-  return (
-    /(^|\/)(tests?|__tests__)\/|(^|\/)src\/test\//.test(relativePath) ||
-    /(\.|-)(test|spec)\.[cm]?[tj]sx?$/.test(basename)
-  ) && /\.[cm]?[tj]sx?$/.test(basename);
+  return isSharedTestPath(relativePath) && /\.[cm]?[tj]sx?$/.test(basename);
 }
 
 function shellQuote(value: string): string {

@@ -1,5 +1,5 @@
-import { entityKindForMarkdownPath } from './artifacts.js';
 import { asConfidence } from './confidence.js';
+import { entityKindForPath } from './entity_classification.js';
 import { getRepoId, openDatabase } from './store.js';
 import { normalizeRepoRoot } from './security.js';
 import type {
@@ -106,8 +106,8 @@ export async function exportImpactGraph(options: GraphExportOptions): Promise<Gr
       for (const row of loadLegacyRows(db, repoId, report.indexRunId, report.changedFiles)) {
         const sourceId = `file:${row.source_path}`;
         const targetId = `file:${row.target_path}`;
-        upsertRowNode(nodes, sourceId, kindForPath(row.source_path), row.source_path, row.source_path, 'affected', asConfidence(row.confidence));
-        upsertRowNode(nodes, targetId, kindForPath(row.target_path), row.target_path, row.target_path, 'changed', asConfidence(row.confidence));
+        upsertRowNode(nodes, sourceId, entityKindForPath(row.source_path), row.source_path, row.source_path, 'affected', asConfidence(row.confidence));
+        upsertRowNode(nodes, targetId, entityKindForPath(row.target_path), row.target_path, row.target_path, 'changed', asConfidence(row.confidence));
         edges.set(`legacy:${row.edge_id}`, {
           id: `legacy:${row.edge_id}`,
           source: sourceId,
@@ -284,22 +284,6 @@ function escapeDotId(value: string): string {
 
 function escapeDotLabel(value: string): string {
   return escapeDotId(value).replace(/\n/g, ' ').replace(/\r/g, ' ');
-}
-
-function kindForPath(path: string): EntityKind {
-  const basename = path.split('/').at(-1) ?? path;
-  if (
-    /(^|\/)(tests?|__tests__)\/|(^|\/)src\/test\//.test(path) ||
-    /(\.|-)(test|spec)\.[cm]?[tj]sx?$/.test(basename) ||
-    /(?:Test|Tests|Spec)\.(?:java|kt)$/.test(basename) ||
-    /(?:^test_.*|.*_test)\.py$/.test(basename) ||
-    /_test\.go$/.test(basename) ||
-    /(?:_test|_spec)\.rs$/.test(basename)
-  ) {
-    return 'test';
-  }
-  if (path.toLowerCase().endsWith('.md')) return entityKindForMarkdownPath(path);
-  return 'file';
 }
 
 function isEntityKind(value: string): value is EntityKind {

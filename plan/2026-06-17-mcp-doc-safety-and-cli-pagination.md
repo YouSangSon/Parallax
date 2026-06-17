@@ -32,7 +32,7 @@
 - Consumes: existing `iterLinks`, `resolveRepoMarkdownTarget`, `mcpDocsToolTables`, and `documentedMcpTools`.
 - Produces: package-visible Markdown link guard in `scripts/docs-lint.js`; MCP parity coverage for `skills/parallax/SKILL.md`, `.ko.md`, and `.zh.md`.
 
-- [ ] **Step 1: Add failing docs-lint test for unpackaged skill links**
+- [x] **Step 1: Add failing docs-lint test for unpackaged skill links**
 
 In `tests/docs_lint.test.ts`, add a test after `tracked docs cannot satisfy trilingual parity with only untracked variants`:
 
@@ -89,7 +89,7 @@ test('package-visible docs cannot link to unpackaged skill Markdown', async () =
 });
 ```
 
-- [ ] **Step 2: Run test and verify it fails**
+- [x] **Step 2: Run test and verify it fails**
 
 Run:
 
@@ -99,7 +99,7 @@ npm exec -- tsx --test tests/docs_lint.test.ts
 
 Expected: FAIL because `scripts/docs-lint.js` currently only checks whether the `../skills/parallax/SKILL.md` target exists.
 
-- [ ] **Step 3: Implement package-visible Markdown link guard**
+- [x] **Step 3: Implement package-visible Markdown link guard**
 
 In `scripts/docs-lint.js`, add helpers near `inTrilingualZone`:
 
@@ -135,7 +135,7 @@ function checkPackageSurfaceLinks(file, content) {
 
 Call `checkPackageSurfaceLinks(file, content)` in `run()` after `checkMarkdownLinkTargets(file, content)`.
 
-- [ ] **Step 4: Add failing MCP skill-table parity coverage**
+- [x] **Step 4: Add failing MCP skill-table parity coverage**
 
 In `tests/mcp.test.ts`, replace `McpDocsToolTable` with:
 
@@ -170,7 +170,7 @@ Change `documentedMcpTools()` so the section ends at the next `## ` heading afte
 
 Use `const readOnlyCell = cells[table.readOnlyColumnIndex];`.
 
-- [ ] **Step 5: Run test and verify it passes**
+- [x] **Step 5: Run test and verify it passes**
 
 Run:
 
@@ -180,7 +180,7 @@ npm exec -- tsx --test tests/docs_lint.test.ts tests/mcp.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scripts/docs-lint.js tests/docs_lint.test.ts tests/mcp.test.ts
@@ -203,7 +203,7 @@ git commit -m "test: guard package docs and skill MCP parity"
 - Consumes: `paginateGraph` and `GraphPaginationInputError` from `src/graph_pagination.ts`.
 - Produces: `parallax graph export --report <id> --format json --limit <n> [--cursor nodeOffset:edgeOffset]` with the same payload shape and validation as UI/MCP graph JSON pagination.
 
-- [ ] **Step 1: Write failing CLI graph pagination tests**
+- [x] **Step 1: Write failing CLI graph pagination tests**
 
 In `tests/parallax.test.ts`, extend `exportImpactGraph renders report graph from SQLite relations without graph DB` after `assert.equal(jsonGraph.format, 'json');` by spawning the CLI from the fixture repo:
 
@@ -275,7 +275,7 @@ In `tests/parallax.test.ts`, extend `exportImpactGraph renders report graph from
   assert.match(invalidLimit.stderr, /graph page limit/);
 ```
 
-- [ ] **Step 2: Run test and verify it fails**
+- [x] **Step 2: Run test and verify it fails**
 
 Run:
 
@@ -285,7 +285,7 @@ npm exec -- tsx --test tests/parallax.test.ts
 
 Expected: FAIL because CLI help/parser does not yet support `--limit` or `--cursor` for graph export.
 
-- [ ] **Step 3: Implement CLI graph pagination**
+- [x] **Step 3: Implement CLI graph pagination**
 
 In `src/cli.ts`, import the helper:
 
@@ -323,7 +323,7 @@ Update `printHelp()` graph line to:
                               [--limit 100] [--cursor nodeOffset:edgeOffset]
 ```
 
-- [ ] **Step 4: Update CLI and MCP docs**
+- [x] **Step 4: Update CLI and MCP docs**
 
 In all three `docs/cli-reference*.md` files:
 - Replace the sentence that says every command prints JSON by default with wording that says most machine-oriented commands can print JSON through command-specific flags, while `analyze` defaults to a human summary and `graph export` defaults to Mermaid text.
@@ -334,7 +334,7 @@ In all three `docs/cli-reference*.md` files:
 
 In all three `docs/mcp*.md` files, update the graph export paragraph so it says CLI graph JSON pagination uses the same contract, not that pagination is MCP/UI-only.
 
-- [ ] **Step 5: Run targeted verification**
+- [x] **Step 5: Run targeted verification**
 
 Run:
 
@@ -346,7 +346,7 @@ npm run check
 
 Expected: all pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/cli.ts tests/parallax.test.ts docs/cli-reference.md docs/cli-reference.ko.md docs/cli-reference.zh.md docs/mcp.md docs/mcp.ko.md docs/mcp.zh.md
@@ -370,7 +370,7 @@ git commit -m "feat: page CLI graph JSON export"
 - Consumes: current MCP behavior in `src/mcp.ts`, where tool responses and resource reads may append `context_tool_runs` and `context_resource_accesses` rows.
 - Produces: trilingual public docs that clearly distinguish source-tree read-only behavior from local `.parallax/impact.db` telemetry writes.
 
-- [ ] **Step 1: Update root README safety model**
+- [x] **Step 1: Update root README safety model**
 
 In each root README safety table, revise the source-tree read-only row so it explicitly mentions both tool calls and resource reads:
 
@@ -380,14 +380,14 @@ In each root README safety table, revise the source-tree read-only row so it exp
 
 Use Korean and Chinese equivalents in localized files. Keep the exact distinction: source files untouched; local database telemetry/context rows may be appended.
 
-- [ ] **Step 2: Update MCP read-only-first section**
+- [x] **Step 2: Update MCP read-only-first section**
 
 In all three `docs/mcp*.md` files, update the read-only-first paragraph to state:
 - `readOnlyHint: true` means source-tree read-only, not necessarily zero local DB writes.
 - MCP resource reads may append `context_resource_accesses` telemetry rows.
 - Analysis/search/context tools may append `context_tool_runs` and context-pack rows.
 
-- [ ] **Step 3: Update operations MCP setup section**
+- [x] **Step 3: Update operations MCP setup section**
 
 In all three `docs/operations*.md` files, replace the sentence that only mentions analysis/search calls with wording that includes resource reads:
 
@@ -397,7 +397,7 @@ MCP does not modify source files. Analysis/search/context calls may persist cont
 
 Use Korean and Chinese equivalents.
 
-- [ ] **Step 4: Run docs verification**
+- [x] **Step 4: Run docs verification**
 
 Run:
 
@@ -408,7 +408,7 @@ npm exec -- tsx --test tests/mcp.test.ts
 
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add README.md README.ko.md README.zh.md docs/mcp.md docs/mcp.ko.md docs/mcp.zh.md docs/operations.md docs/operations.ko.md docs/operations.zh.md
@@ -424,7 +424,7 @@ git commit -m "docs: clarify MCP resource telemetry writes"
 - Consumes: Tasks 1-3.
 - Produces: verified branch ready for user review.
 
-- [ ] **Step 1: Run final gates**
+- [x] **Step 1: Run final gates**
 
 Run:
 
@@ -439,7 +439,22 @@ npm pack --dry-run --json
 
 Expected: all pass.
 
-- [ ] **Step 2: Generate final diff package**
+Observed after the final package-surface fix:
+
+```bash
+npm run verify
+npm pack --dry-run --json
+```
+
+Results:
+
+- `npm run verify` passed. This includes lint, install smoke/build, `npm test`, dogfood, bench, and high-level audit.
+- `npm pack --dry-run --json` passed after `prepack` ran `npm run build`.
+- The dry-run package contains `dist/src/graph_pagination.js` and `dist/src/cli.js`.
+- Bench summary remained `76/76` expected relations with score `0.9987`.
+- Audit reported `0` vulnerabilities.
+
+- [x] **Step 2: Generate final diff package**
 
 Run:
 
@@ -450,11 +465,21 @@ git merge-base main HEAD
 
 Expected: a review package path under `.git/sdd/`.
 
-- [ ] **Step 3: Final branch review**
+Observed before final-review fix: `.git/sdd/review-ab6c60e..d9c5146.diff`.
+
+Observed after final-review fix: regenerate from `ab6c60e132ccd342f289735ee1eabb604f253d78` to final `HEAD`.
+
+- [x] **Step 3: Final branch review**
 
 Dispatch a reviewer with the final review package and the plan file. Fix Critical/Important findings and re-review.
 
-- [ ] **Step 4: Completion summary**
+Final-review fix:
+
+- Finding: package dry-run could include stale `dist/src` because `package.json` ships `dist/src` while source changes live under `src/`.
+- Fix: `package.json` now defines `prepack: npm run build`, `tests/package_metadata.test.ts` asserts it, and `docs/release-checklist*.md` documents that pack/publish rebuilds `dist`.
+- Evidence: `npm pack --dry-run --json` now runs `prepack` and includes `dist/src/graph_pagination.js`.
+
+- [x] **Step 4: Completion summary**
 
 Summarize:
 - Changed files.

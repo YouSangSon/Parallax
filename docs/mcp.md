@@ -63,6 +63,8 @@ Resources are read via MCP resource URIs. Templated URIs expand the `{...}` segm
 
 Graph export is delivered as the `parallax_graphs` **resource**, not a tool: read `parallax://reports/{reportId}/graph/{format}` with `format` one of `mermaid`, `json`, or `dot`. The equivalent CLI form is `parallax graph export` (see [cli-reference.md](cli-reference.md)).
 
+JSON graph resources can be paged with `?limit=100&cursor=nodeOffset:edgeOffset`. For paged requests, `limit` defaults to `100` and must be between `1` and `500`; the next page cursor is returned as `page.nextCursor`. Invalid pagination returns MCP `invalid_pagination`; the UI maps the same validation to `invalid_request`.
+
 ## See also
 
 - [cli-reference.md](cli-reference.md) — the local CLI surface over the same store

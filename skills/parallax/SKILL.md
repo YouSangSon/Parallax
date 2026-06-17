@@ -81,14 +81,14 @@ claude mcp add --transport stdio parallax -- parallax mcp serve
 
 | Tool | Read-only? | What it does |
 |---|---|---|
-| `parallax_analyze_diff` | ✅ | Run impact analysis for a list of changed files |
-| `parallax_context_for_change` | ✅ | Return a budgeted compact context pack for changed files |
-| `parallax_search_context` | ✅ | Search latest indexed entities by keyword/path/symbol/relation/evidence and return ranked context with resource links |
+| `parallax_analyze_diff` | ❌ | Run impact analysis for a list of changed files |
+| `parallax_context_for_change` | ❌ | Return a budgeted compact context pack for changed files |
+| `parallax_search_context` | ❌ | Search latest indexed entities by keyword/path/symbol/relation/evidence and return ranked context with resource links |
 | `parallax_contract_diff` | ❌ | Compare a current OpenAPI contract file against the latest indexed workspace baseline and return compact breaking-change impact |
 | `parallax_remember` | ❌ | Persist an agent fact (entity, attribute, value) on a branch |
 | `parallax_recall` | ✅ | Retrieve facts by branch / entity / attribute / semantic query (sqlite-vec ANN with brute-force fallback) |
 | `parallax_profile` | ✅ | Three-bucket per-entity view (static / dynamic / summary) —  |
-| `parallax_explain_entity` | ✅ | Compact direct incoming/outgoing relation and evidence view for one indexed entity |
+| `parallax_explain_entity` | ❌ | Compact direct incoming/outgoing relation and evidence view for one indexed entity |
 | `parallax_branch` | ❌ | Fork a new branch from an existing branch (no data copy) |
 | `parallax_merge` | ❌ | Multi-parent merge transaction joining two branch heads |
 | `parallax_abandon_branch` | ❌ | Mark a branch state='abandoned' (idempotent, main protected) |

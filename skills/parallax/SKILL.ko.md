@@ -81,14 +81,14 @@ claude mcp add --transport stdio parallax -- parallax mcp serve
 
 | Tool | Read-only? | What it does |
 |---|---|---|
-| `parallax_analyze_diff` | ✅ | 변경된 파일 목록에 대해 impact analysis 실행 |
-| `parallax_context_for_change` | ✅ | 변경된 파일에 대한 budget이 적용된 compact context pack 반환 |
-| `parallax_search_context` | ✅ | keyword/path/symbol/relation/evidence로 최신 인덱싱된 entity를 검색하고, resource link와 함께 순위가 매겨진 context 반환 |
+| `parallax_analyze_diff` | ❌ | 변경된 파일 목록에 대해 impact analysis 실행 |
+| `parallax_context_for_change` | ❌ | 변경된 파일에 대한 budget이 적용된 compact context pack 반환 |
+| `parallax_search_context` | ❌ | keyword/path/symbol/relation/evidence로 최신 인덱싱된 entity를 검색하고, resource link와 함께 순위가 매겨진 context 반환 |
 | `parallax_contract_diff` | ❌ | 현재 OpenAPI contract 파일을 최신 인덱싱된 workspace baseline과 비교해 compact한 breaking-change impact 반환 |
 | `parallax_remember` | ❌ | agent fact(entity, attribute, value)를 branch에 저장 |
 | `parallax_recall` | ✅ | branch / entity / attribute / semantic query로 fact 조회 (brute-force fallback이 있는 sqlite-vec ANN) |
 | `parallax_profile` | ✅ | entity별 three-bucket view (static / dynamic / summary) —  |
-| `parallax_explain_entity` | ✅ | 인덱싱된 entity 하나에 대한 compact한 직접 incoming/outgoing relation 및 evidence view |
+| `parallax_explain_entity` | ❌ | 인덱싱된 entity 하나에 대한 compact한 직접 incoming/outgoing relation 및 evidence view |
 | `parallax_branch` | ❌ | 기존 branch에서 새 branch fork (data copy 없음) |
 | `parallax_merge` | ❌ | 두 branch head를 결합하는 multi-parent merge transaction |
 | `parallax_abandon_branch` | ❌ | branch를 state='abandoned'로 표시 (idempotent, main은 보호됨) |

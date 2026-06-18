@@ -6242,6 +6242,95 @@ test('TypeScript JavaScript adapter records parser-backed array element typed re
   }
 });
 
+test('TypeScript JavaScript adapter records parser-backed destructured array receiver dispatch spans', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-array-destructure-receiver-spans-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+
+  await writeFile(path.join(repoRoot, 'src/guard.ts'), [
+    'class SessionGuard {',
+    '  validateSession(token: string): boolean {',
+    '    return token.length > 0;',
+    '  }',
+    '}',
+    'class AuditGuard {',
+    '  auditSession(token: string): boolean {',
+    '    return token.length > 1;',
+    '  }',
+    '}',
+    'type GuardList = SessionGuard[];',
+    'type GuardPair = [SessionGuard, AuditGuard];',
+    '',
+    'export function authorizePair(pair: GuardPair, guards: GuardList, token: string): boolean {',
+    '  const [session, audit]: GuardPair = pair;',
+    '  const [first]: GuardList = guards;',
+    '  return session.validateSession(token)',
+    '    && audit.auditSession(token)',
+    '    && first.validateSession(token);',
+    '}',
+    '',
+    'export function authorizeParameter([session, audit]: GuardPair, [first]: GuardList, token: string): boolean {',
+    '  return session.validateSession(token)',
+    '    && audit.auditSession(token)',
+    '    && first.validateSession(token);',
+    '}',
+    ''
+  ].join('\n'));
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const calls = db
+      .prepare(`
+        SELECT
+          source.symbol AS source_symbol,
+          target.symbol AS target_symbol,
+          r.provenance,
+          ev.snippet,
+          ev.start_line,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities source ON source.id = r.source_entity_id
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind = 'CALLS'
+          AND source.kind = 'symbol'
+          AND target.kind = 'symbol'
+          AND source.path = 'src/guard.ts'
+          AND target.path = 'src/guard.ts'
+        ORDER BY ev.start_line, ev.start_col, ev.end_col
+      `)
+      .all(index.indexRunId) as Array<{
+        source_symbol: string;
+        target_symbol: string;
+        provenance: string;
+        snippet: string;
+        start_line: number | null;
+        adapter_id: string | null;
+      }>;
+
+    assert.deepEqual(
+      calls.map((row) => [row.source_symbol, row.target_symbol, row.snippet]),
+      [
+        ['authorizePair', 'SessionGuard.validateSession', 'session.validateSession(token)'],
+        ['authorizePair', 'AuditGuard.auditSession', 'audit.auditSession(token)'],
+        ['authorizePair', 'SessionGuard.validateSession', 'first.validateSession(token)'],
+        ['authorizeParameter', 'SessionGuard.validateSession', 'session.validateSession(token)'],
+        ['authorizeParameter', 'AuditGuard.auditSession', 'audit.auditSession(token)'],
+        ['authorizeParameter', 'SessionGuard.validateSession', 'first.validateSession(token)']
+      ]
+    );
+    assert.deepEqual(calls.map((row) => row.start_line), [17, 18, 19, 23, 24, 25]);
+    assert.ok(calls.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
+    assert.ok(calls.every((row) => row.provenance.startsWith('instance-call:')));
+  } finally {
+    db.close();
+  }
+});
+
 test('TypeScript JavaScript adapter records parser-backed object literal method dispatch spans', async () => {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-object-literal-method-spans-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });

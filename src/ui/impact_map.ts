@@ -13,7 +13,7 @@ import {
   evidenceSourceLocation,
   impactEvidenceMatchesPath,
   shortenMiddle,
-  sourceHref,
+  type SourceLinkContext,
   topAffectedFilesForSummary
 } from './shared.js';
 import type { ImpactAction } from '../types.js';
@@ -29,7 +29,12 @@ import type {
   UiReportPreview
 } from '../ui.js';
 
-export function renderImpactMapPanel(graph: UiGraphPreview | null, report: UiReportPreview | null, m: UiMessages): string {
+export function renderImpactMapPanel(
+  graph: UiGraphPreview | null,
+  report: UiReportPreview | null,
+  m: UiMessages,
+  sourceContext: SourceLinkContext = {}
+): string {
   const map = buildImpactMap(graph, report);
   const firstImpact = report ? initialImpactForUi(report) : undefined;
   const displayedPathCount = map.edges.length;
@@ -88,7 +93,7 @@ export function renderImpactMapPanel(graph: UiGraphPreview | null, report: UiRep
           </div>
         </div>
         <aside class="map-legend" aria-label="${escapeHtml(m.ariaImpactMapLegend)}">
-          ${renderImpactInspector(firstImpact, report, m)}
+          ${renderImpactInspector(firstImpact, report, m, sourceContext)}
           <div class="map-legend-key" aria-label="${escapeHtml(m.ariaImpactMapSymbols)}">
             <span><b class="legend-swatch changed"></b>${escapeHtml(m.changedRoot)}</span>
             <span><b class="legend-swatch affected"></b>${escapeHtml(m.affectedTargetRole)}</span>
@@ -400,7 +405,8 @@ function initialImpactForUi(report: UiReportPreview): UiReportPreview['affectedF
 function renderImpactInspector(
   item: UiReportPreview['affectedFiles'][number] | undefined,
   report: UiReportPreview | null,
-  m: UiMessages
+  m: UiMessages,
+  sourceContext: SourceLinkContext = {}
 ): string {
   const evidence = item && report ? impactEvidenceForPath(report.evidence, item.path) : [];
   const action = item && report ? actionByTargetPath(report.actions).get(item.path) : undefined;
@@ -428,12 +434,12 @@ function renderImpactInspector(
         </div>
         <div>
           <dt>${escapeHtml(m.source)}</dt>
-          <dd id="inspectorSource">${renderInspectorSource(evidence[0], m)}</dd>
+          <dd id="inspectorSource">${renderInspectorSource(evidence[0], m, sourceContext)}</dd>
         </div>
       </dl>
       <section class="inspector-evidence">
         <h4>${escapeHtml(m.topEvidence)}</h4>
-        <ul id="inspectorEvidenceList">${renderInspectorEvidenceList(evidence, m)}</ul>
+        <ul id="inspectorEvidenceList">${renderInspectorEvidenceList(evidence, m, sourceContext)}</ul>
       </section>
     </section>
   `;
@@ -449,17 +455,25 @@ function renderInspectorAction(action: ImpactAction | undefined, m: UiMessages):
   `;
 }
 
-function renderInspectorSource(evidence: UiEvidencePreview | undefined, m: UiMessages): string {
+function renderInspectorSource(
+  evidence: UiEvidencePreview | undefined,
+  m: UiMessages,
+  sourceContext: SourceLinkContext
+): string {
   if (!evidence) return escapeHtml(m.noSourceSpanRecorded);
-  const source = evidenceSourceLocation(evidence);
+  const source = evidenceSourceLocation(evidence, sourceContext);
   if (!source) return escapeHtml(m.noSourceSpanRecorded);
   return `<a class="source-link" href="${escapeHtml(source.href)}" target="_blank" rel="noreferrer">${escapeHtml(`${m.ariaOpenSourceLabel} ${source.label}`)}</a>`;
 }
 
-function renderInspectorEvidenceList(evidence: readonly UiEvidencePreview[], m: UiMessages): string {
+function renderInspectorEvidenceList(
+  evidence: readonly UiEvidencePreview[],
+  m: UiMessages,
+  sourceContext: SourceLinkContext
+): string {
   if (evidence.length === 0) return `<li class="inspector-empty">${escapeHtml(m.noMatchingEvidence)}</li>`;
   return evidence.slice(0, 3).map((item) => {
-    const source = evidenceSourceLocation(item);
+    const source = evidenceSourceLocation(item, sourceContext);
     return `
       <li>
         <strong>${escapeHtml(item.file)}</strong>

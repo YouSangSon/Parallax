@@ -300,7 +300,7 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(html, /class="impact-row impact-path-row selectable-impact"/);
     assert.match(html, /class="relation-trail"/);
     assert.match(html, /1 evidence/);
-    assert.match(html, /\/source\?path=src%2Fa\.ts&amp;line=1/);
+    assert.match(html, new RegExp(`/source\\?path=src%2Fa\\.ts&amp;line=1&amp;report=${reportId}&amp;lang=en`));
     assert.match(html, /Copy verify/);
     assert.match(html, /selectedImpactPath/);
     assert.match(html, /nextUrl\.searchParams\.set\('report', value\)/);
@@ -310,9 +310,9 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(html, /class="copy-command"/);
     assert.match(html, /data-command="npm test -- tests\/b\.test\.ts"/);
     assert.match(html, /navigator\.clipboard\.writeText/);
-    assert.match(html, /\/source\?path=tests%2Fb\.test\.ts&amp;line=1/);
+    assert.match(html, new RegExp(`/source\\?path=tests%2Fb\\.test\\.ts&amp;line=1&amp;report=${reportId}&amp;lang=en`));
     assert.match(html, /Open source L\d+/);
-    assert.match(html, /\/source\?path=src%2Fa\.ts&amp;line=\d+/);
+    assert.match(html, new RegExp(`/source\\?path=src%2Fa\\.ts&amp;line=\\d+&amp;report=${reportId}&amp;lang=en`));
     assert.match(html, /Coverage Gaps/);
     assert.match(html, /Workspace Contracts/);
     assert.match(html, /overflow-wrap: anywhere/);
@@ -381,7 +381,7 @@ test('UI snapshot and HTML compare the selected report to the previous saved rep
     assert.match(html, /Added impact[\s\S]*README\.md/);
     assert.match(html, /class="delta-path-row selectable-impact"[\s\S]*data-impact-path="README\.md"/);
     assert.match(html, /Inspect impact/);
-    assert.match(html, /\/source\?path=README\.md&amp;line=1/);
+    assert.match(html, new RegExp(`/source\\?path=README\\.md&amp;line=1&amp;report=${reportId}&amp;lang=en`));
     assert.match(html, /document\.querySelectorAll\('\.selectable-impact a, \.selectable-impact button'\)/);
     assert.match(html, /bootstrap\.comparison/);
   } finally {
@@ -664,9 +664,13 @@ test('UI server exposes bootstrap and resource-shaped JSON endpoints', async () 
     };
     assert.ok(coverageJson.coverage.some((item) => item.path === 'src/a.ts'));
 
-    const sourceResponse = await fetch(new URL('/source?path=src/a.ts&line=1', ui.url));
+    const sourceResponse = await fetch(new URL(`/source?path=src/a.ts&line=1&report=${encodeURIComponent(reportId)}&lang=ko`, ui.url));
     assert.equal(sourceResponse.status, 200);
     const sourceHtml = await sourceResponse.text();
+    assert.match(sourceHtml, /<html lang="ko">/);
+    assert.match(sourceHtml, new RegExp(`href="/\\?report=${reportId}&amp;lang=ko"`));
+    assert.match(sourceHtml, /Impact Workbench로 돌아가기/);
+    assert.match(sourceHtml, /줄 1 · /);
     assert.match(sourceHtml, /src\/a\.ts/);
     assert.match(sourceHtml, /source-line-active/);
     assert.match(sourceHtml, /export const a/);

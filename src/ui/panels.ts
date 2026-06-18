@@ -27,6 +27,7 @@ import {
   impactEvidenceMatchesPath,
   shortenMiddle,
   sourceHref,
+  type SourceLinkContext,
   topAffectedFilesForSummary
 } from './shared.js';
 export function renderImpactSummaryPanel(snapshot: UiSnapshot, m: UiMessages): string {
@@ -285,7 +286,7 @@ export function actionKindLabel(kind: ImpactAction['kind'], m: UiMessages): stri
   return kind === 'verify' ? m.verify : m.review;
 }
 
-export function renderActionRow(item: ImpactAction, m: UiMessages): string {
+export function renderActionRow(item: ImpactAction, m: UiMessages, sourceContext: SourceLinkContext = {}): string {
   const command = actionCommandText(item);
   const targetPath = item.target.path && !item.target.path.includes('\0') ? item.target.path : undefined;
   const targetLabel = targetPath ?? item.target.displayName ?? item.target.symbol ?? item.target.id;
@@ -297,7 +298,7 @@ export function renderActionRow(item: ImpactAction, m: UiMessages): string {
     `${item.confidence} ${m.confidenceInline}`
   ].filter((value): value is string => Boolean(value)).join(' · ');
   const sourceLink = targetPath
-    ? `<a class="source-link" href="${escapeHtml(sourceHref(targetPath, 1))}" target="_blank" rel="noreferrer">${escapeHtml(m.target)}</a>`
+    ? `<a class="source-link" href="${escapeHtml(sourceHref(targetPath, 1, sourceContext))}" target="_blank" rel="noreferrer">${escapeHtml(m.target)}</a>`
     : '';
 
   return `
@@ -320,7 +321,8 @@ export function renderImpactPathRow(
   item: UiReportPreview['affectedFiles'][number],
   evidenceCount: number,
   action: ImpactAction | undefined,
-  m: UiMessages
+  m: UiMessages,
+  sourceContext: SourceLinkContext = {}
 ): string {
   const trail = impactTrailParts(item).map((part) => `<span>${escapeHtml(part)}</span>`).join('');
   const actionCommand = action ? actionCommandText(action) : undefined;
@@ -343,7 +345,7 @@ export function renderImpactPathRow(
       <div class="impact-path-meta">
         <span class="badge confidence-${escapeHtml(item.confidence)}">${escapeHtml(item.confidence)}</span>
         <span class="evidence-pill">${escapeHtml(String(evidenceCount))} ${escapeHtml(m.evidence)}</span>
-        <a class="source-link" href="${escapeHtml(sourceHref(item.path, 1))}" target="_blank" rel="noreferrer">${escapeHtml(m.source)}</a>
+        <a class="source-link" href="${escapeHtml(sourceHref(item.path, 1, sourceContext))}" target="_blank" rel="noreferrer">${escapeHtml(m.source)}</a>
         ${actionCommand ? `<button class="copy-command" type="button" data-command="${escapeHtml(actionCommand)}" aria-label="${escapeHtml(`${m.ariaCopyVerifyForPrefix} ${item.path}`)}">${escapeHtml(m.copyVerify)}</button>` : ''}
       </div>
     </li>

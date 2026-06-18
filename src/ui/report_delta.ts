@@ -3,7 +3,7 @@
 // Functions moved verbatim. Type-only imports from ui.ts are erased at compile
 // time, so there is no runtime import cycle; runtime helpers come from shared.ts.
 
-import { escapeHtml, sourceHref } from './shared.js';
+import { escapeHtml, sourceHref, type SourceLinkContext } from './shared.js';
 import type {
   UiMessages,
   UiReportComparison,
@@ -15,7 +15,11 @@ import type {
 
 type ReportDeltaSummary = 'wider' | 'narrower' | 'unchanged';
 
-export function renderReportDeltaPanel(comparison: UiReportComparison | null, m: UiMessages): string {
+export function renderReportDeltaPanel(
+  comparison: UiReportComparison | null,
+  m: UiMessages,
+  sourceContext: SourceLinkContext = {}
+): string {
   if (!comparison) return '';
   const headline = comparison.summary === 'wider'
     ? m.impactWidened
@@ -52,8 +56,8 @@ export function renderReportDeltaPanel(comparison: UiReportComparison | null, m:
         <b>${escapeHtml(formatSignedDelta(item.delta))}</b>${escapeHtml(item.label)}
       </span>
     `).join('');
-  const addedRows = renderDeltaPathRows(comparison.addedAffectedPaths, 'added', m);
-  const removedRows = renderDeltaPathRows(comparison.removedAffectedPaths, 'removed', m);
+  const addedRows = renderDeltaPathRows(comparison.addedAffectedPaths, 'added', m, sourceContext);
+  const removedRows = renderDeltaPathRows(comparison.removedAffectedPaths, 'removed', m, sourceContext);
   const presetRows = comparison.policyPresets.map((preset) => `
     <li class="delta-preset delta-preset-${escapeHtml(preset.summary)}">
       <strong>${escapeHtml(preset.label)}</strong>
@@ -138,9 +142,14 @@ function copyCommandAttribute(value: string): string {
   return `data-command="${escapeHtml(value).replaceAll('\n', '&#10;')}"`;
 }
 
-function renderDeltaPathRows(paths: readonly string[], mode: 'added' | 'removed', m: UiMessages): string {
+function renderDeltaPathRows(
+  paths: readonly string[],
+  mode: 'added' | 'removed',
+  m: UiMessages,
+  sourceContext: SourceLinkContext
+): string {
   return paths.slice(0, 4).map((pathValue) => {
-    const sourceLink = `<a class="source-link" href="${escapeHtml(sourceHref(pathValue, 1))}" target="_blank" rel="noreferrer">${escapeHtml(m.source)}</a>`;
+    const sourceLink = `<a class="source-link" href="${escapeHtml(sourceHref(pathValue, 1, sourceContext))}" target="_blank" rel="noreferrer">${escapeHtml(m.source)}</a>`;
     if (mode === 'added') {
       return `
         <li class="delta-path-row selectable-impact" tabindex="0" role="button" data-impact-path="${escapeHtml(pathValue)}" data-filter-text="${escapeHtml(`added impact ${pathValue}`)}">

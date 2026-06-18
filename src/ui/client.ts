@@ -25,7 +25,15 @@ export const UI_CLIENT_JS = `    const snapshot = JSON.parse(document.getElement
       if (element) element.textContent = value;
     }
     function sourceHrefFor(file, line) {
-      return '/source?path=' + encodeURIComponent(file) + '&line=' + line;
+      const query = new URLSearchParams();
+      query.set('path', file);
+      query.set('line', String(line));
+      const current = new URL(window.location.href);
+      const report = current.searchParams.get('report');
+      const lang = current.searchParams.get('lang');
+      if (report) query.set('report', report);
+      if (lang) query.set('lang', lang);
+      return '/source?' + query.toString();
     }
     function evidenceSourceLabel(evidence) {
       const line = Number.isInteger(evidence.startLine) && evidence.startLine > 0 ? evidence.startLine : 1;

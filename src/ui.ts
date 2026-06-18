@@ -543,6 +543,7 @@ type UiMessageKey =
   | 'blastRadius' | 'changedRoot' | 'affectedTargets' | 'nextVerification' | 'affectedTargetEmpty'
   | 'contextNode' | 'source' | 'target' | 'affectedTargetRole' | 'changedInput'
   | 'targets' | 'totalAffected' | 'totalTargets' | 'mappedPaths' | 'confidenceInline'
+  | 'backToWorkbench' | 'lineLabel'
   // Buttons / actions
   | 'copy' | 'copyConfig' | 'copyVerify' | 'copyCopied' | 'copyFailed' | 'verify' | 'review'
   // Trust state labels
@@ -609,6 +610,7 @@ const UI_MESSAGES: Record<UiLanguage, UiMessages> = {
     affectedTargetRole: 'Affected target', changedInput: 'Changed input',
     targets: 'targets', totalAffected: 'total affected', totalTargets: 'total targets',
     mappedPaths: 'mapped paths', confidenceInline: 'confidence',
+    backToWorkbench: 'Back to Impact Workbench', lineLabel: 'Line',
     copy: 'Copy', copyConfig: 'Copy config', copyVerify: 'Copy verify',
     copyCopied: 'Copied', copyFailed: 'Copy failed',
     verify: 'Verify', review: 'Review',
@@ -684,6 +686,7 @@ const UI_MESSAGES: Record<UiLanguage, UiMessages> = {
     affectedTargetRole: '영향받은 대상', changedInput: '변경 입력',
     targets: '대상', totalAffected: '전체 영향', totalTargets: '전체 대상',
     mappedPaths: '표시 경로', confidenceInline: '신뢰도',
+    backToWorkbench: 'Impact Workbench로 돌아가기', lineLabel: '줄',
     copy: '복사', copyConfig: '설정 복사', copyVerify: '검증 복사',
     copyCopied: '복사됨', copyFailed: '복사 실패',
     verify: '검증', review: '검토',
@@ -759,6 +762,7 @@ const UI_MESSAGES: Record<UiLanguage, UiMessages> = {
     affectedTargetRole: '受影响目标', changedInput: '变更输入',
     targets: '目标', totalAffected: '总受影响', totalTargets: '总目标',
     mappedPaths: '已绘制路径', confidenceInline: '置信度',
+    backToWorkbench: '返回 Impact Workbench', lineLabel: '行',
     copy: '复制', copyConfig: '复制配置', copyVerify: '复制验证',
     copyCopied: '已复制', copyFailed: '复制失败',
     verify: '验证', review: '审查',
@@ -838,6 +842,7 @@ export function renderUiHtml(snapshot: UiSnapshot, language: UiLanguage = 'en'):
   const report = snapshot.selectedReport;
   const doctor = snapshot.doctor;
   const title = report ? `Impact Workbench - ${report.id}` : 'Impact Workbench';
+  const sourceContext = { reportId: snapshot.selectedReportId, language: lang };
   const missingReportOption = snapshot.selectedReportId === null && snapshot.reports.length > 0
     ? `<option value="" selected>${escapeHtml(m.selectReport)}</option>`
     : '';
@@ -866,10 +871,10 @@ export function renderUiHtml(snapshot: UiSnapshot, language: UiLanguage = 'en'):
   const evidenceCountsByPath = evidenceCountByImpactPath(report?.affectedFiles ?? [], report?.evidence ?? []);
   const actionByPath = actionByTargetPath(report?.actions ?? []);
   const affectedRows = (report?.affectedFiles ?? []).slice(0, 40).map((item) =>
-    renderImpactPathRow(item, evidenceCountsByPath.get(item.path) ?? 0, actionByPath.get(item.path), m)
+    renderImpactPathRow(item, evidenceCountsByPath.get(item.path) ?? 0, actionByPath.get(item.path), m, sourceContext)
   ).join('');
   const evidenceRows = (report?.evidence ?? []).slice(0, 30).map((item) => {
-    const source = evidenceSourceLocation(item);
+    const source = evidenceSourceLocation(item, sourceContext);
     return `
     <li class="evidence-row" data-impact-path="${escapeHtml(item.file)}" data-source-href="${escapeHtml(source?.href ?? '')}" data-source-label="${escapeHtml(source?.label ?? '')}" data-filter-text="${escapeHtml(`${item.file} ${item.kind} ${item.snippet}`)}">
       <div class="evidence-meta">
@@ -882,7 +887,7 @@ export function renderUiHtml(snapshot: UiSnapshot, language: UiLanguage = 'en'):
     </li>
   `;
   }).join('');
-  const actionRows = (report?.actions ?? []).slice(0, 20).map((item) => renderActionRow(item, m)).join('');
+  const actionRows = (report?.actions ?? []).slice(0, 20).map((item) => renderActionRow(item, m, sourceContext)).join('');
   const adapterInsightRows = (report?.adapterInsights ?? []).map((adapter) => `
     <li class="pack-row" data-filter-text="${escapeHtml(`${adapter.id} ${adapter.status} ${adapter.confidence} ${adapter.languageIds.join(' ')} ${adapter.knownGaps.join(' ')}`)}">
       <strong>${escapeHtml(adapter.id)}</strong>
@@ -946,8 +951,8 @@ export function renderUiHtml(snapshot: UiSnapshot, language: UiLanguage = 'en'):
   ]).join('');
   const impactSummaryPanel = renderImpactSummaryPanel(snapshot, m);
   const impactTriageStrip = renderImpactTriageStrip(snapshot, m);
-  const impactMapPanel = renderImpactMapPanel(snapshot.graph, report, m);
-  const reportDeltaPanel = renderReportDeltaPanel(snapshot.comparison, m);
+  const impactMapPanel = renderImpactMapPanel(snapshot.graph, report, m, sourceContext);
+  const reportDeltaPanel = renderReportDeltaPanel(snapshot.comparison, m, sourceContext);
   const dataJson = JSON.stringify(snapshot).replaceAll('<', '\\u003c');
   const messagesJson = JSON.stringify(m).replaceAll('<', '\\u003c');
 
@@ -1079,6 +1084,9 @@ ${UI_CLIENT_JS}
 
 async function renderSourceViewerHtml(repoRootInput: string, url: URL): Promise<string> {
   const repoRoot = normalizeRepoRoot(repoRootInput);
+  const lang = normalizeUiLanguage(url.searchParams.get('lang'));
+  const m = UI_MESSAGES[lang];
+  const backHref = uiHomeHref({ report: url.searchParams.get('report'), lang });
   const requestedPath = url.searchParams.get('path') ?? '';
   const requestedLine = parseSourceLine(url.searchParams.get('line'));
   const absolutePath = resolveInsideRoot(repoRoot, requestedPath);
@@ -1097,7 +1105,7 @@ async function renderSourceViewerHtml(repoRootInput: string, url: URL): Promise<
   }).join('');
 
   return `<!doctype html>
-<html lang="en">
+<html lang="${lang}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1108,9 +1116,9 @@ ${UI_STYLES_SOURCE_VIEWER}
 </head>
 <body>
   <header>
-    <a href="/">Back to Impact Workbench</a>
+    <a href="${escapeHtml(backHref)}">${escapeHtml(m.backToWorkbench)}</a>
     <h1>${escapeHtml(requestedPath)}</h1>
-    <span>Line ${targetLine} · ${escapeHtml(repoRoot)}</span>
+    <span>${escapeHtml(m.lineLabel)} ${targetLine} · ${escapeHtml(repoRoot)}</span>
   </header>
   <main>
     <section class="source-card">

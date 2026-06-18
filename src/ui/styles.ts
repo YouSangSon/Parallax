@@ -73,6 +73,42 @@ export const UI_STYLES_MAIN = `    :root {
       outline: 2px solid #9ed3c4;
       outline-offset: 2px;
     }
+    .lang-switcher {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      min-width: 0;
+      padding: 2px;
+      border: 1px solid rgba(158, 211, 196, 0.24);
+      border-radius: 6px;
+      background: rgba(248, 244, 232, 0.08);
+    }
+    .lang-link {
+      min-height: 34px;
+      display: grid;
+      place-items: center;
+      border-radius: 4px;
+      padding: 0 8px;
+      color: #bfd1c6;
+      font-size: 12px;
+      font-weight: 800;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+    .lang-link:visited { color: #bfd1c6; }
+    .lang-link:hover {
+      color: #f8fff9;
+      background: rgba(248, 244, 232, 0.1);
+    }
+    .lang-link:focus-visible {
+      outline: 2px solid #9ed3c4;
+      outline-offset: 2px;
+    }
+    .lang-link.active {
+      background: #e6f7ef;
+      color: var(--green);
+    }
+    .lang-link.active:visited { color: var(--green); }
     .shell { width: min(1500px, 100%); margin: 0 auto; padding: 18px; }
     .metrics {
       display: grid;
@@ -372,8 +408,8 @@ export const UI_STYLES_MAIN = `    :root {
     .delta-preset .copy-command {
       justify-self: start;
       margin-top: 2px;
-      min-height: 24px;
-      padding: 2px 7px;
+      min-height: 32px;
+      padding: 4px 9px;
       font-size: 11px;
     }
     .delta-preset-wider { border-color: #d7b477; box-shadow: inset 3px 0 0 var(--amber); }
@@ -572,10 +608,14 @@ export const UI_STYLES_MAIN = `    :root {
       gap: 6px;
     }
     .copy-command {
-      min-height: 26px;
+      min-width: 44px;
+      min-height: 32px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       border: 1px solid #89b6a5;
       border-radius: 6px;
-      padding: 3px 8px;
+      padding: 4px 10px;
       background: #eef8f3;
       color: var(--green);
       cursor: pointer;
@@ -680,9 +720,14 @@ export const UI_STYLES_MAIN = `    :root {
     }
     .source-link {
       width: fit-content;
+      min-width: 44px;
+      min-height: 32px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       border: 1px solid #8bb8bc;
       border-radius: 6px;
-      padding: 3px 8px;
+      padding: 4px 10px;
       color: var(--teal);
       background: #eef7f8;
       font-size: 12px;
@@ -1067,8 +1112,8 @@ export const UI_STYLES_MAIN = `    :root {
       background: rgba(255, 253, 244, 0.045);
     }
     .map-next-action .copy-command {
-      min-height: 24px;
-      padding: 2px 7px;
+      min-height: 32px;
+      padding: 4px 9px;
       border-color: #73c2ac;
       background: #e6f7ef;
     }
@@ -1560,12 +1605,22 @@ export const UI_STYLES_MAIN = `    :root {
       }
       .toolbar {
         display: grid;
-        grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
         gap: 7px;
+      }
+      .lang-switcher {
+        grid-column: 1 / -1;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        width: 100%;
+      }
+      .lang-link {
+        min-height: 44px;
+        padding: 0 6px;
       }
       .toolbar input, .toolbar select {
         min-width: 0;
-        min-height: 34px;
+        min-height: 44px;
         padding: 0 8px;
       }
       .metrics {
@@ -1608,28 +1663,39 @@ export const UI_STYLES_MAIN = `    :root {
         line-height: 1.25;
       }
       .triage-flow {
-        grid-template-columns: minmax(0, 0.9fr) minmax(0, 0.9fr) minmax(0, 1.2fr);
-        gap: 6px;
+        grid-template-columns: 1fr;
+        gap: 8px;
         padding: 8px;
       }
       .triage-step {
-        min-height: 60px;
-        gap: 3px;
-        padding: 8px;
+        min-height: 68px;
+        grid-template-columns: minmax(78px, 0.34fr) minmax(0, 1fr);
+        grid-template-rows: auto auto;
+        align-items: center;
+        gap: 3px 8px;
+        padding: 9px 10px;
       }
       .triage-step:not(:last-child)::after {
-        right: -9px;
-        width: 14px;
-        height: 14px;
-        font-size: 9px;
+        content: "↓";
+        right: auto;
+        top: auto;
+        bottom: -12px;
+        left: 50%;
+        width: 18px;
+        height: 18px;
+        transform: translateX(-50%);
+        font-size: 10px;
       }
-      .triage-step span { font-size: 9px; }
+      .triage-step span {
+        grid-row: 1 / span 2;
+        font-size: 10px;
+      }
       .triage-step strong {
-        font-size: 12px;
+        font-size: 14px;
         line-height: 1.18;
       }
       .triage-step small {
-        font-size: 10px;
+        font-size: 11px;
         line-height: 1.2;
       }
       .panel > h2, .panel-heading { padding: 10px 12px; }
@@ -1661,6 +1727,13 @@ export const UI_STYLES_MAIN = `    :root {
       .map-next-action {
         grid-template-columns: minmax(0, 1fr) auto;
         padding: 6px 7px;
+      }
+      .copy-command, .source-link {
+        min-width: 44px;
+        min-height: 44px;
+      }
+      .map-next-action .copy-command, .delta-preset .copy-command {
+        min-height: 44px;
       }
       .impact-route-strip {
         grid-template-columns: 1fr;

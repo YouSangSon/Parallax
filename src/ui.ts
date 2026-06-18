@@ -1118,6 +1118,14 @@ export async function startUiServer(options: UiServerOptions): Promise<{ server:
         response.end(JSON.stringify({ ok: true }));
         return;
       }
+      if (url.pathname === '/favicon.ico') {
+        response.writeHead(204, {
+          'cache-control': 'public, max-age=86400',
+          'x-content-type-options': 'nosniff'
+        });
+        response.end();
+        return;
+      }
       if (url.pathname === '/source') {
         try {
           const html = await renderSourceViewerHtml(options.repoRoot, url);

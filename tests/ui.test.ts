@@ -233,11 +233,18 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(html, /aria-label="Analysis trust signals"[\s\S]*Known gaps[\s\S]*<strong>4<\/strong>[\s\S]*Open limitations/);
     assert.match(html, /\.trust-signals \{[\s\S]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/);
     assert.match(html, /aria-label="Affected targets by product lane"/);
-    assert.match(html, /@media \(max-width: 560px\)[\s\S]*\.toolbar \{\s*display: grid;\s*grid-template-columns: minmax\(0, 0\.85fr\) minmax\(0, 1\.15fr\);/);
+    assert.match(html, /\.lang-link \{[\s\S]*min-height: 34px;[\s\S]*text-decoration: none;/);
+    assert.match(html, /\.copy-command \{[\s\S]*min-width: 44px;[\s\S]*min-height: 32px;/);
+    assert.match(html, /@media \(max-width: 560px\)[\s\S]*\.toolbar \{\s*display: grid;\s*grid-template-columns: minmax\(0, 1fr\) minmax\(0, 1fr\);/);
+    assert.match(html, /@media \(max-width: 560px\)[\s\S]*\.lang-switcher \{\s*grid-column: 1 \/ -1;[\s\S]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/);
+    assert.match(html, /@media \(max-width: 560px\)[\s\S]*\.toolbar input, \.toolbar select \{[\s\S]*min-height: 44px;/);
     assert.match(html, /@media \(max-width: 980px\)[\s\S]*\.map-content \{\s*grid-template-columns: minmax\(0, 1fr\);\s*height: auto;\s*\}/);
     assert.match(html, /@media \(max-width: 560px\)[\s\S]*\.metrics \{\s*grid-template-columns: none;\s*grid-auto-flow: column;\s*grid-auto-columns: minmax\(96px, 1fr\);/);
     assert.match(html, /@media \(max-width: 560px\)[\s\S]*scrollbar-width: none;/);
-    assert.match(html, /@media \(max-width: 560px\)[\s\S]*\.triage-flow \{\s*grid-template-columns: minmax\(0, 0\.9fr\) minmax\(0, 0\.9fr\) minmax\(0, 1\.2fr\);/);
+    assert.match(html, /@media \(max-width: 560px\)[\s\S]*\.triage-flow \{\s*grid-template-columns: 1fr;/);
+    assert.match(html, /@media \(max-width: 560px\)[\s\S]*\.triage-step \{[\s\S]*grid-template-columns: minmax\(78px, 0\.34fr\) minmax\(0, 1fr\);/);
+    assert.match(html, /@media \(max-width: 560px\)[\s\S]*\.triage-step:not\(:last-child\)::after \{[\s\S]*content: "↓";/);
+    assert.match(html, /@media \(max-width: 560px\)[\s\S]*\.map-next-action \.copy-command, \.delta-preset \.copy-command \{[\s\S]*min-height: 44px;/);
     assert.match(html, /@media \(max-width: 560px\)[\s\S]*\.impact-svg \{ height: 320px; \}/);
     assert.match(html, /impact-lane-green[\s\S]*Runtime code[\s\S]*<b>1<\/b>[\s\S]*src\/a\.ts/);
     assert.match(html, /impact-lane-amber[\s\S]*Tests to verify[\s\S]*<b>1<\/b>[\s\S]*tests\/b\.test\.ts/);
@@ -585,6 +592,9 @@ test('UI server exposes bootstrap and resource-shaped JSON endpoints', async () 
     const html = await htmlResponse.text();
     assert.match(html, /Impact Workbench/);
     assert.ok(html.length > 5_000);
+
+    const faviconResponse = await fetch(new URL('/favicon.ico', ui.url));
+    assert.equal(faviconResponse.status, 204);
 
     const bootstrap = await (await fetch(new URL('/api/bootstrap', ui.url))).json() as {
       selectedReportId: string;

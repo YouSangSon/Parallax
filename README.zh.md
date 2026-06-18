@@ -19,6 +19,8 @@
 
 <img src="docs/assets/parallax-ui-demo.png" alt="Parallax Impact Workbench UI showing ranked impact route cards, a graph-first impact map, analysis trust signals, impact summary, verification action, affected paths, and evidence" width="100%">
 
+<img src="docs/assets/parallax-ui-mobile.png" alt="Parallax mobile Impact Workbench showing the impact triage flow, next verification, ranked route cards, and readable impact map" width="38%">
+
 </div>
 
 ---

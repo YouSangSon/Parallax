@@ -86,7 +86,7 @@ export function renderImpactSummaryPanel(snapshot: UiSnapshot, m: UiMessages): s
       <div class="blast-card">
         <span>${escapeHtml(m.blastRadius)}</span>
         <strong>${escapeHtml(blast)}</strong>
-        <small>${escapeHtml(primaryChange)} touches ${report.affectedCount} targets through ${displayedPathCount} mapped paths.</small>
+        <small>${escapeHtml(primaryChange)} · ${report.affectedCount} ${escapeHtml(m.totalTargets)} · ${displayedPathCount} ${escapeHtml(m.mappedPaths)}</small>
       </div>
       ${trustSummary}
       <div class="confidence-strip" aria-label="${escapeHtml(m.ariaAffectedByConfidence)}">${confidenceRows}</div>
@@ -192,8 +192,8 @@ export function renderImpactTriageStrip(snapshot: UiSnapshot, m: UiMessages): st
   const provenCount = report.affectedFiles.filter((item) => item.confidence === 'proven').length;
   const heuristicCount = report.affectedFiles.filter((item) => item.confidence === 'heuristic').length;
   const riskDetail = [
-    `${report.affectedCount} affected`,
-    `${map.edges.length} mapped paths`,
+    `${report.affectedCount} ${m.affectedTargets}`,
+    `${map.edges.length} ${m.mappedPaths}`,
     `${provenCount} proven`,
     heuristicCount > 0 ? `${heuristicCount} heuristic` : undefined
   ].filter((item): item is string => Boolean(item)).join(' · ');
@@ -209,11 +209,11 @@ export function renderImpactTriageStrip(snapshot: UiSnapshot, m: UiMessages): st
         <li class="triage-step triage-step-changed">
           <span>${escapeHtml(m.changedRoot)}</span>
           <strong title="${escapeHtml(primaryChange)}">${escapeHtml(shortenMiddle(primaryChange, 44))}</strong>
-          <small>${escapeHtml(String(report.changedCount))} changed input</small>
+          <small>${escapeHtml(String(report.changedCount))} ${escapeHtml(m.changedInput)}</small>
         </li>
         <li class="triage-step triage-step-affected${topTargetPath ? ' selectable-impact' : ''}"${topTargetAttrs}>
           <span>${escapeHtml(m.affectedTargets)}</span>
-          <strong>${escapeHtml(String(report.affectedCount))} targets</strong>
+          <strong>${escapeHtml(String(report.affectedCount))} ${escapeHtml(m.targets)}</strong>
           <small title="${escapeHtml(topTarget)}">${escapeHtml(shortenMiddle(topTarget, 58))}</small>
         </li>
         <li class="triage-step triage-step-action${nextActionPath ? ' selectable-impact' : ''}"${nextActionAttrs}>
@@ -294,7 +294,7 @@ export function renderActionRow(item: ImpactAction, m: UiMessages): string {
   const meta = [
     item.runnerId ? `runner ${item.runnerId}` : undefined,
     targetLabel ? `target ${targetLabel}` : undefined,
-    `${item.confidence} confidence`
+    `${item.confidence} ${m.confidenceInline}`
   ].filter((value): value is string => Boolean(value)).join(' · ');
   const sourceLink = targetPath
     ? `<a class="source-link" href="${escapeHtml(sourceHref(targetPath, 1))}" target="_blank" rel="noreferrer">${escapeHtml(m.target)}</a>`

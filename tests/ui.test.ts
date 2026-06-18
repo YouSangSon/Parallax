@@ -225,7 +225,7 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(html, /Changed root[\s\S]*src\/b\.ts[\s\S]*Affected targets[\s\S]*3 targets[\s\S]*Next verification[\s\S]*tests\/b\.test\.ts/);
     assert.match(html, /triage-step triage-step-affected selectable-impact" tabindex="0" role="button" data-impact-path="src\/a\.ts"/);
     assert.match(html, /triage-step triage-step-action selectable-impact" tabindex="0" role="button" data-impact-path="tests\/b\.test\.ts"/);
-    assert.match(html, /src\/b\.ts touches 3 targets through 4 mapped paths/);
+    assert.match(html, /src\/b\.ts · 3 total targets · 4 mapped paths/);
     assert.match(html, /Analysis Trust/);
     assert.match(html, /aria-label="Analysis trust signals"[\s\S]*Coverage[\s\S]*<strong>4\/4<\/strong>[\s\S]*No skipped paths/);
     assert.match(html, /aria-label="Analysis trust signals"[\s\S]*Adapters[\s\S]*<strong>2<\/strong>[\s\S]*2 heuristic\/unknown/);
@@ -254,7 +254,7 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(html, /summary-section-top-impact[\s\S]*Top Impact[\s\S]*<b>1<\/b>[\s\S]*tests\/b\.test\.ts[\s\S]*summary-section-changed[\s\S]*Changed[\s\S]*src\/b\.ts/);
     assert.match(html, /\.summary-columns \{[\s\S]*grid-auto-rows: max-content;[\s\S]*align-content: start;/);
     assert.match(html, /Impact Map/);
-    assert.match(html, /Impact Map[\s\S]*1 changed[\s\S]*3 total affected[\s\S]*4 mapped paths/);
+    assert.match(html, /Impact Map[\s\S]*1 Changed[\s\S]*3 total affected[\s\S]*4 mapped paths/);
     assert.match(html, /\.impact-overview \{[\s\S]*align-items: start;/);
     assert.match(html, /\.map-content \{[\s\S]*grid-template-columns: minmax\(0, 1fr\);[\s\S]*min-height: 0;/);
     assert.match(html, /\.map-frame \{[\s\S]*grid-template-rows: auto auto auto;/);
@@ -270,7 +270,7 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(html, /id="mapNextAction" class="map-next-action" aria-label="Next verification command"[\s\S]*<code>npm test -- tests\/b\.test\.ts<\/code>/);
     assert.match(html, /aria-label="Copy map verification command"/);
     assert.match(html, /function renderMapAction/);
-    assert.match(html, /setText\('mapFlowMeta'[\s\S]*total targets[\s\S]*mapped paths/);
+    assert.match(html, /setText\('mapFlowMeta'[\s\S]*uiMessage\('totalTargets'[\s\S]*uiMessage\('mappedPaths'/);
     assert.match(html, /map-stage-changed/);
     assert.match(html, /map-node-lane-green[\s\S]*Runtime code[\s\S]*confidence-text-proven[\s\S]*proven/);
     assert.match(html, /map-node-lane-amber[\s\S]*Tests to verify[\s\S]*confidence-text-proven[\s\S]*proven/);
@@ -314,6 +314,20 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(html, /Workspace Contracts/);
     assert.match(html, /overflow-wrap: anywhere/);
     assert.doesNotMatch(html, /landing/i);
+
+    const koHtml = renderUiHtml(snapshot, 'ko');
+    assert.match(koHtml, /<html lang="ko">/);
+    assert.match(koHtml, /<script id="ui-messages" type="application\/json">/);
+    assert.match(koHtml, /"copyCopied":"복사됨"/);
+    assert.match(koHtml, /영향 맵[\s\S]*1 변경됨[\s\S]*3 전체 영향[\s\S]*4 표시 경로/);
+    assert.match(koHtml, /주요 영향 흐름[\s\S]*VERIFY · 3 전체 대상 · 4 표시 경로 · proven 신뢰도/);
+    assert.match(koHtml, /uiMessage\('noVerificationActionRecorded'/);
+    assert.match(koHtml, /uiMessage\('ariaOpenSourceLabel'/);
+
+    const zhHtml = renderUiHtml(snapshot, 'zh');
+    assert.match(zhHtml, /<html lang="zh">/);
+    assert.match(zhHtml, /"copyFailed":"复制失败"/);
+    assert.match(zhHtml, /影响图[\s\S]*3 总受影响[\s\S]*4 已绘制路径/);
   } finally {
     await rm(repoRoot, { recursive: true, force: true });
   }

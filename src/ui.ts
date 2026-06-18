@@ -542,8 +542,9 @@ type UiMessageKey =
   // Inline labels
   | 'blastRadius' | 'changedRoot' | 'affectedTargets' | 'nextVerification' | 'affectedTargetEmpty'
   | 'contextNode' | 'source' | 'target' | 'affectedTargetRole' | 'changedInput'
+  | 'targets' | 'totalAffected' | 'totalTargets' | 'mappedPaths' | 'confidenceInline'
   // Buttons / actions
-  | 'copy' | 'copyConfig' | 'copyVerify' | 'verify' | 'review'
+  | 'copy' | 'copyConfig' | 'copyVerify' | 'copyCopied' | 'copyFailed' | 'verify' | 'review'
   // Trust state labels
   | 'reviewGaps' | 'useWithGaps' | 'readyToUse'
   | 'noSkippedPaths' | 'confidenceMetadataPresent' | 'openLimitations' | 'noneReported'
@@ -606,7 +607,10 @@ const UI_MESSAGES: Record<UiLanguage, UiMessages> = {
     nextVerification: 'Next verification', affectedTargetEmpty: 'No affected target',
     contextNode: 'Context node', source: 'Source', target: 'Target',
     affectedTargetRole: 'Affected target', changedInput: 'Changed input',
+    targets: 'targets', totalAffected: 'total affected', totalTargets: 'total targets',
+    mappedPaths: 'mapped paths', confidenceInline: 'confidence',
     copy: 'Copy', copyConfig: 'Copy config', copyVerify: 'Copy verify',
+    copyCopied: 'Copied', copyFailed: 'Copy failed',
     verify: 'Verify', review: 'Review',
     reviewGaps: 'Review gaps', useWithGaps: 'Use with gaps', readyToUse: 'Ready to use',
     noSkippedPaths: 'No skipped paths', confidenceMetadataPresent: 'Confidence metadata present',
@@ -678,7 +682,10 @@ const UI_MESSAGES: Record<UiLanguage, UiMessages> = {
     nextVerification: '다음 검증', affectedTargetEmpty: '영향받은 대상 없음',
     contextNode: '컨텍스트 노드', source: '소스', target: '대상',
     affectedTargetRole: '영향받은 대상', changedInput: '변경 입력',
+    targets: '대상', totalAffected: '전체 영향', totalTargets: '전체 대상',
+    mappedPaths: '표시 경로', confidenceInline: '신뢰도',
     copy: '복사', copyConfig: '설정 복사', copyVerify: '검증 복사',
+    copyCopied: '복사됨', copyFailed: '복사 실패',
     verify: '검증', review: '검토',
     reviewGaps: '갭 검토', useWithGaps: '갭 있음', readyToUse: '사용 가능',
     noSkippedPaths: '건너뛴 경로 없음', confidenceMetadataPresent: '신뢰도 메타데이터 존재',
@@ -750,7 +757,10 @@ const UI_MESSAGES: Record<UiLanguage, UiMessages> = {
     nextVerification: '下一步验证', affectedTargetEmpty: '无受影响目标',
     contextNode: '上下文节点', source: '源', target: '目标',
     affectedTargetRole: '受影响目标', changedInput: '变更输入',
+    targets: '目标', totalAffected: '总受影响', totalTargets: '总目标',
+    mappedPaths: '已绘制路径', confidenceInline: '置信度',
     copy: '复制', copyConfig: '复制配置', copyVerify: '复制验证',
+    copyCopied: '已复制', copyFailed: '复制失败',
     verify: '验证', review: '审查',
     reviewGaps: '审查缺口', useWithGaps: '存在缺口', readyToUse: '可使用',
     noSkippedPaths: '无跳过路径', confidenceMetadataPresent: '存在置信度元数据',
@@ -929,6 +939,7 @@ export function renderUiHtml(snapshot: UiSnapshot, language: UiLanguage = 'en'):
   const impactMapPanel = renderImpactMapPanel(snapshot.graph, report, m);
   const reportDeltaPanel = renderReportDeltaPanel(snapshot.comparison, m);
   const dataJson = JSON.stringify(snapshot).replaceAll('<', '\\u003c');
+  const messagesJson = JSON.stringify(m).replaceAll('<', '\\u003c');
 
   return `<!doctype html>
 <html lang="${lang}">
@@ -1048,6 +1059,7 @@ ${UI_STYLES_MAIN}
     </section>
   </main>
   <script id="impact-data" type="application/json">${dataJson}</script>
+  <script id="ui-messages" type="application/json">${messagesJson}</script>
   <script>
 ${UI_CLIENT_JS}
   </script>

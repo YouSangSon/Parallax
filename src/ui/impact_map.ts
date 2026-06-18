@@ -35,9 +35,9 @@ export function renderImpactMapPanel(graph: UiGraphPreview | null, report: UiRep
   const displayedPathCount = map.edges.length;
   const totalAffectedCount = report?.affectedCount ?? map.affectedNodes.length;
   const chips = `
-    <span>${map.changedNodes.length} changed</span>
-    <span>${totalAffectedCount} total affected</span>
-    <span>${displayedPathCount} mapped paths</span>
+    <span>${map.changedNodes.length} ${escapeHtml(m.changed)}</span>
+    <span>${totalAffectedCount} ${escapeHtml(m.totalAffected)}</span>
+    <span>${displayedPathCount} ${escapeHtml(m.mappedPaths)}</span>
   `;
   if (map.changedNodes.length === 0 && map.affectedNodes.length === 0) {
     return `
@@ -142,7 +142,7 @@ export function renderImpactMapInsight(
       <div class="map-flow-text">
         <span>${escapeHtml(m.primaryImpactFlow)}</span>
         <strong id="mapFlowPath">${escapeHtml(shortenMiddle(primaryChange, 34))} <em>&rarr;</em> ${escapeHtml(shortenMiddle(primaryTargetLabel, 34))}</strong>
-        <small id="mapFlowMeta">${escapeHtml(relation)} · ${escapeHtml(String(totalAffectedCount))} total targets · ${escapeHtml(String(displayedPathCount))} mapped paths · ${escapeHtml(confidence)} confidence</small>
+        <small id="mapFlowMeta">${escapeHtml(relation)} · ${escapeHtml(String(totalAffectedCount))} ${escapeHtml(m.totalTargets)} · ${escapeHtml(String(displayedPathCount))} ${escapeHtml(m.mappedPaths)} · ${escapeHtml(confidence)} ${escapeHtml(m.confidenceInline)}</small>
       </div>
       ${renderMapNextAction(action, m)}
     </div>

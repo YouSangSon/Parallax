@@ -3,10 +3,14 @@
 // stays byte-identical.
 
 export const UI_CLIENT_JS = `    const snapshot = JSON.parse(document.getElementById('impact-data')?.textContent || '{}');
+    const uiMessages = JSON.parse(document.getElementById('ui-messages')?.textContent || '{}');
     const affectedFiles = snapshot.selectedReport?.affectedFiles || [];
     const evidenceItems = snapshot.selectedReport?.evidence || [];
     const actionItems = snapshot.selectedReport?.actions || [];
     const input = document.getElementById('filterInput');
+    function uiMessage(key, fallback) {
+      return typeof uiMessages[key] === 'string' ? uiMessages[key] : fallback;
+    }
     function evidenceMatchesPath(evidence, path) {
       return evidence.file === path || evidence.subject?.path === path || (evidence.snippet || '').includes(path);
     }
@@ -56,7 +60,7 @@ export const UI_CLIENT_JS = `    const snapshot = JSON.parse(document.getElement
       if (!action || !command) {
         const empty = document.createElement('span');
         empty.className = 'inspector-empty';
-        empty.textContent = 'No verification action recorded.';
+        empty.textContent = uiMessage('noVerificationActionRecorded', 'No verification action recorded.');
         target.append(empty);
         return;
       }
@@ -66,8 +70,8 @@ export const UI_CLIENT_JS = `    const snapshot = JSON.parse(document.getElement
       button.className = 'copy-command';
       button.type = 'button';
       button.dataset.command = command;
-      button.setAttribute('aria-label', 'Copy inspector verification command');
-      button.textContent = 'Copy';
+      button.setAttribute('aria-label', uiMessage('ariaCopyInspectorCommand', 'Copy inspector verification command'));
+      button.textContent = uiMessage('copy', 'Copy');
       target.append(code, button);
       wireCopyButton(button);
     }
@@ -77,12 +81,12 @@ export const UI_CLIENT_JS = `    const snapshot = JSON.parse(document.getElement
       target.replaceChildren();
       target.classList.remove('map-next-action-empty');
       const label = document.createElement('span');
-      label.textContent = 'Next verification';
+      label.textContent = uiMessage('nextVerification', 'Next verification');
       const action = actionItems.find((candidate) => candidate.target?.path === path);
       const command = actionCommandText(action);
       if (!action || !command) {
         const empty = document.createElement('small');
-        empty.textContent = 'No verification action recorded.';
+        empty.textContent = uiMessage('noVerificationActionRecorded', 'No verification action recorded.');
         target.classList.add('map-next-action-empty');
         target.append(label, empty);
         return;
@@ -93,8 +97,8 @@ export const UI_CLIENT_JS = `    const snapshot = JSON.parse(document.getElement
       button.className = 'copy-command';
       button.type = 'button';
       button.dataset.command = command;
-      button.setAttribute('aria-label', 'Copy map verification command');
-      button.textContent = 'Copy';
+      button.setAttribute('aria-label', uiMessage('ariaCopyMapCommand', 'Copy map verification command'));
+      button.textContent = uiMessage('copy', 'Copy');
       target.append(label, code, button);
       wireCopyButton(button);
     }
@@ -105,7 +109,7 @@ export const UI_CLIENT_JS = `    const snapshot = JSON.parse(document.getElement
       if (evidence.length === 0) {
         const empty = document.createElement('li');
         empty.className = 'inspector-empty';
-        empty.textContent = 'No matching evidence recorded.';
+        empty.textContent = uiMessage('noMatchingEvidence', 'No matching evidence recorded.');
         target.append(empty);
         return;
       }
@@ -152,7 +156,7 @@ export const UI_CLIENT_JS = `    const snapshot = JSON.parse(document.getElement
       if (!item) return;
       const matchingEvidence = evidenceForPath(path);
       const mapInsight = document.querySelector('.map-insight');
-      const primaryChange = mapInsight?.getAttribute('data-primary-change') || 'Changed root';
+      const primaryChange = mapInsight?.getAttribute('data-primary-change') || uiMessage('changedRoot', 'Changed root');
       const affectedCount = mapInsight?.getAttribute('data-affected-count') || String(affectedFiles.length);
       const displayedPathCount = mapInsight?.getAttribute('data-displayed-path-count') || String(affectedFiles.length);
       document.body.dataset.selectedImpactPath = path;
@@ -164,12 +168,12 @@ export const UI_CLIENT_JS = `    const snapshot = JSON.parse(document.getElement
           document.createTextNode(' ' + shortenMiddleForUi(item.path, 34))
         );
       }
-      setText('mapFlowMeta', (item.reason || 'impacts') + ' · ' + affectedCount + ' total targets · ' + displayedPathCount + ' mapped paths · ' + item.confidence + ' confidence');
+      setText('mapFlowMeta', (item.reason || 'impacts') + ' · ' + affectedCount + ' ' + uiMessage('totalTargets', 'total targets') + ' · ' + displayedPathCount + ' ' + uiMessage('mappedPaths', 'mapped paths') + ' · ' + item.confidence + ' ' + uiMessage('confidenceInline', 'confidence'));
       renderMapAction(path);
       setText('inspectorPath', item.path);
       setText('inspectorReason', item.reason);
       setText('inspectorConfidence', item.confidence);
-      setText('inspectorRelation', item.relationPath?.join(' -> ') || 'direct or not recorded');
+      setText('inspectorRelation', item.relationPath?.join(' -> ') || uiMessage('directOrNotRecorded', 'direct or not recorded'));
       setText('inspectorEvidence', String(matchingEvidence.length));
       renderInspectorAction(path);
       renderInspectorEvidence(matchingEvidence);
@@ -186,10 +190,10 @@ export const UI_CLIENT_JS = `    const snapshot = JSON.parse(document.getElement
           link.href = sourceHref;
           link.target = '_blank';
           link.rel = 'noreferrer';
-          link.textContent = 'Open source ' + sourceLabel;
+          link.textContent = uiMessage('ariaOpenSourceLabel', 'Open source') + ' ' + sourceLabel;
           sourceTarget.append(link);
         } else {
-          sourceTarget.textContent = 'No source span recorded';
+          sourceTarget.textContent = uiMessage('noSourceSpanRecorded', 'No source span recorded');
         }
       }
       for (const row of document.querySelectorAll('[data-impact-path]')) {
@@ -251,14 +255,14 @@ export const UI_CLIENT_JS = `    const snapshot = JSON.parse(document.getElement
       button.dataset.copyWired = 'true';
       button.addEventListener('click', async () => {
         const command = button.getAttribute('data-command') || '';
-        const original = button.textContent || 'Copy';
+        const original = button.textContent || uiMessage('copy', 'Copy');
         button.disabled = true;
         try {
           await copyText(command);
-          button.textContent = 'Copied';
+          button.textContent = uiMessage('copyCopied', 'Copied');
           button.dataset.state = 'copied';
         } catch {
-          button.textContent = 'Copy failed';
+          button.textContent = uiMessage('copyFailed', 'Copy failed');
           button.dataset.state = 'failed';
         }
         window.setTimeout(() => {

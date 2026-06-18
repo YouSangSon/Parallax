@@ -86,7 +86,7 @@ export function renderImpactSummaryPanel(snapshot: UiSnapshot, m: UiMessages): s
       <div class="blast-card">
         <span>${escapeHtml(m.blastRadius)}</span>
         <strong>${escapeHtml(blast)}</strong>
-        <small>${escapeHtml(primaryChange)} touches ${report.affectedCount} targets through ${displayedPathCount} displayed paths.</small>
+        <small>${escapeHtml(primaryChange)} touches ${report.affectedCount} targets through ${displayedPathCount} mapped paths.</small>
       </div>
       ${trustSummary}
       <div class="confidence-strip" aria-label="${escapeHtml(m.ariaAffectedByConfidence)}">${confidenceRows}</div>
@@ -193,7 +193,7 @@ export function renderImpactTriageStrip(snapshot: UiSnapshot, m: UiMessages): st
   const heuristicCount = report.affectedFiles.filter((item) => item.confidence === 'heuristic').length;
   const riskDetail = [
     `${report.affectedCount} affected`,
-    `${map.edges.length} displayed paths`,
+    `${map.edges.length} mapped paths`,
     `${provenCount} proven`,
     heuristicCount > 0 ? `${heuristicCount} heuristic` : undefined
   ].filter((item): item is string => Boolean(item)).join(' · ');

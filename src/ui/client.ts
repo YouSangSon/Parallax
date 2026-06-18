@@ -164,7 +164,7 @@ export const UI_CLIENT_JS = `    const snapshot = JSON.parse(document.getElement
           document.createTextNode(' ' + shortenMiddleForUi(item.path, 34))
         );
       }
-      setText('mapFlowMeta', (item.reason || 'impacts') + ' · ' + affectedCount + ' targets · ' + displayedPathCount + ' displayed paths · ' + item.confidence + ' confidence');
+      setText('mapFlowMeta', (item.reason || 'impacts') + ' · ' + affectedCount + ' total targets · ' + displayedPathCount + ' mapped paths · ' + item.confidence + ' confidence');
       renderMapAction(path);
       setText('inspectorPath', item.path);
       setText('inspectorReason', item.reason);

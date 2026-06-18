@@ -33,10 +33,11 @@ export function renderImpactMapPanel(graph: UiGraphPreview | null, report: UiRep
   const map = buildImpactMap(graph, report);
   const firstImpact = report ? initialImpactForUi(report) : undefined;
   const displayedPathCount = map.edges.length;
+  const totalAffectedCount = report?.affectedCount ?? map.affectedNodes.length;
   const chips = `
     <span>${map.changedNodes.length} changed</span>
-    <span>${map.affectedNodes.length} affected</span>
-    <span>${displayedPathCount} displayed paths</span>
+    <span>${totalAffectedCount} total affected</span>
+    <span>${displayedPathCount} mapped paths</span>
   `;
   if (map.changedNodes.length === 0 && map.affectedNodes.length === 0) {
     return `
@@ -53,7 +54,7 @@ export function renderImpactMapPanel(graph: UiGraphPreview | null, report: UiRep
   const selectedPath = firstImpact?.path;
   const svg = renderImpactMapSvg(map, selectedPath, m);
   const selectedAction = selectedPath && report ? actionByTargetPath(report.actions).get(selectedPath) : undefined;
-  const insight = renderImpactMapInsight(map, displayedPathCount, m, firstImpact?.path, selectedAction);
+  const insight = renderImpactMapInsight(map, totalAffectedCount, displayedPathCount, m, firstImpact?.path, selectedAction);
   const routeStrip = renderImpactRouteStrip(map, m, selectedPath);
   const edgeRows = map.edges.slice(0, 6).map((edge) => {
     const from = map.nodeById.get(edge.from);
@@ -122,6 +123,7 @@ export function renderImpactRouteStrip(map: ReturnType<typeof buildImpactMap>, m
 
 export function renderImpactMapInsight(
   map: ReturnType<typeof buildImpactMap>,
+  totalAffectedCount: number,
   displayedPathCount: number,
   m: UiMessages,
   selectedPath?: string,
@@ -136,11 +138,11 @@ export function renderImpactMapInsight(
   const relation = primaryEdge?.label ?? 'IMPACTS';
   const confidence = primaryTarget?.confidence ?? primaryEdge?.confidence ?? 'unknown';
   return `
-    <div class="map-insight" aria-label="${escapeHtml(m.ariaPrimaryImpactFlow)}" data-primary-change="${escapeHtml(primaryChange)}" data-affected-count="${escapeHtml(String(map.affectedNodes.length))}" data-displayed-path-count="${escapeHtml(String(displayedPathCount))}">
+    <div class="map-insight" aria-label="${escapeHtml(m.ariaPrimaryImpactFlow)}" data-primary-change="${escapeHtml(primaryChange)}" data-affected-count="${escapeHtml(String(totalAffectedCount))}" data-displayed-path-count="${escapeHtml(String(displayedPathCount))}">
       <div class="map-flow-text">
         <span>${escapeHtml(m.primaryImpactFlow)}</span>
         <strong id="mapFlowPath">${escapeHtml(shortenMiddle(primaryChange, 34))} <em>&rarr;</em> ${escapeHtml(shortenMiddle(primaryTargetLabel, 34))}</strong>
-        <small id="mapFlowMeta">${escapeHtml(relation)} · ${escapeHtml(String(map.affectedNodes.length))} targets · ${escapeHtml(String(displayedPathCount))} displayed paths · ${escapeHtml(confidence)} confidence</small>
+        <small id="mapFlowMeta">${escapeHtml(relation)} · ${escapeHtml(String(totalAffectedCount))} total targets · ${escapeHtml(String(displayedPathCount))} mapped paths · ${escapeHtml(confidence)} confidence</small>
       </div>
       ${renderMapNextAction(action, m)}
     </div>

@@ -4,13 +4,12 @@
 // ./shared.js, and ui.ts types (type-only import — erased at compile time, so
 // there is no runtime import cycle with ui.ts). Moved verbatim from ui.ts.
 
-import { markdownArtifactMetadataFromContent, type MarkdownArtifactMetadata } from '../artifacts.js';
+import type { MarkdownArtifactMetadata } from '../artifacts.js';
 import { exportImpactGraph } from '../graph.js';
 import {
-  hasArtifactMetadata,
-  workArtifactFreshness,
-  workArtifactFreshnessRank,
-  workArtifactKindRank
+  workArtifactEvidenceResourceUri,
+  workArtifactPathSet,
+  workArtifactsFromImpactReport
 } from '../work_artifacts.js';
 import { getRepoId, latestCompletedIndexRun, openDatabase } from '../store.js';
 import type { ImpactReport } from '../types.js';
@@ -96,7 +95,6 @@ export function reportPreviewFromRow(row: ReportRow): UiReportPreview {
   };
 }
 
-const workArtifactKinds = new Set(['policy', 'proposal', 'prd', 'decision', 'business_plan', 'requirement', 'meeting_note', 'customer_artifact']);
 const omittedWorkArtifactEvidenceSnippet = 'Work artifact evidence omitted from UI bootstrap. Open the entity resource for document details.';
 
 export function evidencePreviewFromReport(report: ImpactReport): UiEvidencePreview[] {
@@ -116,78 +114,7 @@ export function evidencePreviewFromReport(report: ImpactReport): UiEvidencePrevi
 
 export function workArtifactsFromReportRow(row: ReportRow): UiWorkArtifactImpact[] {
   const report = JSON.parse(row.json) as ImpactReport;
-  const affectedByPath = new Map(report.affectedFiles.map((item) => [item.path, item]));
-  const metadataByPath = workArtifactMetadataByPath(report);
-  const byKey = new Map<string, UiWorkArtifactImpact>();
-  for (const item of report.affected) {
-    const targetPath = item.target.path;
-    if (!targetPath || !workArtifactKinds.has(item.target.kind)) continue;
-    const affectedFile = affectedByPath.get(targetPath);
-    const metadata = metadataByPath.get(targetPath);
-    const key = `${item.target.kind}:${targetPath}`;
-    if (byKey.has(key)) continue;
-    byKey.set(key, {
-      kind: item.target.kind,
-      path: targetPath,
-      displayName: metadata?.title ?? item.target.displayName ?? targetPath,
-      reason: affectedFile?.reason ?? item.relations.join(' -> '),
-      confidence: affectedFile?.confidence ?? item.confidence,
-      relations: item.relations,
-      resourceUri: entityResourceUri(item.target),
-      ...(affectedFile?.depth !== undefined ? { depth: affectedFile.depth } : {}),
-      ...(metadata && hasArtifactMetadata(metadata) ? { metadata } : {}),
-      freshness: workArtifactFreshness(item.target.kind, metadata, row.created_at)
-    });
-  }
-  return [...byKey.values()].sort(compareWorkArtifacts);
-}
-
-export function workArtifactPathSet(report: ImpactReport): Set<string> {
-  return new Set(
-    report.affected
-      .map((item) => item.target)
-      .filter((target) => target.path && workArtifactKinds.has(target.kind))
-      .map((target) => target.path!)
-  );
-}
-
-export function workArtifactEvidenceResourceUri(
-  evidence: ImpactReport['evidence'][number],
-  workArtifactPaths: ReadonlySet<string>
-): string | undefined {
-  if (evidence.subject && workArtifactKinds.has(evidence.subject.kind)) {
-    return entityResourceUri(evidence.subject);
-  }
-  if (evidence.subject?.path && workArtifactPaths.has(evidence.subject.path)) {
-    return entityResourceUri(evidence.subject);
-  }
-  if (workArtifactPaths.has(evidence.file)) {
-    return `parallax://entities/${encodeURIComponent(`file:${evidence.file}`)}`;
-  }
-  return undefined;
-}
-
-export function workArtifactMetadataByPath(report: ImpactReport): Map<string, MarkdownArtifactMetadata> {
-  const workArtifactPaths = workArtifactPathSet(report);
-  const out = new Map<string, MarkdownArtifactMetadata>();
-  for (const evidence of report.evidence) {
-    const path = workArtifactEvidencePath(evidence, workArtifactPaths);
-    if (!path || out.has(path)) continue;
-    const metadata = markdownArtifactMetadataFromContent(evidence.snippet);
-    if (hasArtifactMetadata(metadata)) out.set(path, metadata);
-  }
-  return out;
-}
-
-export function workArtifactEvidencePath(
-  evidence: ImpactReport['evidence'][number],
-  workArtifactPaths: ReadonlySet<string>
-): string | undefined {
-  if (evidence.subject?.path && workArtifactPaths.has(evidence.subject.path)) {
-    return evidence.subject.path;
-  }
-  if (workArtifactPaths.has(evidence.file)) return evidence.file;
-  return undefined;
+  return workArtifactsFromImpactReport(report, { asOfIso: row.created_at, includeDepth: true });
 }
 
 export function workArtifactMetadataText(metadata: MarkdownArtifactMetadata | undefined): string {
@@ -197,13 +124,6 @@ export function workArtifactMetadataText(metadata: MarkdownArtifactMetadata | un
     metadata.status ? `status ${metadata.status}` : undefined,
     metadata.updatedAt ? `updated ${metadata.updatedAt}` : undefined
   ].filter((item): item is string => Boolean(item)).join(' · ');
-}
-
-export function compareWorkArtifacts(left: UiWorkArtifactImpact, right: UiWorkArtifactImpact): number {
-  return workArtifactFreshnessRank(left.freshness.state) - workArtifactFreshnessRank(right.freshness.state)
-    || workArtifactKindRank(left.kind) - workArtifactKindRank(right.kind)
-    || (left.depth ?? 99) - (right.depth ?? 99)
-    || left.path.localeCompare(right.path);
 }
 
 export async function graphPreview(repoRoot: string, reportId: string): Promise<UiGraphPreview | null> {

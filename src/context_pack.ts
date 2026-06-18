@@ -1,14 +1,11 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 
-import { markdownArtifactMetadataFromContent } from './artifacts.js';
-import type { MarkdownArtifactMetadata } from './artifacts.js';
 import { resolveInsideRoot } from './security.js';
 import {
-  hasArtifactMetadata,
-  workArtifactFreshness,
-  workArtifactFreshnessRank,
-  workArtifactKindRank
+  isWorkArtifactEvidence,
+  workArtifactPathSet,
+  workArtifactsFromImpactReport
 } from './work_artifacts.js';
 import type {
   Confidence,
@@ -17,7 +14,6 @@ import type {
   ContextPackEvidence,
   ContextPackItem,
   ContextPackReusePolicy,
-  ContextPackWorkArtifact,
   EntityRef,
   Evidence,
   ImpactReport
@@ -98,7 +94,7 @@ export function buildContextPack(report: ImpactReport, budget: ContextBudget, as
     };
   });
   const workArtifactPaths = workArtifactPathSet(report);
-  const allWorkArtifacts = workArtifactsForContextPack(report, asOfIso);
+  const allWorkArtifacts = workArtifactsFromImpactReport(report, { asOfIso });
   const selectedWorkArtifacts = allWorkArtifacts.slice(0, preset.workArtifactLimit);
   const selectedEvidence = dedupeEvidenceForContext(report.evidence)
     .sort((a, b) => compareEvidence(a, b, selectedPaths))
@@ -258,80 +254,7 @@ function dedupeEvidenceForContext(evidence: readonly Evidence[]): Evidence[] {
   return [...byKey.values()];
 }
 
-const contextWorkArtifactKinds = new Set(['policy', 'proposal', 'prd', 'decision', 'business_plan', 'requirement', 'meeting_note', 'customer_artifact']);
 const omittedWorkArtifactEvidenceSnippet = 'Work artifact evidence omitted from context pack. Fetch the entity or evidence resource for document details.';
-
-function workArtifactsForContextPack(report: ImpactReport, asOfIso: string): ContextPackWorkArtifact[] {
-  const affectedByPath = new Map(report.affectedFiles.map((item) => [item.path, item]));
-  const metadataByPath = workArtifactMetadataByPath(report);
-  const byKey = new Map<string, ContextPackWorkArtifact>();
-  for (const item of report.affected) {
-    const targetPath = item.target.path;
-    if (!targetPath || !contextWorkArtifactKinds.has(item.target.kind)) continue;
-    const affectedFile = affectedByPath.get(targetPath);
-    const metadata = metadataByPath.get(targetPath);
-    const key = `${item.target.kind}:${targetPath}`;
-    if (byKey.has(key)) continue;
-    byKey.set(key, {
-      kind: item.target.kind,
-      path: targetPath,
-      displayName: metadata?.title ?? item.target.displayName ?? targetPath,
-      reason: affectedFile?.reason ?? item.relations.join(' -> '),
-      confidence: affectedFile?.confidence ?? item.confidence,
-      relations: item.relations,
-      resourceUri: entityResourceUri(item.target),
-      ...(metadata && hasArtifactMetadata(metadata) ? { metadata } : {}),
-      freshness: workArtifactFreshness(item.target.kind, metadata, asOfIso)
-    });
-  }
-  return [...byKey.values()].sort(compareContextWorkArtifacts);
-}
-
-function workArtifactPathSet(report: ImpactReport): Set<string> {
-  return new Set(
-    report.affected
-      .map((item) => item.target)
-      .filter((target) => target.path && contextWorkArtifactKinds.has(target.kind))
-      .map((target) => target.path!)
-  );
-}
-
-function workArtifactMetadataByPath(report: ImpactReport): Map<string, MarkdownArtifactMetadata> {
-  const workArtifactPaths = workArtifactPathSet(report);
-  const out = new Map<string, MarkdownArtifactMetadata>();
-  for (const evidence of report.evidence) {
-    const path = workArtifactEvidencePath(evidence, workArtifactPaths);
-    if (!path || out.has(path)) continue;
-    const metadata = markdownArtifactMetadataFromContent(evidence.snippet);
-    if (hasArtifactMetadata(metadata)) out.set(path, metadata);
-  }
-  return out;
-}
-
-function workArtifactEvidencePath(
-  evidence: Evidence,
-  workArtifactPaths: ReadonlySet<string>
-): string | undefined {
-  if (evidence.subject?.path && workArtifactPaths.has(evidence.subject.path)) {
-    return evidence.subject.path;
-  }
-  if (workArtifactPaths.has(evidence.file)) return evidence.file;
-  return undefined;
-}
-
-function isWorkArtifactEvidence(evidence: Evidence, workArtifactPaths: ReadonlySet<string>): boolean {
-  return Boolean(
-    (evidence.subject && contextWorkArtifactKinds.has(evidence.subject.kind)) ||
-    (evidence.subject?.path && workArtifactPaths.has(evidence.subject.path)) ||
-    workArtifactPaths.has(evidence.file)
-  );
-}
-
-function compareContextWorkArtifacts(left: ContextPackWorkArtifact, right: ContextPackWorkArtifact): number {
-  return workArtifactFreshnessRank(left.freshness.state) - workArtifactFreshnessRank(right.freshness.state)
-    || workArtifactKindRank(left.kind) - workArtifactKindRank(right.kind)
-    || left.path.localeCompare(right.path);
-}
 
 function compareEvidence(
   left: Evidence,

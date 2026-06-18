@@ -191,7 +191,7 @@ abstract class RegexBackedSemanticAdapter implements SemanticAdapter {
 
 export class TypeScriptJavaScriptSemanticAdapter extends RegexBackedSemanticAdapter {
   override readonly knownGaps = [
-    'TypeScript/JavaScript import, declaration, same-file/named-imported/direct-named-re-exported/star-re-exported/namespace-re-exported/default-imported/direct-default-re-exported/namespace-imported class/interface heritage type relation, imported call-site, local identifier call, method-reference alias call, same-class this.method, same-file class super.method, same-file/direct-new-or-const-alias-inferred/namespace-constructor-inferred/factory-wrapper-inferred/direct-factory-call-receiver/named-imported/direct-named-re-exported/star-re-exported/namespace-imported/namespace-re-exported/default-imported/direct-default-re-exported factory return type instance method call, interface/type-literal method/function-property/function-type-alias signature, same-file/named-imported/direct-named-re-exported/star-re-exported/namespace-re-exported/default-imported/direct-default-re-exported/namespace-imported interface/type-literal typed receiver method call, same-file interface extends typed receiver method call, same-file alias-backed interface extends typed receiver method call, same-file type reference alias typed receiver method call, same-file simple generic type reference typed receiver method call, same-file generic constraint typed receiver method call, same-file intersection type alias typed receiver method call, direct intersection typed receiver method call, same-file simple union typed receiver method call, declared typed local/class field receiver method call, typed local variable instance method call, typed/destructured/named-object parameter instance method call, assertion-wrapped/non-null/parenthesized typed receiver method call, string-literal element access method call, private member receiver method call, constructor parameter property instance method call, constructor assignment instance method call, class field arrow method caller/target, static class field arrow method call, typed class field instance method call, class field instance method call, same-file new ClassName instance call, and direct new ClassName().method call spans are parser-backed, but broader dynamic dispatch and advanced type relation resolution are not yet complete',
+    'TypeScript/JavaScript import, declaration, same-file/named-imported/direct-named-re-exported/star-re-exported/namespace-re-exported/default-imported/direct-default-re-exported/namespace-imported class/interface heritage type relation, imported call-site, local identifier call, method-reference alias call, same-class this.method, same-file class super.method, same-file/direct-new-or-const-alias-inferred/namespace-constructor-inferred/factory-wrapper-inferred/direct-factory-call-receiver/named-imported/direct-named-re-exported/star-re-exported/namespace-imported/namespace-re-exported/default-imported/direct-default-re-exported factory return type instance method call, interface/type-literal method/function-property/function-type-alias signature, same-file/named-imported/direct-named-re-exported/star-re-exported/namespace-re-exported/default-imported/direct-default-re-exported/namespace-imported interface/type-literal typed receiver method call, same-file interface extends typed receiver method call, same-file alias-backed interface extends typed receiver method call, same-file type reference alias typed receiver method call, same-file simple generic type reference typed receiver method call, same-file generic constraint typed receiver method call, same-file intersection type alias typed receiver method call, direct intersection typed receiver method call, same-file simple union typed receiver method call, declared typed local/class field receiver method call, typed local variable instance method call, typed/destructured/named-object parameter instance method call, assertion-wrapped/non-null/parenthesized typed receiver method call, string-literal element access method call, private member receiver method call, constructor parameter property instance method call, constructor assignment instance method call, object literal method/property callable declarations and receiver method calls, class field arrow method caller/target, static class field arrow method call, typed class field instance method call, class field instance method call, same-file new ClassName instance call, and direct new ClassName().method call spans are parser-backed, but broader dynamic dispatch and advanced type relation resolution are not yet complete',
     'polymorphism, alias-heavy object flows, generated code, and framework-specific routing may require deeper adapters'
   ];
 
@@ -1634,6 +1634,11 @@ function extractTypeScriptJavaScriptSymbols(file: ScannedFile): ExtractedSymbol[
       const methodName = typeScriptJavaScriptMemberNameText(node.name);
       if (className && methodName) {
         addSymbol(`${className}.${methodName}`, 'method', node, classHasExportModifier(node));
+      } else {
+        const objectName = objectLiteralCallableOwnerName(node);
+        if (objectName && methodName) {
+          addSymbol(`${objectName}.${methodName}`, 'method', node, false);
+        }
       }
     } else if (ts.isMethodSignature(node) && ts.isIdentifier(node.name)) {
       const typeName = enclosingTypeScriptJavaScriptTypeMemberOwnerName(node);
@@ -1650,6 +1655,12 @@ function extractTypeScriptJavaScriptSymbols(file: ScannedFile): ExtractedSymbol[
       const propertyName = typeScriptJavaScriptMemberNameText(node.name);
       if (className && propertyName) {
         addSymbol(`${className}.${propertyName}`, 'method', node, classHasExportModifier(node));
+      }
+    } else if (isCallableObjectPropertyAssignment(node)) {
+      const objectName = objectLiteralCallableOwnerName(node);
+      const propertyName = objectLiteralMemberNameText(node.name);
+      if (objectName && propertyName) {
+        addSymbol(`${objectName}.${propertyName}`, 'method', node, false);
       }
     } else if (ts.isVariableStatement(node)) {
       const exported = hasExportModifier(node);
@@ -2670,7 +2681,14 @@ function collectTypeScriptJavaScriptLocalCallables(
     } else if (ts.isMethodDeclaration(node)) {
       const className = enclosingTypeScriptJavaScriptClassName(node);
       const methodName = typeScriptJavaScriptMemberNameText(node.name);
-      if (className && methodName) addCallable(`${className}.${methodName}`, 'method');
+      if (className && methodName) {
+        addCallable(`${className}.${methodName}`, 'method');
+      } else {
+        const objectName = objectLiteralCallableOwnerName(node);
+        if (objectName && methodName) {
+          addCallable(`${objectName}.${methodName}`, 'method');
+        }
+      }
     } else if (ts.isMethodSignature(node) && ts.isIdentifier(node.name)) {
       const typeName = enclosingTypeScriptJavaScriptTypeMemberOwnerName(node);
       if (typeName) addCallable(`${typeName}.${node.name.text}`, 'method');
@@ -2684,6 +2702,12 @@ function collectTypeScriptJavaScriptLocalCallables(
       const propertyName = typeScriptJavaScriptMemberNameText(node.name);
       if (className && propertyName) {
         addCallable(`${className}.${propertyName}`, 'method');
+      }
+    } else if (isCallableObjectPropertyAssignment(node)) {
+      const objectName = objectLiteralCallableOwnerName(node);
+      const propertyName = objectLiteralMemberNameText(node.name);
+      if (objectName && propertyName) {
+        addCallable(`${objectName}.${propertyName}`, 'method');
       }
     } else if (ts.isVariableStatement(node)) {
       const symbolKind = variableKind(node.declarationList);
@@ -3481,6 +3505,7 @@ function collectTypeScriptJavaScriptLocalInstanceBindings(
         typeUnionAliases
       );
       const binding = typeBindingFromKnownInstanceExpression(node.initializer, factoryReturnTypes)
+        ?? typeBindingFromObjectLiteralCallableInitializer(node.name.text, node.initializer, localCallables)
         ?? typeBindingFromDeclaredType(
           node,
           typeReferenceAliases,
@@ -4003,6 +4028,37 @@ function isCallableClassProperty(node: ts.Node): node is ts.PropertyDeclaration 
   return ts.isPropertyDeclaration(node)
     && typeScriptJavaScriptMemberNameText(node.name) !== undefined
     && isCallableInitializer(node.initializer);
+}
+
+function isCallableObjectPropertyAssignment(node: ts.Node): node is ts.PropertyAssignment {
+  return ts.isPropertyAssignment(node)
+    && objectLiteralMemberNameText(node.name) !== undefined
+    && isCallableInitializer(node.initializer);
+}
+
+function typeBindingFromObjectLiteralCallableInitializer(
+  localName: string,
+  node: ts.Expression | undefined,
+  localCallables: ReadonlyMap<string, TsLocalCallable>
+): TsLocalInstanceBinding | undefined {
+  if (!node || !ts.isObjectLiteralExpression(node)) return undefined;
+  for (const property of node.properties) {
+    const memberName = objectLiteralCallableMemberName(property);
+    if (memberName && localCallables.has(`${localName}.${memberName}`)) {
+      return { typeNames: [localName], resolution: 'first' };
+    }
+  }
+  return undefined;
+}
+
+function objectLiteralCallableMemberName(node: ts.ObjectLiteralElementLike): string | undefined {
+  if (ts.isMethodDeclaration(node)) return objectLiteralMemberNameText(node.name);
+  if (isCallableObjectPropertyAssignment(node)) return objectLiteralMemberNameText(node.name);
+  return undefined;
+}
+
+function objectLiteralMemberNameText(name: ts.PropertyName | undefined): string | undefined {
+  return propertyNameText(name);
 }
 
 function isCallableTypePropertySignature(
@@ -4570,9 +4626,13 @@ function enclosingLocalCaller(
     if (ts.isMethodDeclaration(current)) {
       const className = enclosingTypeScriptJavaScriptClassName(current);
       const methodName = typeScriptJavaScriptMemberNameText(current.name);
-      const callable = className && methodName
-        ? localCallables.get(`${className}.${methodName}`)
+      const objectName = className ? undefined : objectLiteralCallableOwnerName(current);
+      const callableName = className && methodName
+        ? `${className}.${methodName}`
+        : objectName && methodName
+        ? `${objectName}.${methodName}`
         : undefined;
+      const callable = callableName ? localCallables.get(callableName) : undefined;
       if (callable) return callable;
     }
     if (isCallableClassProperty(current)) {
@@ -4580,6 +4640,14 @@ function enclosingLocalCaller(
       const propertyName = typeScriptJavaScriptMemberNameText(current.name);
       const callable = className && propertyName
         ? localCallables.get(`${className}.${propertyName}`)
+        : undefined;
+      if (callable) return callable;
+    }
+    if (isCallableObjectPropertyAssignment(current)) {
+      const objectName = objectLiteralCallableOwnerName(current);
+      const propertyName = objectLiteralMemberNameText(current.name);
+      const callable = objectName && propertyName
+        ? localCallables.get(`${objectName}.${propertyName}`)
         : undefined;
       if (callable) return callable;
     }
@@ -4610,6 +4678,30 @@ function enclosingTypeScriptJavaScriptClassName(node: ts.Node): string | undefin
   let current: ts.Node | undefined = node.parent;
   while (current) {
     if (ts.isClassDeclaration(current) && current.name) return current.name.text;
+    current = current.parent;
+  }
+  return undefined;
+}
+
+function objectLiteralCallableOwnerName(node: ts.Node): string | undefined {
+  let current: ts.Node | undefined = node.parent;
+  while (current) {
+    if (ts.isObjectLiteralExpression(current)) {
+      const declaration = current.parent;
+      return ts.isVariableDeclaration(declaration) && ts.isIdentifier(declaration.name)
+        ? declaration.name.text
+        : undefined;
+    }
+    if (
+      ts.isFunctionDeclaration(current)
+      || ts.isFunctionExpression(current)
+      || ts.isArrowFunction(current)
+      || ts.isClassDeclaration(current)
+      || ts.isInterfaceDeclaration(current)
+      || ts.isTypeAliasDeclaration(current)
+    ) {
+      return undefined;
+    }
     current = current.parent;
   }
   return undefined;

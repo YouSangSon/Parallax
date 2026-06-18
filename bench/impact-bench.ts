@@ -210,6 +210,7 @@ const expectedRelations: readonly ExpectedRelation[] = [
   languageRelation('DEPENDS_ON', 'src/ts/nodenext-barrel.ts', 'src/ts/session.ts', 'TS NodeNext .js re-export barrel reaches session'),
   languageRelation('DEPENDS_ON', 'src/ts/alias-consumer.ts', 'src/ts/session.ts', 'TS path alias import reaches session'),
   languageRelation('CALLS', 'src/ts/alias-consumer.ts', 'src/ts/session.ts', 'TS path alias consumer calls session validator'),
+  languageSymbolRelation('CALLS', 'src/ts/object-literal-consumer.ts', 'authorizeWithObjectLiteral', 'guard.validateSession', 'TS object literal method consumer calls guard validator'),
   languageRelation('DEPENDS_ON', 'src/js/legacy.js', 'src/ts/session.ts', 'JS require reaches TS session'),
   languageRelation('CALLS', 'src/js/legacy.js', 'src/ts/session.ts', 'JS require consumer calls session validator'),
   languageRelation('DEPENDS_ON', 'tests/session.test.ts', 'src/ts/session.ts', 'TS test imports session'),
@@ -736,6 +737,26 @@ function languageDeclareRelation(
   };
 }
 
+function languageSymbolRelation(
+  kind: string,
+  sourcePath: string,
+  sourceSymbol: string,
+  targetSymbol: string,
+  label: string
+): ExpectedRelation {
+  return {
+    kind,
+    sourceKind: 'symbol',
+    sourcePath,
+    sourceSymbol,
+    targetKind: 'symbol',
+    targetPath: sourcePath,
+    targetSymbol,
+    adapterId: adapterIdForPath(sourcePath),
+    label
+  };
+}
+
 function externalRelation(
   kind: string,
   sourcePath: string,
@@ -1118,6 +1139,17 @@ async function writeFixture(repoRoot: string): Promise<void> {
     'import { validateSession } from "@app/session";',
     'export function aliasConsumer(): boolean {',
     '  return validateSession("alias");',
+    '}',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(repoRoot, 'src/ts/object-literal-consumer.ts'), [
+    'export function authorizeWithObjectLiteral(token: string): boolean {',
+    '  const guard = {',
+    '    validateSession(candidate: string): boolean {',
+    '      return candidate.length > 0;',
+    '    }',
+    '  };',
+    '  return guard.validateSession(token);',
     '}',
     ''
   ].join('\n'));

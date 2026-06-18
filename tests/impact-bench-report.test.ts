@@ -18,8 +18,8 @@ function makeReport(overrides: Partial<ImpactBenchReport> = {}): ImpactBenchRepo
     summary: {
       passed: true,
       score: 0.9987,
-      expectedRelations: 77,
-      matchedRelations: 77,
+      expectedRelations: 78,
+      matchedRelations: 78,
       unexpectedRelations: 0
     },
     scores: {
@@ -142,7 +142,7 @@ test('bench report summary renders current metrics without a baseline', () => {
   assert.match(markdown, /^## Impact Bench/);
   assert.match(markdown, /\*\*Status:\*\* passed/);
   assert.match(markdown, /\| Overall score \| 0\.9987 \| n\/a \|/);
-  assert.match(markdown, /\| Matched relations \| 77\/77 \| n\/a \|/);
+  assert.match(markdown, /\| Matched relations \| 78\/78 \| n\/a \|/);
   assert.match(markdown, /\| Semantic recall@1 \| 1\.0000 \| n\/a \|/);
   assert.match(markdown, /\| Semantic model isolation \| 1\.0000 \| n\/a \|/);
   assert.match(markdown, /\| `evidence-fts-policy` \| 1\.0000 \| 1\.0000 \| 966 \| no \|/);
@@ -156,7 +156,7 @@ test('bench report summary renders metric and count deltas against a baseline', 
     summary: {
       passed: true,
       score: 0.9123,
-      expectedRelations: 77,
+      expectedRelations: 78,
       matchedRelations: 70,
       unexpectedRelations: 2
     },
@@ -200,7 +200,7 @@ test('bench report summary renders metric and count deltas against a baseline', 
   assert.match(markdown, /\*\*Status:\*\* passed \(baseline: passed\)/);
   assert.match(markdown, /\| Overall score \| 0\.9987 \| \+0\.0864 \|/);
   assert.match(markdown, /\| Relation recall \| 1\.0000 \| \+0\.0789 \|/);
-  assert.match(markdown, /\| Matched relations \| 77\/77 \| \+7 \|/);
+  assert.match(markdown, /\| Matched relations \| 78\/78 \| \+8 \|/);
   assert.match(markdown, /\| Unexpected relations \| 0 \| -2 better \|/);
   assert.match(markdown, /\| Matched affected files \| 2\/2 \| \+1 \|/);
   assert.match(markdown, /\| Retrieval recall@5 \| 1\.0000 \| \+0\.5000 \|/);

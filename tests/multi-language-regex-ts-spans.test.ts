@@ -6184,6 +6184,125 @@ test('TypeScript JavaScript adapter records parser-backed array element typed re
   }
 });
 
+test('TypeScript JavaScript adapter records parser-backed object literal method dispatch spans', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-object-literal-method-spans-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+
+  await writeFile(path.join(repoRoot, 'src/guard.ts'), [
+    'export function authorize(token: string): boolean {',
+    '  const guard = {',
+    '    validateSession(candidate: string): boolean {',
+    '      return candidate.length > 0;',
+    '    },',
+    '    auditSession: (candidate: string): boolean => candidate.startsWith("svc_")',
+    '  };',
+    '  return guard.validateSession(token) && guard.auditSession(token);',
+    '}',
+    ''
+  ].join('\n'));
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const declarations = db
+      .prepare(`
+        SELECT
+          target.symbol AS symbol,
+          ev.snippet,
+          ev.start_line,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind = 'DECLARES'
+          AND r.source_entity_id = 'file:src/guard.ts'
+          AND target.symbol LIKE 'guard.%'
+        ORDER BY target.symbol
+      `)
+      .all(index.indexRunId) as Array<{
+        symbol: string;
+        snippet: string;
+        start_line: number | null;
+        adapter_id: string | null;
+      }>;
+
+    assert.deepEqual(
+      declarations.map((row) => [row.symbol, row.start_line]),
+      [
+        ['guard.auditSession', 6],
+        ['guard.validateSession', 3]
+      ]
+    );
+    assert.ok(declarations.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
+    assert.match(
+      declarations.find((row) => row.symbol === 'guard.validateSession')?.snippet ?? '',
+      /^validateSession\(candidate: string\): boolean/
+    );
+    assert.match(
+      declarations.find((row) => row.symbol === 'guard.auditSession')?.snippet ?? '',
+      /^auditSession: \(candidate: string\): boolean =>/
+    );
+
+    const calls = db
+      .prepare(`
+        SELECT
+          source.symbol AS source_symbol,
+          target.symbol AS target_symbol,
+          r.provenance,
+          ev.snippet,
+          ev.start_line,
+          ev.end_line,
+          ev.start_col,
+          ev.end_col,
+          adapter_runs.adapter_id
+        FROM relations r
+        INNER JOIN entities source ON source.id = r.source_entity_id
+        INNER JOIN entities target ON target.id = r.target_entity_id
+        INNER JOIN relation_evidence ev ON ev.relation_id = r.id
+        LEFT JOIN adapter_runs ON adapter_runs.id = r.adapter_run_id
+        WHERE r.index_run_id = ?
+          AND r.kind = 'CALLS'
+          AND source.kind = 'symbol'
+          AND target.kind = 'symbol'
+          AND source.path = 'src/guard.ts'
+          AND target.path = 'src/guard.ts'
+          AND target.symbol LIKE 'guard.%'
+        ORDER BY ev.start_line, ev.start_col, ev.end_col
+      `)
+      .all(index.indexRunId) as Array<{
+        source_symbol: string;
+        target_symbol: string;
+        provenance: string;
+        snippet: string;
+        start_line: number | null;
+        end_line: number | null;
+        start_col: number | null;
+        end_col: number | null;
+        adapter_id: string | null;
+      }>;
+
+    assert.deepEqual(
+      calls.map((row) => [row.source_symbol, row.target_symbol, row.snippet]),
+      [
+        ['authorize', 'guard.validateSession', 'guard.validateSession(token)'],
+        ['authorize', 'guard.auditSession', 'guard.auditSession(token)']
+      ]
+    );
+    assert.deepEqual(calls.map((row) => row.start_line), [8, 8]);
+    assert.ok(calls.every((row) => row.end_line !== null));
+    assert.ok(calls.every((row) => row.start_col !== null));
+    assert.ok(calls.every((row) => row.end_col !== null));
+    assert.ok(calls.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
+    assert.ok(calls.every((row) => row.provenance.startsWith('instance-call:')));
+  } finally {
+    db.close();
+  }
+});
+
 test('TypeScript JavaScript adapter resolves NodeNext .js-extension local imports to their TypeScript source', async () => {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-ts-nodenext-import-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });

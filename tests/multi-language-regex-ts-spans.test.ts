@@ -6124,10 +6124,13 @@ test('TypeScript JavaScript adapter records parser-backed array element typed re
     '  }',
     '}',
     '',
-    'export function authorize(guards: SessionGuard[], token: string): boolean {',
+    'export function authorize(guards: SessionGuard[], readonlyGuards: readonly SessionGuard[], token: string): boolean {',
     '  const more: Array<SessionGuard> = guards;',
+    '  const readonlyMore: readonly SessionGuard[] = readonlyGuards;',
     '  return guards[0].validateSession(token)',
-    '    && more[1].validateSession(token);',
+    '    && more[1].validateSession(token)',
+    '    && readonlyGuards[2].validateSession(token)',
+    '    && readonlyMore[3].validateSession(token);',
     '}',
     ''
   ].join('\n'));
@@ -6173,10 +6176,12 @@ test('TypeScript JavaScript adapter records parser-backed array element typed re
       calls.map((row) => [row.source_symbol, row.target_symbol, row.snippet]),
       [
         ['authorize', 'SessionGuard.validateSession', 'guards[0].validateSession(token)'],
-        ['authorize', 'SessionGuard.validateSession', 'more[1].validateSession(token)']
+        ['authorize', 'SessionGuard.validateSession', 'more[1].validateSession(token)'],
+        ['authorize', 'SessionGuard.validateSession', 'readonlyGuards[2].validateSession(token)'],
+        ['authorize', 'SessionGuard.validateSession', 'readonlyMore[3].validateSession(token)']
       ]
     );
-    assert.deepEqual(calls.map((row) => row.start_line), [9, 10]);
+    assert.deepEqual(calls.map((row) => row.start_line), [10, 11, 12, 13]);
     assert.ok(calls.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
     assert.ok(calls.every((row) => row.provenance.startsWith('instance-call:')));
   } finally {

@@ -52,6 +52,7 @@ dogfood guard는 그 틈을 메운다. 각 test에서:
 - **affected-file recall** — 변경 파일에 대한 `analyzeDiff`가 기대된 모든 의존자를 드러내야 한다.
 - **evidence presence, span completeness, adapter attribution** — relation은 evidence/span을 지니고 올바른 adapter에 귀속되어야 한다.
 - **retrieval 지표** — brief context budget 안에서 `searchContextForRepo`의 recall/precision/MRR/nDCG.
+- **semantic model recall/isolation** — deterministic int8 fixture embedding으로 embedding 모델명이 바뀔 때 semantic recall이 기대 top fact를 반환하고 cross-model decoy가 섞이지 않는지 검증한다.
 
 runner는 deterministic JSON 리포트를 쓰고, suite가 통과하지 못하면 non-zero exit code를 설정한다. surface는 둘이다:
 
@@ -82,7 +83,7 @@ npm run verify
 npm run bench:report -- --github-step-summary --allow-missing --baseline .parallax/bench/impact-bench-baseline.json
 ```
 
-`npm run verify`는 canonical source-checkout gate다. lint를 먼저 실행한 뒤 install smoke(유일한 build를 담당), fast unit suite, dogfood, bench, 마지막으로 registry-dependent audit을 실행한다. Pull request에서는 CI가 먼저 base SHA에서 `.parallax/bench/impact-bench-baseline.json`을 준비하므로 마지막 summary에는 score, relation, affected-file, retrieval delta가 포함된다.
+`npm run verify`는 canonical source-checkout gate다. lint를 먼저 실행한 뒤 install smoke(유일한 build를 담당), fast unit suite, dogfood, bench, 마지막으로 registry-dependent audit을 실행한다. Pull request에서는 CI가 먼저 base SHA에서 `.parallax/bench/impact-bench-baseline.json`을 준비하므로 마지막 summary에는 score, relation, affected-file, retrieval, semantic recall delta가 포함된다.
 
 ## 테스트를 추가하는 법
 

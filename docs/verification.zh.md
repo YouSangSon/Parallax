@@ -52,6 +52,7 @@ dogfood guard 填补了这个缺口。在每个 test 中，它：
 - **affected-file recall**——对变更文件的 `analyzeDiff` 必须呈现每个期望的依赖者。
 - **evidence presence、span completeness 与 adapter attribution**——relation 必须携带 evidence/span 并归属到正确的 adapter。
 - **retrieval 指标**——在 brief context budget 内 `searchContextForRepo` 的 recall/precision/MRR/nDCG。
+- **semantic model recall/isolation**——使用确定性的 int8 fixture embedding，验证 embedding 模型名变化时 semantic recall 仍返回期望的 top fact，并且不会混入 cross-model decoy。
 
 runner 写出一份确定性 JSON 报告，当 suite 未通过时设置 non-zero exit code。共有两个 surface：
 
@@ -82,7 +83,7 @@ npm run verify
 npm run bench:report -- --github-step-summary --allow-missing --baseline .parallax/bench/impact-bench-baseline.json
 ```
 
-`npm run verify` 是 canonical source-checkout gate。它先运行 lint，然后运行 install smoke（唯一负责 build）、fast unit suite、dogfood、bench，最后运行依赖 registry 的 audit。在 pull request 中，CI 会先从 base SHA 准备 `.parallax/bench/impact-bench-baseline.json`，因此最后的 summary 会包含 score、relation、affected-file 与 retrieval delta。
+`npm run verify` 是 canonical source-checkout gate。它先运行 lint，然后运行 install smoke（唯一负责 build）、fast unit suite、dogfood、bench，最后运行依赖 registry 的 audit。在 pull request 中，CI 会先从 base SHA 准备 `.parallax/bench/impact-bench-baseline.json`，因此最后的 summary 会包含 score、relation、affected-file、retrieval 与 semantic recall delta。
 
 ## 如何添加测试
 

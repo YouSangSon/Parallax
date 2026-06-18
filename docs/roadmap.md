@@ -75,9 +75,10 @@ Without regression signals, there is no guarantee that every change works.
 
 - [x] A deterministic bench harness based on multi-language fixtures
   - Current gate: `bench/impact-bench.ts` builds a fixed TypeScript/JavaScript, JVM/Spring Boot, Python, Go, Rust, OpenAPI, and build-manifest fixture; scores relation recall/precision, affected-file recall, evidence/span coverage, adapter attribution, context-pack readiness, and retrieval quality; and is run by `npm run bench`, `npm test`, and the CI `npm run verify` gate.
-- [ ] Recall quality regression detection when crossing embedding models / LLM providers
+- [x] Recall quality regression detection when crossing embedding models / LLM providers
+  - Current gate: the deterministic bench now includes a semantic model matrix with per-model recall@1 and cross-model isolation checks. It is deliberately offline and catches embedding model namespace regressions without depending on live provider calls; LLM provider network quality remains outside CI, while provider contracts stay covered by offline tests.
 - [x] Automatically report the bench delta on every PR in CI
-  - Current gate: CI prepares a base-SHA bench report for pull requests, runs the canonical `npm run verify` gate on the head, then appends `npm run bench:report` Markdown to the GitHub Step Summary with score, relation, affected-file, and retrieval deltas.
+  - Current gate: CI prepares a base-SHA bench report for pull requests, runs the canonical `npm run verify` gate on the head, then appends `npm run bench:report` Markdown to the GitHub Step Summary with score, relation, affected-file, retrieval, and semantic recall deltas.
 
 ---
 

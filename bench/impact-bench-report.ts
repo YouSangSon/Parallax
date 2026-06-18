@@ -87,7 +87,8 @@ export function formatBenchSummaryMarkdown(
     ),
     metricRow('Retrieval recall@5', report.retrieval.summary.recallAt5, baseline?.retrieval.summary.recallAt5),
     metricRow('Retrieval MRR', report.retrieval.summary.mrr, baseline?.retrieval.summary.mrr),
-    metricRow('Retrieval nDCG@10', report.retrieval.summary.ndcgAt10, baseline?.retrieval.summary.ndcgAt10)
+    metricRow('Retrieval nDCG@10', report.retrieval.summary.ndcgAt10, baseline?.retrieval.summary.ndcgAt10),
+    ...semanticMetricRows(report, baseline)
   ];
 
   const lines = [
@@ -134,12 +135,42 @@ export function formatBenchSummaryMarkdown(
       query.budgetExceeded ? 'yes' : 'no'
     ].join(' | ') + ' |'),
     '',
+    ...semanticModelTableRows(report),
+    '',
     listSection('Missing relations', report.missingRelations),
     '',
     listSection('Unexpected relations', report.unexpectedRelations)
   ];
 
   return ensureTrailingNewline(lines.join('\n'));
+}
+
+function semanticMetricRows(
+  report: ImpactBenchReport,
+  baseline: ImpactBenchReport | undefined
+): string[] {
+  const current = report.retrieval.semanticModels?.summary;
+  if (!current) return [];
+  const previous = baseline?.retrieval.semanticModels?.summary;
+  return [
+    metricRow('Semantic recall@1', current.recallAt1, previous?.recallAt1),
+    metricRow('Semantic model isolation', current.isolation, previous?.isolation)
+  ];
+}
+
+function semanticModelTableRows(report: ImpactBenchReport): string[] {
+  const semanticModels = report.retrieval.semanticModels;
+  if (!semanticModels) return [];
+  return [
+    '| Semantic model | Recall@1 | Isolated | Top fact |',
+    '| :--- | ---: | :--- | :--- |',
+    ...semanticModels.models.map((model) => [
+      `| \`${escapeTableCell(model.model)}\``,
+      formatDecimal(model.recallAt1),
+      model.isolated ? 'yes' : 'no',
+      model.topFactId ? `\`${escapeTableCell(model.topFactId)}\`` : 'none'
+    ].join(' | ') + ' |')
+  ];
 }
 
 function formatMissingBenchReportMarkdown(reportPath: string): string {
@@ -264,6 +295,51 @@ function assertBenchReport(value: unknown, label: string): asserts value is Impa
     assertNumber(query.returnedBytes, label, `retrieval.queries[${index}].returnedBytes`);
     assertBoolean(query.budgetExceeded, label, `retrieval.queries[${index}].budgetExceeded`);
   }
+  if (value.schemaVersion >= 3 || value.retrieval.semanticModels !== undefined) {
+    assertRecord(value.retrieval.semanticModels, label, 'retrieval.semanticModels');
+    assertRecord(value.retrieval.semanticModels.summary, label, 'retrieval.semanticModels.summary');
+    assertBoolean(
+      value.retrieval.semanticModels.summary.passed,
+      label,
+      'retrieval.semanticModels.summary.passed'
+    );
+    for (const key of ['modelCount', 'recallAt1', 'isolation']) {
+      assertNumber(
+        value.retrieval.semanticModels.summary[key],
+        label,
+        `retrieval.semanticModels.summary.${key}`
+      );
+    }
+    if (!Array.isArray(value.retrieval.semanticModels.models)) {
+      throw new Error(`invalid bench report ${label}: expected retrieval.semanticModels.models array`);
+    }
+    for (const [index, model] of value.retrieval.semanticModels.models.entries()) {
+      assertRecord(model, label, `retrieval.semanticModels.models[${index}]`);
+      assertString(model.model, label, `retrieval.semanticModels.models[${index}].model`);
+      assertString(
+        model.expectedFactId,
+        label,
+        `retrieval.semanticModels.models[${index}].expectedFactId`
+      );
+      assertString(
+        model.disallowedFactId,
+        label,
+        `retrieval.semanticModels.models[${index}].disallowedFactId`
+      );
+      assertNullableString(
+        model.topFactId,
+        label,
+        `retrieval.semanticModels.models[${index}].topFactId`
+      );
+      assertStringArray(
+        model.returnedFactIds,
+        label,
+        `retrieval.semanticModels.models[${index}].returnedFactIds`
+      );
+      assertNumber(model.recallAt1, label, `retrieval.semanticModels.models[${index}].recallAt1`);
+      assertBoolean(model.isolated, label, `retrieval.semanticModels.models[${index}].isolated`);
+    }
+  }
   assertString(value.outputPath, label, 'outputPath');
 }
 
@@ -274,6 +350,16 @@ function assertRecord(value: unknown, label: string, key: string): asserts value
 function assertString(value: unknown, label: string, key: string): asserts value is string {
   if (typeof value !== 'string') {
     throw new Error(`invalid bench report ${label}: expected ${key} string`);
+  }
+}
+
+function assertNullableString(
+  value: unknown,
+  label: string,
+  key: string
+): asserts value is string | null {
+  if (typeof value !== 'string' && value !== null) {
+    throw new Error(`invalid bench report ${label}: expected ${key} string or null`);
   }
 }
 

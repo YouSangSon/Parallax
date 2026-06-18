@@ -52,6 +52,7 @@ The default suite globs `tests/**/*.test.ts`. The guard is named `tests/dogfood.
 - **Affected-file recall** — `analyzeDiff` for the changed file must surface every expected dependent.
 - **Evidence presence, span completeness, and adapter attribution** — relations must carry evidence/spans and be attributed to the right adapter.
 - **Retrieval metrics** — `searchContextForRepo` recall/precision/MRR/nDCG within a brief context budget.
+- **Semantic model recall/isolation** — deterministic int8 fixture embeddings verify that semantic recall returns the expected top fact and does not leak cross-model decoys when embedding model names change.
 
 The runner writes a deterministic JSON report and sets a non-zero exit code when the suite does not pass. There are two surfaces:
 
@@ -82,7 +83,7 @@ npm run verify
 npm run bench:report -- --github-step-summary --allow-missing --baseline .parallax/bench/impact-bench-baseline.json
 ```
 
-`npm run verify` is the canonical source-checkout gate. It runs lint first, then install smoke (which owns the only build), the fast unit suite, dogfood, bench, and finally the registry-dependent audit. On pull requests, CI first prepares `.parallax/bench/impact-bench-baseline.json` from the base SHA so the final summary includes score, relation, affected-file, and retrieval deltas.
+`npm run verify` is the canonical source-checkout gate. It runs lint first, then install smoke (which owns the only build), the fast unit suite, dogfood, bench, and finally the registry-dependent audit. On pull requests, CI first prepares `.parallax/bench/impact-bench-baseline.json` from the base SHA so the final summary includes score, relation, affected-file, retrieval, and semantic recall deltas.
 
 ## How to add tests
 

@@ -6,6 +6,8 @@ import { DatabaseSync } from 'node:sqlite';
 
 import { analyzeDiff, indexProject, initProject } from '../src/index.js';
 import { searchContextForRepo } from '../src/mcp.js';
+import { recallSemantic } from '../src/agent_memory.js';
+import type { EmbeddingResult } from '../src/embeddings.js';
 import {
   GO_SEMANTIC_ADAPTER_ID,
   JVM_SPRING_SEMANTIC_ADAPTER_ID,
@@ -18,13 +20,16 @@ import { BUILD_SYSTEM_PACKAGE_ADAPTER_ID } from '../src/adapters/build-system-pa
 import { CONFIG_INFRA_SEMANTIC_ADAPTER_ID } from '../src/adapters/config-infra.js';
 
 const fixtureId = 'phase6b-multilanguage-v0';
-const schemaVersion = 2;
+const schemaVersion = 3;
 const defaultOutputPath = '.parallax/bench/impact-bench-report.json';
 const regexAdapterId = MULTI_LANG_REGEX_ADAPTER_ID;
 const retrievalFixtureId = 'search-context-retrieval-v0';
+const semanticRecallFixtureId = 'semantic-recall-model-regression-v0';
+const semanticModelA = 'bench-semantic-model-a';
+const semanticModelB = 'bench-semantic-model-b';
 
 export type ImpactBenchReport = {
-  schemaVersion: 2;
+  schemaVersion: 2 | 3;
   fixtureId: typeof fixtureId;
   summary: {
     passed: boolean;
@@ -95,6 +100,7 @@ type RelationMatch = {
 type RetrievalBenchReport = {
   fixtureId: typeof retrievalFixtureId;
   summary: RetrievalMetrics;
+  semanticModels?: SemanticRecallBenchReport;
   budgets: {
     brief: {
       maxReturnedBytes: number;
@@ -107,6 +113,34 @@ type RetrievalBenchReport = {
     withoutFactsFts: RetrievalMetrics;
   };
   queries: RetrievalQueryReport[];
+};
+
+type SemanticRecallBenchReport = {
+  fixtureId: typeof semanticRecallFixtureId;
+  summary: {
+    passed: boolean;
+    modelCount: number;
+    recallAt1: number;
+    isolation: number;
+  };
+  models: SemanticRecallModelReport[];
+};
+
+type SemanticRecallModelReport = {
+  model: string;
+  expectedFactId: string;
+  disallowedFactId: string;
+  topFactId: string | null;
+  returnedFactIds: string[];
+  recallAt1: number;
+  isolated: boolean;
+};
+
+type SemanticRecallSpec = {
+  model: string;
+  queryVector: Buffer;
+  expectedFactId: string;
+  disallowedFactId: string;
 };
 
 type RetrievalMetrics = {
@@ -145,6 +179,21 @@ const retrievalQueries: readonly RetrievalQuerySpec[] = [
     id: 'facts-fts-policy',
     query: 'checkout retry policy',
     expectedEntityIds: ['file:bench/fact-policy.ts']
+  }
+];
+
+const semanticRecallSpecs: readonly SemanticRecallSpec[] = [
+  {
+    model: semanticModelA,
+    queryVector: int8Vector([127, 0, 0, 0]),
+    expectedFactId: 'bench:model-a-policy',
+    disallowedFactId: 'bench:model-foreign-a-policy'
+  },
+  {
+    model: semanticModelB,
+    queryVector: int8Vector([0, 127, 0, 0]),
+    expectedFactId: 'bench:model-b-policy',
+    disallowedFactId: 'bench:model-foreign-b-policy'
   }
 ];
 
@@ -326,6 +375,9 @@ export async function runImpactBench(options: RunImpactBenchOptions = {}): Promi
       spanCompleteness >= 0.9 &&
       adapterAttribution === 1 &&
       contextPackReadiness === 1 &&
+      retrieval.summary.recallAt5 === 1 &&
+      retrieval.summary.mrr === 1 &&
+      retrieval.semanticModels?.summary.passed === true &&
       score >= 0.9;
 
     const report: ImpactBenchReport = {
@@ -389,6 +441,14 @@ function seedRetrievalFixture(repoRoot: string, indexRunId: number): void {
       indexRunId,
       indexRunId
     );
+    for (const [entityId, entityPath, displayName] of [
+      ['file:bench/model-a-policy.ts', 'bench/model-a-policy.ts', 'Bench Model A Policy'],
+      ['file:bench/model-b-policy.ts', 'bench/model-b-policy.ts', 'Bench Model B Policy'],
+      ['file:bench/model-foreign-a-policy.ts', 'bench/model-foreign-a-policy.ts', 'Bench Foreign A Policy'],
+      ['file:bench/model-foreign-b-policy.ts', 'bench/model-foreign-b-policy.ts', 'Bench Foreign B Policy']
+    ] as const) {
+      insertEntity.run(entityId, repo.id, entityPath, displayName, indexRunId, indexRunId);
+    }
     db.prepare(`
       INSERT OR REPLACE INTO relations (
         id, repo_id, source_entity_id, target_entity_id, kind, confidence,
@@ -432,6 +492,41 @@ function seedRetrievalFixture(repoRoot: string, indexRunId: number): void {
       'file:bench/fact-policy.ts',
       JSON.stringify('checkout retry owner escalation policy')
     );
+    const insertFact = db.prepare(`
+      INSERT OR REPLACE INTO facts (id, entity_id, attribute, value_blob, op, tx_id, redacted)
+      VALUES (?, ?, 'session_summary', ?, 'assert', 'tx_bench_retrieval', 0)
+    `);
+    for (const [factId, entityId, value] of [
+      ['bench:model-a-policy', 'file:bench/model-a-policy.ts', 'model a semantic recall target'],
+      ['bench:model-b-policy', 'file:bench/model-b-policy.ts', 'model b semantic recall target'],
+      [
+        'bench:model-foreign-a-policy',
+        'file:bench/model-foreign-a-policy.ts',
+        'foreign model a decoy target'
+      ],
+      [
+        'bench:model-foreign-b-policy',
+        'file:bench/model-foreign-b-policy.ts',
+        'foreign model b decoy target'
+      ]
+    ] as const) {
+      insertFact.run(factId, entityId, JSON.stringify(value));
+    }
+
+    const insertEmbedding = db.prepare(`
+      INSERT OR REPLACE INTO fact_embeddings (fact_id, model, vector, dim, created_at)
+      VALUES (?, ?, ?, ?, datetime('now'))
+    `);
+    for (const [factId, model, vector] of [
+      ['bench:model-a-policy', semanticModelA, int8Vector([127, 0, 0, 0])],
+      ['bench:model-a-policy', semanticModelB, int8Vector([0, -127, 0, 0])],
+      ['bench:model-b-policy', semanticModelA, int8Vector([-127, 0, 0, 0])],
+      ['bench:model-b-policy', semanticModelB, int8Vector([0, 127, 0, 0])],
+      ['bench:model-foreign-a-policy', semanticModelB, int8Vector([127, 0, 0, 0])],
+      ['bench:model-foreign-b-policy', semanticModelA, int8Vector([0, 127, 0, 0])]
+    ] as const) {
+      insertEmbedding.run(factId, model, vector, vector.length);
+    }
   } finally {
     db.close();
   }
@@ -441,10 +536,12 @@ async function runRetrievalBench(repoRoot: string): Promise<RetrievalBenchReport
   const all = await runRetrievalQueries(repoRoot, []);
   const withoutEvidenceFts = await runRetrievalQueries(repoRoot, ['evidenceFts']);
   const withoutFactsFts = await runRetrievalQueries(repoRoot, ['factsFts']);
+  const semanticModels = runSemanticRecallModelBench(repoRoot);
 
   return {
     fixtureId: retrievalFixtureId,
     summary: summarizeRetrieval(all),
+    semanticModels,
     budgets: {
       brief: {
         maxReturnedBytes: Math.max(...all.map((query) => query.returnedBytes)),
@@ -458,6 +555,55 @@ async function runRetrievalBench(repoRoot: string): Promise<RetrievalBenchReport
     },
     queries: all
   };
+}
+
+function runSemanticRecallModelBench(repoRoot: string): SemanticRecallBenchReport {
+  const db = new DatabaseSync(path.join(repoRoot, '.parallax/impact.db'), {
+    readOnly: true
+  });
+  try {
+    const models = semanticRecallSpecs.map((spec) => {
+      const embedding: EmbeddingResult = {
+        model: spec.model,
+        vector: spec.queryVector,
+        dim: spec.queryVector.length
+      };
+      const result = recallSemantic(db, embedding, { k: 5, currentOnly: true });
+      const returnedFactIds = result.facts.map((fact) => fact.id);
+      const topFactId = returnedFactIds[0] ?? null;
+      const recallAt1 = topFactId === spec.expectedFactId ? 1 : 0;
+      const isolated = !returnedFactIds.includes(spec.disallowedFactId);
+      return {
+        model: spec.model,
+        expectedFactId: spec.expectedFactId,
+        disallowedFactId: spec.disallowedFactId,
+        topFactId,
+        returnedFactIds,
+        recallAt1,
+        isolated
+      };
+    });
+    const recallAt1 = ratio(
+      models.filter((model) => model.recallAt1 === 1).length,
+      models.length
+    );
+    const isolation = ratio(
+      models.filter((model) => model.isolated).length,
+      models.length
+    );
+    return {
+      fixtureId: semanticRecallFixtureId,
+      summary: {
+        passed: recallAt1 === 1 && isolation === 1,
+        modelCount: models.length,
+        recallAt1,
+        isolation
+      },
+      models
+    };
+  } finally {
+    db.close();
+  }
 }
 
 async function runRetrievalQueries(
@@ -1383,6 +1529,11 @@ function languageIdForPath(filePath: string): string | undefined {
   if (ext === '.properties') return 'properties';
   if (ext === '.md') return 'markdown';
   return undefined;
+}
+
+function int8Vector(values: readonly number[]): Buffer {
+  const bytes = Int8Array.from(values);
+  return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 }
 
 function ratio(numerator: number, denominator: number): number {

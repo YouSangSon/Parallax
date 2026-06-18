@@ -25,7 +25,7 @@ test('ImpactBench runner writes deterministic report shape', async () => {
     assert.equal(serializedReport.includes(workspaceRoot), false);
     assert.equal(serializedReport.includes(tmpdir()), false);
     assert.equal(serializedReport.includes('impact-bench-fixture-'), false);
-    assert.equal(report.schemaVersion, 2);
+    assert.equal(report.schemaVersion, 3);
     assert.equal(report.fixtureId, 'phase6b-multilanguage-v0');
     assert.equal(report.outputPath, '.parallax/bench/impact-bench-report.json');
     assert.equal(report.summary.passed, true);
@@ -48,6 +48,23 @@ test('ImpactBench runner writes deterministic report shape', async () => {
     assert.equal(report.retrieval.summary.mrr, 1);
     assert.equal(report.retrieval.summary.ndcgAt10, 1);
     assert.ok(report.retrieval.summary.precisionAt5 > 0);
+    const semanticModels = report.retrieval.semanticModels;
+    assert.ok(semanticModels);
+    assert.equal(semanticModels.fixtureId, 'semantic-recall-model-regression-v0');
+    assert.equal(semanticModels.summary.passed, true);
+    assert.equal(semanticModels.summary.modelCount, 2);
+    assert.equal(semanticModels.summary.recallAt1, 1);
+    assert.equal(semanticModels.summary.isolation, 1);
+    assert.deepEqual(
+      semanticModels.models.map((model) => model.model),
+      ['bench-semantic-model-a', 'bench-semantic-model-b']
+    );
+    for (const model of semanticModels.models) {
+      assert.equal(model.recallAt1, 1);
+      assert.equal(model.isolated, true);
+      assert.equal(model.topFactId, model.expectedFactId);
+      assert.equal(model.returnedFactIds.includes(model.disallowedFactId), false);
+    }
     assert.ok(report.retrieval.budgets.brief.maxReturnedBytes <= 5_000);
     assert.equal(report.retrieval.budgets.brief.budgetExceededCount, 0);
     assert.ok(

@@ -234,9 +234,11 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(html, /\.trust-signals \{[\s\S]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/);
     assert.match(html, /aria-label="Affected targets by product lane"/);
     assert.match(html, /\.lang-link \{[\s\S]*min-height: 34px;[\s\S]*text-decoration: none;/);
+    assert.match(html, /\.toolbar \{ min-width: 0; display: flex;/);
     assert.match(html, /\.copy-command \{[\s\S]*min-width: 44px;[\s\S]*min-height: 32px;/);
-    assert.match(html, /@media \(max-width: 560px\)[\s\S]*\.toolbar \{\s*display: grid;\s*grid-template-columns: minmax\(0, 1fr\) minmax\(0, 1fr\);/);
-    assert.match(html, /@media \(max-width: 560px\)[\s\S]*\.lang-switcher \{\s*grid-column: 1 \/ -1;[\s\S]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/);
+    assert.match(html, /@media \(max-width: 560px\)[\s\S]*\.toolbar \{\s*display: grid;\s*grid-template-columns: minmax\(0, 1fr\);/);
+    assert.match(html, /@media \(max-width: 560px\)[\s\S]*\.toolbar \{[\s\S]*width: 100%;[\s\S]*max-width: 100%;/);
+    assert.match(html, /@media \(max-width: 560px\)[\s\S]*\.lang-switcher \{[\s\S]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/);
     assert.match(html, /@media \(max-width: 560px\)[\s\S]*\.toolbar input, \.toolbar select \{[\s\S]*min-height: 44px;/);
     assert.match(html, /@media \(max-width: 980px\)[\s\S]*\.map-content \{\s*grid-template-columns: minmax\(0, 1fr\);\s*height: auto;\s*\}/);
     assert.match(html, /@media \(max-width: 560px\)[\s\S]*\.metrics \{\s*grid-template-columns: none;\s*grid-auto-flow: column;\s*grid-auto-columns: minmax\(96px, 1fr\);/);
@@ -245,7 +247,7 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(html, /@media \(max-width: 560px\)[\s\S]*\.triage-step \{[\s\S]*grid-template-columns: minmax\(78px, 0\.34fr\) minmax\(0, 1fr\);/);
     assert.match(html, /@media \(max-width: 560px\)[\s\S]*\.triage-step:not\(:last-child\)::after \{[\s\S]*content: "↓";/);
     assert.match(html, /@media \(max-width: 560px\)[\s\S]*\.map-next-action \.copy-command, \.delta-preset \.copy-command \{[\s\S]*min-height: 44px;/);
-    assert.match(html, /@media \(max-width: 560px\)[\s\S]*\.impact-svg \{ height: 320px; \}/);
+    assert.match(html, /@media \(max-width: 560px\)[\s\S]*\.impact-svg \{ min-width: 640px; height: auto; \}/);
     assert.match(html, /impact-lane-green[\s\S]*Runtime code[\s\S]*<b>1<\/b>[\s\S]*src\/a\.ts/);
     assert.match(html, /impact-lane-amber[\s\S]*Tests to verify[\s\S]*<b>1<\/b>[\s\S]*tests\/b\.test\.ts/);
     assert.match(html, /impact-lane-teal[\s\S]*Docs &amp; policy[\s\S]*<b>1<\/b>[\s\S]*README\.md/);
@@ -254,6 +256,8 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(html, /Impact Map/);
     assert.match(html, /\.impact-overview \{[\s\S]*align-items: start;/);
     assert.match(html, /\.map-content \{[\s\S]*grid-template-columns: minmax\(0, 1fr\);[\s\S]*min-height: 0;/);
+    assert.match(html, /\.map-frame \{[\s\S]*grid-template-rows: auto auto auto;/);
+    assert.match(html, /\.map-svg-scroll \{[\s\S]*overflow-x: auto;[\s\S]*overscroll-behavior-x: contain;/);
     assert.match(html, /\.map-legend \{[\s\S]*grid-template-columns: minmax\(270px, 1\.15fr\) minmax\(170px, 0\.55fr\) minmax\(210px, 0\.8fr\);/);
     assert.match(html, /\.inspector-evidence \{[\s\S]*max-height: 246px;[\s\S]*overflow: auto;/);
     assert.match(html, /Primary impact flow/);
@@ -272,7 +276,7 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(html, /class="map-edge-group selectable-impact selected-impact"[\s\S]*data-impact-path="tests\/b\.test\.ts"[\s\S]*class="map-edge confidence-proven"/);
     assert.match(html, /marker-end="url\(#impactArrow\)"/);
     assert.match(html, /4 displayed paths/);
-    assert.match(html, /viewBox="0 0 760 /);
+    assert.match(html, /class="impact-svg" width="760" height="\d+" viewBox="0 0 760 /);
     assert.match(html, /class="impact-svg"/);
     assert.match(html, /class="map-legend-edge selectable-impact selected-impact" tabindex="0" role="button" data-impact-path="tests\/b\.test\.ts"/);
     assert.match(html, /Impact Inspector/);

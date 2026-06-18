@@ -59,7 +59,7 @@ export const UI_STYLES_MAIN = `    :root {
     }
     .title h1 { margin: 0; font-size: 22px; line-height: 1.15; }
     .title p { margin: 6px 0 0; color: var(--muted-inverse); font-size: 13px; overflow-wrap: anywhere; }
-    .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+    .toolbar { min-width: 0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
     .toolbar input, .toolbar select {
       min-height: 38px;
       border: 1px solid #566158;
@@ -1027,7 +1027,7 @@ export const UI_STYLES_MAIN = `    :root {
       min-width: 0;
       min-height: 0;
       display: grid;
-      grid-template-rows: auto auto;
+      grid-template-rows: auto auto auto;
       align-content: start;
       align-items: start;
       gap: 12px;
@@ -1035,6 +1035,12 @@ export const UI_STYLES_MAIN = `    :root {
       background:
         linear-gradient(180deg, rgba(24, 33, 27, 0.97), rgba(24, 33, 27, 0.94)),
         #18211b;
+    }
+    .map-svg-scroll {
+      min-width: 0;
+      overflow-x: auto;
+      overscroll-behavior-x: contain;
+      scrollbar-color: #73c2ac rgba(255, 253, 244, 0.08);
     }
     .map-insight {
       display: grid;
@@ -1194,10 +1200,9 @@ export const UI_STYLES_MAIN = `    :root {
     }
     .impact-svg {
       display: block;
-      min-width: 0;
       width: 100%;
-      max-width: 100%;
-      height: 470px;
+      min-width: 720px;
+      height: auto;
       filter: drop-shadow(0 16px 30px rgba(0, 0, 0, 0.18));
     }
     .map-stage {
@@ -1586,7 +1591,7 @@ export const UI_STYLES_MAIN = `    :root {
         max-height: none;
         overflow: visible;
       }
-      .impact-svg { height: 380px; }
+      .impact-svg { min-width: 680px; height: auto; }
     }
     @media (max-width: 560px) {
       .shell { padding: 10px; }
@@ -1605,11 +1610,12 @@ export const UI_STYLES_MAIN = `    :root {
       }
       .toolbar {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        grid-template-columns: minmax(0, 1fr);
+        width: 100%;
+        max-width: 100%;
         gap: 7px;
       }
       .lang-switcher {
-        grid-column: 1 / -1;
         display: grid;
         grid-template-columns: repeat(3, minmax(0, 1fr));
         width: 100%;
@@ -1749,7 +1755,7 @@ export const UI_STYLES_MAIN = `    :root {
         width: 22px;
         height: 22px;
       }
-      .impact-svg { height: 320px; }
+      .impact-svg { min-width: 640px; height: auto; }
       .map-legend { max-height: 300px; padding: 10px; overflow: auto; }
       .impact-row, .workspace-link-row, .action-row { grid-template-columns: 1fr; }
       .action-controls { grid-column: auto; justify-content: flex-start; }

@@ -82,7 +82,9 @@ export function renderImpactMapPanel(graph: UiGraphPreview | null, report: UiRep
         <div class="map-frame">
           ${insight}
           ${routeStrip}
-          ${svg}
+          <div class="map-svg-scroll">
+            ${svg}
+          </div>
         </div>
         <aside class="map-legend" aria-label="${escapeHtml(m.ariaImpactMapLegend)}">
           ${renderImpactInspector(firstImpact, report, m)}
@@ -241,11 +243,13 @@ function renderImpactMapSvg(map: ReturnType<typeof buildImpactMap>, selectedPath
   const leftX = 38;
   const rightX = 462;
   const nodeWidth = 238;
-  const nodeHeight = 66;
+  const nodeHeight = 60;
   const rowCount = Math.max(map.changedNodes.length, map.affectedNodes.length, 1);
-  const height = Math.max(420, 160 + rowCount * 78);
-  const changedPositions = impactNodePositions(map.changedNodes, height);
+  const height = Math.max(420, 132 + rowCount * 64);
   const affectedPositions = impactNodePositions(map.affectedNodes, height);
+  const changedPositions = map.changedNodes.length === 1 && map.affectedNodes.length > 1
+    ? [affectedPositions[0] ?? 96]
+    : impactNodePositions(map.changedNodes, height);
   const yByNode = new Map<string, number>([
     ...map.changedNodes.map((node, index): [string, number] => [node.id, changedPositions[index] ?? 92]),
     ...map.affectedNodes.map((node, index): [string, number] => [node.id, affectedPositions[index] ?? 92])
@@ -277,14 +281,14 @@ function renderImpactMapSvg(map: ReturnType<typeof buildImpactMap>, selectedPath
   ).join('');
 
   return `
-    <svg class="impact-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMin meet" role="img" aria-label="${escapeHtml(m.ariaMapSvg)}">
+    <svg class="impact-svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMin meet" role="img" aria-label="${escapeHtml(m.ariaMapSvg)}">
       <defs>
         <marker id="impactArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
           <path class="map-arrow" d="M 0 0 L 10 5 L 0 10 z" />
         </marker>
       </defs>
-      <rect class="map-stage map-stage-changed" x="24" y="58" width="290" height="${height - 86}" rx="16" />
-      <rect class="map-stage map-stage-affected" x="438" y="58" width="290" height="${height - 86}" rx="16" />
+      <rect class="map-stage map-stage-changed" x="24" y="52" width="290" height="${height - 74}" rx="16" />
+      <rect class="map-stage map-stage-affected" x="438" y="52" width="290" height="${height - 74}" rx="16" />
       <text class="map-column-label" x="${leftX}" y="36">${escapeHtml(m.changedRoot)}</text>
       <text class="map-route-label" x="${(leftX + nodeWidth + rightX) / 2}" y="36" text-anchor="middle">${escapeHtml(m.impactPathLabel)}</text>
       <text class="map-column-label" x="${rightX}" y="36">${escapeHtml(m.affectedTargets)}</text>
@@ -296,7 +300,7 @@ function renderImpactMapSvg(map: ReturnType<typeof buildImpactMap>, selectedPath
 }
 
 function renderImpactMapNode(node: ImpactMapNode, x: number, y: number, width: number, height: number, m: UiMessages, selectedPath?: string): string {
-  const label = compactMapLabel(node.label, 42);
+  const label = compactMapLabel(node.label, node.group === 'affected' ? 30 : 34);
   const roleLabel = node.group === 'affected'
     ? (node.laneLabel ?? m.affectedTargetRole)
     : node.group === 'changed'
@@ -325,8 +329,8 @@ function renderImpactMapNode(node: ImpactMapNode, x: number, y: number, width: n
 
 function impactNodePositions(nodes: ImpactMapNode[], height: number): number[] {
   if (nodes.length === 0) return [];
-  const top = 110;
-  const bottom = height - 64;
+  const top = 96;
+  const bottom = height - 54;
   if (nodes.length === 1) return [(top + bottom) / 2];
   const step = (bottom - top) / (nodes.length - 1);
   return nodes.map((_, index) => top + step * index);

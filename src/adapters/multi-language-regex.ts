@@ -191,7 +191,7 @@ abstract class RegexBackedSemanticAdapter implements SemanticAdapter {
 
 export class TypeScriptJavaScriptSemanticAdapter extends RegexBackedSemanticAdapter {
   override readonly knownGaps = [
-    'TypeScript/JavaScript import, declaration, same-file/named-imported/direct-named-re-exported/star-re-exported/namespace-re-exported/default-imported/direct-default-re-exported/namespace-imported class/interface heritage type relation, imported call-site, local identifier call, method-reference alias call, same-class this.method, same-file class super.method, same-file/direct-new-or-const-alias-inferred/namespace-constructor-inferred/factory-wrapper-inferred/direct-factory-call-receiver/named-imported/direct-named-re-exported/star-re-exported/namespace-imported/namespace-re-exported/default-imported/direct-default-re-exported factory return type instance method call, interface/type-literal method/function-property/function-type-alias signature, same-file/named-imported/direct-named-re-exported/star-re-exported/namespace-re-exported/default-imported/direct-default-re-exported/namespace-imported interface/type-literal typed receiver method call, same-file interface extends typed receiver method call, same-file alias-backed interface extends typed receiver method call, same-file type reference alias typed receiver method call, same-file simple generic type reference typed receiver method call, same-file generic constraint typed receiver method call, same-file intersection type alias typed receiver method call, direct intersection typed receiver method call, same-file simple union typed receiver method call, declared typed local/class field receiver method call, typed local variable instance method call, typed/destructured/named-object parameter instance method call, assertion-wrapped/non-null/parenthesized typed receiver method call, string-literal element access method call, private member receiver method call, array/ReadonlyArray/readonly array element typed receiver method call, constructor parameter property instance method call, constructor assignment instance method call, object literal method/property callable declarations and receiver method calls, class field arrow method caller/target, static class field arrow method call, typed class field instance method call, class field instance method call, same-file new ClassName instance call, and direct new ClassName().method call spans are parser-backed, but broader dynamic dispatch and advanced type relation resolution are not yet complete',
+    'TypeScript/JavaScript import, declaration, same-file/named-imported/direct-named-re-exported/star-re-exported/namespace-re-exported/default-imported/direct-default-re-exported/namespace-imported class/interface heritage type relation, imported call-site, local identifier call, method-reference alias call, same-class this.method, same-file class super.method, same-file/direct-new-or-const-alias-inferred/namespace-constructor-inferred/factory-wrapper-inferred/direct-factory-call-receiver/named-imported/direct-named-re-exported/star-re-exported/namespace-imported/namespace-re-exported/default-imported/direct-default-re-exported factory return type instance method call, interface/type-literal method/function-property/function-type-alias signature, same-file/named-imported/direct-named-re-exported/star-re-exported/namespace-re-exported/default-imported/direct-default-re-exported/namespace-imported interface/type-literal typed receiver method call, same-file interface extends typed receiver method call, same-file alias-backed interface extends typed receiver method call, same-file type reference alias typed receiver method call, same-file simple generic type reference typed receiver method call, same-file generic constraint typed receiver method call, same-file intersection type alias typed receiver method call, direct intersection typed receiver method call, same-file simple union typed receiver method call, declared typed local/class field receiver method call, typed local variable instance method call, typed/destructured/named-object parameter instance method call, assertion-wrapped/non-null/parenthesized typed receiver method call, string-literal element access method call, private member receiver method call, array/ReadonlyArray/readonly array and numeric tuple element typed receiver method call, constructor parameter property instance method call, constructor assignment instance method call, object literal method/property callable declarations and receiver method calls, class field arrow method caller/target, static class field arrow method call, typed class field instance method call, class field instance method call, same-file new ClassName instance call, and direct new ClassName().method call spans are parser-backed, but broader dynamic dispatch and advanced type relation resolution are not yet complete',
     'polymorphism, alias-heavy object flows, generated code, and framework-specific routing may require deeper adapters'
   ];
 
@@ -3522,6 +3522,15 @@ function collectTypeScriptJavaScriptLocalInstanceBindings(
           typeParameterConstraints
         );
         if (elementBinding) addBinding(scope.name, `${node.name.text}[]`, elementBinding);
+        for (const [index, typeNode] of tupleElementTypeNodes(node.type).entries()) {
+          const tupleElementBinding = typeBindingFromTypeNode(
+            typeNode,
+            typeReferenceAliases,
+            typeUnionAliases,
+            typeParameterConstraints
+          );
+          if (tupleElementBinding) addBinding(scope.name, `${node.name.text}[${index}]`, tupleElementBinding);
+        }
       }
     } else if (ts.isVariableDeclaration(node) && ts.isObjectBindingPattern(node.name)) {
       const scope = enclosingLocalCaller(node, localCallables);
@@ -3551,6 +3560,15 @@ function collectTypeScriptJavaScriptLocalInstanceBindings(
           parameterConstraints
         );
         if (elementBinding) addBinding(scope.name, `${node.name.text}[]`, elementBinding);
+        for (const [index, typeNode] of tupleElementTypeNodes(node.type).entries()) {
+          const tupleElementBinding = typeBindingFromTypeNode(
+            typeNode,
+            typeReferenceAliases,
+            typeUnionAliases,
+            parameterConstraints
+          );
+          if (tupleElementBinding) addBinding(scope.name, `${node.name.text}[${index}]`, tupleElementBinding);
+        }
       }
     } else if (ts.isParameter(node) && ts.isObjectBindingPattern(node.name)) {
       const scope = enclosingLocalCaller(node, localCallables);
@@ -3826,6 +3844,28 @@ function arrayElementTypeNode(node: ts.TypeNode | undefined): ts.TypeNode | unde
   return undefined;
 }
 
+function tupleElementTypeNodes(node: ts.TypeNode | undefined): ts.TypeNode[] {
+  if (!node) return [];
+  if (ts.isTypeOperatorNode(node) && node.operator === ts.SyntaxKind.ReadonlyKeyword) {
+    return tupleElementTypeNodes(node.type);
+  }
+  if (!ts.isTupleTypeNode(node)) return [];
+  const elementTypes: ts.TypeNode[] = [];
+  for (const element of node.elements) {
+    const elementType = tupleElementTypeNode(element);
+    if (!elementType) return [];
+    elementTypes.push(elementType);
+  }
+  return elementTypes;
+}
+
+function tupleElementTypeNode(node: ts.TypeNode | ts.NamedTupleMember): ts.TypeNode | undefined {
+  if (ts.isNamedTupleMember(node)) return tupleElementTypeNode(node.type);
+  if (ts.isOptionalTypeNode(node)) return tupleElementTypeNode(node.type);
+  if (ts.isRestTypeNode(node)) return undefined;
+  return node;
+}
+
 function typeReferenceNameText(node: ts.EntityName): string | undefined {
   if (ts.isIdentifier(node)) return node.text;
   const left = typeReferenceNameText(node.left);
@@ -3954,7 +3994,20 @@ function arrayElementReceiverBinding(
   if (elementAccessMemberName(unwrapped)) return undefined;
   const baseName = expressionIdentifierName(unwrapped.expression);
   if (!baseName) return undefined;
+  const tupleIndex = numericElementAccessIndex(unwrapped.argumentExpression);
+  if (tupleIndex !== undefined) {
+    const tupleBinding = localInstanceBindings.get(scopedLocalName(sourceScopeName, `${baseName}[${tupleIndex}]`));
+    if (tupleBinding) return tupleBinding;
+  }
   return localInstanceBindings.get(scopedLocalName(sourceScopeName, `${baseName}[]`));
+}
+
+function numericElementAccessIndex(node: ts.Expression | undefined): number | undefined {
+  if (!node) return undefined;
+  const expression = unwrapTypeScriptJavaScriptReceiverExpression(node);
+  if (!ts.isNumericLiteral(expression)) return undefined;
+  const value = Number(expression.text);
+  return Number.isInteger(value) && value >= 0 ? value : undefined;
 }
 
 function expressionIdentifierName(node: ts.Expression): string | undefined {

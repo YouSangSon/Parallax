@@ -6123,14 +6123,25 @@ test('TypeScript JavaScript adapter records parser-backed array element typed re
     '    return token.length > 0;',
     '  }',
     '}',
+    'class AuditGuard {',
+    '  auditSession(token: string): boolean {',
+    '    return token.length > 1;',
+    '  }',
+    '}',
     '',
     'export function authorize(guards: SessionGuard[], readonlyGuards: readonly SessionGuard[], token: string): boolean {',
     '  const more: Array<SessionGuard> = guards;',
     '  const readonlyMore: readonly SessionGuard[] = readonlyGuards;',
+    '  const pair: [SessionGuard, AuditGuard] = [guards[0], new AuditGuard()];',
+    '  const readonlyPair: readonly [SessionGuard, AuditGuard] = pair;',
     '  return guards[0].validateSession(token)',
     '    && more[1].validateSession(token)',
     '    && readonlyGuards[2].validateSession(token)',
-    '    && readonlyMore[3].validateSession(token);',
+    '    && readonlyMore[3].validateSession(token)',
+    '    && pair[0].validateSession(token)',
+    '    && pair[1].auditSession(token)',
+    '    && readonlyPair[0].validateSession(token)',
+    '    && readonlyPair[1].auditSession(token);',
     '}',
     ''
   ].join('\n'));
@@ -6160,7 +6171,6 @@ test('TypeScript JavaScript adapter records parser-backed array element typed re
           AND target.kind = 'symbol'
           AND source.path = 'src/guard.ts'
           AND target.path = 'src/guard.ts'
-          AND target.symbol = 'SessionGuard.validateSession'
         ORDER BY ev.start_line, ev.start_col, ev.end_col
       `)
       .all(index.indexRunId) as Array<{
@@ -6178,10 +6188,14 @@ test('TypeScript JavaScript adapter records parser-backed array element typed re
         ['authorize', 'SessionGuard.validateSession', 'guards[0].validateSession(token)'],
         ['authorize', 'SessionGuard.validateSession', 'more[1].validateSession(token)'],
         ['authorize', 'SessionGuard.validateSession', 'readonlyGuards[2].validateSession(token)'],
-        ['authorize', 'SessionGuard.validateSession', 'readonlyMore[3].validateSession(token)']
+        ['authorize', 'SessionGuard.validateSession', 'readonlyMore[3].validateSession(token)'],
+        ['authorize', 'SessionGuard.validateSession', 'pair[0].validateSession(token)'],
+        ['authorize', 'AuditGuard.auditSession', 'pair[1].auditSession(token)'],
+        ['authorize', 'SessionGuard.validateSession', 'readonlyPair[0].validateSession(token)'],
+        ['authorize', 'AuditGuard.auditSession', 'readonlyPair[1].auditSession(token)']
       ]
     );
-    assert.deepEqual(calls.map((row) => row.start_line), [10, 11, 12, 13]);
+    assert.deepEqual(calls.map((row) => row.start_line), [17, 18, 19, 20, 21, 22, 23, 24]);
     assert.ok(calls.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
     assert.ok(calls.every((row) => row.provenance.startsWith('instance-call:')));
   } finally {

@@ -4021,6 +4021,17 @@ test('TypeScript JavaScript adapter records parser-backed named object destructu
     'export function authorize({ guard, backup: auditGuard }: SessionContext, { aliasGuard }: AliasContext, { guard: renamedGuard }: RenamedContext, token: string): boolean {',
     '  return guard.validateSession(token) && auditGuard.auditSession(token) && aliasGuard.validateSession(token) && renamedGuard.auditSession(token);',
     '}',
+    '',
+    'export function authorizeFromContext(context: SessionContext, token: string): boolean {',
+    '  const typedContext: SessionContext = context;',
+    '  const { guard: inferredGuard, backup: inferredAuditGuard } = typedContext;',
+    '  const { guard: parameterGuard } = context;',
+    '  return typedContext.guard.validateSession(token)',
+    '    && typedContext["backup"].auditSession(token)',
+    '    && inferredGuard.validateSession(token)',
+    '    && inferredAuditGuard.auditSession(token)',
+    '    && parameterGuard.validateSession(token);',
+    '}',
     ''
   ].join('\n'));
 
@@ -4072,10 +4083,15 @@ test('TypeScript JavaScript adapter records parser-backed named object destructu
         ['authorize', 'SessionGuard.validateSession', 'guard.validateSession(token)'],
         ['authorize', 'SessionGuard.auditSession', 'auditGuard.auditSession(token)'],
         ['authorize', 'SessionGuard.validateSession', 'aliasGuard.validateSession(token)'],
-        ['authorize', 'SessionGuard.auditSession', 'renamedGuard.auditSession(token)']
+        ['authorize', 'SessionGuard.auditSession', 'renamedGuard.auditSession(token)'],
+        ['authorizeFromContext', 'SessionGuard.validateSession', 'typedContext.guard.validateSession(token)'],
+        ['authorizeFromContext', 'SessionGuard.auditSession', 'typedContext["backup"].auditSession(token)'],
+        ['authorizeFromContext', 'SessionGuard.validateSession', 'inferredGuard.validateSession(token)'],
+        ['authorizeFromContext', 'SessionGuard.auditSession', 'inferredAuditGuard.auditSession(token)'],
+        ['authorizeFromContext', 'SessionGuard.validateSession', 'parameterGuard.validateSession(token)']
       ]
     );
-    assert.deepEqual(calls.map((row) => row.start_line), [13, 13, 13, 13]);
+    assert.deepEqual(calls.map((row) => row.start_line), [13, 13, 13, 13, 20, 21, 22, 23, 24]);
     assert.ok(calls.every((row) => row.end_line !== null));
     assert.ok(calls.every((row) => row.start_col !== null));
     assert.ok(calls.every((row) => row.end_col !== null));

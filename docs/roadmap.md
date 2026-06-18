@@ -73,7 +73,8 @@ The UI right now is at the level of a first explorer that reads saved reports an
 
 Without regression signals, there is no guarantee that every change works.
 
-- [ ] A deterministic bench harness based on multi-language fixtures
+- [x] A deterministic bench harness based on multi-language fixtures
+  - Current gate: `bench/impact-bench.ts` builds a fixed TypeScript/JavaScript, JVM/Spring Boot, Python, Go, Rust, OpenAPI, and build-manifest fixture; scores relation recall/precision, affected-file recall, evidence/span coverage, adapter attribution, context-pack readiness, and retrieval quality; and is run by `npm run bench`, `npm test`, and the CI `npm run verify` gate.
 - [ ] Recall quality regression detection when crossing embedding models / LLM providers
 - [ ] Automatically report the bench delta on every PR in CI
 

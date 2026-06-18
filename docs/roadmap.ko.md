@@ -72,6 +72,7 @@ MCP는 read-only로 안정화됐다. 다음은 agent 사용성을 깊게 보는 
 - [x] Impact Summary에 coverage, adapter confidence, known gap을 묶은 Analysis Trust 요약 추가
 - [x] client-updated map, inspector, copy, source, empty-state label까지 localize해 workbench language switcher를 정직하게 유지
 - [x] language/report navigation에서 selected report와 language query state를 함께 보존
+- [x] 선택된 impact의 lane, confidence, evidence 수, 검증 준비 상태를 합친 판정 카드 추가
 
 ## 6. 회고와 측정
 

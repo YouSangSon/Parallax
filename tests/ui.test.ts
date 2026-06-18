@@ -269,6 +269,8 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(html, /\.impact-route-strip \{[\s\S]*display: grid;[\s\S]*grid-template-columns: repeat\(auto-fit, minmax\(188px, 1fr\)\);/);
     assert.match(html, /@media \(max-width: 560px\)[\s\S]*\.impact-route-strip \{\s*grid-template-columns: 1fr;/);
     assert.match(html, /id="mapNextAction" class="map-next-action" aria-label="Next verification command"[\s\S]*<code>npm test -- tests\/b\.test\.ts<\/code>/);
+    assert.match(html, /id="mapImpactVerdict" class="map-impact-verdict impact-verdict-green" aria-label="Selected impact verdict"/);
+    assert.match(html, /id="mapImpactVerdictLabel">Ready to verify/);
     assert.match(html, /aria-label="Copy map verification command"/);
     assert.match(html, /function renderMapAction/);
     assert.match(html, /setText\('mapFlowMeta'[\s\S]*uiMessage\('totalTargets'[\s\S]*uiMessage\('mappedPaths'/);
@@ -284,6 +286,12 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(html, /class="map-legend-edge selectable-impact selected-impact" tabindex="0" role="button" data-impact-path="tests\/b\.test\.ts"/);
     assert.match(html, /Impact Inspector/);
     assert.ok(html.indexOf('Impact Inspector') < html.indexOf('aria-label="Impact map symbols"'));
+    assert.match(html, /id="inspectorVerdict" class="impact-verdict impact-verdict-green" aria-label="Selected impact verdict"/);
+    assert.match(html, /Impact verdict[\s\S]*id="inspectorVerdictLabel">Ready to verify/);
+    assert.match(html, /id="inspectorVerdictMeta">Tests to verify · proven · 2 Evidence hits · command ready/);
+    assert.match(html, /function updateImpactVerdict/);
+    assert.match(html, /mapImpactVerdictMeta/);
+    assert.match(html, /laneLabelForImpact/);
     assert.match(html, /class="map-legend-key" aria-label="Impact map symbols"/);
     assert.match(html, /class="map-route-list" aria-label="Visible impact routes"/);
     assert.ok(html.indexOf('Impact Map') < html.indexOf('Impact Summary'));
@@ -322,6 +330,7 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(koHtml, /<html lang="ko">/);
     assert.match(koHtml, /<script id="ui-messages" type="application\/json">/);
     assert.match(koHtml, /"copyCopied":"복사됨"/);
+    assert.match(koHtml, /영향 판정[\s\S]*검증 준비됨[\s\S]*검증할 테스트 · proven · 2 증거 적중 · 명령 준비됨/);
     assert.match(koHtml, /영향 맵[\s\S]*1 변경됨[\s\S]*3 전체 영향[\s\S]*4 표시 경로/);
     assert.match(koHtml, /주요 영향 흐름[\s\S]*VERIFY · 3 전체 대상 · 4 표시 경로 · proven 신뢰도/);
     assert.match(koHtml, /uiMessage\('noVerificationActionRecorded'/);

@@ -1082,6 +1082,38 @@ export const UI_STYLES_MAIN = `    :root {
       line-height: 1.35;
       overflow-wrap: anywhere;
     }
+    .map-flow-aside {
+      display: grid;
+      gap: 8px;
+      min-width: 0;
+    }
+    .map-impact-verdict {
+      display: grid;
+      gap: 3px;
+      min-width: 0;
+      padding: 8px;
+      border: 1px solid rgba(115, 194, 172, 0.32);
+      border-radius: 8px;
+      background: rgba(234, 249, 241, 0.08);
+    }
+    .map-impact-verdict span {
+      color: #a8caba;
+      font-size: 10px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+    .map-impact-verdict strong {
+      color: #f8fff9;
+      font-size: 12px;
+      line-height: 1.15;
+      overflow-wrap: anywhere;
+    }
+    .map-impact-verdict small {
+      color: #c9d8cf;
+      font-size: 11px;
+      line-height: 1.25;
+      overflow-wrap: anywhere;
+    }
     .map-next-action {
       min-width: 0;
       display: grid;
@@ -1449,6 +1481,85 @@ export const UI_STYLES_MAIN = `    :root {
       color: var(--muted);
       overflow-wrap: anywhere;
       font-size: 12px;
+    }
+    .impact-verdict {
+      display: grid;
+      gap: 3px;
+      padding: 8px;
+      border: 1px solid #b8d5c9;
+      border-radius: 8px;
+      background: #fbfffc;
+    }
+    .impact-verdict span {
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+    .impact-verdict strong {
+      color: var(--green);
+      font-size: 14px;
+      line-height: 1.18;
+    }
+    .impact-verdict small {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.3;
+      overflow-wrap: anywhere;
+    }
+    .impact-verdict-green {
+      border-color: #8cc8b5;
+      background: #f4fbf7;
+      box-shadow: inset 3px 0 0 var(--green);
+    }
+    .impact-verdict-teal {
+      border-color: #9fd4d8;
+      background: #f2fbfc;
+      box-shadow: inset 3px 0 0 var(--teal);
+    }
+    .impact-verdict-amber {
+      border-color: #e0c58f;
+      background: #fff8eb;
+      box-shadow: inset 3px 0 0 var(--amber);
+    }
+    .impact-verdict-red {
+      border-color: #e3a6a0;
+      background: #fff4f2;
+      box-shadow: inset 3px 0 0 var(--red);
+    }
+    .impact-verdict-amber strong { color: var(--amber); }
+    .impact-verdict-red strong { color: var(--red); }
+    .impact-verdict-teal strong { color: var(--teal); }
+    .map-impact-verdict.impact-verdict-green,
+    .map-impact-verdict.impact-verdict-teal,
+    .map-impact-verdict.impact-verdict-amber,
+    .map-impact-verdict.impact-verdict-red {
+      background: rgba(234, 249, 241, 0.08);
+      border-color: rgba(115, 194, 172, 0.42);
+    }
+    .map-impact-verdict.impact-verdict-green {
+      box-shadow: inset 3px 0 0 var(--green);
+    }
+    .map-impact-verdict.impact-verdict-teal {
+      box-shadow: inset 3px 0 0 var(--teal);
+    }
+    .map-impact-verdict.impact-verdict-amber {
+      box-shadow: inset 3px 0 0 var(--amber);
+    }
+    .map-impact-verdict.impact-verdict-red {
+      box-shadow: inset 3px 0 0 var(--red);
+    }
+    .map-impact-verdict span {
+      color: #a8caba;
+    }
+    .map-impact-verdict strong,
+    .map-impact-verdict.impact-verdict-amber strong,
+    .map-impact-verdict.impact-verdict-red strong,
+    .map-impact-verdict.impact-verdict-teal strong {
+      color: #f8fff9;
+    }
+    .map-impact-verdict small {
+      color: #c9d8cf;
     }
     .impact-inspector dl {
       display: grid;

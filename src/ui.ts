@@ -543,6 +543,11 @@ type UiMessageKey =
   | 'blastRadius' | 'changedRoot' | 'affectedTargets' | 'nextVerification' | 'affectedTargetEmpty'
   | 'contextNode' | 'source' | 'target' | 'affectedTargetRole' | 'changedInput'
   | 'targets' | 'totalAffected' | 'totalTargets' | 'mappedPaths' | 'confidenceInline'
+  | 'runtimeCode' | 'testsToVerify' | 'docsPolicy' | 'contractsLane' | 'configInfra'
+  | 'noSourceFilesAffected' | 'noTestTargetDetected' | 'noKnowledgeArtifactAffected'
+  | 'noApiContractAffected' | 'noConfigSurfaceAffected' | 'moreAffected'
+  | 'impactVerdict' | 'readyToVerify' | 'evidenceReady' | 'reviewBeforeChange'
+  | 'needsEvidence' | 'commandReady' | 'noCommandShort'
   | 'backToWorkbench' | 'lineLabel'
   // Buttons / actions
   | 'copy' | 'copyConfig' | 'copyVerify' | 'copyCopied' | 'copyFailed' | 'verify' | 'review'
@@ -577,6 +582,7 @@ type UiMessageKey =
   | 'ariaImpactMap' | 'ariaImpactMapLegend' | 'ariaImpactMapSymbols' | 'ariaVisibleRoutes'
   | 'ariaRankedRoutes' | 'ariaPrimaryImpactFlow' | 'ariaNextVerificationCommand'
   | 'ariaCopyMapCommand' | 'ariaImpactInspector' | 'ariaCopyInspectorCommand'
+  | 'ariaImpactVerdict'
   | 'ariaRelationTrail' | 'ariaMapSvg' | 'ariaInspectImpactPath' | 'ariaOpenSourceLabel'
   | 'ariaCopyConfigPrefix' | 'ariaCopyCommandSuffix' | 'ariaCopyVerifyForPrefix'
   | 'ariaImpactOverview' | 'ariaImpactWorkbench';
@@ -610,6 +616,14 @@ const UI_MESSAGES: Record<UiLanguage, UiMessages> = {
     affectedTargetRole: 'Affected target', changedInput: 'Changed input',
     targets: 'targets', totalAffected: 'total affected', totalTargets: 'total targets',
     mappedPaths: 'mapped paths', confidenceInline: 'confidence',
+    runtimeCode: 'Runtime code', testsToVerify: 'Tests to verify',
+    docsPolicy: 'Docs & policy', contractsLane: 'Contracts', configInfra: 'Config & infra',
+    noSourceFilesAffected: 'No source files affected', noTestTargetDetected: 'No test target detected',
+    noKnowledgeArtifactAffected: 'No knowledge artifact affected',
+    noApiContractAffected: 'No API contract affected', noConfigSurfaceAffected: 'No config surface affected',
+    moreAffected: 'more', impactVerdict: 'Impact verdict', readyToVerify: 'Ready to verify',
+    evidenceReady: 'Evidence ready', reviewBeforeChange: 'Review before change',
+    needsEvidence: 'Needs evidence', commandReady: 'command ready', noCommandShort: 'no command',
     backToWorkbench: 'Back to Impact Workbench', lineLabel: 'Line',
     copy: 'Copy', copyConfig: 'Copy config', copyVerify: 'Copy verify',
     copyCopied: 'Copied', copyFailed: 'Copy failed',
@@ -654,7 +668,8 @@ const UI_MESSAGES: Record<UiLanguage, UiMessages> = {
     ariaVisibleRoutes: 'Visible impact routes', ariaRankedRoutes: 'Ranked impact route summary',
     ariaPrimaryImpactFlow: 'Primary impact flow', ariaNextVerificationCommand: 'Next verification command',
     ariaCopyMapCommand: 'Copy map verification command', ariaImpactInspector: 'Impact inspector',
-    ariaCopyInspectorCommand: 'Copy inspector verification command', ariaRelationTrail: 'Relation trail',
+    ariaCopyInspectorCommand: 'Copy inspector verification command',
+    ariaImpactVerdict: 'Selected impact verdict', ariaRelationTrail: 'Relation trail',
     ariaMapSvg: 'Changed entities connected to affected targets', ariaInspectImpactPath: 'Inspect impact path',
     ariaOpenSourceLabel: 'Open source', ariaCopyConfigPrefix: 'Copy', ariaCopyCommandSuffix: 'command',
     ariaCopyVerifyForPrefix: 'Copy verification command for',
@@ -686,6 +701,14 @@ const UI_MESSAGES: Record<UiLanguage, UiMessages> = {
     affectedTargetRole: '영향받은 대상', changedInput: '변경 입력',
     targets: '대상', totalAffected: '전체 영향', totalTargets: '전체 대상',
     mappedPaths: '표시 경로', confidenceInline: '신뢰도',
+    runtimeCode: '런타임 코드', testsToVerify: '검증할 테스트',
+    docsPolicy: '문서 및 정책', contractsLane: '계약', configInfra: '설정 및 인프라',
+    noSourceFilesAffected: '영향받은 소스 파일 없음', noTestTargetDetected: '감지된 테스트 대상 없음',
+    noKnowledgeArtifactAffected: '영향받은 지식 산출물 없음',
+    noApiContractAffected: '영향받은 API 계약 없음', noConfigSurfaceAffected: '영향받은 설정 표면 없음',
+    moreAffected: '추가', impactVerdict: '영향 판정', readyToVerify: '검증 준비됨',
+    evidenceReady: '증거 준비됨', reviewBeforeChange: '변경 전 검토 필요',
+    needsEvidence: '증거 필요', commandReady: '명령 준비됨', noCommandShort: '명령 없음',
     backToWorkbench: 'Impact Workbench로 돌아가기', lineLabel: '줄',
     copy: '복사', copyConfig: '설정 복사', copyVerify: '검증 복사',
     copyCopied: '복사됨', copyFailed: '복사 실패',
@@ -730,7 +753,8 @@ const UI_MESSAGES: Record<UiLanguage, UiMessages> = {
     ariaVisibleRoutes: '표시된 영향 경로', ariaRankedRoutes: '순위별 영향 경로 요약',
     ariaPrimaryImpactFlow: '주요 영향 흐름', ariaNextVerificationCommand: '다음 검증 명령',
     ariaCopyMapCommand: '맵 검증 명령 복사', ariaImpactInspector: '영향 인스펙터',
-    ariaCopyInspectorCommand: '인스펙터 검증 명령 복사', ariaRelationTrail: '관계 경로',
+    ariaCopyInspectorCommand: '인스펙터 검증 명령 복사',
+    ariaImpactVerdict: '선택한 영향 판정', ariaRelationTrail: '관계 경로',
     ariaMapSvg: '변경 엔티티와 영향받은 대상 연결', ariaInspectImpactPath: '영향 경로 점검',
     ariaOpenSourceLabel: '소스 열기', ariaCopyConfigPrefix: '복사', ariaCopyCommandSuffix: '명령',
     ariaCopyVerifyForPrefix: '검증 명령 복사 대상',
@@ -762,6 +786,14 @@ const UI_MESSAGES: Record<UiLanguage, UiMessages> = {
     affectedTargetRole: '受影响目标', changedInput: '变更输入',
     targets: '目标', totalAffected: '总受影响', totalTargets: '总目标',
     mappedPaths: '已绘制路径', confidenceInline: '置信度',
+    runtimeCode: '运行时代码', testsToVerify: '需验证测试',
+    docsPolicy: '文档与策略', contractsLane: '契约', configInfra: '配置与基础设施',
+    noSourceFilesAffected: '无受影响源文件', noTestTargetDetected: '未检测到测试目标',
+    noKnowledgeArtifactAffected: '无受影响知识产物',
+    noApiContractAffected: '无受影响 API 契约', noConfigSurfaceAffected: '无受影响配置表面',
+    moreAffected: '更多', impactVerdict: '影响判定', readyToVerify: '可验证',
+    evidenceReady: '证据就绪', reviewBeforeChange: '变更前需审查',
+    needsEvidence: '需要证据', commandReady: '命令就绪', noCommandShort: '无命令',
     backToWorkbench: '返回 Impact Workbench', lineLabel: '行',
     copy: '复制', copyConfig: '复制配置', copyVerify: '复制验证',
     copyCopied: '已复制', copyFailed: '复制失败',
@@ -806,7 +838,8 @@ const UI_MESSAGES: Record<UiLanguage, UiMessages> = {
     ariaVisibleRoutes: '可见影响路径', ariaRankedRoutes: '排序影响路径摘要',
     ariaPrimaryImpactFlow: '主要影响流', ariaNextVerificationCommand: '下一步验证命令',
     ariaCopyMapCommand: '复制图验证命令', ariaImpactInspector: '影响检查器',
-    ariaCopyInspectorCommand: '复制检查器验证命令', ariaRelationTrail: '关系路径',
+    ariaCopyInspectorCommand: '复制检查器验证命令',
+    ariaImpactVerdict: '所选影响判定', ariaRelationTrail: '关系路径',
     ariaMapSvg: '变更实体连接到受影响目标', ariaInspectImpactPath: '检查影响路径',
     ariaOpenSourceLabel: '打开源', ariaCopyConfigPrefix: '复制', ariaCopyCommandSuffix: '命令',
     ariaCopyVerifyForPrefix: '复制验证命令，目标',

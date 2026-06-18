@@ -142,6 +142,48 @@ export const UI_CLIENT_JS = `    const snapshot = JSON.parse(document.getElement
         target.append(row);
       }
     }
+    function laneLabelForImpact(item, hasCommand) {
+      const pathLower = String(item?.path || '').toLowerCase();
+      const reasonLower = String(item?.reason || '').toLowerCase();
+      if (hasCommand || /(^|\\/)(tests?|__tests__)\\/|(^|\\/)src\\/test\\//.test(pathLower) || /(\\.|-)(test|spec)\\.[cm]?[tj]sx?$/.test(pathLower)) {
+        return uiMessage('testsToVerify', 'Tests to verify');
+      }
+      if (pathLower.endsWith('.md') || /(^|\\/)(docs|doc|policies|policy|proposals|prd|requirements|decisions|adr)\\//.test(pathLower) || /\\b(governs|documents|requires|proposes)\\b/.test(reasonLower)) {
+        return uiMessage('docsPolicy', 'Docs & policy');
+      }
+      if (/(^|\\/)(contracts?|apis?)\\//.test(pathLower) || /(^|[-_.])(openapi|asyncapi)([-_.]|$)/.test(pathLower) || /\\.(proto|graphql|gql|avsc)$/.test(pathLower) || /\\bcontract|endpoint|asyncapi|openapi|graphql|protobuf\\b/.test(reasonLower)) {
+        return uiMessage('contractsLane', 'Contracts');
+      }
+      if (/(^|\\/)(\\.github\\/workflows|terraform|infra|deploy|k8s|helm)\\//.test(pathLower) || /(^|\\/)(dockerfile|makefile|compose\\.ya?ml)$/.test(pathLower) || /\\.(ya?ml|toml|json|jsonc|env|tf|tfvars|hcl|ini)$/.test(pathLower) || /(^|\\/)(package\\.json|pom\\.xml|build\\.gradle(?:\\.kts)?|go\\.mod|cargo\\.toml|pyproject\\.toml)$/.test(pathLower) || /\\b(configures|workflow|infra)\\b/.test(reasonLower)) {
+        return uiMessage('configInfra', 'Config & infra');
+      }
+      return uiMessage('runtimeCode', 'Runtime code');
+    }
+    function updateImpactVerdict(item, evidenceCount, hasCommand) {
+      let tone = 'teal';
+      let label = uiMessage('evidenceReady', 'Evidence ready');
+      if (evidenceCount === 0) {
+        tone = 'red';
+        label = uiMessage('needsEvidence', 'Needs evidence');
+      } else if (item.confidence === 'heuristic' || item.confidence === 'unknown') {
+        tone = 'amber';
+        label = uiMessage('reviewBeforeChange', 'Review before change');
+      } else if (hasCommand) {
+        tone = 'green';
+        label = uiMessage('readyToVerify', 'Ready to verify');
+      }
+      const meta = laneLabelForImpact(item, hasCommand) + ' · ' + item.confidence + ' · ' + evidenceCount + ' '
+        + uiMessage('evidenceHits', 'Evidence hits') + ' · '
+        + (hasCommand ? uiMessage('commandReady', 'command ready') : uiMessage('noCommandShort', 'no command'));
+      const target = document.getElementById('inspectorVerdict');
+      if (target) target.className = 'impact-verdict impact-verdict-' + tone;
+      setText('inspectorVerdictLabel', label);
+      setText('inspectorVerdictMeta', meta);
+      const mapTarget = document.getElementById('mapImpactVerdict');
+      if (mapTarget) mapTarget.className = 'map-impact-verdict impact-verdict-' + tone;
+      setText('mapImpactVerdictLabel', label);
+      setText('mapImpactVerdictMeta', meta);
+    }
     function confidenceRank(confidence) {
       if (confidence === 'proven') return 0;
       if (confidence === 'inferred') return 1;
@@ -163,6 +205,8 @@ export const UI_CLIENT_JS = `    const snapshot = JSON.parse(document.getElement
       const item = affectedFiles.find((candidate) => candidate.path === path);
       if (!item) return;
       const matchingEvidence = evidenceForPath(path);
+      const selectedAction = actionItems.find((candidate) => candidate.target?.path === path);
+      const selectedCommand = actionCommandText(selectedAction);
       const mapInsight = document.querySelector('.map-insight');
       const primaryChange = mapInsight?.getAttribute('data-primary-change') || uiMessage('changedRoot', 'Changed root');
       const affectedCount = mapInsight?.getAttribute('data-affected-count') || String(affectedFiles.length);
@@ -183,6 +227,7 @@ export const UI_CLIENT_JS = `    const snapshot = JSON.parse(document.getElement
       setText('inspectorConfidence', item.confidence);
       setText('inspectorRelation', item.relationPath?.join(' -> ') || uiMessage('directOrNotRecorded', 'direct or not recorded'));
       setText('inspectorEvidence', String(matchingEvidence.length));
+      updateImpactVerdict(item, matchingEvidence.length, Boolean(selectedCommand));
       renderInspectorAction(path);
       renderInspectorEvidence(matchingEvidence);
       const firstEvidence = Array.from(document.querySelectorAll('.evidence-row'))

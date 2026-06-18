@@ -72,6 +72,7 @@ The UI right now is at the level of a first explorer that reads saved reports an
 - [x] Add an Analysis Trust summary to the Impact Summary that bundles coverage, adapter confidence, and known gap
 - [x] Keep the workbench language switcher honest by localizing client-updated map, inspector, copy, source, and empty-state labels
 - [x] Preserve selected report and language query state together across language and report navigation
+- [x] Add a selected-impact verdict card that combines lane, confidence, evidence count, and verification readiness
 
 ## 6. Retrospective and measurement
 

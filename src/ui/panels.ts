@@ -44,8 +44,8 @@ export function renderImpactSummaryPanel(snapshot: UiSnapshot, m: UiMessages): s
   const affectedFiles = topAffectedFilesForSummary(report).slice(0, 4);
   const primaryChange = report.changed[0] ? entityLabel(report.changed[0]) : report.changedFiles[0] ?? 'unknown change';
   const blast = blastRadiusLabel(report.affectedCount);
-  const displayedPathCount = buildImpactMap(snapshot.graph, report).edges.length;
-  const impactLanes = buildImpactLanes(report, snapshot.workArtifacts);
+  const displayedPathCount = buildImpactMap(snapshot.graph, report, m).edges.length;
+  const impactLanes = buildImpactLanes(report, snapshot.workArtifacts, m);
   const trustSummary = renderAnalysisTrustSummary(snapshot, report, m);
   const confidenceRows = ['proven', 'inferred', 'heuristic', 'unknown'].map((confidence) => {
     const count = report.affectedFiles.filter((item) => item.confidence === confidence).length;
@@ -170,7 +170,7 @@ export function renderImpactTriageStrip(snapshot: UiSnapshot, m: UiMessages): st
     `;
   }
 
-  const map = buildImpactMap(snapshot.graph, report);
+  const map = buildImpactMap(snapshot.graph, report, m);
   const affectedFiles = [...report.affectedFiles].sort(compareAffectedFilesForUi);
   const primaryChange = report.changed[0] ? entityLabel(report.changed[0]) : report.changedFiles[0] ?? 'unknown change';
   const topTargetPath = affectedFiles[0]?.path;
@@ -227,13 +227,17 @@ export function renderImpactTriageStrip(snapshot: UiSnapshot, m: UiMessages): st
   `;
 }
 
-export function buildImpactLanes(report: UiReportPreview, workArtifacts: readonly UiWorkArtifactImpact[]): ImpactLane[] {
+export function buildImpactLanes(
+  report: UiReportPreview,
+  workArtifacts: readonly UiWorkArtifactImpact[],
+  m?: UiMessages
+): ImpactLane[] {
   const lanes: ImpactLane[] = [
-    { id: 'code', label: 'Runtime code', count: 0, summary: 'No source files affected', tone: 'green' },
-    { id: 'tests', label: 'Tests to verify', count: 0, summary: 'No test target detected', tone: 'amber' },
-    { id: 'knowledge', label: 'Docs & policy', count: 0, summary: 'No knowledge artifact affected', tone: 'teal' },
-    { id: 'contracts', label: 'Contracts', count: 0, summary: 'No API contract affected', tone: 'red' },
-    { id: 'config', label: 'Config & infra', count: 0, summary: 'No config surface affected', tone: 'blue' }
+    { id: 'code', label: m?.runtimeCode ?? 'Runtime code', count: 0, summary: m?.noSourceFilesAffected ?? 'No source files affected', tone: 'green' },
+    { id: 'tests', label: m?.testsToVerify ?? 'Tests to verify', count: 0, summary: m?.noTestTargetDetected ?? 'No test target detected', tone: 'amber' },
+    { id: 'knowledge', label: m?.docsPolicy ?? 'Docs & policy', count: 0, summary: m?.noKnowledgeArtifactAffected ?? 'No knowledge artifact affected', tone: 'teal' },
+    { id: 'contracts', label: m?.contractsLane ?? 'Contracts', count: 0, summary: m?.noApiContractAffected ?? 'No API contract affected', tone: 'red' },
+    { id: 'config', label: m?.configInfra ?? 'Config & infra', count: 0, summary: m?.noConfigSurfaceAffected ?? 'No config surface affected', tone: 'blue' }
   ];
   const laneById = new Map(lanes.map((lane) => [lane.id, lane]));
   const pathsByLane = new Map<ImpactLane['id'], UiReportPreview['affectedFiles']>();
@@ -251,7 +255,7 @@ export function buildImpactLanes(report: UiReportPreview, workArtifacts: readonl
     if (topPath) lane.topPath = topPath;
     if (lane.count > 0) {
       lane.summary = lane.topPath
-        ? `${lane.topPath}${lane.count > 1 ? ` +${lane.count - 1} more` : ''}`
+        ? `${lane.topPath}${lane.count > 1 ? ` +${lane.count - 1} ${m?.moreAffected ?? 'more'}` : ''}`
         : `${lane.count} affected target${lane.count === 1 ? '' : 's'}`;
     }
   }
@@ -262,9 +266,9 @@ export function buildImpactLanes(report: UiReportPreview, workArtifacts: readonl
     const extraArtifactCount = workArtifacts.filter((item) => !affectedKnowledgePaths.has(item.path)).length;
     knowledgeLane.count += extraArtifactCount;
     if (!knowledgeLane.topPath) {
-      knowledgeLane.summary = `${workArtifacts[0]?.displayName ?? workArtifacts[0]?.path}${knowledgeLane.count > 1 ? ` +${knowledgeLane.count - 1} more` : ''}`;
+      knowledgeLane.summary = `${workArtifacts[0]?.displayName ?? workArtifacts[0]?.path}${knowledgeLane.count > 1 ? ` +${knowledgeLane.count - 1} ${m?.moreAffected ?? 'more'}` : ''}`;
     } else if (extraArtifactCount > 0) {
-      knowledgeLane.summary = `${knowledgeLane.topPath} +${knowledgeLane.count - 1} more`;
+      knowledgeLane.summary = `${knowledgeLane.topPath} +${knowledgeLane.count - 1} ${m?.moreAffected ?? 'more'}`;
     }
   }
 

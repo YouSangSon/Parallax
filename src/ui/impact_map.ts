@@ -35,7 +35,7 @@ export function renderImpactMapPanel(
   m: UiMessages,
   sourceContext: SourceLinkContext = {}
 ): string {
-  const map = buildImpactMap(graph, report);
+  const map = buildImpactMap(graph, report, m);
   const firstImpact = report ? initialImpactForUi(report) : undefined;
   const displayedPathCount = map.edges.length;
   const totalAffectedCount = report?.affectedCount ?? map.affectedNodes.length;
@@ -59,7 +59,17 @@ export function renderImpactMapPanel(
   const selectedPath = firstImpact?.path;
   const svg = renderImpactMapSvg(map, selectedPath, m);
   const selectedAction = selectedPath && report ? actionByTargetPath(report.actions).get(selectedPath) : undefined;
-  const insight = renderImpactMapInsight(map, totalAffectedCount, displayedPathCount, m, firstImpact?.path, selectedAction);
+  const selectedEvidenceCount = firstImpact && report ? impactEvidenceForPath(report.evidence, firstImpact.path).length : 0;
+  const insight = renderImpactMapInsight(
+    map,
+    totalAffectedCount,
+    displayedPathCount,
+    m,
+    firstImpact?.path,
+    selectedAction,
+    firstImpact,
+    selectedEvidenceCount
+  );
   const routeStrip = renderImpactRouteStrip(map, m, selectedPath);
   const edgeRows = map.edges.slice(0, 6).map((edge) => {
     const from = map.nodeById.get(edge.from);
@@ -132,7 +142,9 @@ export function renderImpactMapInsight(
   displayedPathCount: number,
   m: UiMessages,
   selectedPath?: string,
-  action?: ImpactAction
+  action?: ImpactAction,
+  selectedImpact?: UiReportPreview['affectedFiles'][number],
+  selectedEvidenceCount = 0
 ): string {
   const primaryChange = map.changedNodes[0]?.label ?? m.changedRoot;
   const primaryTarget = selectedPath
@@ -149,7 +161,26 @@ export function renderImpactMapInsight(
         <strong id="mapFlowPath">${escapeHtml(shortenMiddle(primaryChange, 34))} <em>&rarr;</em> ${escapeHtml(shortenMiddle(primaryTargetLabel, 34))}</strong>
         <small id="mapFlowMeta">${escapeHtml(relation)} · ${escapeHtml(String(totalAffectedCount))} ${escapeHtml(m.totalTargets)} · ${escapeHtml(String(displayedPathCount))} ${escapeHtml(m.mappedPaths)} · ${escapeHtml(confidence)} ${escapeHtml(m.confidenceInline)}</small>
       </div>
-      ${renderMapNextAction(action, m)}
+      <div class="map-flow-aside">
+        ${renderMapImpactVerdict(selectedImpact, selectedEvidenceCount, action, m)}
+        ${renderMapNextAction(action, m)}
+      </div>
+    </div>
+  `;
+}
+
+export function renderMapImpactVerdict(
+  item: UiReportPreview['affectedFiles'][number] | undefined,
+  evidenceCount: number,
+  action: ImpactAction | undefined,
+  m: UiMessages
+): string {
+  const verdict = impactVerdict(item, evidenceCount, action, m);
+  return `
+    <div id="mapImpactVerdict" class="map-impact-verdict impact-verdict-${escapeHtml(verdict.tone)}" aria-label="${escapeHtml(m.ariaImpactVerdict)}">
+      <span>${escapeHtml(m.impactVerdict)}</span>
+      <strong id="mapImpactVerdictLabel">${escapeHtml(verdict.label)}</strong>
+      <small id="mapImpactVerdictMeta">${escapeHtml(verdict.meta)}</small>
     </div>
   `;
 }
@@ -175,7 +206,8 @@ export function renderMapNextAction(action: ImpactAction | undefined, m: UiMessa
 
 export function buildImpactMap(
   graph: UiGraphPreview | null,
-  report: UiReportPreview | null
+  report: UiReportPreview | null,
+  m?: UiMessages
 ): {
   changedNodes: ImpactMapNode[];
   affectedNodes: ImpactMapNode[];
@@ -194,7 +226,7 @@ export function buildImpactMap(
   const actionTargets = new Set((report?.actions ?? []).map((action) => action.target.path).filter((value): value is string => Boolean(value)));
   const affectedNodes = uniqueImpactMapNodes([
     ...(report ? topAffectedFilesForSummary(report) : []).map((item): ImpactMapNode => {
-      const lane = impactLaneDisplay(classifyImpactLane(item.path, item.reason, actionTargets));
+      const lane = impactLaneDisplay(classifyImpactLane(item.path, item.reason, actionTargets), m);
       return {
         id: `file:${item.path}`,
         label: item.path,
@@ -377,12 +409,12 @@ function uniqueImpactMapNodes(nodes: ImpactMapNode[]): ImpactMapNode[] {
   return [...byId.values()];
 }
 
-function impactLaneDisplay(id: ImpactLaneId): Pick<ImpactLane, 'label' | 'tone'> {
-  if (id === 'tests') return { label: 'Tests to verify', tone: 'amber' };
-  if (id === 'knowledge') return { label: 'Docs & policy', tone: 'teal' };
-  if (id === 'contracts') return { label: 'Contracts', tone: 'red' };
-  if (id === 'config') return { label: 'Config & infra', tone: 'blue' };
-  return { label: 'Runtime code', tone: 'green' };
+function impactLaneDisplay(id: ImpactLaneId, m?: UiMessages): Pick<ImpactLane, 'label' | 'tone'> {
+  if (id === 'tests') return { label: m?.testsToVerify ?? 'Tests to verify', tone: 'amber' };
+  if (id === 'knowledge') return { label: m?.docsPolicy ?? 'Docs & policy', tone: 'teal' };
+  if (id === 'contracts') return { label: m?.contractsLane ?? 'Contracts', tone: 'red' };
+  if (id === 'config') return { label: m?.configInfra ?? 'Config & infra', tone: 'blue' };
+  return { label: m?.runtimeCode ?? 'Runtime code', tone: 'green' };
 }
 
 function impactPathLabel(item: UiReportPreview['affectedFiles'][number], actionTargets: ReadonlySet<string> = new Set()): string {
@@ -410,11 +442,13 @@ function renderImpactInspector(
 ): string {
   const evidence = item && report ? impactEvidenceForPath(report.evidence, item.path) : [];
   const action = item && report ? actionByTargetPath(report.actions).get(item.path) : undefined;
+  const verdict = renderImpactVerdict(item, evidence.length, action, m);
   return `
     <section class="impact-inspector" aria-live="polite" aria-label="${escapeHtml(m.ariaImpactInspector)}">
       <h3>${escapeHtml(m.impactInspector)}</h3>
       <strong id="inspectorPath">${escapeHtml(item?.path ?? m.noAffectedTargetSelected)}</strong>
       <span id="inspectorReason">${escapeHtml(item?.reason ?? m.selectAffectedTarget)}</span>
+      ${verdict}
       <section class="inspector-action">
         <h4>${escapeHtml(m.nextVerification)}</h4>
         <div id="inspectorAction">${renderInspectorAction(action, m)}</div>
@@ -443,6 +477,44 @@ function renderImpactInspector(
       </section>
     </section>
   `;
+}
+
+function renderImpactVerdict(
+  item: UiReportPreview['affectedFiles'][number] | undefined,
+  evidenceCount: number,
+  action: ImpactAction | undefined,
+  m: UiMessages
+): string {
+  const verdict = impactVerdict(item, evidenceCount, action, m);
+  return `
+    <section id="inspectorVerdict" class="impact-verdict impact-verdict-${escapeHtml(verdict.tone)}" aria-label="${escapeHtml(m.ariaImpactVerdict)}">
+      <span>${escapeHtml(m.impactVerdict)}</span>
+      <strong id="inspectorVerdictLabel">${escapeHtml(verdict.label)}</strong>
+      <small id="inspectorVerdictMeta">${escapeHtml(verdict.meta)}</small>
+    </section>
+  `;
+}
+
+function impactVerdict(
+  item: UiReportPreview['affectedFiles'][number] | undefined,
+  evidenceCount: number,
+  action: ImpactAction | undefined,
+  m: UiMessages
+): { label: string; meta: string; tone: 'green' | 'teal' | 'amber' | 'red' | 'empty' } {
+  if (!item) return { label: m.selectAffectedTarget, meta: m.noAffectedTargetSelected, tone: 'empty' };
+  const hasEvidence = evidenceCount > 0;
+  const hasCommand = Boolean(action && actionCommandText(action));
+  const lane = impactLaneDisplay(
+    classifyImpactLane(item.path, item.reason, hasCommand ? new Set([item.path]) : new Set()),
+    m
+  );
+  const meta = `${lane.label} · ${item.confidence} · ${evidenceCount} ${m.evidenceHits} · ${hasCommand ? m.commandReady : m.noCommandShort}`;
+  if (!hasEvidence) return { label: m.needsEvidence, meta, tone: 'red' };
+  if (item.confidence === 'heuristic' || item.confidence === 'unknown') {
+    return { label: m.reviewBeforeChange, meta, tone: 'amber' };
+  }
+  if (hasCommand) return { label: m.readyToVerify, meta, tone: 'green' };
+  return { label: m.evidenceReady, meta, tone: 'teal' };
 }
 
 function renderInspectorAction(action: ImpactAction | undefined, m: UiMessages): string {

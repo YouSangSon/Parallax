@@ -6131,6 +6131,21 @@ test('TypeScript JavaScript adapter records parser-backed array element typed re
     'type GuardList = SessionGuard[];',
     'type GuardPair = [SessionGuard, AuditGuard];',
     'type ReadonlyGuardPair = readonly [SessionGuard, AuditGuard];',
+    'class Coordinator {',
+    '  private guards: GuardList;',
+    '  private pair: GuardPair;',
+    '  constructor(guards: GuardList, private readonlyPair: ReadonlyGuardPair) {',
+    '    this.guards = guards;',
+    '    this.pair = [guards[0], new AuditGuard()];',
+    '  }',
+    '  authorize(token: string): boolean {',
+    '    return this.guards[0].validateSession(token)',
+    '      && this.pair[0].validateSession(token)',
+    '      && this.pair[1].auditSession(token)',
+    '      && this.readonlyPair[0].validateSession(token)',
+    '      && this.readonlyPair[1].auditSession(token);',
+    '  }',
+    '}',
     '',
     'export function authorize(guards: SessionGuard[], readonlyGuards: readonly SessionGuard[], token: string): boolean {',
     '  const more: Array<SessionGuard> = guards;',
@@ -6196,6 +6211,11 @@ test('TypeScript JavaScript adapter records parser-backed array element typed re
     assert.deepEqual(
       calls.map((row) => [row.source_symbol, row.target_symbol, row.snippet]),
       [
+        ['Coordinator.authorize', 'SessionGuard.validateSession', 'this.guards[0].validateSession(token)'],
+        ['Coordinator.authorize', 'SessionGuard.validateSession', 'this.pair[0].validateSession(token)'],
+        ['Coordinator.authorize', 'AuditGuard.auditSession', 'this.pair[1].auditSession(token)'],
+        ['Coordinator.authorize', 'SessionGuard.validateSession', 'this.readonlyPair[0].validateSession(token)'],
+        ['Coordinator.authorize', 'AuditGuard.auditSession', 'this.readonlyPair[1].auditSession(token)'],
         ['authorize', 'SessionGuard.validateSession', 'guards[0].validateSession(token)'],
         ['authorize', 'SessionGuard.validateSession', 'more[1].validateSession(token)'],
         ['authorize', 'SessionGuard.validateSession', 'readonlyGuards[2].validateSession(token)'],
@@ -6211,7 +6231,10 @@ test('TypeScript JavaScript adapter records parser-backed array element typed re
         ['authorize', 'AuditGuard.auditSession', 'readonlyAliasPair[1].auditSession(token)']
       ]
     );
-    assert.deepEqual(calls.map((row) => row.start_line), [23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35]);
+    assert.deepEqual(calls.map((row) => row.start_line), [
+      22, 23, 24, 25, 26,
+      38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50
+    ]);
     assert.ok(calls.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
     assert.ok(calls.every((row) => row.provenance.startsWith('instance-call:')));
   } finally {

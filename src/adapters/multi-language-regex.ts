@@ -192,7 +192,7 @@ abstract class RegexBackedSemanticAdapter implements SemanticAdapter {
 
 export class TypeScriptJavaScriptSemanticAdapter extends RegexBackedSemanticAdapter {
   override readonly knownGaps = [
-    'TypeScript/JavaScript import, declaration, same-file/named-imported/direct-named-re-exported/star-re-exported/namespace-re-exported/default-imported/direct-default-re-exported/namespace-imported class/interface heritage type relation, imported call-site, local identifier call, method-reference alias call, same-class this.method, same-file class super.method, same-file/direct-new-or-const-alias-inferred/namespace-constructor-inferred/factory-wrapper-inferred/direct-factory-call-receiver/named-imported/direct-named-re-exported/star-re-exported/namespace-imported/namespace-re-exported/default-imported/direct-default-re-exported factory return type instance method call, interface/type-literal method/function-property/function-type-alias signature, same-file/named-imported/direct-named-re-exported/star-re-exported/namespace-re-exported/default-imported/direct-default-re-exported/namespace-imported interface/type-literal typed receiver method call, same-file interface extends typed receiver method call, same-file alias-backed interface extends typed receiver method call, same-file type reference alias typed receiver method call, same-file simple generic type reference typed receiver method call, same-file generic constraint typed receiver method call, same-file intersection type alias typed receiver method call, direct intersection typed receiver method call, same-file simple union typed receiver method call, declared typed local/class field receiver method call, typed local variable instance method call, typed/destructured/named-object parameter instance method call, assertion-wrapped/non-null/parenthesized typed receiver method call, string-literal element access method call, private member receiver method call, array/ReadonlyArray/readonly array and numeric tuple element typed receiver method call, including same-file aliases to those indexed collection types, constructor parameter property instance method call, constructor assignment instance method call, object literal method/property callable declarations and receiver method calls, class field arrow method caller/target, static class field arrow method call, typed class field instance method call, class field instance method call, same-file new ClassName instance call, and direct new ClassName().method call spans are parser-backed, but broader dynamic dispatch and advanced type relation resolution are not yet complete',
+    'TypeScript/JavaScript import, declaration, same-file/named-imported/direct-named-re-exported/star-re-exported/namespace-re-exported/default-imported/direct-default-re-exported/namespace-imported class/interface heritage type relation, imported call-site, local identifier call, method-reference alias call, same-class this.method, same-file class super.method, same-file/direct-new-or-const-alias-inferred/namespace-constructor-inferred/factory-wrapper-inferred/direct-factory-call-receiver/named-imported/direct-named-re-exported/star-re-exported/namespace-imported/namespace-re-exported/default-imported/direct-default-re-exported factory return type instance method call, interface/type-literal method/function-property/function-type-alias signature, same-file/named-imported/direct-named-re-exported/star-re-exported/namespace-re-exported/default-imported/direct-default-re-exported/namespace-imported interface/type-literal typed receiver method call, same-file interface extends typed receiver method call, same-file alias-backed interface extends typed receiver method call, same-file type reference alias typed receiver method call, same-file simple generic type reference typed receiver method call, same-file generic constraint typed receiver method call, same-file intersection type alias typed receiver method call, direct intersection typed receiver method call, same-file simple union typed receiver method call, declared typed local/class field receiver method call, typed local variable instance method call, typed/destructured/named-object parameter instance method call, assertion-wrapped/non-null/parenthesized typed receiver method call, string-literal element access method call, private member receiver method call, local/class-scoped array/ReadonlyArray/readonly array and numeric tuple element typed receiver method call, including same-file aliases to those indexed collection types, constructor parameter property instance method call, constructor assignment instance method call, object literal method/property callable declarations and receiver method calls, class field arrow method caller/target, static class field arrow method call, typed class field instance method call, class field instance method call, same-file new ClassName instance call, and direct new ClassName().method call spans are parser-backed, but broader dynamic dispatch and advanced type relation resolution are not yet complete',
     'polymorphism, alias-heavy object flows, generated code, and framework-specific routing may require deeper adapters'
   ];
 
@@ -2564,7 +2564,8 @@ function extractCalls(
     typeExtends,
     typeIntersectionAliases,
     typeUnionAliases,
-    typeReferenceAliases
+    typeReferenceAliases,
+    indexedCollectionAliases
   );
   const staticClassCallables = collectTypeScriptJavaScriptStaticClassCallables(sourceFile);
   const localMethodAliases = collectTypeScriptJavaScriptLocalMethodAliases(
@@ -3658,7 +3659,8 @@ function collectTypeScriptJavaScriptClassInstanceBindings(
   interfaceExtends: ReadonlyMap<string, readonly string[]>,
   typeIntersectionAliases: ReadonlyMap<string, readonly string[]>,
   typeUnionAliases: ReadonlyMap<string, readonly string[]>,
-  typeReferenceAliases: ReadonlyMap<string, string>
+  typeReferenceAliases: ReadonlyMap<string, string>,
+  indexedCollectionAliases: Readonly<TsIndexedCollectionAliases> = new Map()
 ): Map<string, TsLocalInstanceBinding> {
   const bindings = new Map<string, TsLocalInstanceBinding>();
 
@@ -3683,6 +3685,31 @@ function collectTypeScriptJavaScriptClassInstanceBindings(
     bindings.set(scopedLocalName(ownerClassName, propertyName), binding);
   };
 
+  const addIndexedCollectionBindings = (
+    ownerClassName: string | undefined,
+    propertyName: string | undefined,
+    typeNode: ts.TypeNode | undefined,
+    typeParameterConstraints: ReadonlyMap<string, TsLocalInstanceBinding>
+  ): void => {
+    if (!ownerClassName || !propertyName) return;
+    const elementBinding = typeBindingFromTypeNode(
+      arrayElementTypeNode(typeNode, indexedCollectionAliases),
+      typeReferenceAliases,
+      typeUnionAliases,
+      typeParameterConstraints
+    );
+    if (elementBinding) addBinding(ownerClassName, `${propertyName}[]`, elementBinding);
+    for (const [index, elementType] of tupleElementTypeNodes(typeNode, indexedCollectionAliases).entries()) {
+      const tupleElementBinding = typeBindingFromTypeNode(
+        elementType,
+        typeReferenceAliases,
+        typeUnionAliases,
+        typeParameterConstraints
+      );
+      if (tupleElementBinding) addBinding(ownerClassName, `${propertyName}[${index}]`, tupleElementBinding);
+    }
+  };
+
   const visit = (node: ts.Node): void => {
     if (ts.isPropertyDeclaration(node)) {
       const ownerClassName = enclosingTypeScriptJavaScriptClassName(node);
@@ -3700,15 +3727,22 @@ function collectTypeScriptJavaScriptClassInstanceBindings(
           typeParameterConstraints
         );
       if (ownerClassName && propertyName && binding) addBinding(ownerClassName, propertyName, binding);
+      addIndexedCollectionBindings(ownerClassName, propertyName, node.type, typeParameterConstraints);
     } else if (ts.isParameter(node) && ts.isIdentifier(node.name) && isConstructorParameterProperty(node)) {
       const ownerClassName = enclosingTypeScriptJavaScriptClassName(node);
+      const typeParameterConstraints = typeParameterConstraintBindingsForNode(
+        node,
+        typeReferenceAliases,
+        typeUnionAliases
+      );
       const binding = typeBindingFromTypeNode(
         node.type,
         typeReferenceAliases,
         typeUnionAliases,
-        typeParameterConstraintBindingsForNode(node, typeReferenceAliases, typeUnionAliases)
+        typeParameterConstraints
       );
       if (ownerClassName && binding) addBinding(ownerClassName, node.name.text, binding);
+      addIndexedCollectionBindings(ownerClassName, node.name.text, node.type, typeParameterConstraints);
     } else if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
       const ownerClassName = enclosingTypeScriptJavaScriptClassName(node);
       const propertyName = thisPropertyName(node.left);
@@ -4044,6 +4078,24 @@ function arrayElementReceiverBinding(
     if (tupleBinding) return tupleBinding;
   }
   return localInstanceBindings.get(scopedLocalName(sourceScopeName, `${baseName}[]`));
+}
+
+function classElementReceiverBinding(
+  expression: ts.Expression,
+  classInstanceBindings: ReadonlyMap<string, TsLocalInstanceBinding>,
+  ownerClassName: string
+): TsLocalInstanceBinding | undefined {
+  const unwrapped = unwrapTypeScriptJavaScriptReceiverExpression(expression);
+  if (!ts.isElementAccessExpression(unwrapped)) return undefined;
+  if (elementAccessMemberName(unwrapped)) return undefined;
+  const propertyName = thisPropertyName(unwrapped.expression);
+  if (!propertyName) return undefined;
+  const tupleIndex = numericElementAccessIndex(unwrapped.argumentExpression);
+  if (tupleIndex !== undefined) {
+    const tupleBinding = classInstanceBindings.get(scopedLocalName(ownerClassName, `${propertyName}[${tupleIndex}]`));
+    if (tupleBinding) return tupleBinding;
+  }
+  return classInstanceBindings.get(scopedLocalName(ownerClassName, `${propertyName}[]`));
 }
 
 function numericElementAccessIndex(node: ts.Expression | undefined): number | undefined {
@@ -4382,8 +4434,10 @@ function localCallTargetsForExpression(
   {
     const propertyName = thisPropertyName(access.expression);
     const className = enclosingTypeScriptJavaScriptClassName(access);
-    const instance = className && propertyName
-      ? classInstanceBindings.get(scopedLocalName(className, propertyName))
+    const instance = className
+      ? propertyName
+        ? classInstanceBindings.get(scopedLocalName(className, propertyName))
+        : classElementReceiverBinding(access.expression, classInstanceBindings, className)
       : undefined;
     if (instance) {
       return localTypeMemberCallablesForBinding(

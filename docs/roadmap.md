@@ -31,10 +31,11 @@ Cross-repo impact is at a v0 state. It works only among the local repos the user
 
 ## 3. Package / Build resolution
 
-The package resolver has started to use npm lockfiles, but most lockfile ecosystems and semver impact are still open.
+The package resolver now covers manifest graphs across common ecosystems and npm lockfile transitive dependencies. Most non-npm lockfile ecosystems and semver impact are still open.
 
-- [ ] Lockfile-based transitive dependency graph (npm/pip/poetry/go/cargo/maven/gradle)
-  - Progress: npm `package-lock.json` v2/v3 transitive package entries are indexed as lockfile-derived `DEPENDS_ON` package relations with locked versions and evidence spans.
+- [x] npm `package-lock.json` v2/v3 transitive dependency graph
+  - Current gate: transitive package entries are indexed as lockfile-derived `DEPENDS_ON` package relations with locked versions and evidence spans.
+- [ ] Extend lockfile-based transitive dependency graph to pip/poetry/go/cargo/maven/gradle lockfiles
 - [ ] Infer the affected version range from semver/range information
 - [ ] Standardize dumping the dependency graph without running build scripts
 
@@ -69,6 +70,8 @@ The UI right now is at the level of a first explorer that reads saved reports an
 - [x] Unify the initial primary flow/inspector to the action-first selected target
 - [x] Sync the map legend row with the selected target too, and show the selected state starting from server rendering
 - [x] Add an Analysis Trust summary to the Impact Summary that bundles coverage, adapter confidence, and known gap
+- [x] Keep the workbench language switcher honest by localizing client-updated map, inspector, copy, source, and empty-state labels
+- [x] Preserve selected report and language query state together across language and report navigation
 
 ## 6. Retrospective and measurement
 

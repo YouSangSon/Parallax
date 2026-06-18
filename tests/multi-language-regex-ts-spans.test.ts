@@ -6263,9 +6263,14 @@ test('TypeScript JavaScript adapter records parser-backed destructured array rec
     'export function authorizePair(pair: GuardPair, guards: GuardList, token: string): boolean {',
     '  const [session, audit]: GuardPair = pair;',
     '  const [first]: GuardList = guards;',
+    '  const [inferredSession, inferredAudit] = pair;',
+    '  const [inferredFirst] = guards;',
     '  return session.validateSession(token)',
     '    && audit.auditSession(token)',
-    '    && first.validateSession(token);',
+    '    && first.validateSession(token)',
+    '    && inferredSession.validateSession(token)',
+    '    && inferredAudit.auditSession(token)',
+    '    && inferredFirst.validateSession(token);',
     '}',
     '',
     'export function authorizeParameter([session, audit]: GuardPair, [first]: GuardList, token: string): boolean {',
@@ -6318,12 +6323,15 @@ test('TypeScript JavaScript adapter records parser-backed destructured array rec
         ['authorizePair', 'SessionGuard.validateSession', 'session.validateSession(token)'],
         ['authorizePair', 'AuditGuard.auditSession', 'audit.auditSession(token)'],
         ['authorizePair', 'SessionGuard.validateSession', 'first.validateSession(token)'],
+        ['authorizePair', 'SessionGuard.validateSession', 'inferredSession.validateSession(token)'],
+        ['authorizePair', 'AuditGuard.auditSession', 'inferredAudit.auditSession(token)'],
+        ['authorizePair', 'SessionGuard.validateSession', 'inferredFirst.validateSession(token)'],
         ['authorizeParameter', 'SessionGuard.validateSession', 'session.validateSession(token)'],
         ['authorizeParameter', 'AuditGuard.auditSession', 'audit.auditSession(token)'],
         ['authorizeParameter', 'SessionGuard.validateSession', 'first.validateSession(token)']
       ]
     );
-    assert.deepEqual(calls.map((row) => row.start_line), [17, 18, 19, 23, 24, 25]);
+    assert.deepEqual(calls.map((row) => row.start_line), [19, 20, 21, 22, 23, 24, 28, 29, 30]);
     assert.ok(calls.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
     assert.ok(calls.every((row) => row.provenance.startsWith('instance-call:')));
   } finally {

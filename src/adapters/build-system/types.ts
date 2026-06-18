@@ -39,7 +39,13 @@ export type PackageDependencyOverride = {
   path?: string;
 };
 export type ScopedPackageDependencyOverrides = ReadonlyMap<string, ReadonlyMap<string, PackageDependencyOverride>>;
-export type BuildManifestKind = PackageEcosystem | 'gradle-settings' | 'gradle-version-catalog' | 'go-work' | 'pnpm-workspace';
+export type BuildManifestKind =
+  | PackageEcosystem
+  | 'npm-lock'
+  | 'gradle-settings'
+  | 'gradle-version-catalog'
+  | 'go-work'
+  | 'pnpm-workspace';
 
 export type GradleCatalogLibrary = {
   name: string;

@@ -105,7 +105,7 @@ parallax ui --report <report-id> --port 3717
 | **Python / Go / Rust** | Lightweight adapter centered on declaration/test relations |
 | **Markdown / work artifacts** | Classifies policy, proposal, PRD, and decision docs as first-class artifacts and links them to code |
 | **Config / Infra** | Indexes system/config candidates: shell, YAML, JSON, TOML, Dockerfile, Makefile, Terraform, CODEOWNERS, etc. |
-| **Package manifests** | Manifest graph for `package.json`, `pom.xml`, `build.gradle(.kts)`, `go.mod`, `Cargo.toml`, `pyproject.toml` |
+| **Package manifests & locks** | Manifest graph for `package.json`, `pom.xml`, `build.gradle(.kts)`, `go.mod`, `Cargo.toml`, `pyproject.toml`, plus npm `package-lock.json` transitive dependencies |
 
 ### 🌐 Workspace & contracts
 
@@ -235,7 +235,7 @@ npm run verify
 | **Accuracy** | Extend parser-backed TS/JS spans to broader dynamic dispatch and advanced type relations |
 | **JVM / Python / Go / Rust** | Promote declaration-centric adapters to parser-backed call/import resolution |
 | **Workspace / Contract** | Stabilize nested schema diff; deepen generated-client/event-topology resolver |
-| **Package / Build** | Package graph based on lockfile, transitive dependencies, and semver/range |
+| **Package / Build** | Broaden npm lockfile transitive graph support to other lockfiles and semver/range impact |
 | **Agent surface** | Context pack budget tuning and a hit/miss measurement harness |
 | **UI Explorer** | More direct single-screen exploration of the changed → affected → evidence → action flow |
 | **Measurement** | Fixture bench delta and recall-quality regression detection |
@@ -250,7 +250,7 @@ The detailed backlog is tracked against [`docs/roadmap.md`](docs/roadmap.md).
 | :--- | :--- |
 | **Full semantic analysis** | Not type-aware analysis for every language; check each adapter's confidence and known-gap |
 | **Contract depth** | Full generated-client usage graphs at GraphQL/Protobuf/AsyncAPI parser/LSP level are future work |
-| **Package resolution** | Currently manifest-centric; lockfile/transitive/semver execution-based resolvers are future work |
+| **Package resolution** | npm `package-lock.json` transitive dependencies are indexed; other lockfile ecosystems, semver impact, and execution-based resolvers are future work |
 | **Graph DB** | Out of the default product scope; can be extended as an optional projection from SQLite if needed |
 | **External writes** | Obsidian/GitHub/Jira write sync is not yet exposed on the MCP surface |
 | **Code modification** | Parallax does not modify code directly; it gives agents impact and evidence |

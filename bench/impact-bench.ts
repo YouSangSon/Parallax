@@ -220,6 +220,7 @@ const expectedRelations: readonly ExpectedRelation[] = [
   packageDeclareRelation('package.json', '@acme/impact-bench', 'npm package declares bench workspace package'),
   packageManifestIdentityRelation('package.json', 'npm package identity depends on package manifest'),
   packageDependencyRelation('package.json', 'typescript', 'npm package depends on TypeScript package'),
+  packageDependencyRelation('package.json', 'tslib', 'npm lockfile transitive dependency depends on tslib package'),
   packageManifestIdentityRelation('pyproject.toml', 'Python package identity depends on pyproject manifest'),
   packageDependencyRelation('pyproject.toml', 'fastapi', 'Python project dependency depends on FastAPI package'),
   packageDependencyRelation('pyproject.toml', 'pytest', 'Python optional dependency depends on pytest package'),
@@ -926,6 +927,24 @@ async function writeFixture(repoRoot: string): Promise<void> {
     private: true,
     dependencies: {
       typescript: '^5.9.3'
+    }
+  }, null, 2));
+  await writeFile(path.join(repoRoot, 'package-lock.json'), JSON.stringify({
+    name: '@acme/impact-bench',
+    lockfileVersion: 3,
+    packages: {
+      '': {
+        name: '@acme/impact-bench',
+        dependencies: {
+          typescript: '^5.9.3'
+        }
+      },
+      'node_modules/typescript': {
+        version: '5.9.3'
+      },
+      'node_modules/tslib': {
+        version: '2.6.2'
+      }
     }
   }, null, 2));
   await writeFile(path.join(repoRoot, 'pyproject.toml'), [

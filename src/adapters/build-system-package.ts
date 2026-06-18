@@ -19,7 +19,12 @@ import {
 } from './build-system/gradle.js';
 import { discoverGoLocalReplacementIndex, goModSyntaxDiagnostics, goWorkUseTargets, parseGoMod } from './build-system/go.js';
 import { mavenSyntaxDiagnostics, parseMavenPom } from './build-system/maven.js';
-import { parseNpmPackageJson } from './build-system/npm.js';
+import {
+  discoverNpmLockfiles,
+  npmLockfileManifestPath,
+  parseNpmPackageJson
+} from './build-system/npm.js';
+import type { ParsedNpmLockfile } from './build-system/npm.js';
 import { parsePyprojectToml } from './build-system/python.js';
 import {
   buildManifestKind,
@@ -45,7 +50,7 @@ import type {
 } from './build-system/types.js';
 
 export const BUILD_SYSTEM_PACKAGE_ADAPTER_ID = 'build-system-package-resolver-v0';
-export const BUILD_SYSTEM_PACKAGE_ADAPTER_VERSION = '1';
+export const BUILD_SYSTEM_PACKAGE_ADAPTER_VERSION = '2';
 
 const buildSystemCapabilities: readonly AdapterCapability[] = ['packages', 'references'];
 
@@ -55,7 +60,7 @@ export class BuildSystemPackageAdapter implements SemanticAdapter {
   readonly capabilities = buildSystemCapabilities;
   readonly confidence = 'heuristic';
   readonly knownGaps = [
-    'manifest-only resolver; lockfiles, transitive dependencies, and semver range impact are not fully resolved',
+    'npm package-lock transitive dependencies are indexed; other lockfile ecosystems and semver range impact are not fully resolved',
     'build scripts are not executed, so generated dependency graph edges may be absent'
   ];
 
@@ -65,6 +70,7 @@ export class BuildSystemPackageAdapter implements SemanticAdapter {
 
   start(ctx: ExtractCtx, files: readonly ScannedFile[]): AdapterRun {
     const gradleCatalogs = discoverGradleVersionCatalogs(files);
+    const npmLockfiles = discoverNpmLockfiles(files);
     const packageDiscovery = discoverLocalPackages(files, gradleCatalogs);
     const goReplacementIndex = discoverGoLocalReplacementIndex(files, packageDiscovery.byManifest);
     const cargoDependencyContext = discoverCargoDependencyContext(files, packageDiscovery.byManifest);
@@ -74,7 +80,9 @@ export class BuildSystemPackageAdapter implements SemanticAdapter {
         yield* extractBuildSystemEvents(
           file,
           packageDiscovery.byAlias,
+          packageDiscovery.byManifest,
           filePathSet,
+          npmLockfiles,
           gradleCatalogs,
           goReplacementIndex,
           cargoDependencyContext
@@ -87,12 +95,19 @@ export class BuildSystemPackageAdapter implements SemanticAdapter {
 async function* extractBuildSystemEvents(
   file: ScannedFile,
   packageIndex: PackageIndex,
+  packageByManifest: ReadonlyMap<string, LocalPackage>,
   filePathSet: ReadonlySet<string>,
+  npmLockfiles: ReadonlyMap<string, ParsedNpmLockfile>,
   gradleCatalogs: readonly GradleVersionCatalogEntry[],
   goReplacementIndex: ScopedPackageIndex,
   cargoDependencyContext: CargoDependencyContext
 ): AsyncIterable<IndexEvent> {
-  const parsed = parseBuildManifest(file, gradleCatalogs, cargoDependencyContext.dependencyOverrides);
+  const parsed = parseBuildManifest(
+    file,
+    gradleCatalogs,
+    cargoDependencyContext.dependencyOverrides,
+    npmLockfiles
+  );
   const fileDescriptor: EntityDescriptor = {
     kind: 'config',
     path: file.relativePath,
@@ -116,6 +131,20 @@ async function* extractBuildSystemEvents(
       'build manifest path mention',
       target.evidence
     );
+  }
+  if (buildManifestKind(file.relativePath) === 'npm-lock') {
+    const manifestPath = npmLockfileManifestPath(file.relativePath);
+    const localPackage = packageByManifest.get(manifestPath);
+    if (localPackage) {
+      yield relationEvent(
+        fileDescriptor,
+        localPackageDescriptor(localPackage),
+        'CONFIGURES',
+        'proven',
+        'npm lockfile package graph',
+        evidenceForNeedle(file.content, file.relativePath, '"packages"')
+      );
+    }
   }
   if (!parsed.package) return;
 
@@ -203,11 +232,13 @@ function localPackageTarget(
 function parseBuildManifest(
   file: ScannedFile,
   gradleCatalogs: readonly GradleVersionCatalogEntry[],
-  dependencyOverrides: ScopedPackageDependencyOverrides = new Map()
+  dependencyOverrides: ScopedPackageDependencyOverrides = new Map(),
+  npmLockfiles: ReadonlyMap<string, ParsedNpmLockfile> = new Map()
 ): ParsedManifest {
   const kind = buildManifestKind(file.relativePath);
   const parsed =
-    kind === 'npm' ? parseNpmPackageJson(file)
+    kind === 'npm' ? parseNpmPackageJson(file, npmLockfiles.get(file.relativePath))
+    : kind === 'npm-lock' ? { dependencies: [], diagnostics: npmLockfiles.get(npmLockfileManifestPath(file.relativePath))?.diagnostics ?? [] }
     : kind === 'maven' ? parseMavenPom(file)
     : kind === 'gradle' ? parseGradleBuild(file, gradleVersionCatalogForBuild(file.relativePath, gradleCatalogs))
     : kind === 'go' ? parseGoMod(file)

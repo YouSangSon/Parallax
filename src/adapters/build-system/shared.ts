@@ -15,6 +15,7 @@ import type {
 export function buildManifestKind(relativePath: string): BuildManifestKind | undefined {
   const basename = path.posix.basename(relativePath);
   if (basename === 'package.json') return 'npm';
+  if (basename === 'package-lock.json') return 'npm-lock';
   if (basename === 'pom.xml') return 'maven';
   if (basename === 'settings.gradle' || basename === 'settings.gradle.kts') return 'gradle-settings';
   if (basename === 'build.gradle' || basename === 'build.gradle.kts') return 'gradle';

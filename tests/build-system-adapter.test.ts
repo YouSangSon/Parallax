@@ -183,6 +183,92 @@ test('indexProject extracts npm workspace package graph', async () => {
   assert.ok(report.affectedFiles.some((file) => file.path === 'apps/web/package.json'));
 });
 
+test('indexProject extracts npm package-lock transitive dependencies', async () => {
+  const repoRoot = await makeRepo('parallax-build-npm-lock-');
+
+  await writeFile(
+    path.join(repoRoot, 'package.json'),
+    JSON.stringify({
+      name: '@acme/api',
+      version: '1.2.3',
+      dependencies: {
+        express: '^4.18.2'
+      }
+    }, null, 2)
+  );
+  await writeFile(
+    path.join(repoRoot, 'package-lock.json'),
+    JSON.stringify({
+      name: '@acme/api',
+      version: '1.2.3',
+      lockfileVersion: 3,
+      packages: {
+        '': {
+          name: '@acme/api',
+          version: '1.2.3',
+          dependencies: {
+            express: '^4.18.2'
+          }
+        },
+        'node_modules/accepts': {
+          version: '1.3.8',
+          dependencies: {
+            'mime-types': '~2.1.34',
+            negotiator: '0.6.3'
+          }
+        },
+        'node_modules/express': {
+          version: '4.18.2',
+          dependencies: {
+            accepts: '~1.3.8'
+          }
+        },
+        'node_modules/mime-types': {
+          version: '2.1.35'
+        },
+        'node_modules/negotiator': {
+          version: '0.6.3'
+        }
+      }
+    }, null, 2)
+  );
+
+  await initProject({ repoRoot });
+  const index = await indexProject({ repoRoot });
+
+  const rows = relationRows(repoRoot, index.indexRunId);
+  const transitive = rows.find((row) =>
+    row.kind === 'DEPENDS_ON' &&
+    row.sourceName === '@acme/api' &&
+    row.targetKind === 'package' &&
+    row.targetLanguage === 'npm' &&
+    row.targetName === 'accepts'
+  );
+  assert.ok(transitive);
+  assert.equal(transitive.confidence, 'proven');
+  assert.ok(transitive.snippet?.includes('"node_modules/accepts"'));
+  assert.deepEqual(
+    {
+      dependencyType: targetMetadata(transitive).dependencyType,
+      version: targetMetadata(transitive).version
+    },
+    { dependencyType: 'lockfile:transitive', version: '1.3.8' }
+  );
+  assert.ok(rows.some((row) =>
+    row.kind === 'DEPENDS_ON' &&
+    row.sourceName === '@acme/api' &&
+    row.targetName === 'express' &&
+    row.snippet?.includes('"express": "^4.18.2"')
+  ));
+  assert.ok(rows.some((row) =>
+    row.kind === 'CONFIGURES' &&
+    row.sourceKind === 'config' &&
+    row.sourcePath === 'package-lock.json' &&
+    row.targetKind === 'package' &&
+    row.targetName === '@acme/api'
+  ));
+});
+
 test('indexProject extracts Maven Gradle Go Cargo and pyproject dependencies', async () => {
   const repoRoot = await makeRepo('parallax-build-polyglot-');
   await mkdir(path.join(repoRoot, 'service'), { recursive: true });

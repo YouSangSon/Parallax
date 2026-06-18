@@ -234,6 +234,7 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(html, /\.trust-signals \{[\s\S]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/);
     assert.match(html, /aria-label="Affected targets by product lane"/);
     assert.match(html, /\.lang-link \{[\s\S]*min-height: 34px;[\s\S]*text-decoration: none;/);
+    assert.match(html, new RegExp(`href="/\\?report=${reportId}&amp;lang=ko"`));
     assert.match(html, /\.toolbar \{ min-width: 0; display: flex;/);
     assert.match(html, /\.copy-command \{[\s\S]*min-width: 44px;[\s\S]*min-height: 32px;/);
     assert.match(html, /@media \(max-width: 560px\)[\s\S]*\.toolbar \{\s*display: grid;\s*grid-template-columns: minmax\(0, 1fr\);/);
@@ -302,6 +303,8 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(html, /\/source\?path=src%2Fa\.ts&amp;line=1/);
     assert.match(html, /Copy verify/);
     assert.match(html, /selectedImpactPath/);
+    assert.match(html, /nextUrl\.searchParams\.set\('report', value\)/);
+    assert.match(html, /window\.location\.href = nextUrl\.pathname \+ '\?' \+ nextUrl\.searchParams\.toString\(\)/);
     assert.match(html, /Verification Queue/);
     assert.match(html, /Verify tests\/b\.test\.ts/);
     assert.match(html, /class="copy-command"/);

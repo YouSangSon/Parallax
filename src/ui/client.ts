@@ -230,7 +230,11 @@ export const UI_CLIENT_JS = `    const snapshot = JSON.parse(document.getElement
     });
     document.getElementById('reportSelect')?.addEventListener('change', (event) => {
       const value = event.target.value;
-      if (value) window.location.href = '/?report=' + encodeURIComponent(value);
+      if (!value) return;
+      const nextUrl = new URL(window.location.href);
+      nextUrl.pathname = '/';
+      nextUrl.searchParams.set('report', value);
+      window.location.href = nextUrl.pathname + '?' + nextUrl.searchParams.toString();
     });
     async function copyText(value) {
       if (navigator.clipboard?.writeText) {

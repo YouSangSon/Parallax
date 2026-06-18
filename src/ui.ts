@@ -814,10 +814,20 @@ export function normalizeUiLanguage(value: string | null | undefined): UiLanguag
   return UI_LANGUAGES.includes(value as UiLanguage) ? (value as UiLanguage) : 'en';
 }
 
-function renderLanguageSwitcher(active: UiLanguage): string {
+function uiHomeHref(params: Record<string, string | null | undefined>): string {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value) query.set(key, value);
+  }
+  const search = query.toString();
+  return search ? `/?${search}` : '/';
+}
+
+function renderLanguageSwitcher(active: UiLanguage, reportId: string | null): string {
   const links = UI_LANGUAGES.map((lang) => {
     const current = lang === active ? ' aria-current="true"' : '';
-    return `<a class="lang-link${lang === active ? ' active' : ''}" data-lang="${lang}" href="?lang=${lang}"${current}>${escapeHtml(UI_LANGUAGE_LABELS[lang])}</a>`;
+    const href = uiHomeHref({ report: reportId, lang });
+    return `<a class="lang-link${lang === active ? ' active' : ''}" data-lang="${lang}" href="${escapeHtml(href)}"${current}>${escapeHtml(UI_LANGUAGE_LABELS[lang])}</a>`;
   }).join('');
   return `<nav class="lang-switcher" aria-label="${escapeHtml(UI_MESSAGES[active].language)}">${links}</nav>`;
 }
@@ -959,7 +969,7 @@ ${UI_STYLES_MAIN}
       <p>${escapeHtml(snapshot.repoRoot)} · schema ${escapeHtml(String(doctor.database.schemaVersion ?? 'missing'))} · generated ${escapeHtml(snapshot.generatedAt)}</p>
     </div>
     <div class="toolbar" aria-label="${escapeHtml(m.controls)}">
-      ${renderLanguageSwitcher(lang)}
+      ${renderLanguageSwitcher(lang, snapshot.selectedReportId)}
       <select id="reportSelect" aria-label="${escapeHtml(m.reportSelector)}">${reportOptions || `<option value="">${escapeHtml(m.noReports)}</option>`}</select>
       <input id="filterInput" type="search" placeholder="${escapeHtml(m.filterPlaceholder)}" aria-label="${escapeHtml(m.filterRows)}">
     </div>

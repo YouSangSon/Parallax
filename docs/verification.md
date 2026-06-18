@@ -17,6 +17,7 @@ Every command below is an `npm run` script defined in `package.json`.
 | `npm run verify` | Runs the canonical source-checkout release gate: lint, install smoke, fast tests, dogfood, bench, and high-level audit | Before release and in CI |
 | `npm run build` | `tsc -p tsconfig.json`, compiles to `dist/` | Before publishing or smoke-testing the CLI |
 | `npm run bench` | Runs `bench/impact-bench.ts`; exits non-zero on accuracy regression | After engine/adapter changes |
+| `npm run bench:report` | Renders the latest bench JSON as Markdown, optionally comparing it with a baseline report | After `npm run bench`, or in CI summaries |
 | `npm run test:dogfood` | Indexes Parallax on its own source and asserts the internal graph survives | After engine changes (indexer/adapters/analyzer/store/graph) |
 | `npm run test:mcp` | Runs `tests/mcp.test.ts` (impact / context / memory / telemetry / path validation) | After MCP surface changes |
 | `npm run test:ui` | Runs `tests/ui.test.ts` (UI snapshot, server, JSON resource endpoints) | After UI changes |
@@ -59,6 +60,8 @@ The runner writes a deterministic JSON report and sets a non-zero exit code when
 
 Run `npm run bench` after any change that touches relation extraction, ranking, or retrieval.
 
+`npm run bench:report` converts `.parallax/bench/impact-bench-report.json` into a compact Markdown summary. Pass `--baseline <json>` to include delta columns against a previous report, or `--github-step-summary` to append the summary to GitHub Actions' step summary. CI uses this on pull requests by generating a baseline report from the PR base SHA, then reporting the head-vs-base bench delta after `npm run verify`.
+
 ## The docs linter
 
 `scripts/docs-lint.js` (run via `npm run docs:lint`) is a static gate over tracked Markdown plus local untracked Markdown that is not ignored. It enforces:
@@ -76,9 +79,10 @@ Run `npm run bench` after any change that touches relation extraction, ranking, 
 ```bash
 npm ci
 npm run verify
+npm run bench:report -- --github-step-summary --allow-missing --baseline .parallax/bench/impact-bench-baseline.json
 ```
 
-`npm run verify` is the canonical source-checkout gate. It runs lint first, then install smoke (which owns the only build), the fast unit suite, dogfood, bench, and finally the registry-dependent audit.
+`npm run verify` is the canonical source-checkout gate. It runs lint first, then install smoke (which owns the only build), the fast unit suite, dogfood, bench, and finally the registry-dependent audit. On pull requests, CI first prepares `.parallax/bench/impact-bench-baseline.json` from the base SHA so the final summary includes score, relation, affected-file, and retrieval deltas.
 
 ## How to add tests
 

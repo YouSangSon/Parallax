@@ -76,7 +76,8 @@ MCP는 read-only로 안정화됐다. 다음은 agent 사용성을 깊게 보는 
 - [x] 다언어 fixture 기반 deterministic bench harness
   - 현재 gate: `bench/impact-bench.ts`가 TypeScript/JavaScript, JVM/Spring Boot, Python, Go, Rust, OpenAPI, build manifest 고정 fixture를 만들고 relation recall/precision, affected-file recall, evidence/span coverage, adapter attribution, context-pack readiness, retrieval 품질을 채점한다. `npm run bench`, `npm test`, CI의 `npm run verify` gate에서 실행된다.
 - [ ] embedding 모델 / LLM provider 교차 시 recall 품질 회귀 detection
-- [ ] CI에서 매 PR마다 bench delta를 자동 리포트
+- [x] CI에서 매 PR마다 bench delta를 자동 리포트
+  - 현재 gate: CI가 pull request에서 base SHA의 bench report를 준비하고, head에서 canonical `npm run verify` gate를 실행한 뒤, `npm run bench:report` Markdown을 GitHub Step Summary에 append해 score, relation, affected-file, retrieval delta를 표시한다.
 
 ---
 

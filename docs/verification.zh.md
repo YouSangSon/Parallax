@@ -17,6 +17,7 @@ Parallax 分层验证正确性——快速的 unit suite、typecheck、docs lint
 | `npm run verify` | 运行 canonical source-checkout release gate：lint、install smoke、fast tests、dogfood、bench 和 high-level audit | release 前和 CI |
 | `npm run build` | `tsc -p tsconfig.json`，编译到 `dist/` | 发布或 smoke 测试 CLI 前 |
 | `npm run bench` | 运行 `bench/impact-bench.ts`；accuracy 回归时以 non-zero 退出 | engine/adapter 变更后 |
+| `npm run bench:report` | 将最新 bench JSON 渲染为 Markdown，并可选地与 baseline report 比较 | `npm run bench` 后，或用于 CI summary |
 | `npm run test:dogfood` | 对 Parallax 自身 source 进行索引并断言内部 graph 存活 | engine 变更后（indexer/adapters/analyzer/store/graph） |
 | `npm run test:mcp` | 运行 `tests/mcp.test.ts`（impact / context / memory / telemetry / 路径校验） | MCP surface 变更后 |
 | `npm run test:ui` | 运行 `tests/ui.test.ts`（UI 快照、服务器、JSON 资源端点） | UI 变更后 |
@@ -59,6 +60,8 @@ runner 写出一份确定性 JSON 报告，当 suite 未通过时设置 non-zero
 
 凡是触及 relation 抽取、排序或 retrieval 的变更之后，都运行 `npm run bench`。
 
+`npm run bench:report` 会把 `.parallax/bench/impact-bench-report.json` 转成紧凑的 Markdown summary。传入 `--baseline <json>` 时会包含相对上一份 report 的 delta column；传入 `--github-step-summary` 时会 append 到 GitHub Actions step summary。CI 在 pull request 中会先从 PR base SHA 生成 baseline report，然后在 `npm run verify` 之后报告 head-vs-base bench delta。
+
 ## docs linter
 
 `scripts/docs-lint.js`（通过 `npm run docs:lint` 运行）是针对 tracked Markdown 和未被 ignore 的本地 untracked Markdown 的 static gate。它强制：
@@ -76,9 +79,10 @@ runner 写出一份确定性 JSON 报告，当 suite 未通过时设置 non-zero
 ```bash
 npm ci
 npm run verify
+npm run bench:report -- --github-step-summary --allow-missing --baseline .parallax/bench/impact-bench-baseline.json
 ```
 
-`npm run verify` 是 canonical source-checkout gate。它先运行 lint，然后运行 install smoke（唯一负责 build）、fast unit suite、dogfood、bench，最后运行依赖 registry 的 audit。
+`npm run verify` 是 canonical source-checkout gate。它先运行 lint，然后运行 install smoke（唯一负责 build）、fast unit suite、dogfood、bench，最后运行依赖 registry 的 audit。在 pull request 中，CI 会先从 base SHA 准备 `.parallax/bench/impact-bench-baseline.json`，因此最后的 summary 会包含 score、relation、affected-file 与 retrieval delta。
 
 ## 如何添加测试
 

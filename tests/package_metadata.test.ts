@@ -15,7 +15,9 @@ type GitHubActionsWorkflow = {
     string,
     {
       steps?: Array<{
+        name?: string;
         run?: string;
+        if?: string;
       }>;
     }
   >;
@@ -36,6 +38,7 @@ test('package exports only the public module entrypoint and metadata', async () 
     packageJson.scripts?.verify,
     'npm run lint && npm run test:install-smoke && npm test && npm run test:dogfood && npm run bench && npm audit --audit-level=high'
   );
+  assert.equal(packageJson.scripts?.['bench:report'], 'tsx bench/impact-bench-report.ts');
   assert.equal(
     packageJson.scripts?.['test:install-smoke'],
     'npm run build && node dist/src/cli.js --help'
@@ -51,6 +54,21 @@ test('CI verify job delegates to the canonical release gate', async () => {
 
   assert.equal(
     workflow.jobs?.verify?.steps?.some((step) => step.run === 'npm run verify') ?? false,
+    true
+  );
+  assert.equal(
+    workflow.jobs?.verify?.steps?.some(
+      (step) => step.name === 'Report bench summary'
+        && step.if === 'always()'
+        && step.run === 'npm run bench:report -- --github-step-summary --allow-missing --baseline .parallax/bench/impact-bench-baseline.json'
+    ) ?? false,
+    true
+  );
+  assert.equal(
+    workflow.jobs?.verify?.steps?.some(
+      (step) => step.name === 'Prepare PR bench baseline'
+        && step.if === "github.event_name == 'pull_request'"
+    ) ?? false,
     true
   );
 });

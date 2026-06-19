@@ -192,7 +192,7 @@ abstract class RegexBackedSemanticAdapter implements SemanticAdapter {
 
 export class TypeScriptJavaScriptSemanticAdapter extends RegexBackedSemanticAdapter {
   override readonly knownGaps = [
-    'TypeScript/JavaScript extraction is parser-backed via the TypeScript compiler across imports, declarations, heritage type relations, and a wide set of call, typed-receiver, collection, object-binding, member, and instance spans (tracked in docs/roadmap.md), but broader dynamic dispatch, deep alias and object-flow tracking, and advanced type-relation resolution are not yet parser-backed',
+    'TypeScript/JavaScript extraction is parser-backed via the TypeScript compiler across imports, declarations, heritage type relations, and a wide set of call, typed-receiver, collection, object-binding, member, and instance spans, but broader dynamic dispatch, deep alias and object-flow tracking, and advanced type-relation resolution are not yet parser-backed',
     'polymorphism, alias-heavy object flows, generated code, and framework-specific routing may require deeper adapters'
   ];
 

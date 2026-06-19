@@ -56,6 +56,8 @@ MCP has stabilized as read-only. Next is the stage of looking deeply at agent us
 - [ ] Validate the budget tuning (brief/standard/deep) of `context_for_change` with usage telemetry
 - [ ] A harness to measure the hit/miss of context pack results
 - [ ] Consider introducing a write surface separated into its own permission model (compliant with [invariants.md](invariants.md) I-8)
+- [x] Read-only graph query surface: a deterministic Cypher subset exposed as the `parallax_query` MCP tool and `parallax query` CLI (single hop, labels, `WHERE` =/`CONTAINS`, projection, `LIMIT`; write/procedure/reverse clauses rejected)
+- [x] First write surface kept off the read-only MCP (I-8): `parallax ingest-traces` promotes relations confirmed by runtime traces to proven confidence
 
 ## 5. UI Explorer
 

@@ -56,6 +56,8 @@ MCP는 read-only로 안정화됐다. 다음은 agent 사용성을 깊게 보는 
 - [ ] `context_for_change`의 budget tuning (brief/standard/deep)을 사용 텔레메트리로 검증
 - [ ] context pack 결과의 hit/miss 측정 harness
 - [ ] write surface를 별도 권한 모델로 분리해 도입 검토 ([invariants.ko.md](invariants.ko.md) I-8 준수)
+- [x] 읽기전용 그래프 질의 표면: 결정론적 Cypher 서브셋을 `parallax_query` MCP 툴과 `parallax query` CLI로 노출 (단일 hop, label, `WHERE` =/`CONTAINS`, 투영, `LIMIT`; write/procedure/역방향 구문 거부)
+- [x] 읽기전용 MCP에서 분리된 첫 write 표면 (I-8): `parallax ingest-traces`가 런타임 트레이스로 확인된 관계를 proven 신뢰도로 승격
 
 ## 5. UI Explorer
 

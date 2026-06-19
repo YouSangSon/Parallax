@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Heuristic git co-change relations: an indexing pass derives `CO_CHANGES` couplings from commit history (files that repeatedly change together, above coupling/count thresholds, ignoring sweeping commits) so blast-radius analysis recovers config↔code / test↔impl links the static graph misses. Emitted at `heuristic` confidence as its own adapter run with a knownGaps disclosure (coupling is correlational, not a proven dependency), and absent outside a git work tree.
 - Dogfood guard test that runs Parallax against its own internal dependency graph, plus a NodeNext `.js`-extension benchmark fixture.
 - CI workflow running lint, build, test, dogfood, and benchmark on push and pull request.
 - Shared `src/confidence.ts` module with a single `asConfidence` guard, and an adapter-registry safety net that documents and asserts the catch-all adapter stays registered last.

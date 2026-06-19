@@ -113,7 +113,8 @@ export type RelationKind =
   | 'VERIFIES'
   | 'GOVERNS'
   | 'PROPOSES'
-  | 'REQUIRES';
+  | 'REQUIRES'
+  | 'CO_CHANGES';
 
 export type ScannedFile = {
   absolutePath: string;

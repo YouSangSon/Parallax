@@ -28,6 +28,7 @@
 - [x] 每次 adapter run 都在 report 中明示 confidence label 与 known-gap
 - [x] 将 NodeNext/ESM 的 `.js` 扩展名 local import 解析到 TypeScript source(`.ts`) —— 修复内部 import 依赖图全部漏成 `external_entity` 的问题
 - [x] 将 impact report 的 `affected` 按 confidence(proven > inferred > heuristic) → depth → path 的顺序排序 —— 修复 proven 代码影响被埋在 heuristic 文档 mention 之下的问题（UI 的 first-glance target 也随之自动改善）
+- [x] 启发式 git 共同变更关系（`CO_CHANGES`），用于恢复 static 图在结构上遗漏的耦合（config↔code、test↔impl）—— 从 commit 历史中按 coupling/count 阈值导出，以 heuristic confidence 作为独立 adapter run 记录并附带诚实的 knownGaps 声明，仅在 git 历史产生耦合时生成
 
 ## 2. Workspace / Contract
 

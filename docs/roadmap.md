@@ -28,6 +28,7 @@ The biggest gap right now is that there is no way for a person to know *when* re
 - [x] State the confidence label and known-gap in the report for each adapter run
 - [x] Resolve NodeNext/ESM `.js` extension local imports to the TypeScript source (`.ts`) — fixed the issue where the internal import dependency graph was entirely falling through to `external_entity`
 - [x] Sort the impact report's `affected` by confidence (proven > inferred > heuristic) → depth → path — fixed the issue where proven code impact was buried below heuristic document mentions (this also automatically improves the UI's first-glance target)
+- [x] Heuristic git co-change relations (`CO_CHANGES`) to recover couplings the static graph structurally misses (config↔code, test↔impl) — derived from commit history above coupling/count thresholds, emitted at heuristic confidence as its own adapter run with an honest knownGaps disclosure, and only when git history yields couplings
 
 ## 2. Workspace / Contract
 

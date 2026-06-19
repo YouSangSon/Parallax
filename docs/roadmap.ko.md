@@ -28,6 +28,7 @@
 - [x] adapter run마다 confidence label과 known-gap을 report에 명시
 - [x] NodeNext/ESM `.js` 확장자 local import을 TypeScript source(`.ts`)로 resolve — 내부 import 의존성 그래프가 전부 `external_entity`로 빠지던 문제 수정
 - [x] impact report의 `affected`를 confidence(proven > inferred > heuristic) → depth → path 순으로 정렬 — proven 코드 영향이 heuristic 문서 mention 아래 묻히던 문제 수정 (UI의 first-glance target도 자동 개선)
+- [x] static 그래프가 구조적으로 놓치는 결합(config↔code, test↔impl)을 복원하는 heuristic git 공동변경 관계(`CO_CHANGES`) — commit 히스토리에서 coupling/count 임계값 이상으로 도출, heuristic confidence로 자체 adapter run에 정직한 knownGaps 면책과 함께 기록, git 히스토리에서 결합이 나올 때만 생성
 
 ## 2. Workspace / Contract
 

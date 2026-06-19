@@ -639,6 +639,7 @@ function relationVerb(kind: string): string {
   if (kind === 'CONSUMES') return 'consumes';
   if (kind === 'IMPLEMENTS') return 'implements';
   if (kind === 'PRODUCES') return 'produces';
+  if (kind === 'CO_CHANGES') return 'co-changes with';
   return kind.toLowerCase();
 }
 
@@ -707,6 +708,7 @@ function reasonForCanonicalRelation(kind: string, changedFile: string): string {
   if (kind === 'IMPLEMENTS') return `implements ${changedFile}`;
   if (kind === 'CONSUMES') return `consumes ${changedFile}`;
   if (kind === 'PRODUCES') return `produces ${changedFile}`;
+  if (kind === 'CO_CHANGES') return `co-changes with ${changedFile}`;
   return `${kind.toLowerCase()} ${changedFile}`;
 }
 

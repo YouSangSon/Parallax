@@ -14,6 +14,7 @@ import {
   TypeScriptJavaScriptSemanticAdapter
 } from './adapters/multi-language-regex.js';
 import { DATA_DIR } from './branding.js';
+import { computeCoChanges, readCommitHistory } from './co-change.js';
 import { entityKindForPath, languageIdForPath } from './entity_classification.js';
 import { readGitSnapshot } from './git-snapshot.js';
 import type {
@@ -812,6 +813,73 @@ async function indexProjectInternal(
           adapter.id
         );
         throw error;
+      }
+    }
+
+    // Repo-level pass: derive heuristic file<->file coupling from git history.
+    // Only materializes when git history actually yields couplings, so it adds
+    // no adapter_run noise to non-git repos. When present it runs as its own
+    // adapter_run, so the CO_CHANGES relations carry an honest 'heuristic'
+    // confidence and a knownGaps disclosure, consistent with the
+    // confidence-first model.
+    const indexedPaths = new Set(indexedFiles.map((file) => file.relativePath));
+    const coChangePairs = computeCoChanges(readCommitHistory(repoRoot), indexedPaths);
+    if (coChangePairs.length > 0) {
+      const coChangeRunId = Number(
+        insertAdapterRun.run(
+          indexRunId,
+          'co-change',
+          '1',
+          JSON.stringify([]),
+          'heuristic',
+          JSON.stringify([
+            'co-change relations are derived from git commit history, not code semantics — coupling is correlational, not a proven dependency',
+            'squashed/rebased history, renames, and history-poor repos may miss or distort couplings'
+          ]),
+          'running'
+        ).lastInsertRowid
+      );
+      try {
+        for (const pair of coChangePairs) {
+        insertCanonicalRelation({
+          repoId,
+          sourceEntityId: fileEntityId(pair.source),
+          targetEntityId: fileEntityId(pair.target),
+          kind: 'CO_CHANGES',
+          confidence: 'heuristic',
+          provenance: `co-change:${pair.coChangeCount}:${pair.couplingScore.toFixed(2)}`,
+          adapterRunId: coChangeRunId,
+          indexRunId,
+          evidence: [
+            {
+              file: pair.source,
+              snippet: `co-changed with ${pair.target} in ${pair.coChangeCount} commits (coupling ${pair.couplingScore.toFixed(2)})`,
+              confidence: 'heuristic',
+              startLine: 1,
+              endLine: 1,
+              startCol: 1,
+              endCol: 1
+            }
+          ],
+          insertRelation: stmts.insertRelation,
+          insertRelationEvidence: stmts.insertRelationEvidence,
+          canonicalRelationIds: persistCtx.canonicalRelationIds,
+          upsertAttributeDef: stmts.upsertAttributeDef,
+          insertFact: stmts.insertFact,
+          memoryTxId,
+          upsertTextAttribute: stmts.upsertTextAttribute,
+          insertFactProvenance: stmts.insertFactProvenance,
+          currentStateSnapshot
+        });
+      }
+      updateAdapterRun(db, coChangeRunId, 'completed');
+    } catch (error) {
+        updateAdapterRun(
+          db,
+          coChangeRunId,
+          'failed',
+          error instanceof Error ? error.message : String(error)
+        );
       }
     }
 
@@ -1895,7 +1963,8 @@ const relationAttributeByKind: Record<RelationKind, string> = {
   DECLARES: 'declares',
   GOVERNS: 'governs',
   PROPOSES: 'proposes',
-  REQUIRES: 'requires'
+  REQUIRES: 'requires',
+  CO_CHANGES: 'co_changes'
 };
 
 function relationKindToAttribute(kind: string): string {

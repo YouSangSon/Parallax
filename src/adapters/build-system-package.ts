@@ -26,7 +26,8 @@ import {
   parseNpmPackageJson
 } from './build-system/npm.js';
 import type { ParsedNpmLockfile } from './build-system/npm.js';
-import { parsePyprojectToml } from './build-system/python.js';
+import { discoverPoetryLockfiles, parsePyprojectToml, poetryLockfileManifestPath } from './build-system/python.js';
+import type { ParsedPoetryLockfile } from './build-system/python.js';
 import {
   buildManifestKind,
   escapeRegExp,
@@ -61,7 +62,7 @@ export class BuildSystemPackageAdapter implements SemanticAdapter {
   readonly capabilities = buildSystemCapabilities;
   readonly confidence = 'heuristic';
   readonly knownGaps = [
-    'npm package-lock and Cargo.lock transitive dependencies are indexed; other lockfile ecosystems and semver range impact are not fully resolved',
+    'npm package-lock, Cargo.lock, and poetry.lock transitive dependencies are indexed; other lockfile ecosystems and semver range impact are not fully resolved',
     'build scripts are not executed, so generated dependency graph edges may be absent'
   ];
 
@@ -73,6 +74,7 @@ export class BuildSystemPackageAdapter implements SemanticAdapter {
     const gradleCatalogs = discoverGradleVersionCatalogs(files);
     const npmLockfiles = discoverNpmLockfiles(files);
     const cargoLockfiles = discoverCargoLockfiles(files);
+    const poetryLockfiles = discoverPoetryLockfiles(files);
     const packageDiscovery = discoverLocalPackages(files, gradleCatalogs);
     const goReplacementIndex = discoverGoLocalReplacementIndex(files, packageDiscovery.byManifest);
     const cargoDependencyContext = discoverCargoDependencyContext(files, packageDiscovery.byManifest);
@@ -86,6 +88,7 @@ export class BuildSystemPackageAdapter implements SemanticAdapter {
           filePathSet,
           npmLockfiles,
           cargoLockfiles,
+          poetryLockfiles,
           gradleCatalogs,
           goReplacementIndex,
           cargoDependencyContext
@@ -102,6 +105,7 @@ async function* extractBuildSystemEvents(
   filePathSet: ReadonlySet<string>,
   npmLockfiles: ReadonlyMap<string, ParsedNpmLockfile>,
   cargoLockfiles: ReadonlyMap<string, ParsedCargoLockfile>,
+  poetryLockfiles: ReadonlyMap<string, ParsedPoetryLockfile>,
   gradleCatalogs: readonly GradleVersionCatalogEntry[],
   goReplacementIndex: ScopedPackageIndex,
   cargoDependencyContext: CargoDependencyContext
@@ -111,7 +115,8 @@ async function* extractBuildSystemEvents(
     gradleCatalogs,
     cargoDependencyContext.dependencyOverrides,
     npmLockfiles,
-    cargoLockfiles
+    cargoLockfiles,
+    poetryLockfiles
   );
   const fileDescriptor: EntityDescriptor = {
     kind: 'config',
@@ -239,7 +244,8 @@ function parseBuildManifest(
   gradleCatalogs: readonly GradleVersionCatalogEntry[],
   dependencyOverrides: ScopedPackageDependencyOverrides = new Map(),
   npmLockfiles: ReadonlyMap<string, ParsedNpmLockfile> = new Map(),
-  cargoLockfiles: ReadonlyMap<string, ParsedCargoLockfile> = new Map()
+  cargoLockfiles: ReadonlyMap<string, ParsedCargoLockfile> = new Map(),
+  poetryLockfiles: ReadonlyMap<string, ParsedPoetryLockfile> = new Map()
 ): ParsedManifest {
   const kind = buildManifestKind(file.relativePath);
   const parsed =
@@ -250,7 +256,8 @@ function parseBuildManifest(
     : kind === 'go' ? parseGoMod(file)
     : kind === 'cargo' ? parseCargoToml(file, dependencyOverrides.get(file.relativePath), cargoLockfiles.get(file.relativePath))
     : kind === 'cargo-lock' ? { dependencies: [], diagnostics: cargoLockfiles.get(cargoLockfileManifestPath(file.relativePath))?.diagnostics ?? [] }
-    : kind === 'python' ? parsePyprojectToml(file)
+    : kind === 'python' ? parsePyprojectToml(file, poetryLockfiles.get(file.relativePath))
+    : kind === 'poetry-lock' ? { dependencies: [], diagnostics: poetryLockfiles.get(poetryLockfileManifestPath(file.relativePath))?.diagnostics ?? [] }
     : { dependencies: [], diagnostics: [] };
   return {
     ...parsed,

@@ -46,7 +46,8 @@ package resolver 已覆盖常见生态的 manifest graph 与 npm lockfile transi
 - [x] npm `package-lock.json` v2/v3 transitive 依赖图
   - 当前 gate：transitive package entry 会被索引为带 locked version 与 evidence span 的 lockfile-derived `DEPENDS_ON` package relation。
 - [x] `Cargo.lock` transitive 依赖图（有 source 的外部包 → proven `lockfile:transitive` 依赖，镜像 npm lockfile 路径）
-- [ ] 将 lockfile-based transitive 依赖图扩展到 pip/poetry/go/maven/gradle lockfile
+- [x] `poetry.lock` transitive 依赖图（resolved 包 → proven `lockfile:transitive` 依赖；跳过本地 `directory`/`file` source）
+- [ ] 将 lockfile-based transitive 依赖图扩展到 pip (requirements/uv)、go、maven、gradle lockfile
 - [ ] 用 semver/range 信息推断受影响的版本范围
 - [ ] 标准化在不执行 build script 的情况下 dump dependency 图
 

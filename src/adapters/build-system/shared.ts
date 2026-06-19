@@ -25,6 +25,7 @@ export function buildManifestKind(relativePath: string): BuildManifestKind | und
   if (basename === 'Cargo.toml') return 'cargo';
   if (basename === 'Cargo.lock') return 'cargo-lock';
   if (basename === 'pyproject.toml') return 'python';
+  if (basename === 'poetry.lock') return 'poetry-lock';
   if (basename === 'pnpm-workspace.yaml') return 'pnpm-workspace';
   return undefined;
 }

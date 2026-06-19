@@ -43,6 +43,7 @@ export type BuildManifestKind =
   | PackageEcosystem
   | 'npm-lock'
   | 'cargo-lock'
+  | 'poetry-lock'
   | 'gradle-settings'
   | 'gradle-version-catalog'
   | 'go-work'

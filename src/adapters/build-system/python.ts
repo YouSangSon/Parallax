@@ -1,6 +1,8 @@
 import type { ScannedFile } from '../../types.js';
 import {
+  buildManifestKind,
   dedupeDependencies,
+  evidenceForNeedle,
   evidenceLineAt,
   localPackage,
   normalizePythonPackageName,
@@ -15,15 +17,20 @@ import {
 } from './shared.js';
 import type { PackageDependency, ParsedManifest, TomlSectionBlock, TomlStringValue } from './types.js';
 
-export function parsePyprojectToml(file: ScannedFile): ParsedManifest {
+export function parsePyprojectToml(file: ScannedFile, lockfile?: ParsedPoetryLockfile): ParsedManifest {
   const projectName = tomlStringInSection(file.content, 'project', 'name') ?? tomlStringInSection(file.content, 'tool.poetry', 'name');
   if (!projectName) return { dependencies: [], diagnostics: [`pyproject.toml missing [project].name or [tool.poetry].name: ${file.relativePath}`] };
   const version = tomlStringInSection(file.content, 'project', 'version') ?? tomlStringInSection(file.content, 'tool.poetry', 'version');
   const pkg = localPackage('python', projectName, file.relativePath, projectName, version, [normalizePythonPackageName(projectName)]);
+  const manifestDependencies = pyprojectDependencies(file);
+  const manifestNames = new Set(manifestDependencies.map((dependency) => dependency.name));
+  const lockfileDependencies = (lockfile?.dependencies ?? []).filter(
+    (dependency) => !manifestNames.has(dependency.name)
+  );
   return {
     package: pkg,
-    dependencies: pyprojectDependencies(file),
-    diagnostics: []
+    dependencies: dedupeDependencies([...manifestDependencies, ...lockfileDependencies]),
+    diagnostics: lockfile?.diagnostics ?? []
   };
 }
 
@@ -107,4 +114,58 @@ function poetryGroupDependencies(
     lineOffset += line.length + 1;
   }
   return dedupeDependencies(dependencies);
+}
+
+export type ParsedPoetryLockfile = {
+  manifestPath: string;
+  lockfilePath: string;
+  dependencies: PackageDependency[];
+  diagnostics: string[];
+};
+
+// poetry.lock lives next to pyproject.toml.
+export function poetryLockfileManifestPath(lockfilePath: string): string {
+  const prefix = lockfilePath.slice(0, -'poetry.lock'.length);
+  return `${prefix}pyproject.toml`;
+}
+
+export function discoverPoetryLockfiles(
+  files: readonly ScannedFile[]
+): ReadonlyMap<string, ParsedPoetryLockfile> {
+  const lockfiles = new Map<string, ParsedPoetryLockfile>();
+  for (const file of files) {
+    if (buildManifestKind(file.relativePath) !== 'poetry-lock') continue;
+    const parsed = parsePoetryLockfile(file);
+    lockfiles.set(parsed.manifestPath, parsed);
+  }
+  return lockfiles;
+}
+
+// Each `[[package]]` block is a resolved transitive dependency; blocks whose
+// `[package.source]` is a local `directory`/`file` are skipped so local path
+// deps stay first-class packages, mirroring the Cargo.lock handling.
+export function parsePoetryLockfile(file: ScannedFile): ParsedPoetryLockfile {
+  const base = {
+    manifestPath: poetryLockfileManifestPath(file.relativePath),
+    lockfilePath: file.relativePath
+  };
+  const dependencies: PackageDependency[] = [];
+  const blocks = file.content.split(/^\s*\[\[package\]\]\s*$/m).slice(1);
+  for (const block of blocks) {
+    const rawName = /^\s*name\s*=\s*"([^"]+)"/m.exec(block)?.[1];
+    if (!rawName) continue;
+    if (/^\s*type\s*=\s*"(?:directory|file)"/m.test(block)) continue;
+    const name = normalizePythonPackageName(rawName);
+    const version = /^\s*version\s*=\s*"([^"]+)"/m.exec(block)?.[1];
+    dependencies.push({
+      ecosystem: 'python',
+      name,
+      displayName: name,
+      version,
+      dependencyType: 'lockfile:transitive',
+      confidence: 'proven',
+      evidence: evidenceForNeedle(file.content, file.relativePath, `name = "${rawName}"`)
+    });
+  }
+  return { ...base, dependencies: dedupeDependencies(dependencies), diagnostics: [] };
 }

@@ -44,6 +44,8 @@ export { importSession } from './session_import.js';
 export type { SessionImportFormat, SessionImportOptions, SessionImportResult } from './session_import.js';
 export { ingestTraces, parseTraceInput } from './trace_promotion.js';
 export type { ObservedEdge, TraceIngestSummary } from './trace_promotion.js';
+export { executeGraphQuery, parseGraphQuery } from './graph_query.js';
+export type { GraphQueryResult, ParsedGraphQuery } from './graph_query.js';
 export {
   addWorkspaceRepo,
   initWorkspace,

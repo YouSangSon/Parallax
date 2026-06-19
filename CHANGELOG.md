@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Supply-chain and security CI hardening: CodeQL (security-extended) SAST, OpenSSF Scorecard, a gitleaks secret scan plus a `npm audit` high-severity gate, Dependabot for npm and GitHub Actions, and a tag-triggered release workflow that runs the full verify gate, emits an SPDX SBOM (`npm sbom`), attests SLSA build provenance and the SBOM via GitHub OIDC, and publishes to npm with provenance (publish is `--dry-run` until npm trusted publishing or an `NPM_TOKEN` is configured).
 - Heuristic git co-change relations: an indexing pass derives `CO_CHANGES` couplings from commit history (files that repeatedly change together, above coupling/count thresholds, ignoring sweeping commits) so blast-radius analysis recovers config↔code / test↔impl links the static graph misses. Emitted at `heuristic` confidence as its own adapter run with a knownGaps disclosure (coupling is correlational, not a proven dependency), and absent outside a git work tree.
 - Dogfood guard test that runs Parallax against its own internal dependency graph, plus a NodeNext `.js`-extension benchmark fixture.
 - CI workflow running lint, build, test, dogfood, and benchmark on push and pull request.

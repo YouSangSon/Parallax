@@ -1,0 +1,68 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Build, attest, publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write      # OIDC: SLSA build provenance + npm trusted publishing
+      attestations: write  # build-provenance and SBOM attestations
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify (full release gate)
+        run: npm run verify
+
+      - name: Pack tarball
+        run: npm pack
+
+      - name: Generate SBOM (SPDX)
+        run: npm sbom --sbom-format=spdx --omit=dev > sbom.spdx.json
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: '*.tgz'
+
+      - name: Attest SBOM
+        uses: actions/attest-sbom@v1
+        with:
+          subject-path: '*.tgz'
+          sbom-path: sbom.spdx.json
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: |
+            *.tgz
+            sbom.spdx.json
+          retention-days: 14
+
+      # Publishes with npm provenance. Requires npm trusted publishing (OIDC)
+      # configured for this package, or an NPM_TOKEN repository secret. Remove
+      # `--dry-run` once one of those is set up.
+      - name: Publish to npm
+        run: npm publish --provenance --access public --dry-run
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

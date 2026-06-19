@@ -18,6 +18,7 @@ import {
 } from './context_pack.js';
 import type { PersistedContextPack } from './context_pack.js';
 import { doctorProject, redactDoctorReportForMcp } from './doctor.js';
+import { executeGraphQuery } from './graph_query.js';
 import { readGitSnapshot } from './git-snapshot.js';
 import { reflectFacts, repairReflections } from './reflection.js';
 import { profileEntity } from './profile.js';
@@ -347,6 +348,29 @@ export function createMcpServer(context: McpContext): McpServer {
         ...(currentOnly !== undefined ? { currentOnly } : {}),
         ...(semantic !== undefined ? { semantic } : {})
       });
+      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+    }
+  );
+
+  server.registerTool(
+    'parallax_query',
+    {
+      title: 'Query the graph',
+      description:
+        'Run a read-only Cypher subset over the indexed entity/relation graph: a single optional relationship hop, node labels, WHERE equality/CONTAINS, projection, and LIMIT. Write, procedure, projection (WITH/UNWIND), and reverse-direction clauses are rejected.',
+      inputSchema: {
+        query: z.string().min(1)
+      },
+      annotations: {
+        title: 'Query the graph',
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      }
+    },
+    async ({ query }) => {
+      const result = executeGraphQuery(context.repoRoot, query);
       return { content: [{ type: 'text', text: JSON.stringify(result) }] };
     }
   );

@@ -87,21 +87,21 @@ const mcpDocsToolTables: McpDocsToolTable[] = [
   },
   {
     filePath: 'skills/parallax/SKILL.md',
-    toolsHeading: '## MCP tools surfaced (18)',
+    toolsHeading: '## MCP tools surfaced (19)',
     yesLabel: '✅',
     noLabel: '❌',
     readOnlyColumnIndex: 1
   },
   {
     filePath: 'skills/parallax/SKILL.ko.md',
-    toolsHeading: '## MCP tools surfaced (18)',
+    toolsHeading: '## MCP tools surfaced (19)',
     yesLabel: '✅',
     noLabel: '❌',
     readOnlyColumnIndex: 1
   },
   {
     filePath: 'skills/parallax/SKILL.zh.md',
-    toolsHeading: '## MCP tools surfaced (18)',
+    toolsHeading: '## MCP tools surfaced (19)',
     yesLabel: '✅',
     noLabel: '❌',
     readOnlyColumnIndex: 1
@@ -1167,6 +1167,7 @@ test('MCP stdio server initializes and exposes the full agent memory tool surfac
       'parallax_search_context',
       'parallax_remember',
       'parallax_recall',
+      'parallax_query',
       'parallax_branch',
       'parallax_merge',
       'parallax_trace',

@@ -157,6 +157,12 @@ function stripFencedCode(content) {
   return out.join('\n');
 }
 
+// Removes inline `code` spans so prose that documents link/image syntax inside
+// backticks is not parsed as a real reference.
+function stripInlineCode(text) {
+  return text.replace(/`[^`\n]*`/g, '');
+}
+
 // Yields { isImage, target } for every markdown link, with anchors/urls handled.
 function* iterLinks(rawContent) {
   const content = stripFencedCode(rawContent);
@@ -249,14 +255,18 @@ function checkMarkdownLinkTargets(file, content) {
 // the latter), since the Markdown link-target check deliberately skips images.
 // External (http/https/protocol-relative) and data: URIs are ignored.
 function checkImageTargets(file, content) {
+  // Scan with both fenced and inline code removed so prose that *documents*
+  // image syntax (e.g. `![](path)` or `<img src="path">` in backticks) is not
+  // mistaken for a real reference.
+  const scan = stripInlineCode(stripFencedCode(content));
   const targets = [];
-  for (const { isImage, target } of iterLinks(content)) {
-    if (isImage) targets.push(target);
-  }
-  const stripped = stripFencedCode(content);
-  const imgRe = /<img\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/gi;
+  const markdownImage = /!\[[^\]]*\]\(([^)]+)\)/g;
   let match;
-  while ((match = imgRe.exec(stripped)) !== null) {
+  while ((match = markdownImage.exec(scan)) !== null) {
+    targets.push(match[1]);
+  }
+  const htmlImage = /<img\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/gi;
+  while ((match = htmlImage.exec(scan)) !== null) {
     targets.push(match[1]);
   }
   for (let target of targets) {

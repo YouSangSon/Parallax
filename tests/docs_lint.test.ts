@@ -255,6 +255,7 @@ test('docs-lint flags missing local image targets (markdown and HTML <img>), not
         '<img src="docs/assets/missing-html.png" alt="broken">',
         '![badge](https://img.shields.io/badge/x-y-z)',
         '![shot](docs/assets/missing-md.png)',
+        'Documenting syntax in code is ignored: `![](code-only.png)` and `<img src="code-only2.png">`.',
         ''
       ].join('\n'),
       'README.ko.md': '# Root\n\n[English](README.md) · **한국어** · [中文](README.zh.md)\n',
@@ -273,6 +274,8 @@ test('docs-lint flags missing local image targets (markdown and HTML <img>), not
   // present image and the external shields.io badge must NOT be reported.
   assert.doesNotMatch(output, /present\.png/);
   assert.doesNotMatch(output, /shields\.io/);
+  // image syntax inside inline code is documentation, not a reference.
+  assert.doesNotMatch(output, /code-only/);
 });
 
 test('docs-lint passes benign tracked and untracked Markdown', async () => {

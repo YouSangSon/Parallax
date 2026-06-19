@@ -6180,6 +6180,8 @@ test('TypeScript JavaScript adapter records parser-backed array element typed re
     '  const aliasList: GuardList = guards;',
     '  const aliasPair: GuardPair = pair;',
     '  const readonlyAliasPair: ReadonlyGuardPair = pair;',
+    '  const inferredAliasList = aliasList;',
+    '  const inferredAliasPair = aliasPair;',
     '  return guards[0].validateSession(token)',
     '    && more[1].validateSession(token)',
     '    && readonlyGuards[2].validateSession(token)',
@@ -6192,7 +6194,10 @@ test('TypeScript JavaScript adapter records parser-backed array element typed re
     '    && aliasPair[0].validateSession(token)',
     '    && aliasPair[1].auditSession(token)',
     '    && readonlyAliasPair[0].validateSession(token)',
-    '    && readonlyAliasPair[1].auditSession(token);',
+    '    && readonlyAliasPair[1].auditSession(token)',
+    '    && inferredAliasList[0].validateSession(token)',
+    '    && inferredAliasPair[0].validateSession(token)',
+    '    && inferredAliasPair[1].auditSession(token);',
     '}',
     ''
   ].join('\n'));
@@ -6253,12 +6258,15 @@ test('TypeScript JavaScript adapter records parser-backed array element typed re
         ['authorize', 'SessionGuard.validateSession', 'aliasPair[0].validateSession(token)'],
         ['authorize', 'AuditGuard.auditSession', 'aliasPair[1].auditSession(token)'],
         ['authorize', 'SessionGuard.validateSession', 'readonlyAliasPair[0].validateSession(token)'],
-        ['authorize', 'AuditGuard.auditSession', 'readonlyAliasPair[1].auditSession(token)']
+        ['authorize', 'AuditGuard.auditSession', 'readonlyAliasPair[1].auditSession(token)'],
+        ['authorize', 'SessionGuard.validateSession', 'inferredAliasList[0].validateSession(token)'],
+        ['authorize', 'SessionGuard.validateSession', 'inferredAliasPair[0].validateSession(token)'],
+        ['authorize', 'AuditGuard.auditSession', 'inferredAliasPair[1].auditSession(token)']
       ]
     );
     assert.deepEqual(calls.map((row) => row.start_line), [
       22, 23, 24, 25, 26,
-      38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50
+      40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55
     ]);
     assert.ok(calls.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
     assert.ok(calls.every((row) => row.provenance.startsWith('instance-call:')));
@@ -6290,12 +6298,19 @@ test('TypeScript JavaScript adapter records parser-backed destructured array rec
     '  const [first]: GuardList = guards;',
     '  const [inferredSession, inferredAudit] = pair;',
     '  const [inferredFirst] = guards;',
+    '  const aliasPair = pair;',
+    '  const aliasGuards = guards;',
+    '  const [aliasSession, aliasAudit] = aliasPair;',
+    '  const [aliasFirst] = aliasGuards;',
     '  return session.validateSession(token)',
     '    && audit.auditSession(token)',
     '    && first.validateSession(token)',
     '    && inferredSession.validateSession(token)',
     '    && inferredAudit.auditSession(token)',
-    '    && inferredFirst.validateSession(token);',
+    '    && inferredFirst.validateSession(token)',
+    '    && aliasSession.validateSession(token)',
+    '    && aliasAudit.auditSession(token)',
+    '    && aliasFirst.validateSession(token);',
     '}',
     '',
     'export function authorizeParameter([session, audit]: GuardPair, [first]: GuardList, token: string): boolean {',
@@ -6351,12 +6366,15 @@ test('TypeScript JavaScript adapter records parser-backed destructured array rec
         ['authorizePair', 'SessionGuard.validateSession', 'inferredSession.validateSession(token)'],
         ['authorizePair', 'AuditGuard.auditSession', 'inferredAudit.auditSession(token)'],
         ['authorizePair', 'SessionGuard.validateSession', 'inferredFirst.validateSession(token)'],
+        ['authorizePair', 'SessionGuard.validateSession', 'aliasSession.validateSession(token)'],
+        ['authorizePair', 'AuditGuard.auditSession', 'aliasAudit.auditSession(token)'],
+        ['authorizePair', 'SessionGuard.validateSession', 'aliasFirst.validateSession(token)'],
         ['authorizeParameter', 'SessionGuard.validateSession', 'session.validateSession(token)'],
         ['authorizeParameter', 'AuditGuard.auditSession', 'audit.auditSession(token)'],
         ['authorizeParameter', 'SessionGuard.validateSession', 'first.validateSession(token)']
       ]
     );
-    assert.deepEqual(calls.map((row) => row.start_line), [19, 20, 21, 22, 23, 24, 28, 29, 30]);
+    assert.deepEqual(calls.map((row) => row.start_line), [23, 24, 25, 26, 27, 28, 29, 30, 31, 35, 36, 37]);
     assert.ok(calls.every((row) => row.adapter_id === TS_JS_SEMANTIC_ADAPTER_ID));
     assert.ok(calls.every((row) => row.provenance.startsWith('instance-call:')));
   } finally {

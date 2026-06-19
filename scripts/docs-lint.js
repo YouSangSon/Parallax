@@ -244,6 +244,37 @@ function checkMarkdownLinkTargets(file, content) {
   }
 }
 
+// Verifies that local image references resolve to a file that exists. Covers
+// both Markdown images (`![alt](path)`) and HTML `<img src="path">` (READMEs use
+// the latter), since the Markdown link-target check deliberately skips images.
+// External (http/https/protocol-relative) and data: URIs are ignored.
+function checkImageTargets(file, content) {
+  const targets = [];
+  for (const { isImage, target } of iterLinks(content)) {
+    if (isImage) targets.push(target);
+  }
+  const stripped = stripFencedCode(content);
+  const imgRe = /<img\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/gi;
+  let match;
+  while ((match = imgRe.exec(stripped)) !== null) {
+    targets.push(match[1]);
+  }
+  for (let target of targets) {
+    target = target.trim();
+    if (!target) continue;
+    if (/^(?:https?:)?\/\//i.test(target) || /^data:/i.test(target)) continue;
+    const hashIdx = target.indexOf('#');
+    if (hashIdx >= 0) target = target.slice(0, hashIdx);
+    const queryIdx = target.indexOf('?');
+    if (queryIdx >= 0) target = target.slice(0, queryIdx);
+    if (!target) continue;
+    const resolved = resolveRepoMarkdownTarget(file, target);
+    if (!existsSync(resolved)) {
+      report(file, `missing image target ${target}`);
+    }
+  }
+}
+
 function checkPackageSurfaceLinks(file, content) {
   if (!isPackageVisibleMarkdown(file)) return;
   for (const { isImage, target } of iterLinks(content)) {
@@ -285,6 +316,7 @@ function run() {
     const content = readFileSync(file, 'utf8');
     checkForbidden(file, content);
     checkMarkdownLinkTargets(file, content);
+    checkImageTargets(file, content);
     checkPackageSurfaceLinks(file, content);
     if (inTrilingualZone(file)) {
       checkSwitcher(file, content);

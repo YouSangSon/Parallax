@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `docs-lint` now verifies local image targets exist — both Markdown images (`![](path)`) and HTML `<img src="path">` (which READMEs use and the Markdown link-target check skipped) — so a broken screenshot/diagram reference fails the gate instead of slipping through. External (`http(s)`/protocol-relative) and `data:` URIs are ignored.
 - Indexing performance: the write-mode database now opens with `synchronous = NORMAL` (durable-enough for a rebuildable derived index under WAL), a 16 MiB page cache, and 256 MiB mmap, cutting per-write fsync and page I/O during indexing. Deterministic — affects speed, not results.
 - Corrected MCP / CLI / SKILL / schema documentation drift so docs match the source (tool tables, command and flag names, tool counts).
 - Hardened `docs-lint` to enforce trilingual parity, language-switcher headers, and same-language internal links, and to ignore fenced code examples while still scanning them for secrets.

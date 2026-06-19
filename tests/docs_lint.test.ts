@@ -243,6 +243,38 @@ test('repo-relative Markdown helpers keep POSIX paths for Windows-host-safe link
   assert.equal(resolveRepoMarkdownTarget('docs/guides/topic.zh.md', './topic.md'), 'docs/guides/topic.md');
 });
 
+test('docs-lint flags missing local image targets (markdown and HTML <img>), not present ones', async () => {
+  const repoRoot = await makeMarkdownRepo(
+    {
+      'README.md': [
+        '# Root',
+        '',
+        '**English** · [한국어](README.ko.md) · [中文](README.zh.md)',
+        '',
+        '<img src="docs/assets/present.png" alt="ok" width="100%">',
+        '<img src="docs/assets/missing-html.png" alt="broken">',
+        '![badge](https://img.shields.io/badge/x-y-z)',
+        '![shot](docs/assets/missing-md.png)',
+        ''
+      ].join('\n'),
+      'README.ko.md': '# Root\n\n[English](README.md) · **한국어** · [中文](README.zh.md)\n',
+      'README.zh.md': '# Root\n\n[English](README.md) · [한국어](README.ko.md) · **中文**\n',
+      'docs/assets/present.png': 'PNGDATA'
+    },
+    ['README.md', 'README.ko.md', 'README.zh.md', 'docs/assets/present.png']
+  );
+
+  const result = runDocsLint(repoRoot);
+  const output = `${result.stdout}\n${result.stderr}`;
+
+  assert.notEqual(result.status, 0, output);
+  assert.match(output, /missing image target docs\/assets\/missing-html\.png/);
+  assert.match(output, /missing image target docs\/assets\/missing-md\.png/);
+  // present image and the external shields.io badge must NOT be reported.
+  assert.doesNotMatch(output, /present\.png/);
+  assert.doesNotMatch(output, /shields\.io/);
+});
+
 test('docs-lint passes benign tracked and untracked Markdown', async () => {
   const repoRoot = await makeMarkdownRepo(
     {

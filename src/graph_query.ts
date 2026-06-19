@@ -87,25 +87,39 @@ export function parseGraphQuery(input: string): ParsedGraphQuery {
   };
 }
 
+const NODE = '\\(\\s*([A-Za-z_]\\w*)\\s*(?::\\s*([A-Za-z_]\\w*))?\\s*\\)';
+const REL = '\\[\\s*([A-Za-z_]\\w*)?\\s*(?::\\s*([A-Za-z_]\\w*))?\\s*\\]';
+const FORWARD_HOP = new RegExp(`^${NODE}\\s*-\\s*${REL}\\s*->\\s*${NODE}$`);
+const REVERSE_HOP = new RegExp(`^${NODE}\\s*<-\\s*${REL}\\s*-\\s*${NODE}$`);
+const NODE_ONLY = new RegExp(`^${NODE}$`);
+
 function parsePattern(text: string): Pick<ParsedGraphQuery, 'source' | 'relationship' | 'target'> {
-  if (text.includes('<-')) {
-    throw new Error('unsupported query: only left-to-right (->) relationship direction is supported');
+  if (text.includes('<-') && text.includes('->')) {
+    throw new Error('unsupported query: bidirectional relationships are not supported');
   }
-  const hop = text.match(
-    /^\(\s*([A-Za-z_]\w*)\s*(?::\s*([A-Za-z_]\w*))?\s*\)\s*-\s*\[\s*([A-Za-z_]\w*)?\s*(?::\s*([A-Za-z_]\w*))?\s*\]\s*->\s*\(\s*([A-Za-z_]\w*)\s*(?::\s*([A-Za-z_]\w*))?\s*\)$/
-  );
-  if (hop) {
+  const forward = text.match(FORWARD_HOP);
+  if (forward) {
     return {
-      source: { variable: hop[1]!, ...(hop[2] ? { label: hop[2] } : {}) },
-      relationship: { ...(hop[3] ? { variable: hop[3] } : {}), ...(hop[4] ? { type: hop[4] } : {}) },
-      target: { variable: hop[5]!, ...(hop[6] ? { label: hop[6] } : {}) }
+      source: { variable: forward[1]!, ...(forward[2] ? { label: forward[2] } : {}) },
+      relationship: { ...(forward[3] ? { variable: forward[3] } : {}), ...(forward[4] ? { type: forward[4] } : {}) },
+      target: { variable: forward[5]!, ...(forward[6] ? { label: forward[6] } : {}) }
     };
   }
-  const nodeOnly = text.match(/^\(\s*([A-Za-z_]\w*)\s*(?::\s*([A-Za-z_]\w*))?\s*\)$/);
+  // Reverse: (head)<-[r]-(tail) means tail -> head; normalize so the executor
+  // sees the relation's true source (tail) and target (head).
+  const reverse = text.match(REVERSE_HOP);
+  if (reverse) {
+    return {
+      source: { variable: reverse[5]!, ...(reverse[6] ? { label: reverse[6] } : {}) },
+      relationship: { ...(reverse[3] ? { variable: reverse[3] } : {}), ...(reverse[4] ? { type: reverse[4] } : {}) },
+      target: { variable: reverse[1]!, ...(reverse[2] ? { label: reverse[2] } : {}) }
+    };
+  }
+  const nodeOnly = text.match(NODE_ONLY);
   if (nodeOnly) {
     return { source: { variable: nodeOnly[1]!, ...(nodeOnly[2] ? { label: nodeOnly[2] } : {}) } };
   }
-  throw new Error('unsupported MATCH pattern: expected (a), (a:Label), or (a)-[r:TYPE]->(b)');
+  throw new Error('unsupported MATCH pattern: expected (a), (a:Label), (a)-[r:TYPE]->(b), or (a)<-[r:TYPE]-(b)');
 }
 
 function parseWhere(text: string): GraphQueryCondition[] {

@@ -58,6 +58,24 @@ test('executeGraphQuery traverses a typed relationship hop', async () => {
   }
 });
 
+test('executeGraphQuery answers "what depends on X" via a reverse hop', async () => {
+  const repoRoot = await buildRepo();
+  try {
+    // alpha imports beta; "who depends on beta?" = (beta)<-[r:DEPENDS_ON]-(dependent).
+    const result = executeGraphQuery(
+      repoRoot,
+      "MATCH (b)<-[r:DEPENDS_ON]-(a) WHERE b.path CONTAINS 'beta' RETURN a.path"
+    );
+    assert.deepEqual(result.columns, ['a.path']);
+    assert.ok(
+      result.rows.some((row) => row['a.path'] === 'src/alpha.ts'),
+      `expected src/alpha.ts as a dependent of beta in ${JSON.stringify(result.rows)}`
+    );
+  } finally {
+    rmSync(repoRoot, { recursive: true, force: true });
+  }
+});
+
 test('executeGraphQuery rejects write queries before touching the database', async () => {
   const repoRoot = await buildRepo();
   try {

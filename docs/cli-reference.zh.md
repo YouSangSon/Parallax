@@ -24,7 +24,7 @@
 | `parallax query "<cypher>"` | 在已索引的图上运行只读 Cypher 子集并打印 JSON 行 |
 | `parallax ingest-traces --file <traces.json>` | 将与观测到的运行时 `source -> target` 边匹配的关系提升为 `proven` 置信度 |
 
-`query` 子集支持单个可选关系 hop、节点 label、`WHERE` 等于 / `CONTAINS`、投影和 `LIMIT`——例如 `MATCH (a)-[r:DEPENDS_ON]->(b) WHERE a.path CONTAINS 'store' RETURN a.path, b.path LIMIT 20`。write、procedure、projection（`WITH`/`UNWIND`）和反向方向子句会被拒绝。`ingest-traces` 是与只读 MCP 分离的写入面（invariant **I-8**），运行时观测只会提高置信度。
+`query` 子集支持任一方向（`->` 或 `<-`）的单个可选关系 hop、节点 label、`WHERE` 等于 / `CONTAINS`、投影和 `LIMIT`——例如 `MATCH (a)-[r:DEPENDS_ON]->(b) WHERE a.path CONTAINS 'store' RETURN a.path, b.path LIMIT 20`，或“什么依赖 X”的反向形式 `MATCH (x)<-[r:DEPENDS_ON]-(d) WHERE x.path = 'src/store.ts' RETURN d.path`。write、procedure、projection（`WITH`/`UNWIND`）和双向子句会被拒绝。`ingest-traces` 是与只读 MCP 分离的写入面（invariant **I-8**），运行时观测只会提高置信度。
 
 标志：
 

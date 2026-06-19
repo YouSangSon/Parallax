@@ -24,7 +24,7 @@
 | `parallax query "<cypher>"` | 인덱싱된 그래프에 읽기전용 Cypher 서브셋을 실행하고 JSON 행을 출력 |
 | `parallax ingest-traces --file <traces.json>` | 관측된 런타임 `source -> target` 엣지와 매칭되는 관계를 `proven` 신뢰도로 승격 |
 
-`query` 서브셋은 단일 선택적 관계 hop, 노드 label, `WHERE` 등호 / `CONTAINS`, 투영, `LIMIT`를 지원한다 — 예: `MATCH (a)-[r:DEPENDS_ON]->(b) WHERE a.path CONTAINS 'store' RETURN a.path, b.path LIMIT 20`. write·procedure·projection(`WITH`/`UNWIND`)·역방향 구문은 거부된다. `ingest-traces`는 읽기전용 MCP에서 분리된 write 표면(invariant **I-8**)이며, 런타임 관측은 신뢰도를 올리기만 한다.
+`query` 서브셋은 양방향(`->` 또는 `<-`) 단일 선택적 관계 hop, 노드 label, `WHERE` 등호 / `CONTAINS`, 투영, `LIMIT`를 지원한다 — 예: `MATCH (a)-[r:DEPENDS_ON]->(b) WHERE a.path CONTAINS 'store' RETURN a.path, b.path LIMIT 20`, 또는 "무엇이 X에 의존하는가" 역방향 형태 `MATCH (x)<-[r:DEPENDS_ON]-(d) WHERE x.path = 'src/store.ts' RETURN d.path`. write·procedure·projection(`WITH`/`UNWIND`)·양방향 구문은 거부된다. `ingest-traces`는 읽기전용 MCP에서 분리된 write 표면(invariant **I-8**)이며, 런타임 관측은 신뢰도를 올리기만 한다.
 
 플래그:
 

@@ -46,9 +46,19 @@ test('parses a node-only MATCH with no relationship', () => {
   assert.equal(q.target, undefined);
 });
 
+test('parses a reverse-direction hop by normalizing to the true source/target', () => {
+  // (x)<-[r]-(d) means d -> x; normalize so source=d, target=x.
+  const q = parseGraphQuery("MATCH (x)<-[r:DEPENDS_ON]-(d) WHERE x.path = 'src/store.ts' RETURN d.path");
+  assert.equal(q.source.variable, 'd');
+  assert.equal(q.target?.variable, 'x');
+  assert.equal(q.relationship?.type, 'DEPENDS_ON');
+  assert.deepEqual(q.where, [{ variable: 'x', property: 'path', op: '=', value: 'src/store.ts' }]);
+  assert.deepEqual(q.returns, [{ variable: 'd', property: 'path' }]);
+});
+
 test('rejects write clauses and unsupported syntax', () => {
   assert.throws(() => parseGraphQuery("CREATE (a) RETURN a"), /unsupported|read-only|MATCH/i);
   assert.throws(() => parseGraphQuery("MATCH (a) DELETE a"), /unsupported|read-only|DELETE/i);
-  assert.throws(() => parseGraphQuery("MATCH (a)<-[r]-(b) RETURN a"), /direction|unsupported/i);
+  assert.throws(() => parseGraphQuery("MATCH (a)<-[r]->(b) RETURN a"), /bidirectional|unsupported/i);
   assert.throws(() => parseGraphQuery("MATCH (a) RETURN"), /RETURN/i);
 });

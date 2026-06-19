@@ -462,6 +462,29 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === 'install-agent') {
+    const { resolve } = await import('node:path');
+    const { existsSync, readFileSync } = await import('node:fs');
+    const { addParallaxMcpServer, installParallaxMcp } = await import('./index.js');
+    const name = parseOptionalArg(args, '--name');
+    const commandOverride = parseOptionalArg(args, '--command');
+    const configPath = resolve(repoRoot, parseOptionalArg(args, '--config') ?? '.mcp.json');
+    const options = {
+      ...(name ? { name } : {}),
+      ...(commandOverride ? { command: commandOverride } : {})
+    };
+    if (args.includes('--dry-run')) {
+      const existing = existsSync(configPath)
+        ? (JSON.parse(readFileSync(configPath, 'utf8') || '{}') as Record<string, unknown>)
+        : undefined;
+      console.log(JSON.stringify(addParallaxMcpServer(existing, options), null, 2));
+      return;
+    }
+    const result = installParallaxMcp(configPath, options);
+    console.log(JSON.stringify({ path: result.path, created: result.created }, null, 2));
+    return;
+  }
+
   if (command === 'query') {
     const { executeGraphQuery } = await import('./index.js');
     const cypher = parsePositionals(args).join(' ') || parseOptionalArg(args, '--query');
@@ -639,6 +662,7 @@ Agent memory:
   ${PACKAGE_NAME} trace    --fact-id <id> [--depth 5]
   ${PACKAGE_NAME} ingest-traces --file <traces.json>
   ${PACKAGE_NAME} query    "MATCH (a)-[r:DEPENDS_ON]->(b) RETURN a.path, b.path LIMIT 20"
+  ${PACKAGE_NAME} install-agent [--config .mcp.json] [--name parallax] [--dry-run]
 `);
 }
 

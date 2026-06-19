@@ -47,7 +47,7 @@ a first-class agent surface; context-pack telemetry is recorded but nothing acts
 
 | # | Opportunity | Effort | Value |
 | :-- | :-- | :-- | :-- |
-| M1 | **Multi-hop + aggregation in `parallax_query`** — the Cypher subset is capped at one hop (`graph_query.ts`); blast-radius is exactly the multi-hop traversal agents want. Add bounded variable-length paths `-[r:TYPE*1..N]->` (recursive CTE, depth cap ≤ 8 like `analyze_diff`), `COUNT(...)`+`GROUP BY`, `ORDER BY`. Stays read-only + deterministic. | M | HIGH |
+| M1 | **Multi-hop + aggregation in `parallax_query`** — ✅ **variable-length paths shipped** (`-[r:TYPE*1..N]->` via a deterministic recursive CTE, depth cap 8). Still open: `COUNT(...)`+`GROUP BY` and `ORDER BY <col>`. Stays read-only + deterministic. | M | HIGH |
 | M2 | **Telemeter + resource-link `parallax_query`** — unlike every sibling, `parallax_query` (`mcp.ts:355-376`) skips `toolJsonResponse`/telemetry and emits no `parallax://entities/{id}` links. Route it through the existing rails so results are navigable and measurable. | S | HIGH |
 | M3 | **Expose co-change as an MCP tool + resource** — `co-change.ts` computes `CO_CHANGES` coupling but no dedicated surface exists. Add read-only `parallax_co_change` (ranked coupled files by `couplingScore`) and optionally fold top partners into `context_for_change`. Surfaces couplings the static graph misses. | M | HIGH |
 | M4 | **Structured "what-changed-since" tool** — only a human-readable drift warning exists (`analyzer.ts:372`). Add `parallax_changed_since` returning a deterministic delta (entities/relations added/removed, confidence promotions) between two index runs. Lets agents orient incrementally. | M | MED |

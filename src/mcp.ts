@@ -357,7 +357,7 @@ export function createMcpServer(context: McpContext): McpServer {
     {
       title: 'Query the graph',
       description:
-        'Run a read-only Cypher subset over the indexed entity/relation graph: a single optional relationship hop, node labels, WHERE equality/CONTAINS, projection, and LIMIT. Write, procedure, projection (WITH/UNWIND), and reverse-direction clauses are rejected.',
+        'Run a read-only Cypher subset over the indexed entity/relation graph: a relationship hop (forward, reverse, or variable-length *min..max), node labels, WHERE equality/CONTAINS, projection, and LIMIT. Write, procedure, projection (WITH/UNWIND), and bidirectional clauses are rejected.',
       inputSchema: {
         query: z.string().min(1)
       },

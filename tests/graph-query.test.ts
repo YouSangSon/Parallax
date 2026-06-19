@@ -56,6 +56,29 @@ test('parses a reverse-direction hop by normalizing to the true source/target', 
   assert.deepEqual(q.returns, [{ variable: 'd', property: 'path' }]);
 });
 
+test('parses variable-length relationship paths', () => {
+  const range = parseGraphQuery('MATCH (a)-[r:DEPENDS_ON*1..3]->(b) RETURN a.path, b.path');
+  assert.deepEqual(range.relationship?.pathLength, { min: 1, max: 3 });
+
+  const star = parseGraphQuery('MATCH (a)-[:DEPENDS_ON*]->(b) RETURN b.path');
+  assert.deepEqual(star.relationship?.pathLength, { min: 1, max: 8 });
+
+  const exact = parseGraphQuery('MATCH (a)-[:CALLS*2]->(b) RETURN b.path');
+  assert.deepEqual(exact.relationship?.pathLength, { min: 2, max: 2 });
+
+  // max is capped at MAX_HOPS (8).
+  const capped = parseGraphQuery('MATCH (a)-[:CALLS*1..50]->(b) RETURN b.path');
+  assert.equal(capped.relationship?.pathLength?.max, 8);
+});
+
+test('rejects projecting the relationship variable of a variable-length path', () => {
+  // A *N..M path has no single edge binding, so r.kind is unknown.
+  assert.throws(
+    () => parseGraphQuery('MATCH (a)-[r:DEPENDS_ON*1..3]->(b) RETURN r.kind'),
+    /unknown variable in RETURN: r/i
+  );
+});
+
 test('rejects write clauses and unsupported syntax', () => {
   assert.throws(() => parseGraphQuery("CREATE (a) RETURN a"), /unsupported|read-only|MATCH/i);
   assert.throws(() => parseGraphQuery("MATCH (a) DELETE a"), /unsupported|read-only|DELETE/i);

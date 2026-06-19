@@ -1,14 +1,17 @@
 // A deliberately small, READ-ONLY Cypher subset over the canonical
-// entities/relations graph. Supports a single optional relationship hop, node
-// labels, WHERE equality/CONTAINS on properties, projection, and LIMIT, and
-// rejects everything else (writes, procedures, reverse direction) with a clear
-// error. The parser is pure; the executor translates to parameterized SQL.
+// entities/relations graph. Supports an optional relationship hop (forward or
+// reverse, fixed or variable-length `*min..max`), node labels, WHERE
+// equality/CONTAINS on properties, projection, and LIMIT, and rejects
+// everything else (writes, procedures, bidirectional) with a clear error. The
+// parser is pure; the executor translates to parameterized SQL (a recursive CTE
+// for variable-length paths).
 
 import { getRepoId, latestCompletedIndexRun, openDatabase } from './store.js';
 import { normalizeRepoRoot } from './security.js';
 
+export type GraphQueryPathLength = { min: number; max: number };
 export type GraphQueryNode = { variable: string; label?: string };
-export type GraphQueryRel = { variable?: string; type?: string };
+export type GraphQueryRel = { variable?: string; type?: string; pathLength?: GraphQueryPathLength };
 export type GraphQueryCondition = {
   variable: string;
   property: string;
@@ -28,6 +31,7 @@ export type GraphQueryResult = { columns: string[]; rows: Array<Record<string, u
 
 const DEFAULT_LIMIT = 1000;
 const MAX_LIMIT = 10_000;
+const MAX_HOPS = 8;
 
 export function parseGraphQuery(input: string): ParsedGraphQuery {
   const text = input.trim().replace(/\s+/g, ' ');
@@ -61,8 +65,11 @@ export function parseGraphQuery(input: string): ParsedGraphQuery {
   const where = parseWhere(wherePart);
   const returns = parseReturns(returnPart);
 
+  // A variable-length path has no single relationship binding, so its rel
+  // variable is not projectable — omit it so RETURN/WHERE references error.
+  const relVariable = pattern.relationship?.pathLength ? undefined : pattern.relationship?.variable;
   const variables = new Set(
-    [pattern.source.variable, pattern.relationship?.variable, pattern.target?.variable].filter(
+    [pattern.source.variable, relVariable, pattern.target?.variable].filter(
       (value): value is string => typeof value === 'string'
     )
   );
@@ -88,10 +95,37 @@ export function parseGraphQuery(input: string): ParsedGraphQuery {
 }
 
 const NODE = '\\(\\s*([A-Za-z_]\\w*)\\s*(?::\\s*([A-Za-z_]\\w*))?\\s*\\)';
-const REL = '\\[\\s*([A-Za-z_]\\w*)?\\s*(?::\\s*([A-Za-z_]\\w*))?\\s*\\]';
+// Relationship: optional variable, optional :TYPE, optional *min..max length.
+const REL = '\\[\\s*([A-Za-z_]\\w*)?\\s*(?::\\s*([A-Za-z_]\\w*))?\\s*(\\*\\d*(?:\\.\\.\\d+)?)?\\s*\\]';
 const FORWARD_HOP = new RegExp(`^${NODE}\\s*-\\s*${REL}\\s*->\\s*${NODE}$`);
 const REVERSE_HOP = new RegExp(`^${NODE}\\s*<-\\s*${REL}\\s*-\\s*${NODE}$`);
 const NODE_ONLY = new RegExp(`^${NODE}$`);
+
+function relationship(variable: string | undefined, type: string | undefined, pathToken: string | undefined): GraphQueryRel {
+  const pathLength = parsePathLength(pathToken);
+  return {
+    ...(variable ? { variable } : {}),
+    ...(type ? { type } : {}),
+    ...(pathLength ? { pathLength } : {})
+  };
+}
+
+// `*` → 1..MAX_HOPS, `*N` → N..N, `*min..max` → min..max, `*..max` → 1..max.
+function parsePathLength(token: string | undefined): GraphQueryPathLength | undefined {
+  if (!token) return undefined;
+  const body = token.slice(1); // strip leading '*'
+  if (body === '') return { min: 1, max: MAX_HOPS };
+  const range = body.match(/^(\d*)\.\.(\d+)$/);
+  if (range) {
+    const min = range[1] === '' ? 1 : Number(range[1]);
+    const max = Math.min(Number(range[2]), MAX_HOPS);
+    if (min < 1 || max < min) throw new Error(`invalid path length: ${token}`);
+    return { min, max };
+  }
+  const exact = Number(body);
+  if (!Number.isInteger(exact) || exact < 1) throw new Error(`invalid path length: ${token}`);
+  return { min: exact, max: Math.min(exact, MAX_HOPS) };
+}
 
 function parsePattern(text: string): Pick<ParsedGraphQuery, 'source' | 'relationship' | 'target'> {
   if (text.includes('<-') && text.includes('->')) {
@@ -101,8 +135,8 @@ function parsePattern(text: string): Pick<ParsedGraphQuery, 'source' | 'relation
   if (forward) {
     return {
       source: { variable: forward[1]!, ...(forward[2] ? { label: forward[2] } : {}) },
-      relationship: { ...(forward[3] ? { variable: forward[3] } : {}), ...(forward[4] ? { type: forward[4] } : {}) },
-      target: { variable: forward[5]!, ...(forward[6] ? { label: forward[6] } : {}) }
+      relationship: relationship(forward[3], forward[4], forward[5]),
+      target: { variable: forward[6]!, ...(forward[7] ? { label: forward[7] } : {}) }
     };
   }
   // Reverse: (head)<-[r]-(tail) means tail -> head; normalize so the executor
@@ -110,8 +144,8 @@ function parsePattern(text: string): Pick<ParsedGraphQuery, 'source' | 'relation
   const reverse = text.match(REVERSE_HOP);
   if (reverse) {
     return {
-      source: { variable: reverse[5]!, ...(reverse[6] ? { label: reverse[6] } : {}) },
-      relationship: { ...(reverse[3] ? { variable: reverse[3] } : {}), ...(reverse[4] ? { type: reverse[4] } : {}) },
+      source: { variable: reverse[6]!, ...(reverse[7] ? { label: reverse[7] } : {}) },
+      relationship: relationship(reverse[3], reverse[4], reverse[5]),
       target: { variable: reverse[1]!, ...(reverse[2] ? { label: reverse[2] } : {}) }
     };
   }
@@ -119,7 +153,7 @@ function parsePattern(text: string): Pick<ParsedGraphQuery, 'source' | 'relation
   if (nodeOnly) {
     return { source: { variable: nodeOnly[1]!, ...(nodeOnly[2] ? { label: nodeOnly[2] } : {}) } };
   }
-  throw new Error('unsupported MATCH pattern: expected (a), (a:Label), (a)-[r:TYPE]->(b), or (a)<-[r:TYPE]-(b)');
+  throw new Error('unsupported MATCH pattern: expected (a), (a:Label), (a)-[r:TYPE]->(b), (a)<-[r:TYPE]-(b), or variable-length (a)-[r:TYPE*1..3]->(b)');
 }
 
 function parseWhere(text: string): GraphQueryCondition[] {
@@ -221,13 +255,13 @@ export function executeGraphQuery(repoRoot: string, input: string): GraphQueryRe
       .join(', ');
 
     const conditions: string[] = [];
-    const addLabel = (node: GraphQueryNode | undefined, alias: string): void => {
+    const addLabel = (target: string[], node: GraphQueryNode | undefined, alias: string): void => {
       if (node?.label) {
-        conditions.push(`LOWER(${alias}.kind) = LOWER(?)`);
+        target.push(`LOWER(${alias}.kind) = LOWER(?)`);
         params.push(node.label);
       }
     };
-    const addWhere = (): void => {
+    const addWhere = (target: string[]): void => {
       for (const condition of query.where) {
         const { alias, table } = aliasFor(condition.variable);
         const column = `${alias}.${
@@ -236,17 +270,47 @@ export function executeGraphQuery(repoRoot: string, input: string): GraphQueryRe
             : relationshipColumn(condition.property)
         }`;
         if (condition.op === 'CONTAINS') {
-          conditions.push(`${column} LIKE ?`);
+          target.push(`${column} LIKE ?`);
           params.push(`%${condition.value}%`);
         } else {
-          conditions.push(`${column} = ?`);
+          target.push(`${column} = ?`);
           params.push(condition.value);
         }
       }
     };
 
     let sql: string;
-    if (query.relationship && query.target) {
+    if (query.relationship?.pathLength && query.target) {
+      // Variable-length path: transitive closure of `kind` from src to a
+      // reachable node, bounded by [min, max]. UNION (not UNION ALL) dedups and
+      // stops cycles; the depth cap is a hard backstop.
+      const { min, max } = query.relationship.pathLength;
+      const typeClause = query.relationship.type ? ' AND UPPER(r.kind) = UPPER(?)' : '';
+      params.push(repoId, indexRunId);
+      if (query.relationship.type) params.push(query.relationship.type);
+      params.push(repoId, indexRunId);
+      if (query.relationship.type) params.push(query.relationship.type);
+      params.push(max);
+      const outer: string[] = ['reach.depth >= ?'];
+      params.push(min);
+      addLabel(outer, query.source, 'src');
+      addLabel(outer, query.target, 'tgt');
+      addWhere(outer);
+      sql =
+        'WITH RECURSIVE reach(start_id, node_id, depth) AS ( ' +
+        'SELECT r.source_entity_id, r.target_entity_id, 1 FROM relations r ' +
+        `WHERE r.repo_id = ? AND r.index_run_id = ?${typeClause} ` +
+        'UNION ' +
+        'SELECT reach.start_id, r.target_entity_id, reach.depth + 1 FROM reach ' +
+        'JOIN relations r ON r.source_entity_id = reach.node_id ' +
+        `WHERE r.repo_id = ? AND r.index_run_id = ?${typeClause} AND reach.depth < ? ` +
+        ') ' +
+        `SELECT ${selectList} FROM reach ` +
+        'JOIN entities src ON src.id = reach.start_id ' +
+        'JOIN entities tgt ON tgt.id = reach.node_id ' +
+        `WHERE ${outer.join(' AND ')} ` +
+        'ORDER BY src.path, tgt.path';
+    } else if (query.relationship && query.target) {
       conditions.push('r.repo_id = ?');
       params.push(repoId);
       conditions.push('r.index_run_id = ?');
@@ -255,9 +319,9 @@ export function executeGraphQuery(repoRoot: string, input: string): GraphQueryRe
         conditions.push('UPPER(r.kind) = UPPER(?)');
         params.push(query.relationship.type);
       }
-      addLabel(query.source, 'src');
-      addLabel(query.target, 'tgt');
-      addWhere();
+      addLabel(conditions, query.source, 'src');
+      addLabel(conditions, query.target, 'tgt');
+      addWhere(conditions);
       sql =
         `SELECT ${selectList} FROM relations r ` +
         'JOIN entities src ON src.id = r.source_entity_id ' +
@@ -269,8 +333,8 @@ export function executeGraphQuery(repoRoot: string, input: string): GraphQueryRe
       params.push(repoId);
       conditions.push('src.updated_index_run_id = ?');
       params.push(indexRunId);
-      addLabel(query.source, 'src');
-      addWhere();
+      addLabel(conditions, query.source, 'src');
+      addWhere(conditions);
       sql =
         `SELECT ${selectList} FROM entities src WHERE ${conditions.join(' AND ')} ORDER BY src.path`;
     }

@@ -76,6 +76,30 @@ test('executeGraphQuery answers "what depends on X" via a reverse hop', async ()
   }
 });
 
+test('executeGraphQuery traverses a variable-length path transitively', async () => {
+  // Chain: cee imports bee imports ay -> DEPENDS_ON cee->bee->ay.
+  const repoRoot = mkdtempSync(path.join(tmpdir(), 'parallax-query-chain-'));
+  try {
+    mkdirSync(path.join(repoRoot, 'src'), { recursive: true });
+    writeFileSync(path.join(repoRoot, 'src/ay.ts'), 'export const ay = 1;\n');
+    writeFileSync(path.join(repoRoot, 'src/bee.ts'), "import { ay } from './ay.js';\nexport const bee = ay;\n");
+    writeFileSync(path.join(repoRoot, 'src/cee.ts'), "import { bee } from './bee.js';\nexport const cee = bee;\n");
+    await initProject({ repoRoot });
+    await indexProject({ repoRoot });
+
+    // From cee, a 1..3 hop DEPENDS_ON path reaches both bee (1 hop) and ay (2 hops).
+    const result = executeGraphQuery(
+      repoRoot,
+      "MATCH (c)-[:DEPENDS_ON*1..3]->(dep) WHERE c.path CONTAINS 'cee' RETURN dep.path"
+    );
+    const reached = new Set(result.rows.map((row) => row['dep.path']));
+    assert.ok(reached.has('src/bee.ts'), `expected bee reachable in ${JSON.stringify([...reached])}`);
+    assert.ok(reached.has('src/ay.ts'), `expected ay transitively reachable in ${JSON.stringify([...reached])}`);
+  } finally {
+    rmSync(repoRoot, { recursive: true, force: true });
+  }
+});
+
 test('executeGraphQuery rejects write queries before touching the database', async () => {
   const repoRoot = await buildRepo();
   try {

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Variable-length paths in the `query` Cypher subset (`parallax query` and the `parallax_query` MCP tool): `MATCH (a)-[r:DEPENDS_ON*1..3]->(b)` traverses the transitive closure of a relationship kind (forms `*`, `*N`, `*min..max`, `*..max`; max capped at 8) via a deterministic recursive CTE, enabling blast-radius queries like "everything reachable from X". The relationship variable is not projectable in a variable-length path.
 - Confidence-aware impact gate: `parallax analyze --fail-on=<proven|inferred|heuristic|any|none>` controls the exit code so CI can fail a change only when an affected dependent meets a confidence threshold (default behavior — any affected file fails — is unchanged). The pure `failsImpactGate` primitive is the basis for a future GitHub Action / pre-commit hook.
 - Cargo.lock transitive dependency graph: the build-system adapter now parses `Cargo.lock` and merges external (sourced) packages into the owning crate as proven `lockfile:transitive` `DEPENDS_ON` relations, mirroring the npm package-lock graph. Local workspace members (no `source`) are left for first-class package resolution.
 - poetry.lock transitive dependency graph: `poetry.lock` is parsed and its resolved packages are merged into the owning `pyproject.toml` project as proven `lockfile:transitive` deps; local `directory`/`file` sources are skipped so path deps stay first-class.

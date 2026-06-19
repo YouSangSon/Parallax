@@ -42,6 +42,8 @@ export { doctorProject, hasDoctorErrors, redactDoctorReportForMcp, REQUIRED_SCHE
 export type { DoctorFinding, DoctorOptions, DoctorReport } from './doctor.js';
 export { importSession } from './session_import.js';
 export type { SessionImportFormat, SessionImportOptions, SessionImportResult } from './session_import.js';
+export { ingestTraces, parseTraceInput } from './trace_promotion.js';
+export type { ObservedEdge, TraceIngestSummary } from './trace_promotion.js';
 export {
   addWorkspaceRepo,
   initWorkspace,

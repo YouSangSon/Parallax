@@ -462,6 +462,18 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === 'ingest-traces') {
+    const { readFileSync } = await import('node:fs');
+    const { resolve } = await import('node:path');
+    const { ingestTraces, parseTraceInput } = await import('./index.js');
+    const file = parseRequiredArg(args, '--file');
+    const raw = JSON.parse(readFileSync(resolve(repoRoot, file), 'utf8')) as unknown;
+    const edges = parseTraceInput(raw);
+    const summary = ingestTraces(repoRoot, edges);
+    console.log(JSON.stringify(summary, null, 2));
+    return;
+  }
+
   throw new Error(`unknown command: ${command}`);
 }
 
@@ -614,6 +626,7 @@ Agent memory:
   ${PACKAGE_NAME} reindex-vec [--model <hf-model>]
   ${PACKAGE_NAME} profile  --entity <id> [--branch <name>] [--k 50] [--as-of-tx <tx-id>]
   ${PACKAGE_NAME} trace    --fact-id <id> [--depth 5]
+  ${PACKAGE_NAME} ingest-traces --file <traces.json>
 `);
 }
 

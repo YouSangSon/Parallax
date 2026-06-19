@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Confidence-aware impact gate: `parallax analyze --fail-on=<proven|inferred|heuristic|any|none>` controls the exit code so CI can fail a change only when an affected dependent meets a confidence threshold (default behavior — any affected file fails — is unchanged). The pure `failsImpactGate` primitive is the basis for a future GitHub Action / pre-commit hook.
 - Cargo.lock transitive dependency graph: the build-system adapter now parses `Cargo.lock` and merges external (sourced) packages into the owning crate as proven `lockfile:transitive` `DEPENDS_ON` relations, mirroring the npm package-lock graph. Local workspace members (no `source`) are left for first-class package resolution.
 - poetry.lock transitive dependency graph: `poetry.lock` is parsed and its resolved packages are merged into the owning `pyproject.toml` project as proven `lockfile:transitive` deps; local `directory`/`file` sources are skipped so path deps stay first-class.
 - Opt-in agent setup: a `parallax install-agent [--config .mcp.json] [--name parallax] [--dry-run]` command (and `installParallaxMcp` / `addParallaxMcpServer` APIs) that registers Parallax's read-only-first MCP server in a client's standard `mcpServers` config, merging immutably (existing servers and keys preserved) and idempotently. It never runs automatically and `--dry-run` previews the merged config without writing.

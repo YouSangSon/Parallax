@@ -33,6 +33,7 @@
 - `--depth` — ripple 계산의 최대 traversal 깊이.
 - `--max-fanout` — traversal 중 노드당 최대 fan-out.
 - `--json` — 요약 대신 전체 report JSON을 출력하고, report를 저장소에 쓰지 않는다.
+- `--fail-on <level>` — 종료 코드를 confidence로 제어: `proven` / `inferred` / `heuristic`는 영향 파일이 해당 confidence 이상일 때만 실패; `any`(기본)는 영향 파일이 있으면 실패; `none`은 절대 실패하지 않음. CI에서 고신뢰 영향만 게이트할 때 사용.
 
 기본(`--json` 없음)에서는 report가 저장되고 짧은 요약이 출력되며, 기록 시 report 경로가 표시된다.
 

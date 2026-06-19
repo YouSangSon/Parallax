@@ -33,6 +33,7 @@ Flags:
 - `--depth` — maximum traversal depth for ripple computation.
 - `--max-fanout` — maximum fan-out per node during traversal.
 - `--json` — print the full report JSON instead of the summary, and skip writing the report to the store.
+- `--fail-on <level>` — control the exit code by confidence: `proven` / `inferred` / `heuristic` fail only when an affected file meets or exceeds that confidence; `any` (default) fails on any affected file; `none` never fails. Use in CI to gate on high-confidence impact only.
 
 By default (no `--json`) the report is persisted and a short summary is printed; the report path is shown when written.
 

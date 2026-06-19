@@ -33,6 +33,7 @@
 - `--depth` — ripple 计算的最大 traversal 深度。
 - `--max-fanout` — traversal 期间每节点的最大 fan-out。
 - `--json` — 输出完整 report JSON 而非摘要，并跳过将 report 写入存储。
+- `--fail-on <level>` — 按 confidence 控制退出码：`proven` / `inferred` / `heuristic` 仅当受影响文件达到或超过该 confidence 时失败；`any`（默认）只要有受影响文件就失败；`none` 永不失败。用于 CI 仅对高置信影响进行 gate。
 
 默认（无 `--json`）会持久化 report 并打印简短摘要；写入时显示 report 路径。
 

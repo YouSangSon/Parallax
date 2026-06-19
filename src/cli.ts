@@ -182,9 +182,11 @@ async function main(): Promise<void> {
 
   if (command === 'analyze') {
     const { analyzeDiff } = await import('./index.js');
+    const { failsImpactGate } = await import('./confidence.js');
     const changedFiles = parseChangedFiles(args, repoRoot);
     const maxDepth = parseIntegerArg(args, '--depth');
     const maxFanout = parseIntegerArg(args, '--max-fanout');
+    const failOn = parseOptionalArg(args, '--fail-on');
     const report = await analyzeDiff({
       repoRoot,
       changedFiles,
@@ -199,7 +201,7 @@ async function main(): Promise<void> {
       console.log(`Affected files: ${report.affectedFiles.length}`);
       if (report.reportPath) console.log(`Report: ${report.reportPath}`);
     }
-    process.exitCode = report.affectedFiles.length > 0 ? 1 : 0;
+    process.exitCode = failsImpactGate(report.affectedFiles.map((file) => file.confidence), failOn) ? 1 : 0;
     return;
   }
 
@@ -633,8 +635,8 @@ Commands:
   ${PACKAGE_NAME} workspace resolve-contracts [--name <name>] [--json]
   ${PACKAGE_NAME} workspace contract-diff --contract <path> [--name <name>]
                                       [--provider <service>] [--provider-path <path>] [--json]
-  ${PACKAGE_NAME} analyze --changed src/file.ts [--depth 2] [--json]
-  ${PACKAGE_NAME} analyze --base main [--head HEAD] [--depth 2] [--json]
+  ${PACKAGE_NAME} analyze --changed src/file.ts [--depth 2] [--fail-on <level>] [--json]
+  ${PACKAGE_NAME} analyze --base main [--head HEAD] [--depth 2] [--fail-on <level>] [--json]
   ${PACKAGE_NAME} graph export --report <id> [--format mermaid|json|dot]
                               [--limit 100] [--cursor nodeOffset:edgeOffset]
   ${PACKAGE_NAME} mcp serve

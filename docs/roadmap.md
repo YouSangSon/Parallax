@@ -45,7 +45,8 @@ The package resolver now covers manifest graphs across common ecosystems and npm
 
 - [x] npm `package-lock.json` v2/v3 transitive dependency graph
   - Current gate: transitive package entries are indexed as lockfile-derived `DEPENDS_ON` package relations with locked versions and evidence spans.
-- [ ] Extend lockfile-based transitive dependency graph to pip/poetry/go/cargo/maven/gradle lockfiles
+- [x] `Cargo.lock` transitive dependency graph (sourced packages → proven `lockfile:transitive` deps, mirroring the npm lockfile path)
+- [ ] Extend lockfile-based transitive dependency graph to pip/poetry/go/maven/gradle lockfiles
 - [ ] Infer the affected version range from semver/range information
 - [ ] Standardize dumping the dependency graph without running build scripts
 

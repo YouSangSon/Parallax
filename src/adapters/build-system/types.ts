@@ -42,6 +42,7 @@ export type ScopedPackageDependencyOverrides = ReadonlyMap<string, ReadonlyMap<s
 export type BuildManifestKind =
   | PackageEcosystem
   | 'npm-lock'
+  | 'cargo-lock'
   | 'gradle-settings'
   | 'gradle-version-catalog'
   | 'go-work'

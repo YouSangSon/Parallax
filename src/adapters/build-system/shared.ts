@@ -23,6 +23,7 @@ export function buildManifestKind(relativePath: string): BuildManifestKind | und
   if (basename === 'go.mod') return 'go';
   if (basename === 'go.work') return 'go-work';
   if (basename === 'Cargo.toml') return 'cargo';
+  if (basename === 'Cargo.lock') return 'cargo-lock';
   if (basename === 'pyproject.toml') return 'python';
   if (basename === 'pnpm-workspace.yaml') return 'pnpm-workspace';
   return undefined;

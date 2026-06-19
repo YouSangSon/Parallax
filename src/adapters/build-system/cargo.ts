@@ -4,6 +4,7 @@ import type { ScannedFile } from '../../types.js';
 import {
   buildManifestKind,
   dedupeDependencies,
+  evidenceForNeedle,
   evidenceLineAt,
   localPackage,
   packageKey,
@@ -106,7 +107,8 @@ function cargoWorkspaceDependencies(file: ScannedFile): Map<string, CargoWorkspa
 
 export function parseCargoToml(
   file: ScannedFile,
-  dependencyOverrides: ReadonlyMap<string, PackageDependencyOverride> | undefined
+  dependencyOverrides: ReadonlyMap<string, PackageDependencyOverride> | undefined,
+  lockfile?: ParsedCargoLockfile
 ): ParsedManifest {
   const packageName = tomlStringInSection(file.content, 'package', 'name');
   if (!packageName) {
@@ -115,8 +117,16 @@ export function parseCargoToml(
       : { dependencies: [], diagnostics: [`Cargo.toml missing [package].name: ${file.relativePath}`] };
   }
   const pkg = localPackage('cargo', packageName, file.relativePath, packageName, tomlStringInSection(file.content, 'package', 'version'), [packageName]);
-  const dependencies = cargoDependencyEntries(file).map((dependency) => cargoDependency(file, dependency, dependencyOverrides));
-  return { package: pkg, dependencies: dedupeDependencies(dependencies), diagnostics: [] };
+  const manifestDependencies = cargoDependencyEntries(file).map((dependency) => cargoDependency(file, dependency, dependencyOverrides));
+  const manifestNames = new Set(manifestDependencies.map((dependency) => dependency.name));
+  const lockfileDependencies = (lockfile?.dependencies ?? []).filter(
+    (dependency) => !manifestNames.has(dependency.name)
+  );
+  return {
+    package: pkg,
+    dependencies: dedupeDependencies([...manifestDependencies, ...lockfileDependencies]),
+    diagnostics: lockfile?.diagnostics ?? []
+  };
 }
 
 function cargoDependency(
@@ -199,4 +209,58 @@ export function cargoLocalManifestPath(relativePath: string, crateDir: string): 
 export function cargoManifestDir(relativePath: string): string {
   const dir = path.posix.dirname(relativePath);
   return dir === '.' ? '' : dir;
+}
+
+export type ParsedCargoLockfile = {
+  manifestPath: string;
+  lockfilePath: string;
+  dependencies: PackageDependency[];
+  diagnostics: string[];
+};
+
+// Cargo.lock lives next to the workspace/crate root Cargo.toml.
+export function cargoLockfileManifestPath(lockfilePath: string): string {
+  const prefix = lockfilePath.slice(0, -'Cargo.lock'.length);
+  return `${prefix}Cargo.toml`;
+}
+
+export function discoverCargoLockfiles(
+  files: readonly ScannedFile[]
+): ReadonlyMap<string, ParsedCargoLockfile> {
+  const lockfiles = new Map<string, ParsedCargoLockfile>();
+  for (const file of files) {
+    if (buildManifestKind(file.relativePath) !== 'cargo-lock') continue;
+    const parsed = parseCargoLockfile(file);
+    lockfiles.set(parsed.manifestPath, parsed);
+  }
+  return lockfiles;
+}
+
+// Each `[[package]]` block with a `source` is an external (registry/git)
+// transitive dependency; local workspace members have no `source` and are
+// skipped so they are resolved as first-class packages, not transitive deps.
+export function parseCargoLockfile(file: ScannedFile): ParsedCargoLockfile {
+  const base = {
+    manifestPath: cargoLockfileManifestPath(file.relativePath),
+    lockfilePath: file.relativePath
+  };
+  const dependencies: PackageDependency[] = [];
+  const blocks = file.content.split(/^\s*\[\[package\]\]\s*$/m).slice(1);
+  for (const block of blocks) {
+    const name = /^\s*name\s*=\s*"([^"]+)"/m.exec(block)?.[1];
+    if (!name) continue;
+    const hasSource = /^\s*source\s*=\s*"/m.test(block);
+    if (!hasSource) continue;
+    const version = /^\s*version\s*=\s*"([^"]+)"/m.exec(block)?.[1];
+    dependencies.push({
+      ecosystem: 'cargo',
+      name,
+      displayName: name,
+      version,
+      dependencyType: 'lockfile:transitive',
+      confidence: 'proven',
+      evidence: evidenceForNeedle(file.content, file.relativePath, `name = "${name}"`)
+    });
+  }
+  return { ...base, dependencies: dedupeDependencies(dependencies), diagnostics: [] };
 }

@@ -45,7 +45,8 @@ package resolver는 common ecosystem의 manifest graph와 npm lockfile transitiv
 
 - [x] npm `package-lock.json` v2/v3 transitive 의존성 그래프
   - 현재 gate: transitive package entry를 locked version과 evidence span이 있는 lockfile-derived `DEPENDS_ON` package relation으로 index한다.
-- [ ] pip/poetry/go/cargo/maven/gradle lockfile로 lockfile 기반 transitive 의존성 그래프 확장
+- [x] `Cargo.lock` transitive 의존성 그래프 (source 있는 외부 패키지 → proven `lockfile:transitive` 의존성, npm lockfile 경로 미러)
+- [ ] pip/poetry/go/maven/gradle lockfile로 lockfile 기반 transitive 의존성 그래프 확장
 - [ ] semver/range 정보로 영향받는 버전 범위 추론
 - [ ] build script 실행 없이 dependency 그래프 dump 표준화
 

@@ -21,6 +21,10 @@
 | :--- | :--- |
 | `parallax analyze --changed <file[,file]> [--depth <n>] [--max-fanout <n>] [--json]` | 将显式给出的变更文件列表对最新 index 分析 |
 | `parallax analyze --base <ref> [--head <ref>] [--depth <n>] [--max-fanout <n>] [--json]` | 从 `git diff <base>...<head>`（默认 head `HEAD`）推导变更文件列表 |
+| `parallax query "<cypher>"` | 在已索引的图上运行只读 Cypher 子集并打印 JSON 行 |
+| `parallax ingest-traces --file <traces.json>` | 将与观测到的运行时 `source -> target` 边匹配的关系提升为 `proven` 置信度 |
+
+`query` 子集支持单个可选关系 hop、节点 label、`WHERE` 等于 / `CONTAINS`、投影和 `LIMIT`——例如 `MATCH (a)-[r:DEPENDS_ON]->(b) WHERE a.path CONTAINS 'store' RETURN a.path, b.path LIMIT 20`。write、procedure、projection（`WITH`/`UNWIND`）和反向方向子句会被拒绝。`ingest-traces` 是与只读 MCP 分离的写入面（invariant **I-8**），运行时观测只会提高置信度。
 
 标志：
 
@@ -83,6 +87,7 @@
 | 命令 | 用途 |
 | :--- | :--- |
 | `parallax mcp serve` | 为当前 repo 启动 MCP stdio 服务器（见 [mcp.zh.md](mcp.zh.md)） |
+| `parallax install-agent [--config <path>] [--name <name>] [--dry-run]` | 将 Parallax 只读 MCP 服务器注册到客户端的 `mcpServers` 配置（默认 `.mcp.json`）；`--dry-run` 仅预览合并结果而不写入 |
 
 ## UI
 

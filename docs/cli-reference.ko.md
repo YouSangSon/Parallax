@@ -21,6 +21,10 @@
 | :--- | :--- |
 | `parallax analyze --changed <file[,file]> [--depth <n>] [--max-fanout <n>] [--json]` | 명시한 변경 파일 목록을 최신 index에 대해 분석 |
 | `parallax analyze --base <ref> [--head <ref>] [--depth <n>] [--max-fanout <n>] [--json]` | `git diff <base>...<head>`(기본 head `HEAD`)에서 변경 파일 목록을 도출 |
+| `parallax query "<cypher>"` | 인덱싱된 그래프에 읽기전용 Cypher 서브셋을 실행하고 JSON 행을 출력 |
+| `parallax ingest-traces --file <traces.json>` | 관측된 런타임 `source -> target` 엣지와 매칭되는 관계를 `proven` 신뢰도로 승격 |
+
+`query` 서브셋은 단일 선택적 관계 hop, 노드 label, `WHERE` 등호 / `CONTAINS`, 투영, `LIMIT`를 지원한다 — 예: `MATCH (a)-[r:DEPENDS_ON]->(b) WHERE a.path CONTAINS 'store' RETURN a.path, b.path LIMIT 20`. write·procedure·projection(`WITH`/`UNWIND`)·역방향 구문은 거부된다. `ingest-traces`는 읽기전용 MCP에서 분리된 write 표면(invariant **I-8**)이며, 런타임 관측은 신뢰도를 올리기만 한다.
 
 플래그:
 
@@ -83,6 +87,7 @@
 | 명령 | 목적 |
 | :--- | :--- |
 | `parallax mcp serve` | 현재 repo의 MCP stdio 서버를 시작([mcp.ko.md](mcp.ko.md) 참고) |
+| `parallax install-agent [--config <path>] [--name <name>] [--dry-run]` | 클라이언트의 `mcpServers` 설정에 Parallax 읽기전용 MCP 서버를 등록(기본 `.mcp.json`); `--dry-run`은 쓰지 않고 병합 결과만 미리보기 |
 
 ## UI
 

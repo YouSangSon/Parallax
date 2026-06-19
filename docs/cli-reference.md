@@ -21,6 +21,10 @@ Most machine-oriented commands can print JSON through command-specific flags. `a
 | :--- | :--- |
 | `parallax analyze --changed <file[,file]> [--depth <n>] [--max-fanout <n>] [--json]` | Analyze an explicit list of changed files against the latest index |
 | `parallax analyze --base <ref> [--head <ref>] [--depth <n>] [--max-fanout <n>] [--json]` | Derive the changed file list from `git diff <base>...<head>` (default head `HEAD`) |
+| `parallax query "<cypher>"` | Run a read-only Cypher subset over the indexed graph and print JSON rows |
+| `parallax ingest-traces --file <traces.json>` | Promote relations matching observed runtime `source -> target` edges to `proven` confidence |
+
+The `query` subset supports a single optional relationship hop, node labels, `WHERE` equality / `CONTAINS`, projection, and `LIMIT` — e.g. `MATCH (a)-[r:DEPENDS_ON]->(b) WHERE a.path CONTAINS 'store' RETURN a.path, b.path LIMIT 20`. Write, procedure, projection (`WITH`/`UNWIND`), and reverse-direction clauses are rejected. `ingest-traces` is a write surface kept off the read-only MCP (invariant **I-8**); runtime observation only ever raises confidence.
 
 Flags:
 
@@ -83,6 +87,7 @@ The `remember`/`recall` value passed via `--value` is parsed as JSON when possib
 | Command | Purpose |
 | :--- | :--- |
 | `parallax mcp serve` | Start the MCP stdio server for the current repo (see [mcp.md](mcp.md)) |
+| `parallax install-agent [--config <path>] [--name <name>] [--dry-run]` | Register Parallax's read-only MCP server in a client's `mcpServers` config (default `.mcp.json`); `--dry-run` previews the merged config without writing |
 
 ## UI
 

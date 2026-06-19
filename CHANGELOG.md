@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Indexing performance: the write-mode database now opens with `synchronous = NORMAL` (durable-enough for a rebuildable derived index under WAL), a 16 MiB page cache, and 256 MiB mmap, cutting per-write fsync and page I/O during indexing. Deterministic — affects speed, not results.
 - Corrected MCP / CLI / SKILL / schema documentation drift so docs match the source (tool tables, command and flag names, tool counts).
 - Hardened `docs-lint` to enforce trilingual parity, language-switcher headers, and same-language internal links, and to ignore fenced code examples while still scanning them for secrets.
 - Extracted the static CSS and client JavaScript out of `src/ui.ts` into dedicated `src/ui/styles.ts` and `src/ui/client.ts` modules (rendered HTML byte-for-byte unchanged), reducing `ui.ts` from ~5090 to ~3056 lines.

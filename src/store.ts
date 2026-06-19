@@ -50,7 +50,15 @@ export function openDatabase(repoRoot: string, options: OpenDatabaseOptions = {}
   const db = new DatabaseSync(dbPath, { readOnly: options.readOnly ?? false, timeout: 5000, allowExtension: true });
   db.exec('PRAGMA foreign_keys = ON;');
   if (!options.readOnly) {
-    db.exec('PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;');
+    // WAL + synchronous=NORMAL is the standard durable-enough setting for a
+    // rebuildable derived index: fsync only at checkpoints, not per commit, so
+    // the many small writes during indexing are far cheaper while the DB stays
+    // integrity-safe across crashes. cache_size (negative = KiB) and mmap_size
+    // cut page I/O on large indexes. All deterministic — they affect speed, not
+    // results.
+    db.exec(
+      'PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000; PRAGMA synchronous = NORMAL; PRAGMA cache_size = -16000; PRAGMA mmap_size = 268435456;'
+    );
     migrate(db, { skipProjectionRepair: options.skipProjectionRepair === true });
   }
   // Phase 4 P5 / ADR D-018: try to load sqlite-vec for ANN-accelerated

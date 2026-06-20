@@ -77,7 +77,7 @@ Or via the Claude Code CLI:
 claude mcp add --transport stdio parallax -- parallax mcp serve
 ```
 
-## MCP tools surfaced (19)
+## MCP tools surfaced (20)
 
 | Tool | Read-only? | What it does |
 |---|---|---|
@@ -88,6 +88,7 @@ claude mcp add --transport stdio parallax -- parallax mcp serve
 | `parallax_remember` | ❌ | Persist an agent fact (entity, attribute, value) on a branch |
 | `parallax_recall` | ✅ | Retrieve facts by branch / entity / attribute / semantic query (sqlite-vec ANN with brute-force fallback) |
 | `parallax_query` | ✅ | Run a read-only Cypher subset (forward/reverse/variable-length hop, labels, WHERE =/CONTAINS, projection, LIMIT) over the indexed graph |
+| `parallax_co_change` | ✅ | Rank files coupled to a given file via git co-change (CO_CHANGES) by coupling strength, at heuristic confidence |
 | `parallax_profile` | ✅ | Three-bucket per-entity view (static / dynamic / summary) —  |
 | `parallax_explain_entity` | ❌ | Compact direct incoming/outgoing relation and evidence view for one indexed entity |
 | `parallax_branch` | ❌ | Fork a new branch from an existing branch (no data copy) |

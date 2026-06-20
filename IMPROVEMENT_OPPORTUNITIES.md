@@ -41,15 +41,15 @@ pure-JS), never an analyzer server.
 
 ## 2. Agent surface & MCP
 
-19 read-only-first MCP tools + 9 resources. Recent additions: `parallax_query` (read-only Cypher
-subset), CLI `ingest-traces` (write surface, off MCP by I-8). Co-change coupling is computed but not
-a first-class agent surface; context-pack telemetry is recorded but nothing acts on it.
+20 read-only-first MCP tools + 9 resources. Recent additions: `parallax_co_change` (ranked git
+co-change coupling), `parallax_query` (read-only Cypher subset), CLI `ingest-traces` (write surface,
+off MCP by I-8). Context-pack telemetry is recorded but nothing acts on it.
 
 | # | Opportunity | Effort | Value |
 | :-- | :-- | :-- | :-- |
 | M1 | **Multi-hop + aggregation in `parallax_query`** — ✅ **variable-length paths shipped** (`-[r:TYPE*1..N]->` via a deterministic recursive CTE, depth cap 8). Still open: `COUNT(...)`+`GROUP BY` and `ORDER BY <col>`. Stays read-only + deterministic. | M | HIGH |
-| M2 | **Telemeter + resource-link `parallax_query`** — unlike every sibling, `parallax_query` (`mcp.ts:355-376`) skips `toolJsonResponse`/telemetry and emits no `parallax://entities/{id}` links. Route it through the existing rails so results are navigable and measurable. | S | HIGH |
-| M3 | **Expose co-change as an MCP tool + resource** — `co-change.ts` computes `CO_CHANGES` coupling but no dedicated surface exists. Add read-only `parallax_co_change` (ranked coupled files by `couplingScore`) and optionally fold top partners into `context_for_change`. Surfaces couplings the static graph misses. | M | HIGH |
+| M2 | ✅ **shipped** — `parallax_query` now routes through `toolJsonResponse` (telemetered like every sibling) and the result carries the queried `indexRunId` + distinct `resources.entities` ids (from id-projecting columns), navigable via `parallax://entities/{id}`. | S | HIGH |
+| M3 | ✅ **shipped** (tool) — read-only `parallax_co_change` ranks coupled files by `couplingScore` (parsed from CO_CHANGES provenance), partners navigable via `parallax://entities`. Still open: optionally fold top partners into `context_for_change`. | M | HIGH |
 | M4 | **Structured "what-changed-since" tool** — only a human-readable drift warning exists (`analyzer.ts:372`). Add `parallax_changed_since` returning a deterministic delta (entities/relations added/removed, confidence promotions) between two index runs. Lets agents orient incrementally. | M | MED |
 | M5 | **Context-budget advisory from telemetry** — `context_tool_runs`/`hit_count` are recorded but unused. Add `parallax_context_advice` computing omitted-vs-returned and expanded-resource ratios → a suggested budget (advisory only, I-9). | M | MED |
 | M6 | **MCP prompt(s) teaching the impact workflow** — no prompt surface exists. Register `impact_workflow`/`triage_change` prompts laying out analyze→context→expand-resource→query/co_change/trace→remember. Lowest-effort lever for correct tool use. | S | MED |

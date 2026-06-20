@@ -77,7 +77,7 @@ MCP 클라이언트 설정에 추가한다:
 claude mcp add --transport stdio parallax -- parallax mcp serve
 ```
 
-## MCP tools surfaced (19)
+## MCP tools surfaced (20)
 
 | Tool | Read-only? | What it does |
 |---|---|---|
@@ -88,6 +88,7 @@ claude mcp add --transport stdio parallax -- parallax mcp serve
 | `parallax_remember` | ❌ | agent fact(entity, attribute, value)를 branch에 저장 |
 | `parallax_recall` | ✅ | branch / entity / attribute / semantic query로 fact 조회 (brute-force fallback이 있는 sqlite-vec ANN) |
 | `parallax_query` | ✅ | 인덱싱된 그래프에 읽기전용 Cypher 서브셋(정/역/가변 길이 hop, label, WHERE =/CONTAINS, 투영, LIMIT)을 실행 |
+| `parallax_co_change` | ✅ | git 코-체인지(CO_CHANGES)로 특정 파일과 결합된 파일을 결합 강도순으로, heuristic 신뢰도로 순위화 |
 | `parallax_profile` | ✅ | entity별 three-bucket view (static / dynamic / summary) —  |
 | `parallax_explain_entity` | ❌ | 인덱싱된 entity 하나에 대한 compact한 직접 incoming/outgoing relation 및 evidence view |
 | `parallax_branch` | ❌ | 기존 branch에서 새 branch fork (data copy 없음) |

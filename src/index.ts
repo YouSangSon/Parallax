@@ -46,6 +46,8 @@ export { ingestTraces, parseTraceInput } from './trace_promotion.js';
 export type { ObservedEdge, TraceIngestSummary } from './trace_promotion.js';
 export { executeGraphQuery, parseGraphQuery } from './graph_query.js';
 export type { GraphQueryResult, ParsedGraphQuery } from './graph_query.js';
+export { queryCoChanges } from './co_change_query.js';
+export type { CoChangePartner, CoChangeQueryOptions, CoChangeQueryResult } from './co_change_query.js';
 export { addParallaxMcpServer, installParallaxMcp } from './agent_config.js';
 export type { InstallResult, McpClientConfig, ParallaxMcpOptions } from './agent_config.js';
 export {

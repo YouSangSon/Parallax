@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
@@ -87,21 +87,21 @@ const mcpDocsToolTables: McpDocsToolTable[] = [
   },
   {
     filePath: 'skills/parallax/SKILL.md',
-    toolsHeading: '## MCP tools surfaced (19)',
+    toolsHeading: '## MCP tools surfaced (20)',
     yesLabel: '✅',
     noLabel: '❌',
     readOnlyColumnIndex: 1
   },
   {
     filePath: 'skills/parallax/SKILL.ko.md',
-    toolsHeading: '## MCP tools surfaced (19)',
+    toolsHeading: '## MCP tools surfaced (20)',
     yesLabel: '✅',
     noLabel: '❌',
     readOnlyColumnIndex: 1
   },
   {
     filePath: 'skills/parallax/SKILL.zh.md',
-    toolsHeading: '## MCP tools surfaced (19)',
+    toolsHeading: '## MCP tools surfaced (20)',
     yesLabel: '✅',
     noLabel: '❌',
     readOnlyColumnIndex: 1
@@ -1168,6 +1168,7 @@ test('MCP stdio server initializes and exposes the full agent memory tool surfac
       'parallax_remember',
       'parallax_recall',
       'parallax_query',
+      'parallax_co_change',
       'parallax_branch',
       'parallax_merge',
       'parallax_trace',
@@ -2142,6 +2143,56 @@ test('MCP context telemetry records analyze, explain, resource kinds, and redact
     assert.ok(resourceKinds.has('coverage'));
     assert.ok(telemetry.resourceAccesses.every((item) => item.returnedBytes > 0));
     assert.equal(countReports(repoRoot), 0);
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP parallax_co_change ranks coupled partners and records telemetry', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-mcp-cochange-'));
+  const git = (args: string[]): void => {
+    execFileSync('git', args, { cwd: repoRoot, stdio: ['ignore', 'ignore', 'ignore'] });
+  };
+  git(['init']);
+  git(['config', 'user.email', 'test@example.com']);
+  git(['config', 'user.name', 'Test']);
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  for (let round = 1; round <= 3; round++) {
+    await writeFile(path.join(repoRoot, 'src/alpha.ts'), `export const alpha = ${round};\n`);
+    await writeFile(path.join(repoRoot, 'src/beta.ts'), `export const beta = ${round};\n`);
+    git(['add', '-A']);
+    git(['commit', '-m', `round ${round}`]);
+  }
+  await initProject({ repoRoot });
+  await indexProject({ repoRoot });
+
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+
+    const response = await client.request('tools/call', {
+      name: 'parallax_co_change',
+      arguments: { file: 'src/alpha.ts' }
+    });
+    assert.equal(response.error, undefined);
+    assert.equal(response.result.isError, undefined);
+    const result = JSON.parse(response.result.content[0].text) as {
+      file: string;
+      indexRunId: number;
+      partners: Array<{ path: string; coChangeCount: number; couplingScore: number; confidence: string }>;
+      resources: { entities: string[] };
+    };
+    const beta = result.partners.find((partner) => partner.path === 'src/beta.ts');
+    assert.ok(beta, `expected src/beta.ts coupled to alpha in ${JSON.stringify(result.partners)}`);
+    assert.equal(beta.confidence, 'heuristic');
+    assert.ok(result.resources.entities.includes('file:src/beta.ts'));
+
+    const runs = contextToolRuns(repoRoot);
+    assert.equal(runs.length, 1);
+    assert.equal(runs[0]!.tool_name, 'parallax_co_change');
+    assert.equal(runs[0]!.query, 'src/alpha.ts');
+    assert.equal(runs[0]!.index_run_id, result.indexRunId);
+    assert.equal(runs[0]!.resource_count, result.resources.entities.length);
   } finally {
     await client.close();
   }

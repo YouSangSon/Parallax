@@ -77,7 +77,7 @@ parallax gc-branches
 claude mcp add --transport stdio parallax -- parallax mcp serve
 ```
 
-## MCP tools surfaced (19)
+## MCP tools surfaced (20)
 
 | Tool | Read-only? | What it does |
 |---|---|---|
@@ -88,6 +88,7 @@ claude mcp add --transport stdio parallax -- parallax mcp serve
 | `parallax_remember` | ❌ | 在某个 branch 上持久化一条 agent fact (entity, attribute, value) |
 | `parallax_recall` | ✅ | 按 branch / entity / attribute / 语义查询检索 fact (sqlite-vec ANN，brute-force 兜底) |
 | `parallax_query` | ✅ | 在已索引的图上运行只读 Cypher 子集（正向/反向/可变长度 hop、label、WHERE =/CONTAINS、投影、LIMIT） |
+| `parallax_co_change` | ✅ | 通过 git 共变（CO_CHANGES）按耦合强度对与给定文件耦合的文件排序，以 heuristic 置信度 |
 | `parallax_profile` | ✅ | 三桶式的 per-entity 视图 (static / dynamic / summary) —  |
 | `parallax_explain_entity` | ❌ | 针对单个已索引 entity 的紧凑直接 incoming/outgoing relation 与 evidence 视图 |
 | `parallax_branch` | ❌ | 从已有 branch fork 出一个新 branch (无数据拷贝) |

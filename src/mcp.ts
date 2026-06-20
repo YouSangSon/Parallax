@@ -19,6 +19,7 @@ import {
 import type { PersistedContextPack } from './context_pack.js';
 import { doctorProject, redactDoctorReportForMcp } from './doctor.js';
 import { executeGraphQuery } from './graph_query.js';
+import { queryCoChanges } from './co_change_query.js';
 import { readGitSnapshot } from './git-snapshot.js';
 import { reflectFacts, repairReflections } from './reflection.js';
 import { profileEntity } from './profile.js';
@@ -372,6 +373,30 @@ export function createMcpServer(context: McpContext): McpServer {
     async ({ query }) => {
       const result = executeGraphQuery(context.repoRoot, query);
       return toolJsonResponse(context, 'parallax_query', result, { query });
+    }
+  );
+
+  server.registerTool(
+    'parallax_co_change',
+    {
+      title: 'Rank co-changing files',
+      description:
+        'Return files historically coupled to the given file via git co-change (CO_CHANGES), ranked by coupling strength. Surfaces correlational couplings the static graph misses (config<->code, test<->impl) at heuristic confidence. Read-only; partners are navigable entity resources.',
+      inputSchema: {
+        file: z.string().min(1),
+        limit: z.number().int().positive().max(200).optional()
+      },
+      annotations: {
+        title: 'Rank co-changing files',
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      }
+    },
+    async ({ file, limit }) => {
+      const result = queryCoChanges(context.repoRoot, file, limit !== undefined ? { limit } : {});
+      return toolJsonResponse(context, 'parallax_co_change', result, { query: file });
     }
   );
 

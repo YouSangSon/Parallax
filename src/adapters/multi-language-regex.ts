@@ -56,12 +56,43 @@ type InferredTestTarget = {
   evidence?: EvidenceSpan;
 };
 
+// How strongly the call's target was resolved. Concrete resolutions (import
+// binding, this-method, super, static, direct instantiation, local callable)
+// pin a specific declaration; the type-inferred ones approximate dynamic
+// dispatch and object-flow.
+type CallResolution =
+  | 'import'
+  | 'local-call'
+  | 'method-call'
+  | 'super-call'
+  | 'static-call'
+  | 'direct-instance-call'
+  | 'direct-factory-instance-call'
+  | 'field-instance-call'
+  | 'instance-call'
+  | 'method-alias-call';
+
 type ExtractedCall = EvidenceSpan & {
   source?: EntityDescriptor;
   target: EntityDescriptor;
   callee: string;
   provenance: string;
+  resolution: CallResolution;
 };
+
+// Type-inferred receiver dispatch (`instance-call`) and object-flow aliases
+// (`method-alias-call`) are the "wider dynamic dispatch / deep alias tracking"
+// the TS/JS knownGaps flags as not parser-backed — they earn only heuristic
+// confidence. Everything that pins a concrete declaration stays inferred. The
+// resolution itself remains discoverable via the relation's provenance prefix.
+const TYPE_INFERRED_CALL_RESOLUTIONS: ReadonlySet<CallResolution> = new Set<CallResolution>([
+  'instance-call',
+  'method-alias-call'
+]);
+
+function confidenceForCallResolution(resolution: CallResolution): Confidence {
+  return TYPE_INFERRED_CALL_RESOLUTIONS.has(resolution) ? 'heuristic' : 'inferred';
+}
 
 type ExtractedTypeRelation = EvidenceSpan & {
   source: EntityDescriptor;
@@ -433,7 +464,7 @@ async function* extractEvents(
         source: call.source ?? fileDescriptor,
         target: call.target,
         kind: 'CALLS',
-        confidence: 'inferred',
+        confidence: confidenceForCallResolution(call.resolution),
         provenance: call.provenance,
         evidenceFile,
         evidenceSnippet: call.snippet,
@@ -2592,7 +2623,8 @@ function extractCalls(
           ...evidence,
           target: { kind: 'file', path: target.targetPath, languageId: file.language },
           callee: target.callee,
-          provenance: `call:${target.callee}:${evidence.startLine}:${evidence.startCol}`
+          provenance: `call:${target.callee}:${evidence.startLine}:${evidence.startCol}`,
+          resolution: 'import'
         });
       } else {
         const localSource = enclosingLocalCaller(node, localCallables);
@@ -2643,7 +2675,8 @@ function extractCalls(
               source: localSource.descriptor,
               target: localTarget.descriptor,
               callee: localTarget.name,
-              provenance: `${provenanceKind}:${localSource.name}->${localTarget.name}:${evidence.startLine}:${evidence.startCol}`
+              provenance: `${provenanceKind}:${localSource.name}->${localTarget.name}:${evidence.startLine}:${evidence.startCol}`,
+              resolution: provenanceKind
             });
           }
         }

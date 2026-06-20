@@ -32,7 +32,7 @@ pure-JS), never an analyzer server.
 | A2 | **Promote Python to parser-backed** — replace the regex `PythonSemanticAdapter` with a bundled tree-sitter-python (WASM) pass: real imports/defs/calls/class-bases with spans, intra-repo import resolution. AST-resolved → `inferred`, dynamic/unresolved → `heuristic`. Establishes the reusable offline-parser harness A3/A6 reuse. | M | HIGH |
 | A3 | **JVM/Spring parser-based DI / persistence / endpoint links** — bundled tree-sitter-java/kotlin to build the bean graph (constructor + `@Autowired` → `DEPENDS_ON`), JPA repository→entity (`READS`/`WRITES`/`IMPLEMENTS`), and controller route→OpenAPI contract (`IMPLEMENTS`). Today only regex HTTP mappings exist; no DI, no persistence, no contract cross-link. | L | HIGH |
 | A4 | **Symbol-level test↔impl linking** — `inferTestTargets` (`multi-language-regex.ts:5406`) emits `VERIFIES` at file granularity only. Resolve the symbols a test body exercises and emit `VERIFIES` to the target *symbol*; direct call → `inferred`, name-only → `heuristic`. Tells a reviewer exactly which tests cover a changed function. | M | HIGH |
-| A5 | **Resolution-strength-aware confidence in regex lanes** — all regex-lane `CALLS` collapse to flat `inferred` (`multi-language-regex.ts:436`). Thread a resolution tag: import/intra-repo-resolved → `inferred`, unresolved/ambiguous name → `heuristic`, plus a `metadata.resolution` field. No parser work — pure scoring honesty; prerequisite for trusting regex lanes during migration. | S | MED-HIGH |
+| A5 | ✅ **shipped** — TS/JS `CALLS` (the `multi-language-regex.ts` parser lane, which only emits *resolved* calls) no longer collapse to flat `inferred`: type-inferred receiver dispatch (`instance-call`) and object-flow aliases (`method-alias-call`) — the dynamic-dispatch gap the knownGaps flags — are downgraded to `heuristic`; concretely-resolved calls (import, this-method, super, static, direct-instance, local) stay `inferred`. Resolution stays discoverable via the relation provenance prefix (no schema change). | S | MED-HIGH |
 | A6 | **Framework routing for Python/Go web frameworks** — zero routing extraction for Flask/Django/FastAPI or gin/echo/net-http (bench ships FastAPI + Go fixtures). Recognize route decorators/registrations → `endpoint` entities + `DECLARES`, cross-linked to contracts. Depends on A2 / a Go parser. | M | MED-HIGH |
 
 **Sequencing:** A5 (cheap honesty) → A1 (raises the ceiling on the reference lane) → A2 (first regex→parser, builds the harness) → A4 → A3 / A6.
@@ -118,8 +118,8 @@ new features bench-uncovered. The `analyze` exit code is confidence-blind (`cli.
 ## Top cross-dimension picks (highest value-to-effort)
 
 1. **S2** — single transaction + pragmas (S, HIGH): biggest perf win for the smallest diff.
-2. **A5** — resolution-strength confidence (S, MED-HIGH): cheap honesty win across all regex lanes.
-3. **M2 + M6** — telemeter `parallax_query` + workflow prompts (S, HIGH/MED): make the agent surface coherent.
+2. **A5** ✅ — resolution-strength confidence (S, MED-HIGH): cheap honesty win in the TS/JS call lane.
+3. **M2** ✅ **+ M6** — telemeter `parallax_query` (shipped) + workflow prompts (open): make the agent surface coherent.
 4. **D3 → D1** — report JSON Schema then confidence-aware `--fail-on` + Action (S→M, HIGH): the CI-guardrail story.
 5. **M1** — multi-hop Cypher (M, HIGH): turns `parallax_query` into the blast-radius primitive.
 6. **S1** — incremental indexing (L, HIGH): the structural scale unlock; pair with S4 to guard it.

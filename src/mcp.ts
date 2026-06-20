@@ -357,7 +357,7 @@ export function createMcpServer(context: McpContext): McpServer {
     {
       title: 'Query the graph',
       description:
-        'Run a read-only Cypher subset over the indexed entity/relation graph: a relationship hop (forward, reverse, or variable-length *min..max), node labels, WHERE equality/CONTAINS, projection, and LIMIT. Write, procedure, projection (WITH/UNWIND), and bidirectional clauses are rejected.',
+        'Run a read-only Cypher subset over the indexed entity/relation graph: a relationship hop (forward, reverse, or variable-length *min..max), node labels, WHERE equality/CONTAINS, projection, and LIMIT. Write, procedure, projection (WITH/UNWIND), and bidirectional clauses are rejected. Returns columns/rows plus the indexRunId queried and resources.entities (navigable parallax://entities ids — populated when a node id is projected, e.g. RETURN a or RETURN a.id).',
       inputSchema: {
         query: z.string().min(1)
       },
@@ -371,7 +371,7 @@ export function createMcpServer(context: McpContext): McpServer {
     },
     async ({ query }) => {
       const result = executeGraphQuery(context.repoRoot, query);
-      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+      return toolJsonResponse(context, 'parallax_query', result, { query });
     }
   );
 

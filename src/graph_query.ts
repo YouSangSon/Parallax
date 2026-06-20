@@ -27,7 +27,18 @@ export type ParsedGraphQuery = {
   returns: GraphQueryReturn[];
   limit?: number;
 };
-export type GraphQueryResult = { columns: string[]; rows: Array<Record<string, unknown>> };
+export type GraphQueryResult = {
+  columns: string[];
+  rows: Array<Record<string, unknown>>;
+  // The completed index run the query executed against — makes a query result
+  // measurable and pins it to a point in graph history.
+  indexRunId: number;
+  // Distinct entity ids the result projected, navigable via the
+  // `parallax://entities/{id}` resource template. Populated only when a node's
+  // `id` is actually returned (`RETURN a` / `RETURN a.id`) — you can only
+  // navigate ids you returned.
+  resources: { entities: string[] };
+};
 
 const DEFAULT_LIMIT = 1000;
 const MAX_LIMIT = 10_000;
@@ -351,7 +362,26 @@ export function executeGraphQuery(repoRoot: string, input: string): GraphQueryRe
       });
       return mapped;
     });
-    return { columns, rows };
+
+    // Which projected columns are entity ids? Those map to an entity table and
+    // resolve to the `id` column. Their values are navigable resource ids.
+    const entityIdColumnIndexes = query.returns
+      .map((item, index) => ({ item, index }))
+      .filter(({ item }) => aliasFor(item.variable).table === 'entity' && entityColumn(item.property) === 'id')
+      .map(({ index }) => index);
+    const entities: string[] = [];
+    const seen = new Set<string>();
+    for (const row of raw) {
+      for (const index of entityIdColumnIndexes) {
+        const value = row[`c${index}`];
+        if (typeof value === 'string' && value.length > 0 && !seen.has(value)) {
+          seen.add(value);
+          entities.push(value);
+        }
+      }
+    }
+
+    return { columns, rows, indexRunId, resources: { entities } };
   } finally {
     db.close();
   }

@@ -111,3 +111,43 @@ test('executeGraphQuery rejects write queries before touching the database', asy
     rmSync(repoRoot, { recursive: true, force: true });
   }
 });
+
+test('executeGraphQuery surfaces the index run and navigable entity resources for id projections', async () => {
+  const repoRoot = await buildRepo();
+  try {
+    const result = executeGraphQuery(
+      repoRoot,
+      "MATCH (a) WHERE a.path CONTAINS 'src/alpha.ts' RETURN a.id"
+    );
+    assert.equal(typeof result.indexRunId, 'number');
+    assert.ok(result.indexRunId! > 0, `expected a positive index run id, got ${result.indexRunId}`);
+    assert.ok(Array.isArray(result.resources.entities), 'resources.entities must be an array');
+    assert.ok(
+      result.resources.entities.some((id) => id.includes('alpha')),
+      `expected an alpha entity resource id in ${JSON.stringify(result.resources.entities)}`
+    );
+    // Distinct, navigable ids only — no duplicates.
+    assert.equal(
+      result.resources.entities.length,
+      new Set(result.resources.entities).size,
+      'resources.entities must be deduplicated'
+    );
+  } finally {
+    rmSync(repoRoot, { recursive: true, force: true });
+  }
+});
+
+test('executeGraphQuery yields no entity resources when no id is projected', async () => {
+  const repoRoot = await buildRepo();
+  try {
+    const result = executeGraphQuery(
+      repoRoot,
+      "MATCH (a) WHERE a.path CONTAINS 'src/alpha.ts' RETURN a.path"
+    );
+    // Honest navigation: you can only navigate ids you actually returned.
+    assert.deepEqual(result.resources.entities, []);
+    assert.equal(typeof result.indexRunId, 'number');
+  } finally {
+    rmSync(repoRoot, { recursive: true, force: true });
+  }
+});

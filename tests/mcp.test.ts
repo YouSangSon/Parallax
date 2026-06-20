@@ -2147,6 +2147,38 @@ test('MCP context telemetry records analyze, explain, resource kinds, and redact
   }
 });
 
+test('MCP parallax_query records telemetry with the query, index run, and entity resource count', async () => {
+  const repoRoot = await makeRepo();
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+
+    const cypher = "MATCH (a) WHERE a.path CONTAINS 'src/a.ts' RETURN a.id";
+    const response = await client.request('tools/call', {
+      name: 'parallax_query',
+      arguments: { query: cypher }
+    });
+    assert.equal(response.error, undefined);
+    assert.equal(response.result.isError, undefined);
+    const result = JSON.parse(response.result.content[0].text) as {
+      columns: string[];
+      rows: Array<Record<string, unknown>>;
+      indexRunId: number;
+      resources: { entities: string[] };
+    };
+    assert.ok(result.resources.entities.length > 0, 'an id projection should yield navigable entity resources');
+
+    const runs = contextToolRuns(repoRoot);
+    assert.equal(runs.length, 1);
+    assert.equal(runs[0]!.tool_name, 'parallax_query');
+    assert.equal(runs[0]!.query, cypher);
+    assert.equal(runs[0]!.index_run_id, result.indexRunId);
+    assert.equal(runs[0]!.resource_count, result.resources.entities.length);
+  } finally {
+    await client.close();
+  }
+});
+
 test('MCP context telemetry redacts changed file paths before storage', async () => {
   const { repoRoot, secretPath } = await makeSecretPathRepo();
   const client = new McpProcessClient(repoRoot);

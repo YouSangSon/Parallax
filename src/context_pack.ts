@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 
+import { queryCoChanges } from './co_change_query.js';
 import { resolveInsideRoot } from './security.js';
 import {
   isWorkArtifactEvidence,
@@ -11,6 +12,7 @@ import type {
   Confidence,
   ContextBudget,
   ContextPack,
+  ContextPackCoChange,
   ContextPackEvidence,
   ContextPackItem,
   ContextPackReusePolicy,
@@ -26,6 +28,7 @@ type ContextBudgetPreset = {
   workArtifactLimit: number;
   evidenceLimit: number;
   snippetChars: number;
+  coChangeLimit: number;
 };
 
 const contextBudgetPresets: Record<ContextBudget, ContextBudgetPreset> = {
@@ -35,7 +38,8 @@ const contextBudgetPresets: Record<ContextBudget, ContextBudgetPreset> = {
     affectedLimit: 5,
     workArtifactLimit: 5,
     evidenceLimit: 5,
-    snippetChars: 300
+    snippetChars: 300,
+    coChangeLimit: 3
   },
   standard: {
     maxDepth: 2,
@@ -43,7 +47,8 @@ const contextBudgetPresets: Record<ContextBudget, ContextBudgetPreset> = {
     affectedLimit: 15,
     workArtifactLimit: 12,
     evidenceLimit: 12,
-    snippetChars: 800
+    snippetChars: 800,
+    coChangeLimit: 5
   },
   deep: {
     maxDepth: 3,
@@ -51,7 +56,8 @@ const contextBudgetPresets: Record<ContextBudget, ContextBudgetPreset> = {
     affectedLimit: 50,
     workArtifactLimit: 30,
     evidenceLimit: 30,
-    snippetChars: 1_500
+    snippetChars: 1_500,
+    coChangeLimit: 10
   }
 };
 
@@ -67,7 +73,63 @@ export function contextBudgetPreset(budget: ContextBudget): ContextBudgetPreset 
   return contextBudgetPresets[budget];
 }
 
-export function buildContextPack(report: ImpactReport, budget: ContextBudget, asOfIso: string): ContextPack {
+function normalizeCoChangeConfidence(value: string): Confidence {
+  return value === 'proven' || value === 'inferred' || value === 'unknown' ? value : 'heuristic';
+}
+
+/**
+ * Top git co-change partners of the changed files, ranked by coupling strength.
+ * Advisory + honest: these couple via shared history, not structure, so they
+ * carry heuristic confidence. Never throws — an unindexed or non-git repo just
+ * yields an empty list, so the context pack degrades gracefully.
+ */
+export function selectCoChangePartners(
+  repoRoot: string,
+  changedFiles: string[],
+  budget: ContextBudget
+): ContextPackCoChange[] {
+  const limit = contextBudgetPreset(budget).coChangeLimit;
+  const changedSet = new Set(changedFiles);
+  const strongest = new Map<string, ContextPackCoChange>();
+  for (const changedFile of changedFiles) {
+    let partners;
+    try {
+      partners = queryCoChanges(repoRoot, changedFile, { limit }).partners;
+    } catch {
+      continue;
+    }
+    for (const partner of partners) {
+      if (changedSet.has(partner.path)) continue;
+      const entry: ContextPackCoChange = {
+        changedFile,
+        partner: partner.path,
+        coChangeCount: partner.coChangeCount,
+        couplingScore: partner.couplingScore,
+        confidence: normalizeCoChangeConfidence(partner.confidence),
+        resourceUri: entityResourceUri(entityForContextPath(partner.path))
+      };
+      const existing = strongest.get(partner.path);
+      if (!existing || entry.couplingScore > existing.couplingScore) {
+        strongest.set(partner.path, entry);
+      }
+    }
+  }
+  return [...strongest.values()]
+    .sort(
+      (a, b) =>
+        b.couplingScore - a.couplingScore ||
+        b.coChangeCount - a.coChangeCount ||
+        a.partner.localeCompare(b.partner)
+    )
+    .slice(0, limit);
+}
+
+export function buildContextPack(
+  report: ImpactReport,
+  budget: ContextBudget,
+  asOfIso: string,
+  coChanges: ContextPackCoChange[] = []
+): ContextPack {
   const preset = contextBudgetPreset(budget);
   const affectedTargetsByPath = new Map(
     report.affected
@@ -107,7 +169,8 @@ export function buildContextPack(report: ImpactReport, budget: ContextBudget, as
   const entityLinks = [
     ...report.changed.map(entityResourceUri),
     ...contextItems.map((item) => item.resourceUri),
-    ...selectedWorkArtifacts.map((item) => item.resourceUri)
+    ...selectedWorkArtifacts.map((item) => item.resourceUri),
+    ...coChanges.map((entry) => entry.resourceUri)
   ];
   const evidenceLinks = selectedEvidence.flatMap((item) => item.resourceUri ? [item.resourceUri] : []);
   return {
@@ -120,6 +183,7 @@ export function buildContextPack(report: ImpactReport, budget: ContextBudget, as
       resourceUri: entityResourceUri(entity)
     })),
     context: contextItems,
+    ...(coChanges.length > 0 ? { coChanges } : {}),
     workArtifacts: selectedWorkArtifacts,
     ...(report.adapterInsights && report.adapterInsights.length > 0 ? { adapterInsights: report.adapterInsights } : {}),
     actions,

@@ -14,7 +14,8 @@ import {
   contextPackReference,
   contextPackResourceUri,
   normalizeContextBudget,
-  normalizeContextPackReusePolicy
+  normalizeContextPackReusePolicy,
+  selectCoChangePartners
 } from './context_pack.js';
 import type { PersistedContextPack } from './context_pack.js';
 import { doctorProject, redactDoctorReportForMcp } from './doctor.js';
@@ -126,7 +127,7 @@ export function createMcpServer(context: McpContext): McpServer {
     {
       title: 'Build compact context for a change',
       description:
-        'Return a budgeted context pack for changed files so coding agents get ranked impact paths, evidence refs, and resource links without the full report payload.',
+        'Return a budgeted context pack for changed files so coding agents get ranked impact paths, evidence refs, git co-change advisories, and resource links without the full report payload.',
       inputSchema: {
         changedFiles: z.array(z.string()).min(1),
         budget: z.enum(['brief', 'standard', 'deep']).optional(),
@@ -159,7 +160,8 @@ export function createMcpServer(context: McpContext): McpServer {
         const pack = buildContextPack(
           report,
           normalizedBudget,
-          indexRunAsOfIso(context, report.indexRunId)
+          indexRunAsOfIso(context, report.indexRunId),
+          selectCoChangePartners(context.repoRoot, report.changedFiles, normalizedBudget)
         );
         const persisted = persistContextPackForReuse(context, pack, {
           changedFiles: report.changedFiles,

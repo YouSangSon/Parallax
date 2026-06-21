@@ -27,7 +27,7 @@ All registered tools use the `parallax_` prefix. This table is checked against t
 | Tool | Role | Read-only |
 | :--- | :--- | :--- |
 | `parallax_analyze_diff` | Analyze changed files against the latest completed index and return the full impact report | No |
-| `parallax_context_for_change` | Return a budgeted context pack (`brief`/`standard`/`deep`) of ranked impact paths, evidence refs, and resource links for changed files | No |
+| `parallax_context_for_change` | Return a budgeted context pack (`brief`/`standard`/`deep`) of ranked impact paths, evidence refs, git co-change advisories, and resource links for changed files | No |
 | `parallax_search_context` | Search the latest index by keyword, path, symbol, relation provenance, or evidence snippet and return ranked entity context | No |
 | `parallax_contract_diff` | Compare a current OpenAPI contract file against the indexed workspace baseline and return compact breaking-change impact | No |
 | `parallax_remember` | Persist an agent observation as a content-addressable fact on a branch (`assert`/`retract`) | No |

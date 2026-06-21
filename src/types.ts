@@ -220,6 +220,15 @@ export type ContextPackItem = {
   resourceUri: string;
 };
 
+export type ContextPackCoChange = {
+  changedFile: string;
+  partner: string;
+  coChangeCount: number;
+  couplingScore: number;
+  confidence: Confidence;
+  resourceUri: string;
+};
+
 export type ContextPackEvidence = {
   id: string;
   file: string;
@@ -273,6 +282,7 @@ export type ContextPack = {
   summary: string[];
   changed: ContextPackChangedEntity[];
   context: ContextPackItem[];
+  coChanges?: ContextPackCoChange[];
   workArtifacts: ContextPackWorkArtifact[];
   adapterInsights?: AdapterRunInsight[];
   actions: ImpactAction[];

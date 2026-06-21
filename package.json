@@ -32,6 +32,7 @@
     "prepack": "npm run build",
     "bench": "tsx bench/impact-bench.ts",
     "bench:report": "tsx bench/impact-bench-report.ts",
+    "bench:perf": "tsx bench/impact-perf.ts",
     "check": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test tests/**/*.test.ts",
     "test:fixtures": "npm test",

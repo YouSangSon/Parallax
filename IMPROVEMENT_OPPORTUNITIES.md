@@ -47,7 +47,7 @@ off MCP by I-8). Context-pack telemetry is recorded but nothing acts on it.
 
 | # | Opportunity | Effort | Value |
 | :-- | :-- | :-- | :-- |
-| M1 | **Multi-hop + aggregation in `parallax_query`** — ✅ **variable-length paths + `ORDER BY` shipped** (`-[r:TYPE*1..N]->` via a deterministic recursive CTE, depth cap 8; `ORDER BY <projected col> ASC/DESC`, validated against RETURN). Still open: `COUNT(...)`+`GROUP BY`. Stays read-only + deterministic. | M | HIGH |
+| M1 | ✅ **shipped** — multi-hop + aggregation in `parallax_query`: variable-length paths (`-[r:TYPE*1..N]->`, recursive CTE, depth cap 8), `ORDER BY <projected col> ASC/DESC` (incl. `ORDER BY COUNT(..)` for top-N), and `COUNT(<var>)` with implicit grouping (non-aggregate RETURN items become group keys). `COUNT(*)` and `COUNT` on variable-length paths are rejected. Read-only + deterministic. | M | HIGH |
 | M2 | ✅ **shipped** — `parallax_query` now routes through `toolJsonResponse` (telemetered like every sibling) and the result carries the queried `indexRunId` + distinct `resources.entities` ids (from id-projecting columns), navigable via `parallax://entities/{id}`. | S | HIGH |
 | M3 | ✅ **shipped** (tool) — read-only `parallax_co_change` ranks coupled files by `couplingScore` (parsed from CO_CHANGES provenance), partners navigable via `parallax://entities`. Still open: optionally fold top partners into `context_for_change`. | M | HIGH |
 | M4 | **Structured "what-changed-since" tool** — only a human-readable drift warning exists (`analyzer.ts:372`). Add `parallax_changed_since` returning a deterministic delta (entities/relations added/removed, confidence promotions) between two index runs. Lets agents orient incrementally. | M | MED |
@@ -121,7 +121,7 @@ new features bench-uncovered. The `analyze` exit code is confidence-blind (`cli.
 2. **A5** ✅ — resolution-strength confidence (S, MED-HIGH): cheap honesty win in the TS/JS call lane.
 3. **M2** ✅ **+ M6** — telemeter `parallax_query` (shipped) + workflow prompts (open): make the agent surface coherent.
 4. **D3 → D1** — report JSON Schema then confidence-aware `--fail-on` + Action (S→M, HIGH): the CI-guardrail story.
-5. **M1** — multi-hop Cypher (M, HIGH): turns `parallax_query` into the blast-radius primitive.
+5. **M1** ✅ — multi-hop + aggregation Cypher (M, HIGH): turns `parallax_query` into the blast-radius primitive.
 6. **S1** — incremental indexing (L, HIGH): the structural scale unlock; pair with S4 to guard it.
 
 Larger bets (L) that change the tool's ceiling: **A1** (TS TypeChecker), **A3** (Spring DI/persistence),

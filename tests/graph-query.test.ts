@@ -101,6 +101,30 @@ test('rejects ORDER BY on a column that is not projected', () => {
   );
 });
 
+test('parses COUNT aggregate with an implicit grouping key', () => {
+  const q = parseGraphQuery('MATCH (a)-[r:DEPENDS_ON]->(b) RETURN b.path, COUNT(a)');
+  assert.deepEqual(q.returns, [
+    { variable: 'b', property: 'path' },
+    { variable: 'a', count: true }
+  ]);
+});
+
+test('parses ORDER BY on a COUNT column with LIMIT (top-N)', () => {
+  const q = parseGraphQuery(
+    'MATCH (a)-[r:DEPENDS_ON]->(b) RETURN b.path, COUNT(a) ORDER BY COUNT(a) DESC LIMIT 5'
+  );
+  assert.deepEqual(q.orderBy, [{ column: 'COUNT(a)', direction: 'DESC' }]);
+  assert.equal(q.limit, 5);
+});
+
+test('rejects COUNT(*) and COUNT on a variable-length path', () => {
+  assert.throws(() => parseGraphQuery('MATCH (a)-[r:DEPENDS_ON]->(b) RETURN COUNT(*)'), /COUNT/i);
+  assert.throws(
+    () => parseGraphQuery('MATCH (a)-[:DEPENDS_ON*1..3]->(b) RETURN b.path, COUNT(a)'),
+    /COUNT|variable-length/i
+  );
+});
+
 test('rejects write clauses and unsupported syntax', () => {
   assert.throws(() => parseGraphQuery("CREATE (a) RETURN a"), /unsupported|read-only|MATCH/i);
   assert.throws(() => parseGraphQuery("MATCH (a) DELETE a"), /unsupported|read-only|DELETE/i);

@@ -112,6 +112,39 @@ test('executeGraphQuery rejects write queries before touching the database', asy
   }
 });
 
+test('executeGraphQuery counts dependents per file via COUNT + implicit grouping', async () => {
+  const repoRoot = mkdtempSync(path.join(tmpdir(), 'parallax-count-'));
+  mkdirSync(path.join(repoRoot, 'src'), { recursive: true });
+  // shared.ts has two dependents (alpha, beta); solo.ts has one (gamma).
+  writeFileSync(path.join(repoRoot, 'src/shared.ts'), 'export const shared = 1;\n');
+  writeFileSync(path.join(repoRoot, 'src/solo.ts'), 'export const solo = 1;\n');
+  writeFileSync(path.join(repoRoot, 'src/alpha.ts'), "import { shared } from './shared.js';\nexport const a = shared;\n");
+  writeFileSync(path.join(repoRoot, 'src/beta.ts'), "import { shared } from './shared.js';\nexport const b = shared;\n");
+  writeFileSync(path.join(repoRoot, 'src/gamma.ts'), "import { solo } from './solo.js';\nexport const g = solo;\n");
+  await initProject({ repoRoot });
+  await indexProject({ repoRoot });
+  try {
+    const result = executeGraphQuery(
+      repoRoot,
+      'MATCH (a)-[r:DEPENDS_ON]->(b) RETURN b.path, COUNT(a) ORDER BY COUNT(a) DESC, b.path'
+    );
+    assert.deepEqual(result.columns, ['b.path', 'COUNT(a)']);
+    const shared = result.rows.find((row) => row['b.path'] === 'src/shared.ts');
+    const solo = result.rows.find((row) => row['b.path'] === 'src/solo.ts');
+    assert.ok(shared && solo, `expected shared+solo rows in ${JSON.stringify(result.rows)}`);
+    assert.equal(Number(shared['COUNT(a)']), 2);
+    assert.equal(Number(solo['COUNT(a)']), 1);
+    // ORDER BY COUNT(a) DESC: the 2-dependent file ranks before the 1-dependent.
+    const sharedIdx = result.rows.findIndex((row) => row['b.path'] === 'src/shared.ts');
+    const soloIdx = result.rows.findIndex((row) => row['b.path'] === 'src/solo.ts');
+    assert.ok(sharedIdx < soloIdx, 'higher dependent count must sort first');
+    // Aggregated rows carry no navigable entity ids.
+    assert.deepEqual(result.resources.entities, []);
+  } finally {
+    rmSync(repoRoot, { recursive: true, force: true });
+  }
+});
+
 test('executeGraphQuery honors a user ORDER BY DESC over the default ordering', async () => {
   const repoRoot = await buildRepo();
   try {

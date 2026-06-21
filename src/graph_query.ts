@@ -18,7 +18,7 @@ export type GraphQueryCondition = {
   op: '=' | 'CONTAINS';
   value: string;
 };
-export type GraphQueryReturn = { variable: string; property?: string };
+export type GraphQueryReturn = { variable: string; property?: string; count?: boolean };
 export type GraphQueryOrder = { column: string; direction: 'ASC' | 'DESC' };
 export type ParsedGraphQuery = {
   source: GraphQueryNode;
@@ -105,10 +105,14 @@ export function parseGraphQuery(input: string): ParsedGraphQuery {
     }
   }
 
+  // A variable-length path produces a transitive reachability set, not a stable
+  // per-edge row set, so COUNT over it is ill-defined — reject it explicitly.
+  if (pattern.relationship?.pathLength && returns.some((item) => item.count)) {
+    throw new Error('unsupported query: COUNT is not supported on variable-length paths');
+  }
+
   // ORDER BY may only reference projected columns — safe and deterministic.
-  const projectedColumns = new Set(
-    returns.map((item) => (item.property ? `${item.variable}.${item.property}` : item.variable))
-  );
+  const projectedColumns = new Set(returns.map(returnColumnName));
   const orderBy = parseOrderBy(orderByPart);
   for (const order of orderBy) {
     if (!projectedColumns.has(order.column)) {
@@ -134,13 +138,24 @@ function parseOrderBy(text: string): GraphQueryOrder[] {
     .map((part) => part.trim())
     .filter(Boolean)
     .map((part) => {
-      const match = part.match(/^([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)?)(?:\s+(ASC|DESC))?$/i);
+      const match = part.match(
+        /^(COUNT\s*\(\s*[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)?\s*\)|[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)?)(?:\s+(ASC|DESC))?$/i
+      );
       if (!match) {
-        throw new Error(`unsupported ORDER BY item: ${part} (expected var[.prop] [ASC|DESC])`);
+        throw new Error(
+          `unsupported ORDER BY item: ${part} (expected var[.prop] or COUNT(var[.prop]) [ASC|DESC])`
+        );
       }
       const direction = match[2]?.toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
-      return { column: match[1]!, direction };
+      return { column: normalizeOrderColumn(match[1]!), direction };
     });
+}
+
+// Normalize an ORDER BY COUNT(...) token to the canonical `COUNT(inner)` form
+// `returnColumnName` produces, so the two match regardless of casing/spacing.
+function normalizeOrderColumn(raw: string): string {
+  const count = raw.match(/^COUNT\s*\(\s*([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)?)\s*\)$/i);
+  return count ? `COUNT(${count[1]})` : raw;
 }
 
 const NODE = '\\(\\s*([A-Za-z_]\\w*)\\s*(?::\\s*([A-Za-z_]\\w*))?\\s*\\)';
@@ -230,10 +245,28 @@ function parseReturns(text: string): GraphQueryReturn[] {
     .map((item) => item.trim())
     .filter(Boolean)
     .map((item) => {
+      const countMatch = item.match(/^COUNT\s*\(\s*(.+?)\s*\)$/i);
+      if (countMatch) {
+        const inner = countMatch[1]!;
+        const innerMatch = inner.match(/^([A-Za-z_]\w*)(?:\.([A-Za-z_]\w*))?$/);
+        if (!innerMatch) {
+          throw new Error(
+            `unsupported RETURN item: COUNT(${inner}) — only COUNT(<var>) or COUNT(<var>.<prop>) is supported (COUNT(*) is not)`
+          );
+        }
+        return { variable: innerMatch[1]!, ...(innerMatch[2] ? { property: innerMatch[2] } : {}), count: true };
+      }
       const match = item.match(/^([A-Za-z_]\w*)(?:\.([A-Za-z_]\w*))?$/);
       if (!match) throw new Error(`unsupported RETURN item: ${item}`);
       return { variable: match[1]!, ...(match[2] ? { property: match[2] } : {}) };
     });
+}
+
+// Canonical projected-column name, shared by RETURN parsing and ORDER BY
+// matching so the two always agree (e.g. `b.path`, `COUNT(a)`).
+function returnColumnName(item: GraphQueryReturn): string {
+  const base = item.property ? `${item.variable}.${item.property}` : item.variable;
+  return item.count ? `COUNT(${base})` : base;
 }
 
 function entityColumn(property: string | undefined): string {
@@ -296,20 +329,47 @@ export function executeGraphQuery(repoRoot: string, input: string): GraphQueryRe
       return `${alias}.${table === 'entity' ? entityColumn(property) : relationshipColumn(property)}`;
     };
 
-    const columns = query.returns.map((item) =>
-      item.property ? `${item.variable}.${item.property}` : item.variable
-    );
+    const columns = query.returns.map(returnColumnName);
     const selectList = query.returns
-      .map((item, index) => `${columnExpr(item.variable, item.property)} AS c${index}`)
+      .map((item, index) => {
+        const expr = columnExpr(item.variable, item.property);
+        return `${item.count ? `COUNT(${expr})` : expr} AS c${index}`;
+      })
       .join(', ');
+
+    // Aggregation: any COUNT(...) makes the non-aggregate RETURN items the
+    // implicit grouping keys (Cypher has no explicit GROUP BY keyword).
+    const hasAggregate = query.returns.some((item) => item.count);
+    const groupKeyIndexes = query.returns
+      .map((item, index) => ({ item, index }))
+      .filter(({ item }) => !item.count)
+      .map(({ index }) => index);
+    const groupByClause =
+      hasAggregate && groupKeyIndexes.length > 0
+        ? `GROUP BY ${groupKeyIndexes
+            .map((index) => columnExpr(query.returns[index]!.variable, query.returns[index]!.property))
+            .join(', ')}`
+        : '';
 
     // A user ORDER BY references projected columns by their cN alias (validated
     // at parse time to be in RETURN), so it is injection-safe and deterministic.
-    const orderByClause = query.orderBy
+    const userOrderBy = query.orderBy
       ? `ORDER BY ${query.orderBy
           .map((order) => `c${columns.indexOf(order.column)} ${order.direction}`)
           .join(', ')}`
       : null;
+    // The per-branch defaults order by ungrouped columns, invalid in an
+    // aggregate query — order by the group keys instead (nothing when there are
+    // none, i.e. a single all-aggregate row).
+    const aggregateOrderBy = hasAggregate
+      ? groupKeyIndexes.length > 0
+        ? `ORDER BY ${groupKeyIndexes.map((index) => `c${index}`).join(', ')}`
+        : ''
+      : null;
+    const effectiveOrder = (branchDefault: string): string =>
+      userOrderBy ?? aggregateOrderBy ?? branchDefault;
+    const withGroupAndOrder = (branchDefault: string): string =>
+      [groupByClause, effectiveOrder(branchDefault)].filter(Boolean).join(' ');
 
     const conditions: string[] = [];
     const addLabel = (target: string[], node: GraphQueryNode | undefined, alias: string): void => {
@@ -366,7 +426,7 @@ export function executeGraphQuery(repoRoot: string, input: string): GraphQueryRe
         'JOIN entities src ON src.id = reach.start_id ' +
         'JOIN entities tgt ON tgt.id = reach.node_id ' +
         `WHERE ${outer.join(' AND ')} ` +
-        (orderByClause ?? 'ORDER BY src.path, tgt.path');
+        effectiveOrder('ORDER BY src.path, tgt.path');
     } else if (query.relationship && query.target) {
       conditions.push('r.repo_id = ?');
       params.push(repoId);
@@ -384,7 +444,7 @@ export function executeGraphQuery(repoRoot: string, input: string): GraphQueryRe
         'JOIN entities src ON src.id = r.source_entity_id ' +
         'JOIN entities tgt ON tgt.id = r.target_entity_id ' +
         `WHERE ${conditions.join(' AND ')} ` +
-        (orderByClause ?? 'ORDER BY src.path, tgt.path, r.kind');
+        withGroupAndOrder('ORDER BY src.path, tgt.path, r.kind');
     } else {
       conditions.push('src.repo_id = ?');
       params.push(repoId);
@@ -393,7 +453,7 @@ export function executeGraphQuery(repoRoot: string, input: string): GraphQueryRe
       addLabel(conditions, query.source, 'src');
       addWhere(conditions);
       sql =
-        `SELECT ${selectList} FROM entities src WHERE ${conditions.join(' AND ')} ${orderByClause ?? 'ORDER BY src.path'}`;
+        `SELECT ${selectList} FROM entities src WHERE ${conditions.join(' AND ')} ${withGroupAndOrder('ORDER BY src.path')}`;
     }
 
     const limit = query.limit ?? DEFAULT_LIMIT;
@@ -413,7 +473,7 @@ export function executeGraphQuery(repoRoot: string, input: string): GraphQueryRe
     // resolve to the `id` column. Their values are navigable resource ids.
     const entityIdColumnIndexes = query.returns
       .map((item, index) => ({ item, index }))
-      .filter(({ item }) => aliasFor(item.variable).table === 'entity' && entityColumn(item.property) === 'id')
+      .filter(({ item }) => !item.count && aliasFor(item.variable).table === 'entity' && entityColumn(item.property) === 'id')
       .map(({ index }) => index);
     const entities: string[] = [];
     const seen = new Set<string>();

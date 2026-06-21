@@ -87,7 +87,7 @@ claude mcp add --transport stdio parallax -- parallax mcp serve
 | `parallax_contract_diff` | ❌ | 将当前 OpenAPI contract 文件与最新已索引的 workspace baseline 对比，返回紧凑的 breaking-change impact |
 | `parallax_remember` | ❌ | 在某个 branch 上持久化一条 agent fact (entity, attribute, value) |
 | `parallax_recall` | ✅ | 按 branch / entity / attribute / 语义查询检索 fact (sqlite-vec ANN，brute-force 兜底) |
-| `parallax_query` | ✅ | 在已索引的图上运行只读 Cypher 子集（正向/反向/可变长度 hop、label、WHERE =/CONTAINS、投影、ORDER BY、LIMIT） |
+| `parallax_query` | ✅ | 在已索引的图上运行只读 Cypher 子集（正向/反向/可变长度 hop、label、WHERE =/CONTAINS、投影、COUNT 聚合、ORDER BY、LIMIT） |
 | `parallax_co_change` | ✅ | 通过 git 共变（CO_CHANGES）按耦合强度对与给定文件耦合的文件排序，以 heuristic 置信度 |
 | `parallax_profile` | ✅ | 三桶式的 per-entity 视图 (static / dynamic / summary) —  |
 | `parallax_explain_entity` | ❌ | 针对单个已索引 entity 的紧凑直接 incoming/outgoing relation 与 evidence 视图 |

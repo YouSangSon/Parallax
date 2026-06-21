@@ -19,12 +19,14 @@ export type GraphQueryCondition = {
   value: string;
 };
 export type GraphQueryReturn = { variable: string; property?: string };
+export type GraphQueryOrder = { column: string; direction: 'ASC' | 'DESC' };
 export type ParsedGraphQuery = {
   source: GraphQueryNode;
   relationship?: GraphQueryRel;
   target?: GraphQueryNode;
   where: GraphQueryCondition[];
   returns: GraphQueryReturn[];
+  orderBy?: GraphQueryOrder[];
   limit?: number;
 };
 export type GraphQueryResult = {
@@ -67,6 +69,14 @@ export function parseGraphQuery(input: string): ParsedGraphQuery {
     returnPart = returnPart.slice(0, limitMatch.index).trim();
   }
 
+  // ORDER BY sits between RETURN and LIMIT; strip it before parsing return items.
+  let orderByPart = '';
+  const orderByMatch = returnPart.match(/\bORDER\s+BY\b/i);
+  if (orderByMatch) {
+    orderByPart = returnPart.slice(orderByMatch.index! + orderByMatch[0].length).trim();
+    returnPart = returnPart.slice(0, orderByMatch.index).trim();
+  }
+
   const whereSplit = matchPart.split(/\bWHERE\b/i);
   if (whereSplit.length > 2) throw new Error('unsupported query: multiple WHERE clauses');
   const patternPart = whereSplit[0]!.trim();
@@ -95,14 +105,42 @@ export function parseGraphQuery(input: string): ParsedGraphQuery {
     }
   }
 
+  // ORDER BY may only reference projected columns — safe and deterministic.
+  const projectedColumns = new Set(
+    returns.map((item) => (item.property ? `${item.variable}.${item.property}` : item.variable))
+  );
+  const orderBy = parseOrderBy(orderByPart);
+  for (const order of orderBy) {
+    if (!projectedColumns.has(order.column)) {
+      throw new Error(`ORDER BY column must be in RETURN: ${order.column}`);
+    }
+  }
+
   return {
     source: pattern.source,
     ...(pattern.relationship ? { relationship: pattern.relationship } : {}),
     ...(pattern.target ? { target: pattern.target } : {}),
     where,
     returns,
+    ...(orderBy.length > 0 ? { orderBy } : {}),
     ...(limit !== undefined ? { limit } : {})
   };
+}
+
+function parseOrderBy(text: string): GraphQueryOrder[] {
+  if (!text) return [];
+  return text
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const match = part.match(/^([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)?)(?:\s+(ASC|DESC))?$/i);
+      if (!match) {
+        throw new Error(`unsupported ORDER BY item: ${part} (expected var[.prop] [ASC|DESC])`);
+      }
+      const direction = match[2]?.toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
+      return { column: match[1]!, direction };
+    });
 }
 
 const NODE = '\\(\\s*([A-Za-z_]\\w*)\\s*(?::\\s*([A-Za-z_]\\w*))?\\s*\\)';
@@ -265,6 +303,14 @@ export function executeGraphQuery(repoRoot: string, input: string): GraphQueryRe
       .map((item, index) => `${columnExpr(item.variable, item.property)} AS c${index}`)
       .join(', ');
 
+    // A user ORDER BY references projected columns by their cN alias (validated
+    // at parse time to be in RETURN), so it is injection-safe and deterministic.
+    const orderByClause = query.orderBy
+      ? `ORDER BY ${query.orderBy
+          .map((order) => `c${columns.indexOf(order.column)} ${order.direction}`)
+          .join(', ')}`
+      : null;
+
     const conditions: string[] = [];
     const addLabel = (target: string[], node: GraphQueryNode | undefined, alias: string): void => {
       if (node?.label) {
@@ -320,7 +366,7 @@ export function executeGraphQuery(repoRoot: string, input: string): GraphQueryRe
         'JOIN entities src ON src.id = reach.start_id ' +
         'JOIN entities tgt ON tgt.id = reach.node_id ' +
         `WHERE ${outer.join(' AND ')} ` +
-        'ORDER BY src.path, tgt.path';
+        (orderByClause ?? 'ORDER BY src.path, tgt.path');
     } else if (query.relationship && query.target) {
       conditions.push('r.repo_id = ?');
       params.push(repoId);
@@ -338,7 +384,7 @@ export function executeGraphQuery(repoRoot: string, input: string): GraphQueryRe
         'JOIN entities src ON src.id = r.source_entity_id ' +
         'JOIN entities tgt ON tgt.id = r.target_entity_id ' +
         `WHERE ${conditions.join(' AND ')} ` +
-        'ORDER BY src.path, tgt.path, r.kind';
+        (orderByClause ?? 'ORDER BY src.path, tgt.path, r.kind');
     } else {
       conditions.push('src.repo_id = ?');
       params.push(repoId);
@@ -347,7 +393,7 @@ export function executeGraphQuery(repoRoot: string, input: string): GraphQueryRe
       addLabel(conditions, query.source, 'src');
       addWhere(conditions);
       sql =
-        `SELECT ${selectList} FROM entities src WHERE ${conditions.join(' AND ')} ORDER BY src.path`;
+        `SELECT ${selectList} FROM entities src WHERE ${conditions.join(' AND ')} ${orderByClause ?? 'ORDER BY src.path'}`;
     }
 
     const limit = query.limit ?? DEFAULT_LIMIT;

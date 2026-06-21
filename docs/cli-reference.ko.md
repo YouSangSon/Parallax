@@ -24,7 +24,7 @@
 | `parallax query "<cypher>"` | 인덱싱된 그래프에 읽기전용 Cypher 서브셋을 실행하고 JSON 행을 출력 |
 | `parallax ingest-traces --file <traces.json>` | 관측된 런타임 `source -> target` 엣지와 매칭되는 관계를 `proven` 신뢰도로 승격 |
 
-`query` 서브셋은 양방향(`->` 또는 `<-`)의 선택적 관계 hop(고정 또는 가변 길이 `*`, `*N`, `*min..max`; max는 8로 제한), 노드 label, `WHERE` 등호 / `CONTAINS`, 투영, `LIMIT`를 지원한다 — 예: `MATCH (a)-[r:DEPENDS_ON]->(b) WHERE a.path CONTAINS 'store' RETURN a.path, b.path LIMIT 20`, "무엇이 X에 의존하는가" 역방향 `MATCH (x)<-[r:DEPENDS_ON]-(d) WHERE x.path = 'src/store.ts' RETURN d.path`, 또는 "X에서 도달 가능한 전부" 전이 형태 `MATCH (x)-[:DEPENDS_ON*1..3]->(dep) WHERE x.path = 'src/store.ts' RETURN dep.path`. write·procedure·projection(`WITH`/`UNWIND`)·양방향 구문은 거부되며, 가변 길이 경로의 관계 변수는 투영할 수 없다. `ingest-traces`는 읽기전용 MCP에서 분리된 write 표면(invariant **I-8**)이며, 런타임 관측은 신뢰도를 올리기만 한다.
+`query` 서브셋은 양방향(`->` 또는 `<-`)의 선택적 관계 hop(고정 또는 가변 길이 `*`, `*N`, `*min..max`; max는 8로 제한), 노드 label, `WHERE` 등호 / `CONTAINS`, 투영, 투영된 컬럼에 대한 `ORDER BY`(`ASC`/`DESC`), `LIMIT`를 지원한다 — 예: `MATCH (a)-[r:DEPENDS_ON]->(b) WHERE a.path CONTAINS 'store' RETURN a.path, b.path ORDER BY b.path DESC LIMIT 20`, "무엇이 X에 의존하는가" 역방향 `MATCH (x)<-[r:DEPENDS_ON]-(d) WHERE x.path = 'src/store.ts' RETURN d.path`, 또는 "X에서 도달 가능한 전부" 전이 형태 `MATCH (x)-[:DEPENDS_ON*1..3]->(dep) WHERE x.path = 'src/store.ts' RETURN dep.path`. write·procedure·projection(`WITH`/`UNWIND`)·양방향 구문은 거부되며, 가변 길이 경로의 관계 변수는 투영할 수 없고, `ORDER BY`는 투영된 컬럼만 받는다. `ingest-traces`는 읽기전용 MCP에서 분리된 write 표면(invariant **I-8**)이며, 런타임 관측은 신뢰도를 올리기만 한다.
 
 플래그:
 

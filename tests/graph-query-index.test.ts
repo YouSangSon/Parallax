@@ -112,6 +112,27 @@ test('executeGraphQuery rejects write queries before touching the database', asy
   }
 });
 
+test('executeGraphQuery honors a user ORDER BY DESC over the default ordering', async () => {
+  const repoRoot = await buildRepo();
+  try {
+    const ascending = executeGraphQuery(
+      repoRoot,
+      "MATCH (a) WHERE a.path CONTAINS 'src/' RETURN a.path"
+    );
+    const descending = executeGraphQuery(
+      repoRoot,
+      "MATCH (a) WHERE a.path CONTAINS 'src/' RETURN a.path ORDER BY a.path DESC"
+    );
+    const ascPaths = ascending.rows.map((row) => row['a.path'] as string);
+    const descPaths = descending.rows.map((row) => row['a.path'] as string);
+    assert.ok(ascPaths.length >= 2, `need >=2 src files, got ${JSON.stringify(ascPaths)}`);
+    assert.deepEqual(descPaths, [...ascPaths].reverse(), 'DESC must reverse the default ascending path order');
+    assert.deepEqual(descPaths, [...descPaths].sort().reverse(), 'rows must be in descending path order');
+  } finally {
+    rmSync(repoRoot, { recursive: true, force: true });
+  }
+});
+
 test('executeGraphQuery surfaces the index run and navigable entity resources for id projections', async () => {
   const repoRoot = await buildRepo();
   try {

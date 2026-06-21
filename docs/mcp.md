@@ -32,7 +32,7 @@ All registered tools use the `parallax_` prefix. This table is checked against t
 | `parallax_contract_diff` | Compare a current OpenAPI contract file against the indexed workspace baseline and return compact breaking-change impact | No |
 | `parallax_remember` | Persist an agent observation as a content-addressable fact on a branch (`assert`/`retract`) | No |
 | `parallax_recall` | Query facts by entity, attribute, and branch (optionally semantic) | Yes |
-| `parallax_query` | Run a read-only Cypher subset (forward/reverse/variable-length hop, labels, WHERE =/CONTAINS, projection, LIMIT) over the indexed entity/relation graph and return JSON rows plus the queried index run and navigable entity resources | Yes |
+| `parallax_query` | Run a read-only Cypher subset (forward/reverse/variable-length hop, labels, WHERE =/CONTAINS, projection, ORDER BY, LIMIT) over the indexed entity/relation graph and return JSON rows plus the queried index run and navigable entity resources | Yes |
 | `parallax_co_change` | Return files historically coupled to a given file via git co-change (CO_CHANGES), ranked by coupling strength — surfaces correlational couplings the static graph misses, at heuristic confidence | Yes |
 | `parallax_branch` | Create a new memory branch forking from an existing branch (default `main`); no data copied | No |
 | `parallax_merge` | Create a merge transaction so recall on the target walks both branch DAGs | No |

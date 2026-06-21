@@ -47,7 +47,7 @@ off MCP by I-8). Context-pack telemetry is recorded but nothing acts on it.
 
 | # | Opportunity | Effort | Value |
 | :-- | :-- | :-- | :-- |
-| M1 | **Multi-hop + aggregation in `parallax_query`** — ✅ **variable-length paths shipped** (`-[r:TYPE*1..N]->` via a deterministic recursive CTE, depth cap 8). Still open: `COUNT(...)`+`GROUP BY` and `ORDER BY <col>`. Stays read-only + deterministic. | M | HIGH |
+| M1 | **Multi-hop + aggregation in `parallax_query`** — ✅ **variable-length paths + `ORDER BY` shipped** (`-[r:TYPE*1..N]->` via a deterministic recursive CTE, depth cap 8; `ORDER BY <projected col> ASC/DESC`, validated against RETURN). Still open: `COUNT(...)`+`GROUP BY`. Stays read-only + deterministic. | M | HIGH |
 | M2 | ✅ **shipped** — `parallax_query` now routes through `toolJsonResponse` (telemetered like every sibling) and the result carries the queried `indexRunId` + distinct `resources.entities` ids (from id-projecting columns), navigable via `parallax://entities/{id}`. | S | HIGH |
 | M3 | ✅ **shipped** (tool) — read-only `parallax_co_change` ranks coupled files by `couplingScore` (parsed from CO_CHANGES provenance), partners navigable via `parallax://entities`. Still open: optionally fold top partners into `context_for_change`. | M | HIGH |
 | M4 | **Structured "what-changed-since" tool** — only a human-readable drift warning exists (`analyzer.ts:372`). Add `parallax_changed_since` returning a deterministic delta (entities/relations added/removed, confidence promotions) between two index runs. Lets agents orient incrementally. | M | MED |

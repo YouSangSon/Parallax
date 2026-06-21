@@ -79,6 +79,28 @@ test('rejects projecting the relationship variable of a variable-length path', (
   );
 });
 
+test('parses ORDER BY with direction, before LIMIT', () => {
+  const q = parseGraphQuery('MATCH (a) RETURN a.path ORDER BY a.path DESC LIMIT 5');
+  assert.deepEqual(q.returns, [{ variable: 'a', property: 'path' }]);
+  assert.deepEqual(q.orderBy, [{ column: 'a.path', direction: 'DESC' }]);
+  assert.equal(q.limit, 5);
+});
+
+test('parses multi-key ORDER BY defaulting to ASC', () => {
+  const q = parseGraphQuery('MATCH (a)-[r:DEPENDS_ON]->(b) RETURN a.path, b.path ORDER BY b.path, a.path DESC');
+  assert.deepEqual(q.orderBy, [
+    { column: 'b.path', direction: 'ASC' },
+    { column: 'a.path', direction: 'DESC' }
+  ]);
+});
+
+test('rejects ORDER BY on a column that is not projected', () => {
+  assert.throws(
+    () => parseGraphQuery('MATCH (a) RETURN a.path ORDER BY a.kind'),
+    /ORDER BY/i
+  );
+});
+
 test('rejects write clauses and unsupported syntax', () => {
   assert.throws(() => parseGraphQuery("CREATE (a) RETURN a"), /unsupported|read-only|MATCH/i);
   assert.throws(() => parseGraphQuery("MATCH (a) DELETE a"), /unsupported|read-only|DELETE/i);

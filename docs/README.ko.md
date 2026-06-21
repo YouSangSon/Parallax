@@ -21,6 +21,7 @@ Parallax는 local-first 코드 impact 분석 계층이다 — 단일 SQLite 저�
 | :--- | :--- |
 | [`mcp.ko.md`](mcp.ko.md) | MCP 서버, tool, resource |
 | [`cli-reference.ko.md`](cli-reference.ko.md) | 모든 CLI 명령, 플래그, exit code |
+| [`report-schema.ko.md`](report-schema.ko.md) | `analyze --json` 출력의 발행된 JSON Schema |
 | [`extending-adapters.ko.md`](extending-adapters.ko.md) | semantic adapter 작성 |
 | [`verification.ko.md`](verification.ko.md) | 검증 계층, 테스트 script, dogfood guard |
 | [`operations.ko.md`](operations.ko.md) | Troubleshooting과 운영 runbook |

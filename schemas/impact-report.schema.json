@@ -1,0 +1,575 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/YouSangSon/Parallax/blob/main/schemas/impact-report.schema.json",
+  "title": "Parallax Impact Report",
+  "description": "Schema for `parallax analyze --json` output (ImpactReport).",
+  "version": "1.0.0",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "indexRunId": {
+      "type": "number"
+    },
+    "changedFiles": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "affectedFiles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": "string",
+            "enum": [
+              "proven",
+              "inferred",
+              "heuristic",
+              "unknown"
+            ]
+          },
+          "depth": {
+            "type": "number"
+          },
+          "relationPath": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "path",
+          "reason",
+          "confidence"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "changed": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "file",
+              "symbol",
+              "module",
+              "package",
+              "test",
+              "doc",
+              "config",
+              "policy",
+              "proposal",
+              "prd",
+              "workflow",
+              "resource",
+              "endpoint",
+              "contract",
+              "event",
+              "business_plan",
+              "requirement",
+              "decision",
+              "meeting_note",
+              "metric",
+              "customer_artifact",
+              "task",
+              "external_entity"
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "symbol": {
+            "type": "string"
+          },
+          "languageId": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "affected": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "file",
+                  "symbol",
+                  "module",
+                  "package",
+                  "test",
+                  "doc",
+                  "config",
+                  "policy",
+                  "proposal",
+                  "prd",
+                  "workflow",
+                  "resource",
+                  "endpoint",
+                  "contract",
+                  "event",
+                  "business_plan",
+                  "requirement",
+                  "decision",
+                  "meeting_note",
+                  "metric",
+                  "customer_artifact",
+                  "task",
+                  "external_entity"
+                ]
+              },
+              "path": {
+                "type": "string"
+              },
+              "symbol": {
+                "type": "string"
+              },
+              "languageId": {
+                "type": "string"
+              },
+              "displayName": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "kind"
+            ],
+            "additionalProperties": false
+          },
+          "relations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "confidence": {
+            "type": "string",
+            "enum": [
+              "proven",
+              "inferred",
+              "heuristic",
+              "unknown"
+            ]
+          }
+        },
+        "required": [
+          "target",
+          "relations",
+          "confidence"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "actions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "verify",
+              "review"
+            ]
+          },
+          "runnerId": {
+            "type": "string"
+          },
+          "target": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "file",
+                  "symbol",
+                  "module",
+                  "package",
+                  "test",
+                  "doc",
+                  "config",
+                  "policy",
+                  "proposal",
+                  "prd",
+                  "workflow",
+                  "resource",
+                  "endpoint",
+                  "contract",
+                  "event",
+                  "business_plan",
+                  "requirement",
+                  "decision",
+                  "meeting_note",
+                  "metric",
+                  "customer_artifact",
+                  "task",
+                  "external_entity"
+                ]
+              },
+              "path": {
+                "type": "string"
+              },
+              "symbol": {
+                "type": "string"
+              },
+              "languageId": {
+                "type": "string"
+              },
+              "displayName": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "kind"
+            ],
+            "additionalProperties": false
+          },
+          "command": {
+            "type": "string"
+          },
+          "args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "display": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": "string",
+            "enum": [
+              "proven",
+              "inferred",
+              "heuristic",
+              "unknown"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "target",
+          "display",
+          "confidence"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "testCommands": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "verify",
+              "review"
+            ]
+          },
+          "runnerId": {
+            "type": "string"
+          },
+          "target": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "file",
+                  "symbol",
+                  "module",
+                  "package",
+                  "test",
+                  "doc",
+                  "config",
+                  "policy",
+                  "proposal",
+                  "prd",
+                  "workflow",
+                  "resource",
+                  "endpoint",
+                  "contract",
+                  "event",
+                  "business_plan",
+                  "requirement",
+                  "decision",
+                  "meeting_note",
+                  "metric",
+                  "customer_artifact",
+                  "task",
+                  "external_entity"
+                ]
+              },
+              "path": {
+                "type": "string"
+              },
+              "symbol": {
+                "type": "string"
+              },
+              "languageId": {
+                "type": "string"
+              },
+              "displayName": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "kind"
+            ],
+            "additionalProperties": false
+          },
+          "command": {
+            "type": "string"
+          },
+          "args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "display": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": "string",
+            "enum": [
+              "proven",
+              "inferred",
+              "heuristic",
+              "unknown"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "target",
+          "display",
+          "confidence"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "snippet": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": "string",
+            "enum": [
+              "proven",
+              "inferred",
+              "heuristic",
+              "unknown"
+            ]
+          },
+          "startLine": {
+            "type": "number"
+          },
+          "endLine": {
+            "type": "number"
+          },
+          "startCol": {
+            "type": "number"
+          },
+          "endCol": {
+            "type": "number"
+          },
+          "subject": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "file",
+                  "symbol",
+                  "module",
+                  "package",
+                  "test",
+                  "doc",
+                  "config",
+                  "policy",
+                  "proposal",
+                  "prd",
+                  "workflow",
+                  "resource",
+                  "endpoint",
+                  "contract",
+                  "event",
+                  "business_plan",
+                  "requirement",
+                  "decision",
+                  "meeting_note",
+                  "metric",
+                  "customer_artifact",
+                  "task",
+                  "external_entity"
+                ]
+              },
+              "path": {
+                "type": "string"
+              },
+              "symbol": {
+                "type": "string"
+              },
+              "languageId": {
+                "type": "string"
+              },
+              "displayName": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "kind"
+            ],
+            "additionalProperties": false
+          },
+          "relationKind": {
+            "type": "string"
+          },
+          "extractorId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "file",
+          "kind",
+          "snippet",
+          "confidence"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "adapterInsights": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "languageIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "confidence": {
+            "type": "string",
+            "enum": [
+              "proven",
+              "inferred",
+              "heuristic",
+              "unknown"
+            ]
+          },
+          "knownGaps": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "string"
+          },
+          "errorSummary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "languageIds",
+          "confidence",
+          "knownGaps",
+          "status"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "reportPath": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "indexRunId",
+    "changedFiles",
+    "affectedFiles",
+    "changed",
+    "affected",
+    "actions",
+    "testCommands",
+    "evidence"
+  ],
+  "additionalProperties": false
+}

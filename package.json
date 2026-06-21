@@ -42,7 +42,9 @@
     "test:benchmark": "npm run bench",
     "test:install-smoke": "npm run build && node dist/src/cli.js --help",
     "docs:lint": "node scripts/docs-lint.js",
-    "lint": "npm run check && npm run docs:lint",
+    "schemas:build": "tsx scripts/generate-report-schema.ts",
+    "schemas:check": "tsx scripts/generate-report-schema.ts --check",
+    "lint": "npm run check && npm run docs:lint && npm run schemas:check",
     "verify": "npm run lint && npm run test:install-smoke && npm test && npm run test:dogfood && npm run bench && npm audit --audit-level=high"
   },
   "engines": {

@@ -32,7 +32,7 @@
 - `--base` / `--head` — Git ref; `--head`는 `--base`를 요구한다. `--base`/`--head`/`--changed`가 없으면 positional 파일 경로를 받는다.
 - `--depth` — ripple 계산의 최대 traversal 깊이.
 - `--max-fanout` — traversal 중 노드당 최대 fan-out.
-- `--json` — 요약 대신 전체 report JSON을 출력하고, report를 저장소에 쓰지 않는다.
+- `--json` — 요약 대신 전체 report JSON을 출력하고, report를 저장소에 쓰지 않는다. 출력은 발행된 [report JSON Schema](report-schema.ko.md)에 대해 검증된다.
 - `--fail-on <level>` — 종료 코드를 confidence로 제어: `proven` / `inferred` / `heuristic`는 영향 파일이 해당 confidence 이상일 때만 실패; `any`(기본)는 영향 파일이 있으면 실패; `none`은 절대 실패하지 않음. CI에서 고신뢰 영향만 게이트할 때 사용.
 
 기본(`--json` 없음)에서는 report가 저장되고 짧은 요약이 출력되며, 기록 시 report 경로가 표시된다.
@@ -111,6 +111,7 @@ impact 시 `analyze`의 exit code `1`은 의도된 것이다 — CI 작업과 ag
 ## 함께 보기
 
 - [mcp.ko.md](mcp.ko.md) — 같은 저장소 위의 MCP 서버 surface
+- [report-schema.ko.md](report-schema.ko.md) — `analyze --json` 출력의 발행된 JSON Schema
 - [extending-adapters.ko.md](extending-adapters.ko.md) — `parallax index`가 graph를 추출하는 방식
 - [invariants.ko.md](invariants.ko.md) — local-first, explicit-trigger, read-only-first 불변 원칙
 - [glossary.ko.md](glossary.ko.md) — 용어

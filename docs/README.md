@@ -21,6 +21,7 @@ Parallax is a local-first code impact-analysis layer: a single SQLite store powe
 | :--- | :--- |
 | [`mcp.md`](mcp.md) | MCP server, tools, and resources |
 | [`cli-reference.md`](cli-reference.md) | Every CLI command, flag, and exit code |
+| [`report-schema.md`](report-schema.md) | Published JSON Schema for `analyze --json` output |
 | [`extending-adapters.md`](extending-adapters.md) | Authoring semantic adapters |
 | [`verification.md`](verification.md) | Verification layers, test scripts, and the dogfood guard |
 | [`operations.md`](operations.md) | Troubleshooting and operator runbook |

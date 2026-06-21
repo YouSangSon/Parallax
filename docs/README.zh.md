@@ -21,6 +21,7 @@ Parallax 是一个 local-first 的代码 impact 分析层——单个 SQLite 存
 | :--- | :--- |
 | [`mcp.zh.md`](mcp.zh.md) | MCP 服务器、tool 与 resource |
 | [`cli-reference.zh.md`](cli-reference.zh.md) | 每个 CLI 命令、标志与 exit code |
+| [`report-schema.zh.md`](report-schema.zh.md) | `analyze --json` 输出的已发布 JSON Schema |
 | [`extending-adapters.zh.md`](extending-adapters.zh.md) | 编写 semantic adapter |
 | [`verification.zh.md`](verification.zh.md) | 验证层、测试 script 与 dogfood guard |
 | [`operations.zh.md`](operations.zh.md) | Troubleshooting 与运维 runbook |

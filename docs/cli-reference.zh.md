@@ -32,7 +32,7 @@
 - `--base` / `--head` — Git ref；`--head` 需要 `--base`。若无 `--base`/`--head`/`--changed`，则接受 positional 文件路径。
 - `--depth` — ripple 计算的最大 traversal 深度。
 - `--max-fanout` — traversal 期间每节点的最大 fan-out。
-- `--json` — 输出完整 report JSON 而非摘要，并跳过将 report 写入存储。
+- `--json` — 输出完整 report JSON 而非摘要，并跳过将 report 写入存储。输出会针对已发布的 [report JSON Schema](report-schema.zh.md) 进行校验。
 - `--fail-on <level>` — 按 confidence 控制退出码：`proven` / `inferred` / `heuristic` 仅当受影响文件达到或超过该 confidence 时失败；`any`（默认）只要有受影响文件就失败；`none` 永不失败。用于 CI 仅对高置信影响进行 gate。
 
 默认（无 `--json`）会持久化 report 并打印简短摘要；写入时显示 report 路径。
@@ -111,6 +111,7 @@ UI 会一直运行直到被中断（`SIGINT`/`SIGTERM`）；启动时打印其 U
 ## 另见
 
 - [mcp.zh.md](mcp.zh.md) — 同一存储之上的 MCP 服务器 surface
+- [report-schema.zh.md](report-schema.zh.md) — `analyze --json` 输出的已发布 JSON Schema
 - [extending-adapters.zh.md](extending-adapters.zh.md) — `parallax index` 如何提取 graph
 - [invariants.zh.md](invariants.zh.md) — local-first、explicit-trigger、read-only-first 不变量
 - [glossary.zh.md](glossary.zh.md) — 术语

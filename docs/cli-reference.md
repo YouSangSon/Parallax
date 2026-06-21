@@ -32,7 +32,7 @@ Flags:
 - `--base` / `--head` — Git refs; `--head` requires `--base`. Without `--base`/`--head`/`--changed`, positional file paths are accepted.
 - `--depth` — maximum traversal depth for ripple computation.
 - `--max-fanout` — maximum fan-out per node during traversal.
-- `--json` — print the full report JSON instead of the summary, and skip writing the report to the store.
+- `--json` — print the full report JSON instead of the summary, and skip writing the report to the store. The output validates against the published [report JSON Schema](report-schema.md).
 - `--fail-on <level>` — control the exit code by confidence: `proven` / `inferred` / `heuristic` fail only when an affected file meets or exceeds that confidence; `any` (default) fails on any affected file; `none` never fails. Use in CI to gate on high-confidence impact only.
 
 By default (no `--json`) the report is persisted and a short summary is printed; the report path is shown when written.
@@ -111,6 +111,7 @@ The `analyze` exit code of `1` on impact is deliberate: it lets CI jobs and agen
 ## See also
 
 - [mcp.md](mcp.md) — the MCP server surface over the same store
+- [report-schema.md](report-schema.md) — published JSON Schema for `analyze --json` output
 - [extending-adapters.md](extending-adapters.md) — how `parallax index` extracts the graph
 - [invariants.md](invariants.md) — local-first, explicit-trigger, and read-only-first invariants
 - [glossary.md](glossary.md) — terminology

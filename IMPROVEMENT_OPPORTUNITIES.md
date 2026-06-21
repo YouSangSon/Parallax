@@ -191,3 +191,46 @@ The perf harness paid for itself immediately by killing one bet and pointing at 
   **not** traversal (200 trivial indexed lookups + one 2k-row sort cannot cost
   seconds). There is an unprofiled O(repo) hotspot in report-building. Any future
   analyze optimization must **start from a profile, not a guess.**
+
+### S1 design — incremental indexing (decided 2026-06-21, arc opened)
+
+**Goal.** Turn O(repo) indexing into O(changed): carry an unchanged file's
+graph rows into the new `index_run_id` cohort, re-extract only changed files.
+
+**Write-path facts** (from a full read of `src/indexer.ts` / `src/store.ts`):
+- Reads filter by `index_run_id` (relations, relation_evidence, edges, evidence,
+  symbols, files) or `updated_index_run_id` (entities). **Carry-forward = re-stamp
+  rows with the new run id**, not leave-in-place — old-cohort rows are invisible.
+- Entity/relation/evidence ids are **content-addressed and stable** across runs;
+  `files.id`/`symbols.id`/`edges.id` are autoincrement (preserve or re-stamp).
+- `files.content_hash` (SHA-256 of content) already exists, used only for
+  staleness today — it is the delta gate. `index_runs.extractor_version` exists.
+- Non-determinism lives on `index_runs`/`adapter_runs` timestamps, **not** on the
+  graph rows dogfood/bench compare.
+
+**Resolution probe (decisive).** Cross-file edges proved to be **file-level,
+path-resolved, source-attributed**: renaming a target file's exported symbol
+(content-only change, path unchanged) left an importer's edges byte-identical for
+both a `const` import (`DEPENDS_ON`) and a function call
+(`CALLS [call:foo:3:10]` → `file:leaf.ts`). So an unchanged file's edges depend
+on its own content + the **existence (path)** of its targets, not their content.
+
+**Chosen architecture — conservative, provably byte-identical:**
+- **Re-extraction closure = changed files only** (no reverse-dependency closure),
+  **gated** on: `extractor_version` unchanged **and** the file path set unchanged
+  (no adds/deletes/renames). Either condition failing → **full reindex** (safe
+  fallback). This captures the dominant loop (editing existing files) and
+  sidesteps the whole cross-file-resolution hazard class.
+- **Carry-forward mechanism:** `INSERT … SELECT` re-stamping the prior cohort's
+  rows with the new `index_run_id` for unchanged files (slice 2). Targets the
+  measured cost (skip re-parsing), simpler than an event cache.
+- **Co-change** is global/git-derived and cheap → always recompute.
+- **Validation backbone = correctness oracle test:** full reindex of an end-state
+  must equal incremental-to-that-end-state (graph rows modulo `index_run_id` +
+  run timestamps). Stronger than dogfood; it catches any edge type that turns out
+  to be target-content-dependent (the residual risk the probe couldn't exhaust).
+
+**Slice plan:** (1) ✅ pure `computeIndexDelta` classifier + oracle scaffold (this
+arc-opening). (2) wire carry-forward into the write path behind the delta, guarded
+by the oracle + dogfood + `bench:perf`; do S2 (single write transaction) first.
+(3) extend the perf bench to report incremental vs full timings.

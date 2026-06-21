@@ -931,7 +931,83 @@ export function createMcpServer(context: McpContext): McpServer {
     }
   );
 
+  registerWorkflowPrompts(server);
+
   return server;
+}
+
+/**
+ * Workflow prompts teach an agent how to chain the read-only Parallax tools into
+ * a coherent investigation. They are templates, not tool calls: each returns a
+ * user message that sequences analyze -> context -> query/co-change -> remember,
+ * and biases toward high-confidence (proven > inferred > heuristic) signal.
+ */
+function registerWorkflowPrompts(server: McpServer): void {
+  const changedFilesClause = (changedFiles?: string): string =>
+    changedFiles && changedFiles.trim().length > 0
+      ? ` for these changed files: ${changedFiles.trim()}`
+      : '';
+
+  server.registerPrompt(
+    'impact_workflow',
+    {
+      title: 'Map the impact of a change',
+      description:
+        'Chain the Parallax tools to map the full blast radius of a change end to end.',
+      argsSchema: { changedFiles: z.string().optional() }
+    },
+    ({ changedFiles }) => ({
+      messages: [
+        {
+          role: 'user',
+          content: {
+            type: 'text',
+            text: [
+              `Map the full blast radius of a code change with Parallax${changedFilesClause(changedFiles)}.`,
+              'Prefer high-confidence signal (proven > inferred > heuristic) and cite evidence. Follow this sequence:',
+              '',
+              '1. Call `parallax_analyze_diff` to get affected files, suggested verify/review actions, and per-relation confidence.',
+              '2. Call `parallax_context_for_change` to assemble a focused context pack (changed entities plus their highest-confidence dependents) before reading code.',
+              '3. Widen the search: `parallax_query` for the transitive dependency closure (e.g. `MATCH (x)-[:DEPENDS_ON*1..3]->(d) WHERE x.path = ... RETURN d.path`), and `parallax_co_change` for files that historically change together but have no structural edge.',
+              '4. Persist what you learned with `parallax_remember` (decisions, risky areas, verification outcomes) so the next session inherits it.',
+              '',
+              'Report the affected set grouped by confidence, the actions to run, and any co-change coupling that structural analysis alone would miss.'
+            ].join('\n')
+          }
+        }
+      ]
+    })
+  );
+
+  server.registerPrompt(
+    'triage_change',
+    {
+      title: 'Triage the risk of a change',
+      description:
+        'Quickly triage whether a change is risky and decide what to verify, using Parallax.',
+      argsSchema: { changedFiles: z.string().optional() }
+    },
+    ({ changedFiles }) => ({
+      messages: [
+        {
+          role: 'user',
+          content: {
+            type: 'text',
+            text: [
+              `Triage whether a change is risky and what to verify with Parallax${changedFilesClause(changedFiles)}. Be fast and decisive:`,
+              '',
+              '1. Call `parallax_analyze_diff`. Focus on the highest-confidence affected files and the suggested verify/review actions.',
+              '2. Call `parallax_co_change` on the changed files to catch hidden coupling (files that co-change in git history without a structural edge).',
+              '3. Decide which checks to run now (from the suggested actions) and which areas a human should review. Treat heuristic-confidence impact as "investigate", not "ignore".',
+              '4. Record the triage verdict with `parallax_remember` so the rationale is auditable later.',
+              '',
+              'Output a short risk verdict (low/medium/high), the concrete verify actions, and the review hotspots.'
+            ].join('\n')
+          }
+        }
+      ]
+    })
+  );
 }
 
 export async function serveMcp(context: McpContext): Promise<void> {

@@ -4177,3 +4177,63 @@ test('MCP reflect summarizes via stub provider', async () => {
     await client.close();
   }
 });
+
+const mcpPromptDocFiles = ['docs/mcp.md', 'docs/mcp.ko.md', 'docs/mcp.zh.md'];
+
+function documentedMcpPrompts(filePath: string): string[] {
+  const markdown = readFileSync(path.resolve(filePath), 'utf8');
+  const lines = markdown.split('\n');
+  const start = lines.findIndex((line) => line.trim() === '## MCP prompts');
+  assert.notEqual(start, -1, `${filePath} must have a ## MCP prompts section`);
+  const end = lines.findIndex((line, index) => index > start && line.startsWith('## '));
+  const section = lines.slice(start + 1, end === -1 ? lines.length : end);
+  const names: string[] = [];
+  for (const line of section) {
+    const cells = line.split('|').slice(1, -1).map((cell) => cell.trim());
+    const name = cells[0]?.match(/^`([a-z_]+)`$/)?.[1];
+    if (name) {
+      names.push(name);
+    }
+  }
+  assert.ok(names.length > 0, `${filePath} MCP prompts table must document prompts`);
+  return names;
+}
+
+test('MCP server exposes workflow prompts that match the docs and reference real tools', async () => {
+  const repoRoot = await makeRepo();
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+
+    const listed = await client.request('prompts/list', {});
+    assert.equal(listed.error, undefined);
+    const prompts = listed.result.prompts as Array<{ name: string; description?: string }>;
+    const promptNames = prompts.map((prompt) => prompt.name).sort();
+    assert.deepEqual(promptNames, ['impact_workflow', 'triage_change']);
+
+    for (const filePath of mcpPromptDocFiles) {
+      assert.deepEqual(
+        documentedMcpPrompts(filePath).sort(),
+        promptNames,
+        `${filePath} MCP prompts table must match prompts/list`
+      );
+    }
+
+    const got = await client.request('prompts/get', {
+      name: 'impact_workflow',
+      arguments: { changedFiles: 'src/store.ts' }
+    });
+    assert.equal(got.error, undefined);
+    const messages = got.result.messages as Array<{
+      role: string;
+      content: { type: string; text: string };
+    }>;
+    const text = messages.map((message) => message.content.text).join('\n');
+    assert.match(text, /parallax_analyze_diff/);
+    assert.match(text, /parallax_co_change/);
+    assert.match(text, /parallax_remember/);
+    assert.match(text, /src\/store\.ts/);
+  } finally {
+    await client.close();
+  }
+});

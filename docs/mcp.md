@@ -47,6 +47,15 @@ All registered tools use the `parallax_` prefix. This table is checked against t
 | `parallax_restore_branch` | Move an abandoned branch back to active and un-archive its transactions (idempotent) | No |
 | `parallax_trace` | Walk `fact_provenance` edges from a fact back through its evidence chain | Yes |
 
+## MCP prompts
+
+Prompts are workflow templates (surfaced via `prompts/list` and fetched with `prompts/get`) that teach an agent how to chain the read-only tools into a coherent investigation. Each returns a user message sequencing analyze → context → query/co-change → remember, and biases toward high-confidence (proven > inferred > heuristic) signal. Both accept an optional `changedFiles` string.
+
+| Prompt | Purpose |
+| :--- | :--- |
+| `impact_workflow` | Map the full blast radius of a change end to end: `parallax_analyze_diff` → `parallax_context_for_change` → `parallax_query` / `parallax_co_change` → `parallax_remember` |
+| `triage_change` | Quickly triage whether a change is risky and decide what to verify, then record the verdict |
+
 ## Resources
 
 Resources are read via MCP resource URIs. Templated URIs expand the `{...}` segments; `parallax://coverage/latest` is a fixed URI.

@@ -137,9 +137,23 @@ determinism/honesty core, so guarding must come first.
 
 Reassessed order across the four L bets:
 
-1. **Lay the guardrail — S4 + D2 (prerequisite, not optional).** S1/A1 both move
-   the indexer's cost and output; without a perf bench (S4) and feature bench
-   (D2) their regressions land invisibly. Cheapest insurance for everything below.
+1. **Lay the guardrail — S4 first, then D2 (prerequisite, not optional).** S1/A1
+   both move the indexer's cost and output; without a guard their regressions
+   land invisibly. Two evidence-based refinements after re-checking the code:
+   - **S4 (perf bench) is the genuine gap and the higher-value half.** There is
+     no perf/scale measurement anywhere, and it is the specific guard S1 needs.
+     Caveat: timing/peak-RSS are **inherently non-deterministic**, so S4 cannot
+     fold into `ImpactBenchReport` (its `tests/impact-bench.test.ts` asserts a
+     byte-identical, path-free report across runs). S4 must be a **separate
+     perf-bench path** (e.g. `bench:perf`) over a deterministic synthetic-repo
+     generator, publishing thresholds — not exact millisecond values.
+   - **D2's marginal value is lower than the catalog implies.** All four
+     "thinly benched" features already have unit/integration coverage in the
+     verify gate (`trace-promotion-index`, `cross-repo-resolver`,
+     `contract-diff`, and co-change across six test files). They are *not*
+     unguarded — D2 adds quality-metric *trend* tracking (recall/precision over
+     time) on top, which is real but incremental and determinism-delicate
+     (co-change needs a git fixture; only counts/recall may reach the report).
 2. **S1 — incremental indexing.** Highest structural leverage; prereqs already
    exist (`files.content_hash` + `index_run.extractor_version` columns are
    present — only carry-forward logic is missing). Risk lives in reproducing an

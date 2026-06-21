@@ -69,7 +69,7 @@ Analyzer traversal is N+1 per frontier node.
 | :-- | :-- | :-- | :-- |
 | S1 | **Incremental indexing (content-hash-gated)** — load the prior run's `path → content_hash`, carry forward unchanged files' entities/relations/evidence to the new `index_run_id`, re-extract only changed/added/deleted (gate on `extractor_version` for adapter upgrades). Turns O(repo) into O(changed). The single highest-leverage scale change. | L | HIGH |
 | S2 | **Single transaction + SQLite pragmas** — ✅ **pragmas shipped** (`synchronous=NORMAL` + 16 MiB `cache_size` + 256 MiB `mmap_size` on the write-mode DB). Still open: wrap the write loop in one explicit `BEGIN/COMMIT` (must interleave safely with the existing `CurrentStateSnapshot` restore + SAVEPOINT path). | S | HIGH |
-| S3 | **Batch the analyzer's per-node traversal** — `loadCanonicalImpactRows` (`analyzer.ts:448-500`) runs one query per frontier node per depth (up to fanout 2000 × depth 8). Batch each depth into one `WHERE target_entity_id IN (frontier)` query; replace the correlated evidence subquery with a grouped join. Same ordering/semantics, far fewer round-trips. | M | HIGH |
+| S3 | ⛔ **deprioritized — premise refuted by measurement.** The idea was to batch the per-node traversal query (`loadCanonicalImpactRows`) to cut round-trips. Built and verified byte-identical, then `bench:perf` showed it **flat** (2k files: 7545→7475 ms) even on a 200-node frontier: **in-process SQLite has no per-query latency, so N+1 query *count* is ~free** — and local-first is an invariant, so it can never matter. Reverted as premature optimization (KISS/YAGNI). The traversal-semantics characterization test (`tests/analyzer-traversal-batch.test.ts`) was kept as a guard for any future change. | M | ~~HIGH~~ LOW |
 | S4 | **Large-repo perf benchmark + documented limits** — foundation ✅: deterministic synthetic-repo generator (`bench/synthetic-repo.ts`, guarded by `tests/synthetic-repo.test.ts`) + `npm run bench:perf` (`bench/impact-perf.ts`) timing index+analyze at scale, isolated from the determinism-locked accuracy bench, with an optional `--max-ms-per-kfile` CI gate. The perf run already exposes super-linear analyze cost (the S3 hotspot). Still open: standard 10k/50k scales + peak-RSS capture + published baseline limits. | M | MED-HIGH |
 | S5 | **Retention / prune superseded index runs (+ VACUUM)** — every run inserts a new cohort; nothing prunes old ones, so the DB grows by a full snapshot per run. Add deterministic retention (keep last N completed) inside a transaction + optional VACUUM. | M | MED |
 | S6 | **Committable / shareable index artifact** — define export/import of a compacted single-cohort DB + a `{extractor_version, git_commit_sha, content_hash set}` manifest; on import warn when hashes diverge from the working tree. "Index once in CI, everyone consumes." Depends on S5. | M | MED |
@@ -171,5 +171,23 @@ Reassessed order across the four L bets:
    (JVM-only) audience, partially started (regex bean lane already exists), and
    gated on building the offline-parser harness (A2). Pursue only after A2.
 
-Net: **S4+D2 → S1 (with S2/S3) → A1 → W3 (after W1/W2) → A3 (after A2)**. Pick
+Net: **S4 → S1 (with S2) → A1 → W3 (after W1/W2) → A3 (after A2)**. Pick
 one arc at a time — each L bet is its own multi-session effort.
+
+### Measured findings from the S4 perf bench (2026-06-21)
+
+The perf harness paid for itself immediately by killing one bet and pointing at another:
+
+- **S3 is not a win — N+1 query count is ~free here.** Batching the per-node
+  traversal query was built, verified byte-identical, and measured **flat** at
+  2k files even with a 200-node frontier. In-process SQLite has no per-query
+  latency, and local-first is an invariant, so query *count* will never be the
+  bottleneck. Reverted. (See the S3 row.)
+- **Indexing dominates analyze ~3:1 at 2k files** (≈22 s vs ≈7.5 s). The scale
+  lever the numbers endorse is **S1 (incremental indexing)** — its premise
+  (re-parse every file every run) is exactly this cost. This is the
+  evidence-backed next structural arc.
+- **Analyze spends ≈7.5 s for only ~200 affected files** — unexplained and
+  **not** traversal (200 trivial indexed lookups + one 2k-row sort cannot cost
+  seconds). There is an unprofiled O(repo) hotspot in report-building. Any future
+  analyze optimization must **start from a profile, not a guess.**

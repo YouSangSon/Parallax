@@ -78,23 +78,23 @@ function normalizeCoChangeConfidence(value: string): Confidence {
 }
 
 /**
- * Top git co-change partners of the changed files, ranked by coupling strength.
- * Advisory + honest: these couple via shared history, not structure, so they
- * carry heuristic confidence. Never throws — an unindexed or non-git repo just
- * yields an empty list, so the context pack degrades gracefully.
+ * Git co-change partners of the changed files, ranked by coupling strength
+ * (strongest first). Advisory + honest: these couple via shared history, not
+ * structure, so they carry heuristic confidence. Returns the full candidate set
+ * — `buildContextPack` applies the budget cap and discloses what it truncates,
+ * matching every other bounded dimension. Never throws: an unindexed or non-git
+ * repo just yields an empty list, so the context pack degrades gracefully.
  */
 export function selectCoChangePartners(
   repoRoot: string,
-  changedFiles: string[],
-  budget: ContextBudget
+  changedFiles: string[]
 ): ContextPackCoChange[] {
-  const limit = contextBudgetPreset(budget).coChangeLimit;
   const changedSet = new Set(changedFiles);
   const strongest = new Map<string, ContextPackCoChange>();
   for (const changedFile of changedFiles) {
     let partners;
     try {
-      partners = queryCoChanges(repoRoot, changedFile, { limit }).partners;
+      partners = queryCoChanges(repoRoot, changedFile).partners;
     } catch {
       continue;
     }
@@ -114,14 +114,12 @@ export function selectCoChangePartners(
       }
     }
   }
-  return [...strongest.values()]
-    .sort(
-      (a, b) =>
-        b.couplingScore - a.couplingScore ||
-        b.coChangeCount - a.coChangeCount ||
-        a.partner.localeCompare(b.partner)
-    )
-    .slice(0, limit);
+  return [...strongest.values()].sort(
+    (a, b) =>
+      b.couplingScore - a.couplingScore ||
+      b.coChangeCount - a.coChangeCount ||
+      a.partner.localeCompare(b.partner)
+  );
 }
 
 export function buildContextPack(
@@ -166,11 +164,12 @@ export function buildContextPack(
   const actions = report.actions.filter((action) =>
     action.target.path ? selectedActionPaths.has(action.target.path) : false
   );
+  const selectedCoChanges = coChanges.slice(0, preset.coChangeLimit);
   const entityLinks = [
     ...report.changed.map(entityResourceUri),
     ...contextItems.map((item) => item.resourceUri),
     ...selectedWorkArtifacts.map((item) => item.resourceUri),
-    ...coChanges.map((entry) => entry.resourceUri)
+    ...selectedCoChanges.map((entry) => entry.resourceUri)
   ];
   const evidenceLinks = selectedEvidence.flatMap((item) => item.resourceUri ? [item.resourceUri] : []);
   return {
@@ -183,7 +182,7 @@ export function buildContextPack(
       resourceUri: entityResourceUri(entity)
     })),
     context: contextItems,
-    ...(coChanges.length > 0 ? { coChanges } : {}),
+    ...(selectedCoChanges.length > 0 ? { coChanges: selectedCoChanges } : {}),
     workArtifacts: selectedWorkArtifacts,
     ...(report.adapterInsights && report.adapterInsights.length > 0 ? { adapterInsights: report.adapterInsights } : {}),
     actions,
@@ -197,7 +196,8 @@ export function buildContextPack(
       affected: Math.max(report.affectedFiles.length - selectedAffected.length, 0),
       workArtifacts: Math.max(allWorkArtifacts.length - selectedWorkArtifacts.length, 0),
       evidence: Math.max(dedupeEvidenceForContext(report.evidence).length - selectedEvidence.length, 0),
-      actions: Math.max(report.actions.length - actions.length, 0)
+      actions: Math.max(report.actions.length - actions.length, 0),
+      coChanges: Math.max(coChanges.length - selectedCoChanges.length, 0)
     },
     limits: {
       affectedLimit: preset.affectedLimit,
@@ -205,7 +205,9 @@ export function buildContextPack(
       evidenceLimit: preset.evidenceLimit,
       snippetChars: preset.snippetChars,
       affectedTruncated: report.affectedFiles.length > preset.affectedLimit,
-      evidenceTruncated: dedupeEvidenceForContext(report.evidence).length > preset.evidenceLimit
+      evidenceTruncated: dedupeEvidenceForContext(report.evidence).length > preset.evidenceLimit,
+      coChangeLimit: preset.coChangeLimit,
+      coChangeTruncated: coChanges.length > preset.coChangeLimit
     },
     ...(report.warnings && report.warnings.length > 0 ? { warnings: report.warnings } : {})
   };

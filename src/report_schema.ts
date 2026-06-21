@@ -14,7 +14,7 @@ import { z } from 'zod';
 export const IMPACT_REPORT_SCHEMA_VERSION = '1.0.0';
 
 const SCHEMA_ID =
-  'https://github.com/YouSangSon/Parallax/blob/main/schemas/impact-report.schema.json';
+  'https://raw.githubusercontent.com/YouSangSon/Parallax/main/schemas/impact-report.schema.json';
 const JSON_SCHEMA_DIALECT = 'https://json-schema.org/draft/2020-12/schema';
 
 const confidenceSchema = z.enum(['proven', 'inferred', 'heuristic', 'unknown']);

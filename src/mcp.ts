@@ -161,7 +161,7 @@ export function createMcpServer(context: McpContext): McpServer {
           report,
           normalizedBudget,
           indexRunAsOfIso(context, report.indexRunId),
-          selectCoChangePartners(context.repoRoot, report.changedFiles, normalizedBudget)
+          selectCoChangePartners(context.repoRoot, report.changedFiles)
         );
         const persisted = persistContextPackForReuse(context, pack, {
           changedFiles: report.changedFiles,

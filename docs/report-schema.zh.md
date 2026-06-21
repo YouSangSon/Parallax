@@ -10,7 +10,7 @@
 | :--- | :--- |
 | 路径 | [`schemas/impact-report.schema.json`](../schemas/impact-report.schema.json) |
 | Dialect | JSON Schema draft 2020-12 |
-| `$id` | `https://github.com/YouSangSon/Parallax/blob/main/schemas/impact-report.schema.json` |
+| `$id` | `https://raw.githubusercontent.com/YouSangSon/Parallax/main/schemas/impact-report.schema.json` |
 | `version` | 报告形态的语义化版本（当前为 `1.0.0`） |
 
 该 schema 描述 `parallax analyze --json` 输出的对象（`ImpactReport`）：`id`、`indexRunId`、`changedFiles`、`affectedFiles`、`changed`、`affected`、`actions`、`evidence`，以及可选的 `adapterInsights` / `warnings`。注意 `--json` 不会持久化报告，因此该输出中不含可选字段 `reportPath`。
@@ -29,10 +29,10 @@ npx ajv-cli validate -s schemas/impact-report.schema.json -d report.json --spec=
 `version` 字段携带报告形态的语义化版本：
 
 - **patch** — 仅文档或非结构性澄清。
-- **minor** — 新增可选字段（旧消费者仍然有效）。
-- **major** — 移除/重命名字段或收紧类型（对消费者是破坏性变更）。
+- **minor** — 新增可选字段。
+- **major** — 移除/重命名字段或收紧类型。
 
-`$id` 保持稳定；消费者应锁定的信号是 `version` 字段。
+该 schema 是**封闭的**（每一层都是 `additionalProperties: false`），因此校验严格，且兼容方向是单向的：旧报告始终能通过新 schema，但新报告（携带 minor 中新增的字段）会被旧 schema *拒绝*。因此消费者应跟踪某个 major 内的最新 schema，而不是锁定到精确的 minor。`$id` 在各版本间保持稳定；用于比较的信号是 `version` 字段。
 
 ## 如何保持同步
 

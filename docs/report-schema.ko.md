@@ -10,7 +10,7 @@
 | :--- | :--- |
 | 경로 | [`schemas/impact-report.schema.json`](../schemas/impact-report.schema.json) |
 | Dialect | JSON Schema draft 2020-12 |
-| `$id` | `https://github.com/YouSangSon/Parallax/blob/main/schemas/impact-report.schema.json` |
+| `$id` | `https://raw.githubusercontent.com/YouSangSon/Parallax/main/schemas/impact-report.schema.json` |
 | `version` | 리포트 형태의 시맨틱 버전(현재 `1.0.0`) |
 
 이 스키마는 `parallax analyze --json`이 내보내는 객체(`ImpactReport`)를 기술한다: `id`, `indexRunId`, `changedFiles`, `affectedFiles`, `changed`, `affected`, `actions`, `evidence`, 그리고 선택적 `adapterInsights` / `warnings`. `--json`은 리포트를 저장하지 않으므로 선택 필드 `reportPath`는 이 출력에서 빠진다.
@@ -29,10 +29,10 @@ npx ajv-cli validate -s schemas/impact-report.schema.json -d report.json --spec=
 `version` 필드는 리포트 형태의 시맨틱 버전을 담는다:
 
 - **patch** — 문서 한정 또는 비구조적 명료화.
-- **minor** — 선택 필드 추가(기존 소비자는 계속 유효).
-- **major** — 필드 제거/이름 변경 또는 타입 강화(소비자에게 호환성 깨짐).
+- **minor** — 선택 필드 추가.
+- **major** — 필드 제거/이름 변경 또는 타입 강화.
 
-`$id`는 안정적으로 유지되며, 소비자가 고정해야 할 신호는 `version` 필드다.
+스키마는 **닫혀 있다**(모든 수준에서 `additionalProperties: false`)이라 검증이 엄격하며, 호환 방향은 한쪽이다: 구 리포트는 항상 신 스키마를 통과하지만, 신 리포트(minor에서 추가된 필드를 포함)는 구 스키마에서 *거부*된다. 따라서 소비자는 정확한 minor에 고정하기보다 major 내 최신 스키마를 추적해야 한다. `$id`는 버전 간 안정적으로 유지되며, 비교 신호는 `version` 필드다.
 
 ## 동기화 유지 방법
 

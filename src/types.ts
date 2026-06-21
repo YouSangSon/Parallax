@@ -298,6 +298,7 @@ export type ContextPack = {
     workArtifacts: number;
     evidence: number;
     actions: number;
+    coChanges: number;
   };
   limits: {
     affectedLimit: number;
@@ -306,6 +307,8 @@ export type ContextPack = {
     snippetChars: number;
     affectedTruncated: boolean;
     evidenceTruncated: boolean;
+    coChangeLimit: number;
+    coChangeTruncated: boolean;
   };
   warnings?: string[];
 };

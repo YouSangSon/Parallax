@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/YouSangSon/Parallax/blob/main/schemas/impact-report.schema.json",
+  "$id": "https://raw.githubusercontent.com/YouSangSon/Parallax/main/schemas/impact-report.schema.json",
   "title": "Parallax Impact Report",
   "description": "Schema for `parallax analyze --json` output (ImpactReport).",
   "version": "1.0.0",

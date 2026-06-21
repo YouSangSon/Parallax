@@ -10,7 +10,7 @@
 | :--- | :--- |
 | Path | [`schemas/impact-report.schema.json`](../schemas/impact-report.schema.json) |
 | Dialect | JSON Schema draft 2020-12 |
-| `$id` | `https://github.com/YouSangSon/Parallax/blob/main/schemas/impact-report.schema.json` |
+| `$id` | `https://raw.githubusercontent.com/YouSangSon/Parallax/main/schemas/impact-report.schema.json` |
 | `version` | semantic version of the report shape (currently `1.0.0`) |
 
 The schema describes the object emitted by `parallax analyze --json` (the `ImpactReport`): `id`, `indexRunId`, `changedFiles`, `affectedFiles`, `changed`, `affected`, `actions`, `evidence`, and the optional `adapterInsights` / `warnings`. Note that `--json` does not persist the report, so the optional `reportPath` field is absent from that output.
@@ -29,10 +29,10 @@ npx ajv-cli validate -s schemas/impact-report.schema.json -d report.json --spec=
 The `version` field carries a semantic version of the report shape:
 
 - **patch** — documentation-only or non-structural clarifications.
-- **minor** — additive optional fields (older consumers stay valid).
-- **major** — a removed or renamed field, or a tightened type (a breaking change for consumers).
+- **minor** — additive optional fields.
+- **major** — a removed or renamed field, or a tightened type.
 
-The `$id` stays stable; the `version` field is the signal consumers should pin against.
+The schema is **closed** (`additionalProperties: false` at every level), so validation is strict — and the compatibility direction is one-way: an older report always validates against a newer schema, but a newer report (carrying a field added in a minor bump) is *rejected* by an older schema. Consumers should therefore track the latest schema within a major version rather than pinning to an exact minor. The `$id` stays stable across versions; the `version` field is the signal to compare against.
 
 ## How it stays in sync
 

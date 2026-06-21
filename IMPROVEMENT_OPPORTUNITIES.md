@@ -30,7 +30,7 @@ pure-JS), never an analyzer server.
 | :-- | :-- | :-- | :-- |
 | A1 | **TypeScript program-mode type resolution** — build indexed files into one in-memory `ts.createProgram` and use `getTypeChecker()` to resolve receivers/return types by `Symbol`/`Type` instead of hand-rolled name-matching (`multi-language-regex.ts` ~1876–3335). Checker-resolved → `proven`, name-match fallback → `inferred`. Unlocks generics instantiation, conditional/mapped/`typeof` types, the "wider dynamic dispatch" the roadmap defers. | L | HIGH |
 | A2 | **Promote Python to parser-backed** — replace the regex `PythonSemanticAdapter` with a bundled tree-sitter-python (WASM) pass: real imports/defs/calls/class-bases with spans, intra-repo import resolution. AST-resolved → `inferred`, dynamic/unresolved → `heuristic`. Establishes the reusable offline-parser harness A3/A6 reuse. | M | HIGH |
-| A3 | **JVM/Spring parser-based DI / persistence / endpoint links** — bundled tree-sitter-java/kotlin to build the bean graph (constructor + `@Autowired` → `DEPENDS_ON`), JPA repository→entity (`READS`/`WRITES`/`IMPLEMENTS`), and controller route→OpenAPI contract (`IMPLEMENTS`). Today only regex HTTP mappings exist; no DI, no persistence, no contract cross-link. | L | HIGH |
+| A3 | **JVM/Spring parser-based DI / persistence / endpoint links** — bundled tree-sitter-java/kotlin to build the bean graph (constructor + `@Autowired` → `DEPENDS_ON`), JPA repository→entity (`READS`/`WRITES`/`IMPLEMENTS`), and controller route→OpenAPI contract (`IMPLEMENTS`). Today a regex lane already emits a coarse `spring:Bean` `DEPENDS_ON` (heuristic, `extractSpringBeanMethods`) plus regex HTTP mappings — but no parser-resolved DI graph, no JPA persistence links, and no controller→contract cross-link. Depends on the offline-parser harness (A2). | L | HIGH |
 | A4 | **Symbol-level test↔impl linking** — `inferTestTargets` (`multi-language-regex.ts:5406`) emits `VERIFIES` at file granularity only. Resolve the symbols a test body exercises and emit `VERIFIES` to the target *symbol*; direct call → `inferred`, name-only → `heuristic`. Tells a reviewer exactly which tests cover a changed function. | M | HIGH |
 | A5 | ✅ **shipped** — TS/JS `CALLS` (the `multi-language-regex.ts` parser lane, which only emits *resolved* calls) no longer collapse to flat `inferred`: type-inferred receiver dispatch (`instance-call`) and object-flow aliases (`method-alias-call`) — the dynamic-dispatch gap the knownGaps flags — are downgraded to `heuristic`; concretely-resolved calls (import, this-method, super, static, direct-instance, local) stay `inferred`. Resolution stays discoverable via the relation provenance prefix (no schema change). | S | MED-HIGH |
 | A6 | **Framework routing for Python/Go web frameworks** — zero routing extraction for Flask/Django/FastAPI or gin/echo/net-http (bench ships FastAPI + Go fixtures). Recognize route decorators/registrations → `endpoint` entities + `DECLARES`, cross-linked to contracts. Depends on A2 / a Go parser. | M | MED-HIGH |
@@ -126,3 +126,36 @@ new features bench-uncovered. The `analyze` exit code is confidence-blind (`cli.
 
 Larger bets (L) that change the tool's ceiling: **A1** (TS TypeChecker), **A3** (Spring DI/persistence),
 **W3** (monorepo), **S1** (incremental). Sequence these after the quick wins land and are bench-guarded.
+
+## Larger-bet reassessment (2026-06-21)
+
+The quick-win layer has largely shipped (A5, M1, M2, M3 + co-change context fold,
+M6, D3, S2-pragmas), so the "do these after quick wins" precondition is **half**
+met: the wins landed, but the **bench guardrail did not** (S4 perf bench + D2
+feature bench are still open). Every larger bet is a structural change to the
+determinism/honesty core, so guarding must come first.
+
+Reassessed order across the four L bets:
+
+1. **Lay the guardrail — S4 + D2 (prerequisite, not optional).** S1/A1 both move
+   the indexer's cost and output; without a perf bench (S4) and feature bench
+   (D2) their regressions land invisibly. Cheapest insurance for everything below.
+2. **S1 — incremental indexing.** Highest structural leverage; prereqs already
+   exist (`files.content_hash` + `index_run.extractor_version` columns are
+   present — only carry-forward logic is missing). Risk lives in reproducing an
+   identical graph for unchanged files and in the second `files` write path
+   (snapshot/SAVEPOINT restore). De-risk with S2-transaction + S3-batch first.
+   S1 also sets the **cost budget** A1 must later fit inside.
+3. **A1 — TS TypeChecker.** Highest accuracy ceiling, but `createProgram` is
+   whole-repo and pulls *against* S1's incremental cost model — so it must land
+   after S1 establishes the budget and after S4 can catch the perf hit.
+4. **W3 — monorepo sub-packages.** Self-contained, deterministic manifest
+   parsing (lower risk than S1/A1), broad audience — but only pays off once
+   W1/W2 surface cross-repo/cross-package impact in the main report, so do those
+   medium items first.
+5. **A3 — Spring DI/persistence.** Lowest priority of the four: narrower
+   (JVM-only) audience, partially started (regex bean lane already exists), and
+   gated on building the offline-parser harness (A2). Pursue only after A2.
+
+Net: **S4+D2 → S1 (with S2/S3) → A1 → W3 (after W1/W2) → A3 (after A2)**. Pick
+one arc at a time — each L bet is its own multi-session effort.

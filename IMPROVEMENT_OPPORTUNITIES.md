@@ -52,25 +52,26 @@ off MCP by I-8). Context-pack telemetry is recorded but nothing acts on it.
 | M3 | ✅ **shipped** — read-only `parallax_co_change` ranks coupled files by `couplingScore` (parsed from CO_CHANGES provenance), partners navigable via `parallax://entities`. Follow-on ✅: `context_for_change` now folds in the top co-change partners as a budget-aware, heuristic-confidence advisory section (`selectCoChangePartners` + `ContextPack.coChanges`). | M | HIGH |
 | M4 | **Structured "what-changed-since" tool** — only a human-readable drift warning exists (`analyzer.ts:372`). Add `parallax_changed_since` returning a deterministic delta (entities/relations added/removed, confidence promotions) between two index runs. Lets agents orient incrementally. | M | MED |
 | M5 | **Context-budget advisory from telemetry** — `context_tool_runs`/`hit_count` are recorded but unused. Add `parallax_context_advice` computing omitted-vs-returned and expanded-resource ratios → a suggested budget (advisory only, I-9). | M | MED |
-| M6 | **MCP prompt(s) teaching the impact workflow** — no prompt surface exists. Register `impact_workflow`/`triage_change` prompts laying out analyze→context→expand-resource→query/co_change/trace→remember. Lowest-effort lever for correct tool use. | S | MED |
+| M6 | ✅ **shipped** — MCP workflow prompts now exist: `impact_workflow` and `triage_change` lay out the analyze→context→query/co_change→remember flow so agents discover the intended read path without guessing. | S | MED |
 | M7 | **Permissioned write surface for trace ingestion (I-8)** — Phase A: read-only `parallax_trace_preview` (dry-run match, returns promoted/unmatched, no write). Phase B: gated `parallax_ingest_traces` behind explicit opt-in. Closes the observe→prove loop while honoring read-only-first. | L | LOW-MED |
 
-**Sequencing:** M2 / M6 / M7-Phase-A (quick wins) → M1 / M3 (core impact value) → M4 / M5 → M7-Phase-B.
+**Sequencing remaining work:** M4 / M5 → M7-Phase-A → M7-Phase-B. The quick-win prompt/query layer (M1/M2/M3/M6) is now in place.
 
 ---
 
 ## 3. Architecture, scale & performance
 
-Indexing is a **full re-index every run** (confirmed: `scanFiles` reads every file; `content_hash`
-is stored but used only for staleness warnings). No explicit transaction around the write path.
-Analyzer traversal is N+1 per frontier node.
+Incremental indexing now exists for the unchanged-file carry-forward path, but `scanFiles` still
+walks the repo, the write path still lacks an explicit crash-atomic transaction, and saved/exported
+artifacts still need a stronger immutability contract. Analyzer traversal is N+1 per frontier node.
 
 | # | Opportunity | Effort | Value |
 | :-- | :-- | :-- | :-- |
-| S1 | **Incremental indexing (content-hash-gated)** — load the prior run's `path → content_hash`, carry forward unchanged files' entities/relations/evidence to the new `index_run_id`, re-extract only changed/added/deleted (gate on `extractor_version` for adapter upgrades). Turns O(repo) into O(changed). The single highest-leverage scale change. | L | HIGH |
-| S2 | **Single transaction + SQLite pragmas** — ✅ **pragmas shipped** (`synchronous=NORMAL` + 16 MiB `cache_size` + 256 MiB `mmap_size` on the write-mode DB). Still open: wrap the write loop in one explicit `BEGIN/COMMIT` (must interleave safely with the existing `CurrentStateSnapshot` restore + SAVEPOINT path). | S | HIGH |
+| S1 | **Incremental indexing follow-through (content-hash-gated)** — the core arc is partially shipped: content-hash/extractor-version delta classification, unchanged-file carry-forward into the new `index_run_id`, saved-report graph preservation after incremental re-index, and `bench:perf` slices for full/no-op incremental/edited-file incremental/analyze phases are all in place. Still open: make the write path crash-atomic, keep saved/exported artifacts explicitly immutable as later index cohorts land, and reduce the remaining all-files bookkeeping cost for unchanged files. | L | HIGH |
+| S2 | **Single transaction + SQLite pragmas** — ✅ **pragmas shipped** (`synchronous=NORMAL` + 16 MiB `cache_size` + 256 MiB `mmap_size` on the write-mode DB). Still open: wrap the write loop in one explicit `BEGIN/COMMIT` so indexing is crash-atomic end-to-end (must interleave safely with the existing `CurrentStateSnapshot` restore + SAVEPOINT path). | S | HIGH |
 | S3 | ⛔ **deprioritized — premise refuted by measurement.** The idea was to batch the per-node traversal query (`loadCanonicalImpactRows`) to cut round-trips. Built and verified byte-identical, then `bench:perf` showed it **flat** (2k files: 7545→7475 ms) even on a 200-node frontier: **in-process SQLite has no per-query latency, so N+1 query *count* is ~free** — and local-first is an invariant, so it can never matter. Reverted as premature optimization (KISS/YAGNI). The traversal-semantics characterization test (`tests/analyzer-traversal-batch.test.ts`) was kept as a guard for any future change. | M | ~~HIGH~~ LOW |
-| S4 | **Large-repo perf benchmark + documented limits** — foundation ✅: deterministic synthetic-repo generator (`bench/synthetic-repo.ts`, guarded by `tests/synthetic-repo.test.ts`) + `npm run bench:perf` (`bench/impact-perf.ts`) timing index+analyze at scale, isolated from the determinism-locked accuracy bench, with an optional `--max-ms-per-kfile` CI gate. The perf run already exposes super-linear analyze cost (the S3 hotspot). Still open: standard 10k/50k scales + peak-RSS capture + published baseline limits. | M | MED-HIGH |
+| S4 | **Large-repo perf benchmark + documented limits** — foundation ✅: deterministic synthetic-repo generator (`bench/synthetic-repo.ts`, guarded by `tests/synthetic-repo.test.ts`) + `npm run bench:perf` (`bench/impact-perf.ts`) now reporting full initial index, no-op incremental index, edited-file incremental index, analyze-without-persist, and analyze-with-persist phases at scale, isolated from the determinism-locked accuracy bench, with an optional `--max-ms-per-kfile` CI gate. The perf run already exposes super-linear analyze cost (the S3 hotspot). Still open: standard 10k/50k scales + peak-RSS capture + published baseline limits; deterministic `verify` should continue to avoid exact timing assertions. | M | MED-HIGH |
+| S7 | **Saved-artifact immutability guardrail** — incremental carry-forward fixed saved report graph loss for the current path, but the larger contract is still implicit. Persisted reports/exports should remain inspectable snapshots even as later index cohorts land, rather than depending on mutable canonical rows staying query-compatible forever. Make that invariant explicit in storage/docs/tests before more scale work lands on top. | M | HIGH |
 | S5 | **Retention / prune superseded index runs (+ VACUUM)** — every run inserts a new cohort; nothing prunes old ones, so the DB grows by a full snapshot per run. Add deterministic retention (keep last N completed) inside a transaction + optional VACUUM. | M | MED |
 | S6 | **Committable / shareable index artifact** — define export/import of a compacted single-cohort DB + a `{extractor_version, git_commit_sha, content_hash set}` manifest; on import warn when hashes diverge from the working tree. "Index once in CI, everyone consumes." Depends on S5. | M | MED |
 
@@ -99,19 +100,20 @@ fidelity and the integration into the primary report are the gaps.
 
 ## 5. DX, UI, measurement & docs
 
-Parallax has strong CI *for itself* and a rich UI, but ships nothing for consumers and leaves four
-new features bench-uncovered. The `analyze` exit code is confidence-blind (`cli.ts:202`: `length > 0`).
+Parallax has strong CI *for itself* and a rich UI, but the consumer-facing guardrail story is still
+unfinished even after shipping the confidence-aware `--fail-on` primitive. Several newer features
+also remain thinly bench-covered.
 
 | # | Opportunity | Effort | Value |
 | :-- | :-- | :-- | :-- |
-| D1 | **Official GitHub Action + confidence-aware `--fail-on` gate** — add `parallax analyze --fail-on=<proven\|inferred\|heuristic\|any\|none>` (+ `--min-affected=N`) so exit codes encode confidence-weighted impact, then publish an `action.yml` that runs init→index→analyze over a PR diff and fails per `--fail-on`. Turns Parallax into a CI guardrail. | M | HIGH |
+| D1 | **Official GitHub Action + remaining impact-gate surfaces** — ✅ **confidence-aware `--fail-on` shipped** (`parallax analyze --fail-on=<proven\|inferred\|heuristic\|any\|none>` now lets CI fail only when affected dependents meet a threshold). Still open: publish an official `action.yml` that runs init→index→analyze over a PR diff using that primitive, decide whether `--min-affected=N` belongs in the same gate family, and thread the shipped gate into the remaining hook/CI guardrail surfaces. | M | HIGH |
 | D2 | **Bench coverage for co-change / traces / cross-repo / contract-diff** — four shipped features have zero/thin bench coverage, so regressions are invisible to the gate. Add micro-fixtures (multi-commit co-change, trace-ingest promotion, two-repo cross-repo, paired v1/v2 contract) + metrics into `ImpactBenchReport`. Defends the determinism+honesty core. | M | HIGH |
 | D3 | ✅ **shipped** (impact report) — `parallax analyze --json` output now has a published, versioned JSON Schema (`schemas/impact-report.schema.json`, draft 2020-12). The hand-written `ImpactReport` stays authoritative; a zod mirror (`src/report_schema.ts`) generates the artifact, with a compile-time conformance assertion + a `npm run lint` drift guard + a test that validates real `analyze --json` output against the schema. Still open: **bench-report schema** (deferred — `bench/` is outside `tsc` scope and `RetrievalBenchReport` isn't exported; it is an internal artifact, not an external contract). | S | MED-HIGH |
 | D4 | **UI export + deep-linkable state** — the workbench is a sharing dead-end: no JSON/CSV/PNG export, URL encodes only `?report&lang`. Add client-side export buttons and encode selected path / filter / preset into the URL. Surgical `ui/client.ts` additions. | S-M | MED-HIGH |
-| D5 | **Getting-started tutorial (trilingual)** — no `docs/getting-started.md`; the README shows commands but no expected output. Add a worked before/after walkthrough with real affected-files output, branching into MCP / CI / UI next steps. | S | MED |
+| D5 | ✅ **shipped** — trilingual getting-started tutorials now exist (`docs/getting-started*.md`) with a worked init→index→analyze walkthrough, expected affected output, and MCP / CI / UI next steps. | S | MED |
 | D6 | **Pre-commit / pre-push impact-gate installer** — `install-agent` proves the scaffold pattern; add `parallax install-hook` dropping a hook that runs `analyze --changed <staged> --fail-on=<level>` (reuses D1's flag). Shift-left to the commit. | S | MED |
 
-**Sequencing:** D3 → D1 → D6 (shared `--fail-on` primitive) maximizes reuse; D2 is independently high-value; D4/D5 amplify adoption.
+**Sequencing:** D3 → D1 → D6 still maximizes reuse, but the `--fail-on` primitive is already landed; the remaining D1 work is the official Action and wiring that gate into more guardrail surfaces. D2 is independently high-value; D4 is still open while D5 is shipped.
 
 ---
 
@@ -119,10 +121,10 @@ new features bench-uncovered. The `analyze` exit code is confidence-blind (`cli.
 
 1. **S2** — single transaction + pragmas (S, HIGH): biggest perf win for the smallest diff.
 2. **A5** ✅ — resolution-strength confidence (S, MED-HIGH): cheap honesty win in the TS/JS call lane.
-3. **M2** ✅ **+ M6** — telemeter `parallax_query` (shipped) + workflow prompts (open): make the agent surface coherent.
-4. **D3 → D1** — report JSON Schema then confidence-aware `--fail-on` + Action (S→M, HIGH): the CI-guardrail story.
+3. **M2 + M6** ✅ — telemetered query responses and shipped workflow prompts make the agent surface coherent; the next agent-surface lift is M4/M5 guidance from real drift/telemetry.
+4. **D3 → D1** — report JSON Schema plus the shipped confidence-aware `--fail-on`, then the still-open official Action (S→M, HIGH): the CI-guardrail story.
 5. **M1** ✅ — multi-hop + aggregation Cypher (M, HIGH): turns `parallax_query` into the blast-radius primitive.
-6. **S1** — incremental indexing (L, HIGH): the structural scale unlock; pair with S4 to guard it.
+6. **S1 / S2 / S7** — incremental indexing is partially shipped; the remaining structural scale/correctness arc is crash-atomic writes, explicit artifact immutability, and cheaper unchanged-file handling, paired with S4 guardrails.
 
 Larger bets (L) that change the tool's ceiling: **A1** (TS TypeChecker), **A3** (Spring DI/persistence),
 **W3** (monorepo), **S1** (incremental). Sequence these after the quick wins land and are bench-guarded.

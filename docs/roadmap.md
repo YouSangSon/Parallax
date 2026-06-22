@@ -37,6 +37,7 @@ Cross-repo impact is at a v0 state. It works only among the local repos the user
 - [ ] Stabilize OpenAPI / GraphQL / Protobuf / AsyncAPI contract diff down to the *nested schema* level
 - [ ] Take the generated-client / event topology resolver beyond heuristics
 - [ ] Have the workspace catalog recognize sub-packages inside a monorepo as first-class
+- [ ] Surface cross-repo contract consumers directly in the primary `analyzeDiff` report instead of keeping them in a side lane only
 - [ ] Keep cross-repo links bidirectional (provider→consumer, consumer→provider) and always consistent
 
 ## 3. Package / Build resolution
@@ -58,7 +59,8 @@ MCP has stabilized as read-only. Next is the stage of looking deeply at agent us
 - [ ] Validate the budget tuning (brief/standard/deep) of `context_for_change` with usage telemetry
 - [ ] A harness to measure the hit/miss of context pack results
 - [ ] Consider introducing a write surface separated into its own permission model (compliant with [invariants.md](invariants.md) I-8)
-- [x] Read-only graph query surface: a deterministic Cypher subset exposed as the `parallax_query` MCP tool and `parallax query` CLI (single hop, labels, `WHERE` =/`CONTAINS`, projection, `LIMIT`; write/procedure/reverse clauses rejected)
+- [x] Read-only graph query surface: a deterministic Cypher subset exposed as the `parallax_query` MCP tool and `parallax query` CLI (single-hop and bounded multi-hop traversal, forward and reverse clauses, labels, `WHERE` =/`CONTAINS`, projection, `LIMIT`; write/procedure clauses rejected)
+- [x] MCP workflow prompts: `impact_workflow` and `triage_change` teach the intended analyze → context → query/co-change → remember flow
 - [x] First write surface kept off the read-only MCP (I-8): `parallax ingest-traces` promotes relations confirmed by runtime traces to proven confidence
 
 ## 5. UI Explorer
@@ -94,10 +96,14 @@ Without regression signals, there is no guarantee that every change works.
 
 - [x] A deterministic bench harness based on multi-language fixtures
   - Current gate: `bench/impact-bench.ts` builds a fixed TypeScript/JavaScript, JVM/Spring Boot, Python, Go, Rust, OpenAPI, and build-manifest fixture; scores relation recall/precision, affected-file recall, evidence/span coverage, adapter attribution, context-pack readiness, and retrieval quality; and is run by `npm run bench`, `npm test`, and the CI `npm run verify` gate.
+- [x] A separate scale/perf bench that reports full index, no-op incremental index, edited-file incremental index, and analyze phases without pretending exact timings are deterministic
+  - Current tool: `npm run bench:perf` measures those phases on the synthetic-repo generator outside `npm run verify`, so timing remains advisory rather than a byte-for-byte CI contract.
 - [x] Recall quality regression detection when crossing embedding models / LLM providers
   - Current gate: the deterministic bench now includes a semantic model matrix with per-model recall@1 and cross-model isolation checks. It is deliberately offline and catches embedding model namespace regressions without depending on live provider calls; LLM provider network quality remains outside CI, while provider contracts stay covered by offline tests.
 - [x] Automatically report the bench delta on every PR in CI
   - Current gate: CI prepares a base-SHA bench report for pull requests, runs the canonical `npm run verify` gate on the head, then appends `npm run bench:report` Markdown to the GitHub Step Summary with score, relation, affected-file, retrieval, and semantic recall deltas.
+- [ ] Wrap indexing in one explicit transaction so the write path is crash-atomic, not only pragma-tuned
+- [ ] Make saved reports / exported artifacts explicitly immutable snapshots across later incremental re-index runs
 
 ---
 

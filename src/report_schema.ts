@@ -66,6 +66,7 @@ const evidenceSchema = z.object({
   endCol: z.number().optional(),
   subject: entityRefSchema.optional(),
   relationKind: z.string().optional(),
+  relationConfidence: confidenceSchema.optional(),
   extractorId: z.string().optional()
 });
 

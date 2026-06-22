@@ -673,6 +673,7 @@ function evidenceFromCanonicalRow(
     ...(row.evidence_end_col !== null ? { endCol: row.evidence_end_col } : {}),
     subject: sourceEntity,
     relationKind,
+    relationConfidence: confidence,
     extractorId: 'canonical-entity-graph'
   };
 }

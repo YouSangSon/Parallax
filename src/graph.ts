@@ -4,6 +4,7 @@ import { getRepoId, openDatabase } from './store.js';
 import { normalizeRepoRoot } from './security.js';
 import type {
   Confidence,
+  EntityRef,
   EntityKind,
   GraphEdge,
   GraphExport,
@@ -38,6 +39,14 @@ type LegacyGraphRow = {
   confidence: string;
   source_path: string;
   target_path: string;
+};
+
+type ReportEvidenceEdge = {
+  id: string;
+  source: EntityRef;
+  target: EntityRef;
+  kind: string;
+  confidence: Confidence;
 };
 
 export async function exportImpactGraph(options: GraphExportOptions): Promise<GraphExport> {
@@ -81,6 +90,7 @@ export async function exportImpactGraph(options: GraphExportOptions): Promise<Gr
     const affectedEntityIds = new Set(report.affected.map((item) => item.target.id));
     const graphScopeEntityIds = [...new Set([...changedEntityIds, ...affectedEntityIds])];
     const canonicalRows = loadCanonicalRows(db, repoId, report.indexRunId, graphScopeEntityIds);
+    const edgeSignatures = new Set<string>();
     if (canonicalRows.length > 0) {
       for (const row of canonicalRows) {
         upsertRowNode(nodes, row.source_id, row.source_kind, row.source_display_name, row.source_path, 'affected', asConfidence(row.confidence));
@@ -101,8 +111,37 @@ export async function exportImpactGraph(options: GraphExportOptions): Promise<Gr
           confidence: asConfidence(row.confidence),
           label: row.relation_kind
         });
+        edgeSignatures.add(edgeSignature(row.source_id, row.relation_kind, row.target_id));
       }
-    } else {
+    }
+
+    for (const edge of buildReportEvidenceEdges(report)) {
+      const signature = edgeSignature(edge.source.id, edge.kind, edge.target.id);
+      if (edgeSignatures.has(signature)) continue;
+      upsertReportNode(
+        nodes,
+        edge.source,
+        changedEntityIds.has(edge.source.id) ? 'changed' : affectedEntityIds.has(edge.source.id) ? 'affected' : 'context',
+        edge.confidence
+      );
+      upsertReportNode(
+        nodes,
+        edge.target,
+        changedEntityIds.has(edge.target.id) ? 'changed' : affectedEntityIds.has(edge.target.id) ? 'affected' : 'context',
+        edge.confidence
+      );
+      edges.set(edge.id, {
+        id: edge.id,
+        source: edge.source.id,
+        target: edge.target.id,
+        kind: edge.kind,
+        confidence: edge.confidence,
+        label: edge.kind
+      });
+      edgeSignatures.add(signature);
+    }
+
+    if (canonicalRows.length === 0 && edges.size === 0) {
       for (const row of loadLegacyRows(db, repoId, report.indexRunId, report.changedFiles)) {
         const sourceId = `file:${row.source_path}`;
         const targetId = `file:${row.target_path}`;
@@ -134,6 +173,85 @@ export async function exportImpactGraph(options: GraphExportOptions): Promise<Gr
   } finally {
     db.close();
   }
+}
+
+function buildReportEvidenceEdges(report: ImpactReport): ReportEvidenceEdge[] {
+  const entities = [
+    ...report.changed,
+    ...report.affected.map((item) => item.target)
+  ];
+  const entityById = new Map(entities.map((entity) => [entity.id, entity]));
+  const entityByLabel = new Map<string, EntityRef>();
+  for (const entity of entities) {
+    for (const label of labelsForEntity(entity)) {
+      entityByLabel.set(label, entity);
+    }
+  }
+
+  const edges = new Map<string, ReportEvidenceEdge>();
+  for (const evidence of report.evidence) {
+    if (!evidence.subject || !evidence.relationKind) continue;
+    const source = entityById.get(evidence.subject.id) ?? evidence.subject;
+    const target = targetFromReportRelations(report, source, evidence.relationKind, entityByLabel)
+      ?? (report.changed.length === 1 ? report.changed[0] : undefined);
+    if (!target || source.id === target.id) continue;
+
+    const kind = evidence.relationKind;
+    const confidence = asConfidence(evidence.relationConfidence ?? evidence.confidence);
+    const id = `report-evidence:${evidence.id}:${source.id}:${kind}:${target.id}`;
+    edges.set(id, { id, source, target, kind, confidence });
+  }
+  return [...edges.values()].sort((a, b) => a.id.localeCompare(b.id));
+}
+
+function edgeSignature(sourceId: string, kind: string, targetId: string): string {
+  return `${sourceId}\0${kind}\0${targetId}`;
+}
+
+function targetFromReportRelations(
+  report: ImpactReport,
+  source: EntityRef,
+  relationKind: string,
+  entityByLabel: Map<string, EntityRef>
+): EntityRef | undefined {
+  const affected = report.affected.find((item) => item.target.id === source.id);
+  if (!affected) return undefined;
+  const verb = relationVerb(relationKind);
+  for (const relation of affected.relations) {
+    for (const sourceLabel of labelsForEntity(source)) {
+      const prefix = `${sourceLabel} ${verb} `;
+      if (!relation.startsWith(prefix)) continue;
+      const targetLabel = relation.slice(prefix.length);
+      const target = entityByLabel.get(targetLabel);
+      if (target) return target;
+    }
+  }
+  return undefined;
+}
+
+function labelsForEntity(entity: EntityRef): string[] {
+  return [...new Set([
+    entity.displayName,
+    entity.path,
+    entity.id
+  ].filter((value): value is string => typeof value === 'string' && value.length > 0))];
+}
+
+function relationVerb(kind: string): string {
+  if (kind === 'DEPENDS_ON') return 'depends on';
+  if (kind === 'VERIFIES') return 'verifies';
+  if (kind === 'DOCUMENTS') return 'documents';
+  if (kind === 'PROPOSES') return 'proposes';
+  if (kind === 'REQUIRES') return 'requires';
+  if (kind === 'CONFIGURES') return 'configures';
+  if (kind === 'DEPLOYS') return 'deploys';
+  if (kind === 'CALLS') return 'calls';
+  if (kind === 'REFERENCES') return 'references';
+  if (kind === 'CONSUMES') return 'consumes';
+  if (kind === 'IMPLEMENTS') return 'implements';
+  if (kind === 'PRODUCES') return 'produces';
+  if (kind === 'CO_CHANGES') return 'co-changes with';
+  return kind.toLowerCase();
 }
 
 function loadCanonicalRows(
@@ -195,6 +313,23 @@ function loadLegacyRows(
       ORDER BY f.path, e.target_path, e.kind
     `)
     .all(repoId, indexRunId, ...changedFiles) as LegacyGraphRow[];
+}
+
+function upsertReportNode(
+  nodes: Map<string, GraphNode>,
+  entity: EntityRef,
+  group: GraphNode['group'],
+  confidence?: Confidence
+): void {
+  upsertRowNode(
+    nodes,
+    entity.id,
+    entity.kind,
+    entity.displayName ?? entity.path ?? entity.id,
+    entity.path ?? null,
+    group,
+    confidence
+  );
 }
 
 function upsertRowNode(

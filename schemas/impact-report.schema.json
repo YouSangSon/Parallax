@@ -486,6 +486,15 @@
           "relationKind": {
             "type": "string"
           },
+          "relationConfidence": {
+            "type": "string",
+            "enum": [
+              "proven",
+              "inferred",
+              "heuristic",
+              "unknown"
+            ]
+          },
           "extractorId": {
             "type": "string"
           }

@@ -59,6 +59,7 @@ export type Evidence = {
   endCol?: number;
   subject?: EntityRef;
   relationKind?: string;
+  relationConfidence?: Confidence;
   extractorId?: string;
 };
 

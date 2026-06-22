@@ -3586,6 +3586,71 @@ test('exportImpactGraph renders report graph from SQLite relations without graph
   assert.doesNotMatch(dotGraph.rendered, /sk-test-secret/);
 });
 
+test('exportImpactGraph keeps a saved report graph stable after incremental reindex', async () => {
+  const repoRoot = await makeFixtureRepo();
+  await initProject({ repoRoot });
+  await indexProject({ repoRoot });
+  const report = await analyzeDiff({
+    repoRoot,
+    changedFiles: ['src/auth/session.ts'],
+    writeReport: true
+  });
+
+  const before = await exportImpactGraph({ repoRoot, reportId: report.id, format: 'json' });
+  const beforeParsed = JSON.parse(before.rendered) as {
+    edges: Array<{ confidence: string; kind: string; source: string; target: string }>;
+  };
+  assert.ok(beforeParsed.edges.some((edge) => edge.kind === 'DEPENDS_ON'));
+
+  await writeFile(
+    path.join(repoRoot, 'src/routes/private.ts'),
+    [
+      'import { validateSession } from "../auth/session";',
+      'export function privateRoute(token: string) {',
+      '  return validateSession(token.trim()) ? "ok" : "no";',
+      '}',
+      ''
+    ].join('\n')
+  );
+  const reindex = await indexProject({ repoRoot });
+  assert.equal(reindex.mode, 'incremental');
+
+  const after = await exportImpactGraph({ repoRoot, reportId: report.id, format: 'json' });
+  const afterParsed = JSON.parse(after.rendered) as {
+    edges: Array<{ confidence: string; kind: string; source: string; target: string }>;
+  };
+  const edgeSignatures = (edges: Array<{ confidence: string; kind: string; source: string; target: string }>) =>
+    edges
+      .map((edge) => `${edge.source} ${edge.kind} ${edge.target} ${edge.confidence}`)
+      .sort();
+  assert.deepEqual(edgeSignatures(afterParsed.edges), edgeSignatures(beforeParsed.edges));
+
+  const db = new DatabaseSync(databasePath(repoRoot));
+  try {
+    db.prepare(
+      `UPDATE relations
+          SET index_run_id = ?
+        WHERE id = (
+          SELECT id
+            FROM relations
+           WHERE index_run_id = ?
+             AND source_entity_id = 'file:tests/session.test.ts'
+             AND target_entity_id = 'file:src/auth/session.ts'
+           ORDER BY kind
+           LIMIT 1
+        )`
+    ).run(report.indexRunId, reindex.indexRunId);
+  } finally {
+    db.close();
+  }
+
+  const partial = await exportImpactGraph({ repoRoot, reportId: report.id, format: 'json' });
+  const partialParsed = JSON.parse(partial.rendered) as {
+    edges: Array<{ confidence: string; kind: string; source: string; target: string }>;
+  };
+  assert.deepEqual(edgeSignatures(partialParsed.edges), edgeSignatures(beforeParsed.edges));
+});
+
 test('analyzeDiff follows bounded multi-hop relations with cycle protection', async () => {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-depth-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });

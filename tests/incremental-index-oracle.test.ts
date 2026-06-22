@@ -172,3 +172,56 @@ test('an incremental reindex (edit one file body, stable path set) is byte-ident
     rmSync(fullRoot, { recursive: true, force: true });
   }
 });
+
+// The discriminating oracle: editing leaf.ts (no outgoing relations) never makes
+// the `NOT IN (changed)` exclusion exclude anything, so it does not exercise the
+// risky path. Editing a.ts — which HAS outgoing CALLS+DEPENDS_ON — does: its old
+// rows must be excluded from carry-forward and re-derived by extraction, and the
+// dropped call must be stranded on the prior run, not carried forward. The test
+// also chains two incremental hops (the second carries forward from a run that
+// was itself incremental) to pin the "every completed run holds the full graph"
+// invariant.
+const A_DROP_CALL = "import { foo } from './leaf.js';\nexport function bar() {\n  return 0;\n}\n";
+const AA_EDIT = "import { bar } from './a.js';\nexport function baz() {\n  return bar() + 1;\n}\n";
+
+test('an incremental reindex re-derives a changed file (dropping a relation) and chains hops — byte-identical to full', async () => {
+  const incrementalRoot = mkdtempSync(path.join(tmpdir(), 'parallax-oracle-drop-incr-'));
+  const fullRoot = mkdtempSync(path.join(tmpdir(), 'parallax-oracle-drop-full-'));
+  try {
+    // Incremental: full, then edit a.ts (drops its CALLS to foo, keeps the
+    // import) → hop 1; then edit aa.ts → hop 2 (carry-forward from an incremental
+    // run). a.ts and aa.ts each have outgoing relations, so their rows are the
+    // ones the exclusion must drop and re-extraction must re-derive.
+    writeChain(incrementalRoot);
+    await initProject({ repoRoot: incrementalRoot });
+    await indexProject({ repoRoot: incrementalRoot });
+    writeFileSync(path.join(incrementalRoot, 'src/a.ts'), A_DROP_CALL);
+    const hop1 = await indexProject({ repoRoot: incrementalRoot });
+    assert.equal(hop1.mode, 'incremental', 'editing a.ts (stable path set) must be incremental');
+    writeFileSync(path.join(incrementalRoot, 'src/aa.ts'), AA_EDIT);
+    const hop2 = await indexProject({ repoRoot: incrementalRoot });
+    assert.equal(hop2.mode, 'incremental', 'a second edit must also be incremental (chained hop)');
+    const incrementalSnapshot = snapshotGraph(incrementalRoot);
+
+    // Full reindex of the same end state.
+    writeChain(fullRoot);
+    writeFileSync(path.join(fullRoot, 'src/a.ts'), A_DROP_CALL);
+    writeFileSync(path.join(fullRoot, 'src/aa.ts'), AA_EDIT);
+    await initProject({ repoRoot: fullRoot });
+    await indexProject({ repoRoot: fullRoot });
+    const fullSnapshot = snapshotGraph(fullRoot);
+
+    // The dropped a.ts->foo CALLS relation must be stranded on the prior run, not
+    // carried forward into the new cohort.
+    assert.ok(
+      !incrementalSnapshot.relations.some(
+        (row) => row.kind === 'CALLS' && row.source_entity_id === 'file:src/a.ts'
+      ),
+      'the dropped CALLS from a.ts must not survive in the new run cohort'
+    );
+    assert.deepEqual(incrementalSnapshot, fullSnapshot);
+  } finally {
+    rmSync(incrementalRoot, { recursive: true, force: true });
+    rmSync(fullRoot, { recursive: true, force: true });
+  }
+});

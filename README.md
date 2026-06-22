@@ -77,6 +77,8 @@ parallax ui
 parallax ui --report <report-id> --port 3717
 ```
 
+For a worked tutorial that continues from the UI into MCP and CI guardrails, see [`docs/getting-started.md`](docs/getting-started.md).
+
 > 💡 `analyze` returns exit code `1` when there are affected files. This is intentional, so CI or agent guardrails can use "has impact" as a signal.
 
 ---
@@ -265,9 +267,11 @@ The detailed backlog is tracked against [`docs/roadmap.md`](docs/roadmap.md).
 | [`docs/invariants.md`](docs/invariants.md) | Invariants like local-first, redaction, and the permission model |
 | [`docs/glossary.md`](docs/glossary.md) | Glossary |
 | [`docs/README.md`](docs/README.md) | Documentation index |
+| [`docs/getting-started.md`](docs/getting-started.md) | First-run tutorial from init to MCP and CI guardrails |
 | [`docs/architecture.md`](docs/architecture.md) | Source-checkout runtime architecture and extension map |
 | [`docs/mcp.md`](docs/mcp.md) | MCP server, tools, and resources |
 | [`docs/cli-reference.md`](docs/cli-reference.md) | Every CLI command, flag, and exit code |
+| [`docs/report-schema.md`](docs/report-schema.md) | Published JSON Schema for `analyze --json` output |
 | [`docs/extending-adapters.md`](docs/extending-adapters.md) | Authoring semantic adapters |
 | [`docs/verification.md`](docs/verification.md) | Verification layers, test scripts, and the dogfood guard |
 | [`docs/operations.md`](docs/operations.md) | Troubleshooting and operator runbook |

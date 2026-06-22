@@ -77,6 +77,8 @@ parallax ui
 parallax ui --report <report-id> --port 3717
 ```
 
+如果你想从 UI 继续走到 MCP 与 CI guardrail，可直接看 [`docs/getting-started.zh.md`](docs/getting-started.zh.md)。
+
 > 💡 当存在受影响文件时，`analyze` 会返回退出码 `1`。这是有意为之，便于 CI 或智能体护栏将“存在影响”作为信号。
 
 ---
@@ -265,9 +267,11 @@ npm run verify
 | [`docs/invariants.zh.md`](docs/invariants.zh.md) | local-first、脱敏、权限模型等不变量 |
 | [`docs/glossary.zh.md`](docs/glossary.zh.md) | 术语表 |
 | [`docs/README.zh.md`](docs/README.zh.md) | 文档索引 |
+| [`docs/getting-started.zh.md`](docs/getting-started.zh.md) | 从 init 一直到 MCP 与 CI guardrail 的首次使用教程 |
 | [`docs/architecture.zh.md`](docs/architecture.zh.md) | Source-checkout runtime architecture 与扩展地图 |
 | [`docs/mcp.zh.md`](docs/mcp.zh.md) | MCP 服务器、tool 与 resource |
 | [`docs/cli-reference.zh.md`](docs/cli-reference.zh.md) | 每个 CLI 命令、标志与 exit code |
+| [`docs/report-schema.zh.md`](docs/report-schema.zh.md) | `analyze --json` 输出的已发布 JSON Schema |
 | [`docs/extending-adapters.zh.md`](docs/extending-adapters.zh.md) | 编写 semantic adapter |
 | [`docs/verification.zh.md`](docs/verification.zh.md) | 验证层、测试 script 与 dogfood guard |
 | [`docs/operations.zh.md`](docs/operations.zh.md) | Troubleshooting 与运维 runbook |

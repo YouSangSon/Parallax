@@ -43,8 +43,9 @@ test('package exports only the public module entrypoint and metadata', async () 
     packageJson.scripts?.['test:install-smoke'],
     'npm run build && node dist/src/cli.js --help'
   );
-  assert.deepEqual(packageJson.files, ['dist/src', 'README.md', 'docs']);
+  assert.deepEqual(packageJson.files, ['dist/src', 'README.md', 'docs', 'schemas']);
   assert.equal(packageJson.files?.includes('dist'), false);
+  assert.equal(packageJson.files?.includes('schemas'), true);
 });
 
 test('CI verify job delegates to the canonical release gate', async () => {

@@ -4,6 +4,12 @@
 
 Parallax is a local-first code impact-analysis layer: a single SQLite store powers a CLI, an MCP server for coding agents, and a UI explorer. This index links the main packaged guides in `docs/`.
 
+## Getting started
+
+| Document | Contents |
+| :--- | :--- |
+| [`getting-started.md`](getting-started.md) | First-run tutorial: init, index, analyze, UI, MCP, and CI guardrails |
+
 ## Concepts and direction
 
 | Document | Contents |
@@ -29,6 +35,6 @@ Parallax is a local-first code impact-analysis layer: a single SQLite store powe
 
 ## Source checkout note
 
-The repository checkout also contains TypeScript source files, tests, benchmark fixtures, and a Parallax skill for Claude Code / Codex users under `skills/`. Packaged docs do not link to `skills/` because the npm package ships the built CLI plus public docs, not the skill directory. Maintainer docs such as architecture and release checklist call out when they require a source checkout.
+The repository checkout also contains TypeScript source files, tests, benchmark fixtures, and a Parallax skill for Claude Code / Codex users under `skills/`. The npm package ships the built CLI, public docs, and the published report schema under `schemas/`, but not the skill directory. Maintainer docs such as architecture and release checklist call out when they require a source checkout.
 
 For the project landing page, see the [root README](../README.md).

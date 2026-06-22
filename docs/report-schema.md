@@ -15,6 +15,8 @@
 
 The schema describes the object emitted by `parallax analyze --json` (the `ImpactReport`): `id`, `indexRunId`, `changedFiles`, `affectedFiles`, `changed`, `affected`, `actions`, `evidence`, and the optional `adapterInsights` / `warnings`. Note that `--json` does not persist the report, so the optional `reportPath` field is absent from that output.
 
+The same artifact is published in the npm package, so packaged consumers can validate `report.json` without cloning the source checkout.
+
 ## Validating output
 
 Any JSON Schema validator works. For example, with [`ajv`](https://ajv.js.org/):

@@ -54,7 +54,8 @@
   "files": [
     "dist/src",
     "README.md",
-    "docs"
+    "docs",
+    "schemas"
   ],
   "devDependencies": {
     "@types/node": "^24.0.0",

@@ -4,6 +4,12 @@
 
 Parallax 是一个 local-first 的代码 impact 分析层——单个 SQLite 存储驱动 CLI、面向编码代理的 MCP 服务器和 UI explorer。本索引链接 `docs/` 中的主要 packaged guide。
 
+## 快速上手
+
+| 文档 | 内容 |
+| :--- | :--- |
+| [`getting-started.zh.md`](getting-started.zh.md) | 首次使用教程：init、index、analyze、UI、MCP 与 CI guardrail |
+
 ## 概念与方向
 
 | 文档 | 内容 |
@@ -29,6 +35,6 @@ Parallax 是一个 local-first 的代码 impact 分析层——单个 SQLite 存
 
 ## Source checkout 说明
 
-Repository checkout 还包含 TypeScript source file、test、benchmark fixture，并在 `skills/` 下包含面向 Claude Code / Codex 用户的 Parallax skill。npm package 会发布构建后的 CLI 和 public docs，但不发布 skill directory，因此 packaged docs 不链接到 `skills/`。Architecture 和 release checklist 等 maintainer 文档会在正文中注明何时需要 source checkout。
+Repository checkout 还包含 TypeScript source file、test、benchmark fixture，并在 `skills/` 下包含面向 Claude Code / Codex 用户的 Parallax skill。npm package 会发布构建后的 CLI、public docs，以及 `schemas/` 下已发布的 report schema，但不发布 skill directory，因此 packaged docs 不链接到 `skills/`。Architecture 和 release checklist 等 maintainer 文档会在正文中注明何时需要 source checkout。
 
 项目落地页见[根 README](../README.zh.md)。

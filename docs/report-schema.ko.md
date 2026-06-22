@@ -15,6 +15,8 @@
 
 이 스키마는 `parallax analyze --json`이 내보내는 객체(`ImpactReport`)를 기술한다: `id`, `indexRunId`, `changedFiles`, `affectedFiles`, `changed`, `affected`, `actions`, `evidence`, 그리고 선택적 `adapterInsights` / `warnings`. `--json`은 리포트를 저장하지 않으므로 선택 필드 `reportPath`는 이 출력에서 빠진다.
 
+같은 산출물은 npm package에도 포함되므로, packaged consumer는 source checkout 없이도 `report.json`을 검증할 수 있다.
+
 ## 출력 검증
 
 어떤 JSON Schema 검증기든 동작한다. 예를 들어 [`ajv`](https://ajv.js.org/)로:

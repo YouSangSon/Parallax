@@ -77,6 +77,8 @@ parallax ui
 parallax ui --report <report-id> --port 3717
 ```
 
+UI 다음에 MCP와 CI guardrail까지 이어지는 튜토리얼은 [`docs/getting-started.ko.md`](docs/getting-started.ko.md)를 참고하자.
+
 > 💡 `analyze`는 영향받는 파일이 있으면 exit code `1`을 반환한다. CI나 agent guardrail에서 “영향 있음”을 신호로 쓰기 위한 의도적인 동작이다.
 
 ---
@@ -265,9 +267,11 @@ npm run verify
 | [`docs/invariants.ko.md`](docs/invariants.ko.md) | local-first, redaction, 권한 모델 같은 불변 원칙 |
 | [`docs/glossary.ko.md`](docs/glossary.ko.md) | 용어집 |
 | [`docs/README.ko.md`](docs/README.ko.md) | 문서 인덱스 |
+| [`docs/getting-started.ko.md`](docs/getting-started.ko.md) | init부터 MCP, CI guardrail까지 이어지는 첫 실행 튜토리얼 |
 | [`docs/architecture.ko.md`](docs/architecture.ko.md) | Source-checkout runtime architecture와 확장 맵 |
 | [`docs/mcp.ko.md`](docs/mcp.ko.md) | MCP 서버, tool, resource |
 | [`docs/cli-reference.ko.md`](docs/cli-reference.ko.md) | 모든 CLI 명령, 플래그, exit code |
+| [`docs/report-schema.ko.md`](docs/report-schema.ko.md) | `analyze --json` 출력의 발행된 JSON Schema |
 | [`docs/extending-adapters.ko.md`](docs/extending-adapters.ko.md) | semantic adapter 작성 |
 | [`docs/verification.ko.md`](docs/verification.ko.md) | 검증 계층, 테스트 script, dogfood guard |
 | [`docs/operations.ko.md`](docs/operations.ko.md) | Troubleshooting과 운영 runbook |

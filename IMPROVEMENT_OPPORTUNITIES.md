@@ -232,7 +232,8 @@ on its own content + the **existence (path)** of its targets, not their content.
 
 **Slice plan:** (1) ✅ pure `computeIndexDelta` classifier + oracle scaffold (this
 arc-opening). (2) ✅ **SHIPPED** — carry-forward wired into the write path behind
-the delta. (3) extend the perf bench to report incremental vs full timings.
+the delta. (3) ✅ **SHIPPED** — perf bench reports full vs no-op incremental vs
+edited-file incremental timings, plus analyze no-persist vs persisted timings.
 
 **Slice 2 as shipped (2026-06-21).** `IndexResult.mode` (`'full'|'incremental'`);
 `indexProjectInternal` computes the delta, skips re-extraction of unchanged files,

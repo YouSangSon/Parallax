@@ -1,10 +1,11 @@
 #!/usr/bin/env tsx
 /**
- * S4 performance bench — measures index + analyze cost on a deterministic
- * synthetic repo at increasing scales. This is intentionally NOT part of
- * `npm run verify`: timing and peak RSS are non-deterministic, so they must not
- * reach the byte-identical `ImpactBenchReport`. Run it on demand to capture a
- * baseline or, in CI, with a generous `--max-ms-per-kfile` ceiling.
+ * S4 performance bench — measures full index, incremental index, and analyze
+ * costs on a deterministic synthetic repo at increasing scales. This is
+ * intentionally NOT part of `npm run verify`: timing and peak RSS are
+ * non-deterministic, so they must not reach the byte-identical
+ * `ImpactBenchReport`. Run it on demand to capture a baseline or, in CI, with a
+ * generous `--max-ms-per-kfile` ceiling.
  *
  *   tsx bench/impact-perf.ts                          # default scales (200, 1000)
  *   tsx bench/impact-perf.ts --scales 1000,10000      # custom scales
@@ -14,16 +15,26 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
+import { pathToFileURL } from 'node:url';
 
 import { analyzeDiff, indexProject, initProject } from '../src/index.js';
-import { generateSyntheticRepo } from './synthetic-repo.js';
+import type { IndexResult } from '../src/index.js';
+import { editSyntheticChangedFile, generateSyntheticRepo } from './synthetic-repo.js';
 
-type PerfRow = {
+export type PerfRow = {
   files: number;
-  indexMs: number;
-  analyzeMs: number;
+  fullIndexMs: number;
+  noopIncrementalMs: number;
+  editIncrementalMs: number;
+  analyzeNoPersistMs: number;
+  analyzePersistMs: number;
   affected: number;
   rssMb: number;
+};
+
+type Timed<T> = {
+  value: T;
+  ms: number;
 };
 
 const DEFAULT_SCALES = [200, 1000];
@@ -43,30 +54,102 @@ function parseScales(argv: string[]): number[] {
   return scales.length > 0 ? scales : DEFAULT_SCALES;
 }
 
+async function timed<T>(fn: () => Promise<T>): Promise<Timed<T>> {
+  const start = performance.now();
+  const value = await fn();
+  return { value, ms: performance.now() - start };
+}
+
+function assertIncremental(result: IndexResult, label: string): void {
+  if (result.mode !== 'incremental') {
+    throw new Error(`${label} reindex expected mode === 'incremental', got ${result.mode}`);
+  }
+}
+
 async function measure(files: number): Promise<PerfRow> {
   const root = await mkdtemp(path.join(tmpdir(), 'parallax-perf-'));
   try {
     const info = await generateSyntheticRepo(root, { files });
     await initProject({ repoRoot: root });
 
-    const indexStart = performance.now();
-    await indexProject({ repoRoot: root });
-    const indexMs = performance.now() - indexStart;
+    const fullIndex = await timed(() => indexProject({ repoRoot: root }));
+    if (fullIndex.value.mode !== 'full') {
+      throw new Error(`initial index expected mode === 'full', got ${fullIndex.value.mode}`);
+    }
 
-    const analyzeStart = performance.now();
-    const report = await analyzeDiff({ repoRoot: root, changedFiles: [info.changedFile] });
-    const analyzeMs = performance.now() - analyzeStart;
+    const noopIncremental = await timed(() => indexProject({ repoRoot: root }));
+    assertIncremental(noopIncremental.value, 'no-op');
+
+    await editSyntheticChangedFile(root, info);
+    const editIncremental = await timed(() => indexProject({ repoRoot: root }));
+    assertIncremental(editIncremental.value, 'single-file edit');
+
+    const analyzeNoPersist = await timed(() =>
+      analyzeDiff({ repoRoot: root, changedFiles: [info.changedFile], persistReport: false })
+    );
+    const analyzePersist = await timed(() =>
+      analyzeDiff({ repoRoot: root, changedFiles: [info.changedFile] })
+    );
 
     return {
       files,
-      indexMs,
-      analyzeMs,
-      affected: report.affectedFiles.length,
+      fullIndexMs: fullIndex.ms,
+      noopIncrementalMs: noopIncremental.ms,
+      editIncrementalMs: editIncremental.ms,
+      analyzeNoPersistMs: analyzeNoPersist.ms,
+      analyzePersistMs: analyzePersist.ms,
+      affected: analyzePersist.value.affectedFiles.length,
       rssMb: process.memoryUsage().rss / (1024 * 1024)
     };
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+}
+
+function msPerKfile(ms: number, files: number): number {
+  return ms / (files / 1000);
+}
+
+export function formatPerfTable(rows: readonly PerfRow[]): string {
+  const lines = [
+    [
+      'files',
+      'full_index_ms',
+      'noop_incremental_ms',
+      'edit_incremental_ms',
+      'analyze_no_persist_ms',
+      'analyze_persist_ms',
+      'affected',
+      'rss_mb',
+      'full_index_ms/kfile',
+      'noop_incremental_ms/kfile',
+      'edit_incremental_ms/kfile',
+      'analyze_no_persist_ms/kfile',
+      'analyze_persist_ms/kfile'
+    ].join('\t')
+  ];
+
+  for (const row of rows) {
+    lines.push(
+      [
+        row.files,
+        row.fullIndexMs.toFixed(0),
+        row.noopIncrementalMs.toFixed(1),
+        row.editIncrementalMs.toFixed(1),
+        row.analyzeNoPersistMs.toFixed(1),
+        row.analyzePersistMs.toFixed(1),
+        row.affected,
+        row.rssMb.toFixed(0),
+        msPerKfile(row.fullIndexMs, row.files).toFixed(0),
+        msPerKfile(row.noopIncrementalMs, row.files).toFixed(0),
+        msPerKfile(row.editIncrementalMs, row.files).toFixed(0),
+        msPerKfile(row.analyzeNoPersistMs, row.files).toFixed(0),
+        msPerKfile(row.analyzePersistMs, row.files).toFixed(0)
+      ].join('\t')
+    );
+  }
+
+  return lines.join('\n');
 }
 
 async function main(): Promise<void> {
@@ -80,32 +163,27 @@ async function main(): Promise<void> {
     rows.push(await measure(files));
   }
 
-  console.log('files\tindex_ms\tanalyze_ms\taffected\trss_mb\tindex_ms/kfile');
-  let worstPerK = 0;
+  console.log(formatPerfTable(rows));
+
+  let worstIndexPerK = 0;
   for (const row of rows) {
-    const perK = row.indexMs / (row.files / 1000);
-    worstPerK = Math.max(worstPerK, perK);
-    console.log(
-      [
-        row.files,
-        row.indexMs.toFixed(0),
-        row.analyzeMs.toFixed(1),
-        row.affected,
-        row.rssMb.toFixed(0),
-        perK.toFixed(0)
-      ].join('\t')
+    worstIndexPerK = Math.max(
+      worstIndexPerK,
+      msPerKfile(row.fullIndexMs, row.files),
+      msPerKfile(row.noopIncrementalMs, row.files),
+      msPerKfile(row.editIncrementalMs, row.files)
     );
   }
 
-  if (ceiling !== null && Number.isFinite(ceiling) && worstPerK > ceiling) {
+  if (ceiling !== null && Number.isFinite(ceiling) && worstIndexPerK > ceiling) {
     console.error(
-      `PERF GATE FAILED: worst index cost ${worstPerK.toFixed(0)} ms/kfile exceeds ceiling ${ceiling} ms/kfile`
+      `PERF GATE FAILED: worst index cost ${worstIndexPerK.toFixed(0)} ms/kfile exceeds ceiling ${ceiling} ms/kfile`
     );
     process.exit(1);
   }
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+const invokedPath = process.argv[1] ? pathToFileURL(path.resolve(process.argv[1])).href : '';
+if (import.meta.url === invokedPath) {
+  await main();
+}

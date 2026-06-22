@@ -38,3 +38,10 @@ export async function generateSyntheticRepo(
   }
   return { fileCount, changedFile: 'src/mod0.ts' };
 }
+
+export async function editSyntheticChangedFile(
+  root: string,
+  info: SyntheticRepoInfo
+): Promise<void> {
+  await writeFile(path.join(root, info.changedFile), 'export const v0 = 1;\n', 'utf8');
+}

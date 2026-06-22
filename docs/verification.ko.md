@@ -18,7 +18,7 @@ Parallax는 정확성을 여러 계층으로 검증한다 — 빠른 unit suite,
 | `npm run build` | `tsc -p tsconfig.json`, `dist/`로 compile | 배포하거나 CLI를 smoke test하기 전 |
 | `npm run bench` | `bench/impact-bench.ts` 실행. accuracy 회귀 시 non-zero로 종료 | engine/adapter 변경 후 |
 | `npm run bench:report` | 최신 bench JSON을 Markdown으로 렌더링하고, 선택적으로 baseline report와 비교 | `npm run bench` 후 또는 CI summary에서 |
-| `npm run bench:perf` | `bench/impact-perf.ts` 실행; 합성 repo를 점점 큰 규모로 index+analyze 시간 측정(비결정적, `verify`에 미포함) | 인덱싱/traversal 성능 작업 시 |
+| `npm run bench:perf` | `bench/impact-perf.ts` 실행; 합성 repo에서 full index, no-op incremental index, edited-file incremental index, analyze phase 시간을 측정(비결정적, `verify`에 미포함) | 인덱싱/traversal 성능 작업 시 |
 | `npm run test:dogfood` | Parallax를 자기 source에 대해 인덱싱하고 내부 graph가 살아남는지 검증 | engine 변경 후(indexer/adapters/analyzer/store/graph) |
 | `npm run test:mcp` | `tests/mcp.test.ts` 실행(impact / context / memory / telemetry / path validation) | MCP surface 변경 후 |
 | `npm run test:ui` | `tests/ui.test.ts` 실행(UI snapshot, server, JSON resource endpoint) | UI 변경 후 |
@@ -66,14 +66,14 @@ relation 추출, 랭킹, retrieval을 건드리는 변경 후에는 `npm run ben
 
 ## performance bench
 
-`bench/impact-perf.ts`(`npm run bench:perf`로 실행)는 **결정적 합성 repo**(`bench/synthetic-repo.ts`)를 점점 큰 규모로 만들어 index+analyze 비용을 측정한다 — leaf를 바꾸면 모든 importer로 파급되는 module hub 구조로, analyzer의 reverse-dependency traversal을 스트레스한다. accuracy bench 및 `npm run verify`와 **의도적으로 분리**되어 있다: 시간과 peak RSS는 비결정적이라 바이트-동일한 `impact-bench-report.json`에 절대 들어가면 안 된다. baseline을 잡거나 인덱서/analyzer 작업 중 회귀가 의심될 때 사용하고, CI에서는 넉넉한 `--max-ms-per-kfile` ceiling으로 게이트할 수 있다.
+`bench/impact-perf.ts`(`npm run bench:perf`로 실행)는 **결정적 합성 repo**(`bench/synthetic-repo.ts`)를 점점 큰 규모로 만들어 full index, no-op incremental index, edited-file incremental index, analyze 비용을 측정한다 — leaf를 바꾸면 모든 importer로 파급되는 module hub 구조로, analyzer의 reverse-dependency traversal을 스트레스한다. accuracy bench 및 `npm run verify`와 **의도적으로 분리**되어 있다: 시간과 peak RSS는 비결정적이라 바이트-동일한 `impact-bench-report.json`에 절대 들어가면 안 된다. baseline을 잡거나 인덱서/analyzer 작업 중 회귀가 의심될 때 사용하고, CI에서는 index phase 중 최악의 `/kfile` 비용을 넉넉한 `--max-ms-per-kfile` ceiling으로 게이트할 수 있다.
 
 ```bash
 npm run bench:perf -- --scales 1000,10000        # 사용자 지정 규모
 npm run bench:perf -- --max-ms-per-kfile 2000    # ceiling 초과 시 실패
 ```
 
-합성 generator 자체는 결정적이며, 시간 측정 실행은 verify에 없지만 generator는 `tests/synthetic-repo.test.ts`로 정규 verify 게이트에서 가드된다.
+출력 표는 `full_index_ms`, `noop_incremental_ms`, `edit_incremental_ms`, `analyze_no_persist_ms`, `analyze_persist_ms`와 대응하는 `/kfile` 열을 분리한다. 시간 측정 실행은 verify에 없지만 합성 generator와 표 formatter는 `tests/synthetic-repo.test.ts`로 정규 verify 게이트에서 가드된다.
 
 ## docs linter
 

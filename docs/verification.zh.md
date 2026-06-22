@@ -18,7 +18,7 @@ Parallax 分层验证正确性——快速的 unit suite、typecheck、docs lint
 | `npm run build` | `tsc -p tsconfig.json`，编译到 `dist/` | 发布或 smoke 测试 CLI 前 |
 | `npm run bench` | 运行 `bench/impact-bench.ts`；accuracy 回归时以 non-zero 退出 | engine/adapter 变更后 |
 | `npm run bench:report` | 将最新 bench JSON 渲染为 Markdown，并可选地与 baseline report 比较 | `npm run bench` 后，或用于 CI summary |
-| `npm run bench:perf` | 运行 `bench/impact-perf.ts`；在递增规模的合成 repo 上测量 index+analyze 耗时（非确定性，不在 `verify` 中） | 处理 indexing/traversal 性能时 |
+| `npm run bench:perf` | 运行 `bench/impact-perf.ts`；在合成 repo 上测量 full index、no-op incremental index、edited-file incremental index 与 analyze phase 耗时（非确定性，不在 `verify` 中） | 处理 indexing/traversal 性能时 |
 | `npm run test:dogfood` | 对 Parallax 自身 source 进行索引并断言内部 graph 存活 | engine 变更后（indexer/adapters/analyzer/store/graph） |
 | `npm run test:mcp` | 运行 `tests/mcp.test.ts`（impact / context / memory / telemetry / 路径校验） | MCP surface 变更后 |
 | `npm run test:ui` | 运行 `tests/ui.test.ts`（UI 快照、服务器、JSON 资源端点） | UI 变更后 |
@@ -66,14 +66,14 @@ runner 写出一份确定性 JSON 报告，当 suite 未通过时设置 non-zero
 
 ## performance bench
 
-`bench/impact-perf.ts`（通过 `npm run bench:perf` 运行）在**确定性合成 repo**（`bench/synthetic-repo.ts`）上以递增规模测量 index+analyze 成本——一个 module hub 结构，改动 leaf 会波及所有 importer，从而压测 analyzer 的 reverse-dependency traversal。它与 accuracy bench 及 `npm run verify` **刻意分离**：耗时与 peak RSS 是非确定性的，绝不能进入字节一致的 `impact-bench-report.json`。用它来建立 baseline，或在处理 indexer/analyzer 时排查疑似回归；在 CI 中可用宽松的 `--max-ms-per-kfile` ceiling 设闸。
+`bench/impact-perf.ts`（通过 `npm run bench:perf` 运行）在**确定性合成 repo**（`bench/synthetic-repo.ts`）上以递增规模测量 full index、no-op incremental index、edited-file incremental index 与 analyze 成本——一个 module hub 结构，改动 leaf 会波及所有 importer，从而压测 analyzer 的 reverse-dependency traversal。它与 accuracy bench 及 `npm run verify` **刻意分离**：耗时与 peak RSS 是非确定性的，绝不能进入字节一致的 `impact-bench-report.json`。用它来建立 baseline，或在处理 indexer/analyzer 时排查疑似回归；在 CI 中可对最差 index phase `/kfile` 成本使用宽松的 `--max-ms-per-kfile` ceiling 设闸。
 
 ```bash
 npm run bench:perf -- --scales 1000,10000        # 自定义规模
 npm run bench:perf -- --max-ms-per-kfile 2000    # 超过 ceiling 即失败
 ```
 
-合成 generator 本身是确定性的，且即使计时运行不在 verify 中，generator 也由 `tests/synthetic-repo.test.ts` 在常规 verify 闸中守护。
+输出表会分开显示 `full_index_ms`、`noop_incremental_ms`、`edit_incremental_ms`、`analyze_no_persist_ms`、`analyze_persist_ms` 以及对应的 `/kfile` 列。计时运行不在 verify 中，但合成 generator 和表格 formatter 由 `tests/synthetic-repo.test.ts` 在常规 verify 闸中守护。
 
 ## docs linter
 

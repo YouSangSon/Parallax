@@ -231,6 +231,26 @@ on its own content + the **existence (path)** of its targets, not their content.
   to be target-content-dependent (the residual risk the probe couldn't exhaust).
 
 **Slice plan:** (1) ✅ pure `computeIndexDelta` classifier + oracle scaffold (this
-arc-opening). (2) wire carry-forward into the write path behind the delta, guarded
-by the oracle + dogfood + `bench:perf`; do S2 (single write transaction) first.
-(3) extend the perf bench to report incremental vs full timings.
+arc-opening). (2) ✅ **SHIPPED** — carry-forward wired into the write path behind
+the delta. (3) extend the perf bench to report incremental vs full timings.
+
+**Slice 2 as shipped (2026-06-21).** `IndexResult.mode` (`'full'|'incremental'`);
+`indexProjectInternal` computes the delta, skips re-extraction of unchanged files,
+and `carryForwardUnchanged` re-stamps their rows into the new run cohort. Design
+correction vs the original note: the graph tables use **content-addressed PKs with
+an in-place run-id column**, so carry-forward is `UPDATE … SET run_id` (not
+`INSERT…SELECT`), except `entity_versions` (PK includes run id → `INSERT OR IGNORE
+… SELECT`). Attribution is **inverted** (bump everything on the prior run EXCEPT
+rows owned by a changed file) to keep the param list small and strand a changed
+file's vanished rows on the prior run. Wrapped in a SAVEPOINT. Oracle widened to
+**7 tables** (entities, entity_versions, relations, relation_evidence, evidence,
+edges, symbols) — incremental == full byte-identical, verified. Full `verify`
+green (573 tests). **Known harmless divergence:** carried relations keep the prior
+run's `adapter_run_id` (unread; no run-deleting GC → no dangling FK) — documented
+in code. **Perf (synthetic, single-file edit): ~1.5–2.3× faster re-index** (2k:
+21s→14s). The win is the skipped re-parse; it is *understated* by the tiny
+synthetic files and *bounded* by the SQLite restamp's index-maintenance cost on
+`idx_relations_*` (super-linear). Two follow-on arcs left on the table: skip the
+all-files file loop for unchanged files (opens the coverage/`entity_versions`
+write surface — deferred), and lighten the restamp by dropping run-id from the
+relations indexes (trades against traversal speed).

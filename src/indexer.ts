@@ -17,6 +17,7 @@ import { DATA_DIR } from './branding.js';
 import { computeCoChanges, readCommitHistory } from './co-change.js';
 import { entityKindForPath, languageIdForPath } from './entity_classification.js';
 import { readGitSnapshot } from './git-snapshot.js';
+import { computeIndexDelta, type IndexDelta, type IndexRunFiles } from './index_delta.js';
 import type {
   EntityDescriptor,
   ExtractCtx,
@@ -617,6 +618,22 @@ async function indexProjectInternal(
       unsupportedFiles
     );
 
+    // Incremental delta: compare the current indexed-file set + extractor version
+    // against the prior completed run. When nothing but file bodies changed (same
+    // path set, same extractor) the unchanged files' graph rows are carried
+    // forward and only the changed files are re-extracted; otherwise a full
+    // reindex. `priorRun` is null on the first index → full.
+    const priorRun = loadPriorCompletedRun(db, repoId);
+    const delta: IndexDelta = computeIndexDelta({
+      prior: priorRun?.files ?? null,
+      current: {
+        extractorVersion: extractorVersionFor(registeredAdapters),
+        files: new Map(indexedFiles.map((file) => [file.relativePath, file.hash]))
+      }
+    });
+    const isIncremental = delta.mode === 'incremental';
+    const changedSet = new Set(delta.changed);
+
     const adapterRunIds = new Map<SemanticAdapter, number>();
     const insertAdapterRun = db.prepare(`
         INSERT INTO adapter_runs (
@@ -772,6 +789,14 @@ async function indexProjectInternal(
         const run = await adapter.start(ctx, adapterFiles);
         try {
           for (const file of adapterFiles) {
+            // Incremental: an unchanged file's rows are carried forward after this
+            // loop, so skip its (expensive) re-extraction. It still counts as
+            // covered — the main file loop already wrote its 'indexed' coverage —
+            // so record it as completed to keep the on-failure coverage correct.
+            if (isIncremental && !changedSet.has(file.relativePath)) {
+              completedFilePaths.add(file.relativePath);
+              continue;
+            }
             for await (const event of run.process(file)) {
               handleEvent(event, file, adapterPersistCtx);
             }
@@ -814,6 +839,13 @@ async function indexProjectInternal(
         );
         throw error;
       }
+    }
+
+    // Carry unchanged files' extraction rows into this run's cohort. Runs after
+    // all changed-file extraction (so a changed file's vanished rows stay on the
+    // prior run) and before co-change (which is always recomputed below).
+    if (isIncremental && priorRun) {
+      carryForwardUnchanged(db, repoId, priorRun.runId, indexRunId, delta.changed);
     }
 
     // Repo-level pass: derive heuristic file<->file coupling from git history.
@@ -892,6 +924,7 @@ async function indexProjectInternal(
 
     return {
       indexRunId,
+      mode: delta.mode,
       filesIndexed: indexedFiles.length,
       symbolsIndexed: persistCtx.counters.symbolsIndexed,
       edgesIndexed: persistCtx.counters.edgesIndexed,
@@ -1121,6 +1154,133 @@ function extractorVersionFor(adapters: readonly SemanticAdapter[]): string {
     return `${adapter.id}-${adapter.version}`;
   }
   return adapters.map((adapter) => `${adapter.id}-${adapter.version}`).join(',');
+}
+
+// Load the prior completed run's per-file content hashes + extractor version so
+// `computeIndexDelta` can decide whether the next run may be incremental. After
+// any completed run (full or incremental) every live row is stamped with that
+// run id, so the prior completed run always holds the full current graph.
+type PriorIndexRun = { runId: number; files: IndexRunFiles };
+
+function loadPriorCompletedRun(db: Db, repoId: number): PriorIndexRun | null {
+  const priorRun = db
+    .prepare(
+      "SELECT id, extractor_version FROM index_runs WHERE repo_id = ? AND status = 'completed' ORDER BY id DESC LIMIT 1"
+    )
+    .get(repoId) as { id: number; extractor_version: string } | undefined;
+  if (!priorRun) return null;
+  const rows = db
+    .prepare('SELECT path, content_hash FROM files WHERE repo_id = ? AND index_run_id = ?')
+    .all(repoId, priorRun.id) as Array<{ path: string; content_hash: string }>;
+  const files = new Map<string, string>();
+  for (const row of rows) files.set(row.path, row.content_hash);
+  return { runId: priorRun.id, files: { extractorVersion: priorRun.extractor_version, files } };
+}
+
+// Carry an unchanged file's extraction-produced rows from the prior completed
+// run into the new run's cohort. The file-level rows (files, `file:` entities)
+// are already re-stamped by the main file loop, so this only moves the rows that
+// the (now-skipped) extraction would have produced: relations, their evidence,
+// scan evidence, edges, symbols, and symbol-level entities. Attribution is
+// inverted — bump everything still on the prior run EXCEPT rows owned by a
+// changed file — so the parameter list stays small (changed files are few) and a
+// changed file's vanished old rows are correctly left stranded on the prior run.
+// Wrapped in a SAVEPOINT so a mid-statement failure cannot half-move the graph.
+//
+// Known divergence (intentional): a carried relation keeps the prior run's
+// `adapter_run_id` rather than the current run's. This is invisible — nothing
+// reads `relations.adapter_run_id` (adapter confidence/knownGaps are read from
+// `adapter_runs` by `index_run_id` directly), and no GC path deletes
+// `index_runs`/`adapter_runs`, so the FK never dangles. Re-mapping it would add
+// risk for zero observable benefit; revisit only if a reader of that column or a
+// run-deleting GC is introduced.
+function carryForwardUnchanged(
+  db: Db,
+  repoId: number,
+  priorRunId: number,
+  newRunId: number,
+  changedPaths: readonly string[]
+): void {
+  const placeholders = changedPaths.map(() => '?').join(', ');
+  // `NOT IN (empty)` is always true in SQLite, so a no-changed run (identical
+  // re-index) still carries every row forward, which is exactly right.
+  const notInChanged = changedPaths.length > 0 ? `IN (${placeholders})` : null;
+
+  db.exec('SAVEPOINT s1_carry_forward');
+  try {
+    // Symbol-level entities of unchanged files (file entities are already on the
+    // new run via the main loop, so the prior-run filter excludes them).
+    db.prepare(
+      `UPDATE entities SET updated_index_run_id = ?
+       WHERE repo_id = ? AND updated_index_run_id = ?
+         ${notInChanged ? `AND (path IS NULL OR path NOT ${notInChanged})` : ''}`
+    ).run(newRunId, repoId, priorRunId, ...changedPaths);
+
+    // entity_versions is keyed by (entity_id, index_run_id) — one row per run, not
+    // re-stamped in place. Copy the prior run's rows into the new run for entities
+    // not owned by a changed file. INSERT OR IGNORE: file entities already have a
+    // new-run row from the main loop, and changed entities are re-written by
+    // extraction, so only unchanged symbol entities are actually inserted.
+    db.prepare(
+      `INSERT OR IGNORE INTO entity_versions (entity_id, index_run_id, content_hash, location_json, state)
+       SELECT ev.entity_id, ?, ev.content_hash, ev.location_json, ev.state
+       FROM entity_versions ev
+       WHERE ev.index_run_id = ?
+         ${
+           notInChanged
+             ? `AND ev.entity_id NOT IN (SELECT id FROM entities WHERE repo_id = ? AND path ${notInChanged})`
+             : ''
+         }`
+    ).run(newRunId, priorRunId, ...(notInChanged ? [repoId, ...changedPaths] : []));
+
+    db.prepare(
+      `UPDATE relations SET index_run_id = ?
+       WHERE repo_id = ? AND index_run_id = ?
+         ${
+           notInChanged
+             ? `AND source_entity_id NOT IN (SELECT id FROM entities WHERE repo_id = ? AND path ${notInChanged})`
+             : ''
+         }`
+    ).run(newRunId, repoId, priorRunId, ...(notInChanged ? [repoId, ...changedPaths] : []));
+
+    db.prepare(
+      `UPDATE relation_evidence SET index_run_id = ?
+       WHERE repo_id = ? AND index_run_id = ?
+         ${notInChanged ? `AND file_path NOT ${notInChanged}` : ''}`
+    ).run(newRunId, repoId, priorRunId, ...changedPaths);
+
+    db.prepare(
+      `UPDATE evidence SET index_run_id = ?
+       WHERE repo_id = ? AND index_run_id = ?
+         ${notInChanged ? `AND file_path NOT ${notInChanged}` : ''}`
+    ).run(newRunId, repoId, priorRunId, ...changedPaths);
+
+    db.prepare(
+      `UPDATE edges SET index_run_id = ?
+       WHERE repo_id = ? AND index_run_id = ?
+         ${
+           notInChanged
+             ? `AND source_file_id NOT IN (SELECT id FROM files WHERE repo_id = ? AND path ${notInChanged})`
+             : ''
+         }`
+    ).run(newRunId, repoId, priorRunId, ...(notInChanged ? [repoId, ...changedPaths] : []));
+
+    db.prepare(
+      `UPDATE symbols SET index_run_id = ?
+       WHERE index_run_id = ?
+         ${
+           notInChanged
+             ? `AND file_id NOT IN (SELECT id FROM files WHERE repo_id = ? AND path ${notInChanged})`
+             : ''
+         }`
+    ).run(newRunId, priorRunId, ...(notInChanged ? [repoId, ...changedPaths] : []));
+
+    db.exec('RELEASE SAVEPOINT s1_carry_forward');
+  } catch (error) {
+    db.exec('ROLLBACK TO SAVEPOINT s1_carry_forward');
+    db.exec('RELEASE SAVEPOINT s1_carry_forward');
+    throw error;
+  }
 }
 
 function prepareStatements(db: Db): PreparedStatements {

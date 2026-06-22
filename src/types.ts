@@ -15,6 +15,9 @@ export type IndexOptions = {
 
 export type IndexResult = {
   indexRunId: number;
+  // 'incremental' when the prior completed run's graph rows for unchanged files
+  // were carried forward (only changed files re-extracted); 'full' otherwise.
+  mode: 'full' | 'incremental';
   filesIndexed: number;
   symbolsIndexed: number;
   edgesIndexed: number;

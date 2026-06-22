@@ -1405,7 +1405,14 @@ test('indexProject promotes relation-only existing endpoint entities into rerun 
   const registry = new AdapterRegistry();
   registry.register({
     id: 'relation-only-rerun-freshness-test-adapter',
-    version: '1',
+    // This adapter's output changes with `emitExplicitEntity` while the file
+    // content stays identical. Incremental indexing assumes extractor output is
+    // a pure function of (content, extractor_version), so reflect the behavior
+    // change as a version bump — that makes the rerun a full reindex, which is
+    // what this test means to exercise (relation-only endpoint promotion).
+    get version() {
+      return emitExplicitEntity ? '1' : '2';
+    },
     capabilities: ['calls', 'symbols'],
     supports: (file) => file.language === 'typescript',
     start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
@@ -3151,9 +3158,14 @@ test('failed reruns preserve last completed current-state snapshot for analyzeDi
   await writeFile(path.join(repoRoot, 'src/core.ts'), 'export const core = 1;\n');
   await initProject({ repoRoot });
 
+  // The failing variant changes the adapter's behavior on identical file
+  // content; bump its version so the rerun is a full reindex (incremental
+  // indexing assumes extractor output is pure in content + extractor_version),
+  // which is the path this test exercises — a failed re-extraction must preserve
+  // the last completed current-state snapshot.
   const makeImportAdapter = (failOnCore: boolean): SemanticAdapter => ({
     id: 'snapshot-preservation-test-adapter',
-    version: '1',
+    version: failOnCore ? '2' : '1',
     capabilities: ['imports'],
     supports: (file) => file.language === 'typescript',
     start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({

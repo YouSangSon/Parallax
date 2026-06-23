@@ -127,6 +127,7 @@ type CollectedIndexEvent = {
 type CollectedIndexRun = {
   events: CollectedIndexEvent[];
   completedFilePathsByAdapterId: Map<string, Set<string>>;
+  completedAdapterRuns: Array<{ adapterId: string; adapterRunId: number }>;
 };
 
 type AdapterRunStatus = 'completed' | 'failed' | 'skipped';
@@ -785,6 +786,7 @@ async function collectAdapterEvents(input: {
   `);
   const events: CollectedIndexEvent[] = [];
   const completedFilePathsByAdapterId = new Map<string, Set<string>>();
+  const completedAdapterRuns: Array<{ adapterId: string; adapterRunId: number }> = [];
   void input.fileAdapterByPath;
 
   for (let groupIndex = 0; groupIndex < input.adapterGroups.length; groupIndex++) {
@@ -836,9 +838,12 @@ async function collectAdapterEvents(input: {
           await run.dispose();
         }
       }
-      updateAdapterRun(input.db, adapterRunId, 'completed');
+      completedAdapterRuns.push({ adapterId: adapter.id, adapterRunId });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      for (const completedRun of completedAdapterRuns) {
+        updateAdapterRun(input.db, completedRun.adapterRunId, 'completed');
+      }
       updateAdapterRun(input.db, adapterRunId, 'failed', message);
       markAdapterCoverageSkipped(
         input.insertCoverage,
@@ -859,7 +864,7 @@ async function collectAdapterEvents(input: {
     }
   }
 
-  return { events, completedFilePathsByAdapterId };
+  return { events, completedFilePathsByAdapterId, completedAdapterRuns };
 }
 
 function persistCollectedIndexRun(input: {
@@ -990,6 +995,9 @@ function persistCollectedIndexRun(input: {
         adapterId: collectedEvent.adapterId
       };
       handleEvent(collectedEvent.event, collectedEvent.file, adapterPersistCtx);
+    }
+    for (const completedRun of input.collected.completedAdapterRuns) {
+      updateAdapterRun(input.db, completedRun.adapterRunId, 'completed');
     }
 
     const extractedFiles =

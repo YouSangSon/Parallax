@@ -3267,6 +3267,113 @@ test('indexProject crash during adapter processing does not strand a partial cur
   }
 });
 
+test('indexProject replay failure fails adapter audit instead of leaving completed without error', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-replay-failure-audit-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(
+    path.join(repoRoot, 'src/app.ts'),
+    ['export function run() {', '  return 1;', '}', ''].join('\n')
+  );
+  await initProject({ repoRoot });
+
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'replay-serialization-failure-adapter',
+    version: '1',
+    capabilities: ['symbols'],
+    supports: (file) => file.language === 'typescript',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+      async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
+        yield {
+          kind: 'entity',
+          entity: {
+            kind: 'symbol',
+            path: file.relativePath,
+            languageId: file.language,
+            symbol: 'run',
+            symbolKind: 'function',
+            metadata: {
+              unserializable: BigInt(1)
+            }
+          }
+        };
+      }
+    })
+  });
+
+  await assert.rejects(
+    indexProjectWithRegistryForTest({ repoRoot }, registry),
+    /serialize a BigInt|BigInt/
+  );
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const indexRun = db
+      .prepare('SELECT id, status FROM index_runs ORDER BY id DESC LIMIT 1')
+      .get() as { id: number; status: string };
+    assert.equal(indexRun.status, 'failed');
+
+    const adapterRun = db
+      .prepare(
+        `SELECT status, error_summary
+         FROM adapter_runs
+         WHERE index_run_id = ? AND adapter_id = ?`
+      )
+      .get(indexRun.id, 'replay-serialization-failure-adapter') as {
+      status: string;
+      error_summary: string | null;
+    };
+    assert.notDeepEqual(
+      { status: adapterRun.status, errorSummary: adapterRun.error_summary },
+      { status: 'completed', errorSummary: null }
+    );
+    assert.equal(adapterRun.status, 'failed');
+    assert.match(adapterRun.error_summary ?? '', /serialize a BigInt|BigInt/);
+
+    const graphRows = db
+      .prepare(
+        `SELECT
+           (SELECT count(*) FROM files WHERE index_run_id = ?) AS files,
+           (SELECT count(*) FROM entities WHERE created_index_run_id = ? OR updated_index_run_id = ?) AS entities,
+           (SELECT count(*) FROM entity_versions WHERE index_run_id = ?) AS entity_versions,
+           (SELECT count(*) FROM symbols WHERE index_run_id = ?) AS symbols,
+           (SELECT count(*) FROM evidence WHERE index_run_id = ?) AS evidence,
+           (SELECT count(*) FROM transactions WHERE index_run_id = ?) AS transactions`
+      )
+      .get(
+        indexRun.id,
+        indexRun.id,
+        indexRun.id,
+        indexRun.id,
+        indexRun.id,
+        indexRun.id,
+        indexRun.id
+      ) as {
+      files: number;
+      entities: number;
+      entity_versions: number;
+      symbols: number;
+      evidence: number;
+      transactions: number;
+    };
+    assert.deepEqual({ ...graphRows }, {
+      files: 0,
+      entities: 0,
+      entity_versions: 0,
+      symbols: 0,
+      evidence: 0,
+      transactions: 0
+    });
+
+    const main = db
+      .prepare("SELECT head_tx_id FROM branches WHERE name = 'main'")
+      .get() as { head_tx_id: string | null };
+    assert.equal(main.head_tx_id, null);
+  } finally {
+    db.close();
+  }
+});
+
 test('failed reruns preserve last completed current-state snapshot for analyzeDiff', async () => {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-failed-rerun-snapshot-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });

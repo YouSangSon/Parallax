@@ -89,9 +89,36 @@ export async function exportImpactGraph(options: GraphExportOptions): Promise<Gr
     const changedEntityIds = new Set(report.changed.map((entity) => entity.id));
     const affectedEntityIds = new Set(report.affected.map((item) => item.target.id));
     const graphScopeEntityIds = [...new Set([...changedEntityIds, ...affectedEntityIds])];
-    const canonicalRows = loadCanonicalRows(db, repoId, report.indexRunId, graphScopeEntityIds);
-    const edgeSignatures = new Set<string>();
-    if (canonicalRows.length > 0) {
+    const reportEdges = buildReportEvidenceEdges(report);
+    if (reportEdges.length > 0) {
+      for (const edge of reportEdges) {
+        upsertReportNode(
+          nodes,
+          edge.source,
+          changedEntityIds.has(edge.source.id) ? 'changed' : affectedEntityIds.has(edge.source.id) ? 'affected' : 'context',
+          edge.confidence
+        );
+        upsertReportNode(
+          nodes,
+          edge.target,
+          changedEntityIds.has(edge.target.id) ? 'changed' : affectedEntityIds.has(edge.target.id) ? 'affected' : 'context',
+          edge.confidence
+        );
+        edges.set(edge.id, {
+          id: edge.id,
+          source: edge.source.id,
+          target: edge.target.id,
+          kind: edge.kind,
+          confidence: edge.confidence,
+          label: edge.kind
+        });
+      }
+    }
+
+    const canonicalRows = reportEdges.length === 0
+      ? loadCanonicalRows(db, repoId, report.indexRunId, graphScopeEntityIds)
+      : [];
+    if (reportEdges.length === 0 && canonicalRows.length > 0) {
       for (const row of canonicalRows) {
         upsertRowNode(nodes, row.source_id, row.source_kind, row.source_display_name, row.source_path, 'affected', asConfidence(row.confidence));
         upsertRowNode(
@@ -111,34 +138,7 @@ export async function exportImpactGraph(options: GraphExportOptions): Promise<Gr
           confidence: asConfidence(row.confidence),
           label: row.relation_kind
         });
-        edgeSignatures.add(edgeSignature(row.source_id, row.relation_kind, row.target_id));
       }
-    }
-
-    for (const edge of buildReportEvidenceEdges(report)) {
-      const signature = edgeSignature(edge.source.id, edge.kind, edge.target.id);
-      if (edgeSignatures.has(signature)) continue;
-      upsertReportNode(
-        nodes,
-        edge.source,
-        changedEntityIds.has(edge.source.id) ? 'changed' : affectedEntityIds.has(edge.source.id) ? 'affected' : 'context',
-        edge.confidence
-      );
-      upsertReportNode(
-        nodes,
-        edge.target,
-        changedEntityIds.has(edge.target.id) ? 'changed' : affectedEntityIds.has(edge.target.id) ? 'affected' : 'context',
-        edge.confidence
-      );
-      edges.set(edge.id, {
-        id: edge.id,
-        source: edge.source.id,
-        target: edge.target.id,
-        kind: edge.kind,
-        confidence: edge.confidence,
-        label: edge.kind
-      });
-      edgeSignatures.add(signature);
     }
 
     if (canonicalRows.length === 0 && edges.size === 0) {
@@ -189,23 +189,45 @@ function buildReportEvidenceEdges(report: ImpactReport): ReportEvidenceEdge[] {
   }
 
   const edges = new Map<string, ReportEvidenceEdge>();
-  for (const evidence of report.evidence) {
+  for (const evidence of [...report.evidence].sort(compareReportEvidence)) {
     if (!evidence.subject || !evidence.relationKind) continue;
     const source = entityById.get(evidence.subject.id) ?? evidence.subject;
-    const target = targetFromReportRelations(report, source, evidence.relationKind, entityByLabel)
+    const exactReportTarget = evidence.target ? entityById.get(evidence.target.id) ?? evidence.target : undefined;
+    const target = exactReportTarget
+      ?? targetFromReportRelations(report, source, evidence.relationKind, entityByLabel)
       ?? (report.changed.length === 1 ? report.changed[0] : undefined);
     if (!target || source.id === target.id) continue;
 
     const kind = evidence.relationKind;
     const confidence = asConfidence(evidence.relationConfidence ?? evidence.confidence);
-    const id = `report-evidence:${evidence.id}:${source.id}:${kind}:${target.id}`;
-    edges.set(id, { id, source, target, kind, confidence });
+    const signature = reportEdgeSignature(source.id, kind, target.id);
+    const id = `report-evidence:${source.id}:${kind}:${target.id}`;
+    const current = edges.get(signature);
+    if (!current || confidenceRank(confidence) > confidenceRank(current.confidence)) {
+      edges.set(signature, { id, source, target, kind, confidence });
+    }
   }
   return [...edges.values()].sort((a, b) => a.id.localeCompare(b.id));
 }
 
-function edgeSignature(sourceId: string, kind: string, targetId: string): string {
+function compareReportEvidence(left: ImpactReport['evidence'][number], right: ImpactReport['evidence'][number]): number {
+  return (left.subject?.id ?? '').localeCompare(right.subject?.id ?? '')
+    || (left.relationKind ?? '').localeCompare(right.relationKind ?? '')
+    || (left.target?.id ?? '').localeCompare(right.target?.id ?? '')
+    || left.file.localeCompare(right.file)
+    || left.kind.localeCompare(right.kind)
+    || left.id.localeCompare(right.id);
+}
+
+function reportEdgeSignature(sourceId: string, kind: string, targetId: string): string {
   return `${sourceId}\0${kind}\0${targetId}`;
+}
+
+function confidenceRank(confidence: Confidence): number {
+  if (confidence === 'proven') return 4;
+  if (confidence === 'inferred') return 3;
+  if (confidence === 'heuristic') return 2;
+  return 1;
 }
 
 function targetFromReportRelations(

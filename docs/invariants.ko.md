@@ -53,3 +53,7 @@ MCP는 안전한 read-only 분석 표면을 먼저 안정화한다. write 권한
 
 모든 영향도 판단은 evidence + provenance + confidence를 같이 가져야 한다. 모르는 것은 `unknown` / coverage gap / missing adapter로 명시적으로 드러낸다. 추정값을 사실처럼 반환하지 않는다.
 분석 리포트는 adapter run 단위의 confidence와 known gap도 함께 노출해서, parser-backed 결과와 broad heuristic coverage를 agent와 사람이 구분할 수 있어야 한다.
+
+## I-11. Saved reports are immutable snapshots
+
+저장된 리포트와 report-scoped graph export는 저장된 report JSON snapshot에서 읽는다. 이후 index run, carry-forward, retention, repair, canonical graph row 변경이 기존 리포트의 내용을 바꾸면 안 된다. Persisted report에 relation-bearing evidence가 없을 때만 canonical graph row가 legacy report를 보강할 수 있다.

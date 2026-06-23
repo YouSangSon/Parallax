@@ -3,7 +3,7 @@
   "$id": "https://raw.githubusercontent.com/YouSangSon/Parallax/main/schemas/impact-report.schema.json",
   "title": "Parallax Impact Report",
   "description": "Schema for `parallax analyze --json` output (ImpactReport).",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "type": "object",
   "properties": {
     "id": {
@@ -431,6 +431,59 @@
             "type": "number"
           },
           "subject": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "file",
+                  "symbol",
+                  "module",
+                  "package",
+                  "test",
+                  "doc",
+                  "config",
+                  "policy",
+                  "proposal",
+                  "prd",
+                  "workflow",
+                  "resource",
+                  "endpoint",
+                  "contract",
+                  "event",
+                  "business_plan",
+                  "requirement",
+                  "decision",
+                  "meeting_note",
+                  "metric",
+                  "customer_artifact",
+                  "task",
+                  "external_entity"
+                ]
+              },
+              "path": {
+                "type": "string"
+              },
+              "symbol": {
+                "type": "string"
+              },
+              "languageId": {
+                "type": "string"
+              },
+              "displayName": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "kind"
+            ],
+            "additionalProperties": false
+          },
+          "target": {
             "type": "object",
             "properties": {
               "id": {

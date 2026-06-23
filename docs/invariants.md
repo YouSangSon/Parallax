@@ -53,3 +53,7 @@ Test or review commands are not run automatically. They are only recommended in 
 
 Every impact judgment must carry evidence + provenance + confidence together. What is unknown is surfaced explicitly as `unknown` / coverage gap / missing adapter. Estimated values are not returned as if they were facts.
 Analysis reports also expose per-adapter-run confidence and known gaps, so that agents and people can distinguish parser-backed results from broad heuristic coverage.
+
+## I-11. Saved reports are immutable snapshots
+
+Persisted reports and report-scoped graph exports are read from the stored report JSON snapshot. Later index runs, carry-forward, retention, repair, or canonical graph row changes must not change what an existing report says. Canonical graph rows may enrich legacy reports only when the persisted report lacks relation-bearing evidence.

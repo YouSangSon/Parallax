@@ -58,6 +58,7 @@ export type Evidence = {
   startCol?: number;
   endCol?: number;
   subject?: EntityRef;
+  target?: EntityRef;
   relationKind?: string;
   relationConfidence?: Confidence;
   extractorId?: string;
@@ -245,6 +246,7 @@ export type ContextPackEvidence = {
   startCol?: number;
   endCol?: number;
   subject?: EntityRef;
+  target?: EntityRef;
   relationKind?: string;
 };
 

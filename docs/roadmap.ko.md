@@ -103,7 +103,7 @@ MCP는 read-only로 안정화됐다. 다음은 agent 사용성을 깊게 보는 
 - [x] CI에서 매 PR마다 bench delta를 자동 리포트
   - 현재 gate: CI가 pull request에서 base SHA의 bench report를 준비하고, head에서 canonical `npm run verify` gate를 실행한 뒤, `npm run bench:report` Markdown을 GitHub Step Summary에 append해 score, relation, affected-file, retrieval, semantic recall delta를 표시한다.
 - [x] indexing graph/current-state write를 하나의 explicit transaction으로 commit해 crashed run이 partial current graph cohort를 남기지 못하게 만들기
-- [ ] 나중 incremental re-index가 돌아도 saved report / exported artifact를 immutable snapshot으로 보존하기
+- [x] 나중 incremental re-index가 돌아도 saved report / exported artifact를 immutable snapshot으로 보존하기
 
 ---
 

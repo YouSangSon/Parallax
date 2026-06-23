@@ -46,6 +46,12 @@ type CanonicalImpactRow = {
   source_symbol: string | null;
   source_language_id: string | null;
   source_display_name: string;
+  target_entity_id: string;
+  target_kind: string;
+  target_path: string | null;
+  target_symbol: string | null;
+  target_language_id: string | null;
+  target_display_name: string;
   evidence_id: string | null;
   evidence_file_path: string | null;
   evidence_kind: string | null;
@@ -61,6 +67,12 @@ type CanonicalContextEvidenceRow = {
   relation_id: string;
   relation_kind: string;
   relation_confidence: string;
+  target_entity_id: string;
+  target_kind: string;
+  target_path: string | null;
+  target_symbol: string | null;
+  target_language_id: string | null;
+  target_display_name: string;
   evidence_id: string;
   evidence_file_path: string;
   evidence_kind: string;
@@ -404,6 +416,12 @@ function loadCanonicalOutgoingEvidence(
         r.id AS relation_id,
         r.kind AS relation_kind,
         r.confidence AS relation_confidence,
+        target.id AS target_entity_id,
+        target.kind AS target_kind,
+        target.path AS target_path,
+        target.symbol AS target_symbol,
+        target.language_id AS target_language_id,
+        target.display_name AS target_display_name,
         evidence.id AS evidence_id,
         evidence.file_path AS evidence_file_path,
         evidence.kind AS evidence_kind,
@@ -411,6 +429,7 @@ function loadCanonicalOutgoingEvidence(
         evidence.confidence AS evidence_confidence,
         ${spanColumns}
       FROM relations r
+      JOIN entities target ON target.id = r.target_entity_id
       INNER JOIN relation_evidence evidence ON evidence.relation_id = r.id
       WHERE r.repo_id = ?
         AND r.source_entity_id = ?
@@ -524,9 +543,16 @@ function loadCanonicalReverseRows(
           source.path AS source_path,
           source.symbol AS source_symbol,
           source.language_id AS source_language_id,
-          source.display_name AS source_display_name
+          source.display_name AS source_display_name,
+          target.id AS target_entity_id,
+          target.kind AS target_kind,
+          target.path AS target_path,
+          target.symbol AS target_symbol,
+          target.language_id AS target_language_id,
+          target.display_name AS target_display_name
         FROM relations r
         JOIN entities source ON source.id = r.source_entity_id
+        JOIN entities target ON target.id = r.target_entity_id
         WHERE r.repo_id = ?
           AND r.target_entity_id = ?
           AND r.index_run_id = ?
@@ -545,6 +571,12 @@ function loadCanonicalReverseRows(
         bounded.source_symbol AS source_symbol,
         bounded.source_language_id AS source_language_id,
         bounded.source_display_name AS source_display_name,
+        bounded.target_entity_id AS target_entity_id,
+        bounded.target_kind AS target_kind,
+        bounded.target_path AS target_path,
+        bounded.target_symbol AS target_symbol,
+        bounded.target_language_id AS target_language_id,
+        bounded.target_display_name AS target_display_name,
         evidence.id AS evidence_id,
         evidence.file_path AS evidence_file_path,
         evidence.kind AS evidence_kind,
@@ -613,7 +645,7 @@ function loadLegacyImpactRows(
       reason: reasonForLegacyRelation(row.kind, changedFile),
       relationKind: row.kind,
       confidence: row.confidence,
-      evidence: makeEvidence(repoRoot, row.source_path, row.kind, row.confidence),
+      evidence: makeEvidence(repoRoot, row.source_path, row.kind, row.confidence, entityForPath(changedFile)),
       depth: 1,
       relationPath: [reasonForLegacyRelation(row.kind, changedFile)]
     };
@@ -655,6 +687,18 @@ function entityFromCanonicalRow(row: CanonicalImpactRow): EntityRef {
   };
 }
 
+function targetEntityFromCanonicalRow(row: CanonicalImpactRow | CanonicalContextEvidenceRow): EntityRef {
+  const kind = isEntityKind(row.target_kind) ? row.target_kind : 'file';
+  return {
+    id: row.target_entity_id,
+    kind,
+    ...(row.target_path ? { path: row.target_path } : {}),
+    ...(row.target_symbol ? { symbol: row.target_symbol } : {}),
+    ...(row.target_language_id ? { languageId: row.target_language_id } : {}),
+    displayName: row.target_display_name
+  };
+}
+
 function evidenceFromCanonicalRow(
   row: CanonicalImpactRow,
   sourceEntity: EntityRef,
@@ -672,6 +716,7 @@ function evidenceFromCanonicalRow(
     ...(row.evidence_start_col !== null ? { startCol: row.evidence_start_col } : {}),
     ...(row.evidence_end_col !== null ? { endCol: row.evidence_end_col } : {}),
     subject: sourceEntity,
+    target: targetEntityFromCanonicalRow(row),
     relationKind,
     relationConfidence: confidence,
     extractorId: 'canonical-entity-graph'
@@ -690,7 +735,9 @@ function evidenceFromContextRow(row: CanonicalContextEvidenceRow, sourceEntity: 
     ...(row.evidence_start_col !== null ? { startCol: row.evidence_start_col } : {}),
     ...(row.evidence_end_col !== null ? { endCol: row.evidence_end_col } : {}),
     subject: sourceEntity,
+    target: targetEntityFromCanonicalRow(row),
     relationKind: row.relation_kind,
+    relationConfidence: asConfidence(row.relation_confidence),
     extractorId: 'canonical-entity-graph'
   };
 }
@@ -787,8 +834,14 @@ function confidenceRank(confidence: Confidence): number {
   return 0;
 }
 
-function makeEvidence(repoRoot: string, relativePath: string, kind: string, confidence: Evidence['confidence']): Evidence {
-  const id = createHash('sha1').update(`${kind}:${relativePath}`).digest('hex').slice(0, 16);
+function makeEvidence(
+  repoRoot: string,
+  relativePath: string,
+  kind: string,
+  confidence: Evidence['confidence'],
+  target?: EntityRef
+): Evidence {
+  const id = createHash('sha1').update(`${kind}:${relativePath}:${target?.id ?? ''}`).digest('hex').slice(0, 16);
   const subject = entityForPath(relativePath);
   let content: string;
   try {
@@ -802,6 +855,7 @@ function makeEvidence(repoRoot: string, relativePath: string, kind: string, conf
       snippet: redactSecrets(error instanceof Error ? error.message : String(error)),
       confidence: 'unknown',
       subject,
+      ...(target ? { target } : {}),
       relationKind: kind,
       extractorId: 'mvp-file-edge'
     };
@@ -814,6 +868,7 @@ function makeEvidence(repoRoot: string, relativePath: string, kind: string, conf
     snippet: redactSecrets(content),
     confidence,
     subject,
+    ...(target ? { target } : {}),
     relationKind: kind,
     extractorId: 'mvp-file-edge'
   };

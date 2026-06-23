@@ -103,7 +103,7 @@ Without regression signals, there is no guarantee that every change works.
 - [x] Automatically report the bench delta on every PR in CI
   - Current gate: CI prepares a base-SHA bench report for pull requests, runs the canonical `npm run verify` gate on the head, then appends `npm run bench:report` Markdown to the GitHub Step Summary with score, relation, affected-file, retrieval, and semantic recall deltas.
 - [x] Commit indexing graph/current-state writes in one explicit transaction so a crashed run cannot strand a partial current graph cohort
-- [ ] Make saved reports / exported artifacts explicitly immutable snapshots across later incremental re-index runs
+- [x] Make saved reports / exported artifacts explicitly immutable snapshots across later incremental re-index runs
 
 ---
 

@@ -355,6 +355,7 @@ function compactEvidence(
     ...(evidence.startCol !== undefined ? { startCol: evidence.startCol } : {}),
     ...(evidence.endCol !== undefined ? { endCol: evidence.endCol } : {}),
     ...(evidence.subject !== undefined ? { subject: evidence.subject } : {}),
+    ...(evidence.target !== undefined ? { target: evidence.target } : {}),
     ...(evidence.relationKind !== undefined ? { relationKind: evidence.relationKind } : {})
   };
 }

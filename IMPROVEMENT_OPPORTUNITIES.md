@@ -63,16 +63,16 @@ off MCP by I-8). Context-pack telemetry is recorded but nothing acts on it.
 
 Incremental indexing now exists for the unchanged-file carry-forward path, and indexing now commits
 the graph/current-state cohort in one explicit crash-atomic transaction after adapter extraction
-finishes. `scanFiles` still walks the repo, saved/exported artifacts still need a stronger
-immutability contract, and analyzer traversal is N+1 per frontier node.
+finishes. Saved/exported artifact immutability is now explicit; `scanFiles` still walks the repo,
+and analyzer traversal is N+1 per frontier node.
 
 | # | Opportunity | Effort | Value |
 | :-- | :-- | :-- | :-- |
-| S1 | **Incremental indexing follow-through (content-hash-gated)** — the core arc is partially shipped: content-hash/extractor-version delta classification, unchanged-file carry-forward into the new `index_run_id`, saved-report graph preservation after incremental re-index, crash-atomic graph/current-state commits, and `bench:perf` slices for full/no-op incremental/edited-file incremental/analyze phases are all in place. Still open: keep saved/exported artifacts explicitly immutable as later index cohorts land, and reduce the remaining all-files bookkeeping cost for unchanged files. | L | HIGH |
+| S1 | **Incremental indexing follow-through (content-hash-gated)** — the core arc is partially shipped: content-hash/extractor-version delta classification, unchanged-file carry-forward into the new `index_run_id`, saved/exported artifact immutability, crash-atomic graph/current-state commits, and `bench:perf` slices for full/no-op incremental/edited-file incremental/analyze phases are all in place. Still open: reduce the remaining all-files bookkeeping cost for unchanged files. | L | HIGH |
 | S2 | ✅ **shipped** — write-mode SQLite pragmas are in place, and indexing now commits the graph/current-state cohort in one explicit transaction after adapter extraction finishes. A child-process crash regression proves partial files/relations/evidence/transactions from a crashed run do not become current. | S | HIGH |
 | S3 | ⛔ **deprioritized — premise refuted by measurement.** The idea was to batch the per-node traversal query (`loadCanonicalImpactRows`) to cut round-trips. Built and verified byte-identical, then `bench:perf` showed it **flat** (2k files: 7545→7475 ms) even on a 200-node frontier: **in-process SQLite has no per-query latency, so N+1 query *count* is ~free** — and local-first is an invariant, so it can never matter. Reverted as premature optimization (KISS/YAGNI). The traversal-semantics characterization test (`tests/analyzer-traversal-batch.test.ts`) was kept as a guard for any future change. | M | ~~HIGH~~ LOW |
 | S4 | **Large-repo perf benchmark + documented limits** — foundation ✅: deterministic synthetic-repo generator (`bench/synthetic-repo.ts`, guarded by `tests/synthetic-repo.test.ts`) + `npm run bench:perf` (`bench/impact-perf.ts`) now reporting full initial index, no-op incremental index, edited-file incremental index, analyze-without-persist, and analyze-with-persist phases at scale, isolated from the determinism-locked accuracy bench, with an optional `--max-ms-per-kfile` CI gate. The perf run already exposes super-linear analyze cost (the S3 hotspot). Still open: standard 10k/50k scales + peak-RSS capture + published baseline limits; deterministic `verify` should continue to avoid exact timing assertions. | M | MED-HIGH |
-| S7 | **Saved-artifact immutability guardrail** — incremental carry-forward fixed saved report graph loss for the current path, but the larger contract is still implicit. Persisted reports/exports should remain inspectable snapshots even as later index cohorts land, rather than depending on mutable canonical rows staying query-compatible forever. Make that invariant explicit in storage/docs/tests before more scale work lands on top. | M | HIGH |
+| S7 | ✅ **shipped** — saved report graph exports now treat persisted report JSON as the immutable graph snapshot source. Canonical graph rows remain only a legacy fallback when a persisted report lacks relation-bearing evidence, so later index cohorts, carry-forward, retention, repair, or canonical row mutation do not rewrite modern saved artifacts. | M | HIGH |
 | S5 | **Retention / prune superseded index runs (+ VACUUM)** — every run inserts a new cohort; nothing prunes old ones, so the DB grows by a full snapshot per run. Add deterministic retention (keep last N completed) inside a transaction + optional VACUUM. | M | MED |
 | S6 | **Committable / shareable index artifact** — define export/import of a compacted single-cohort DB + a `{extractor_version, git_commit_sha, content_hash set}` manifest; on import warn when hashes diverge from the working tree. "Index once in CI, everyone consumes." Depends on S5. | M | MED |
 
@@ -125,7 +125,7 @@ also remain thinly bench-covered.
 3. **M2 + M6** ✅ — telemetered query responses and shipped workflow prompts make the agent surface coherent; the next agent-surface lift is M4/M5 guidance from real drift/telemetry.
 4. **D3 → D1** — report JSON Schema plus the shipped confidence-aware `--fail-on`, then the still-open official Action (S→M, HIGH): the CI-guardrail story.
 5. **M1** ✅ — multi-hop + aggregation Cypher (M, HIGH): turns `parallax_query` into the blast-radius primitive.
-6. **S1 / S7** — incremental indexing is partially shipped; the remaining structural scale/correctness arc is explicit artifact immutability and cheaper unchanged-file handling, paired with S4 guardrails.
+6. **S1 / S4** — incremental indexing is partially shipped; the remaining structural scale/correctness arc is cheaper unchanged-file handling paired with S4 guardrails.
 
 Larger bets (L) that change the tool's ceiling: **A1** (TS TypeChecker), **A3** (Spring DI/persistence),
 **W3** (monorepo), **S1** (incremental). Sequence these after the quick wins land and are bench-guarded.

@@ -3875,6 +3875,141 @@ test('exportImpactGraph keeps a saved report graph stable after incremental rein
   assert.deepEqual(edgeSignatures(partialParsed.edges), edgeSignatures(beforeParsed.edges));
 });
 
+test('exportImpactGraph treats persisted report JSON as the immutable graph snapshot', async () => {
+  const repoRoot = await makeFixtureRepo();
+  await initProject({ repoRoot });
+  await indexProject({ repoRoot });
+  const report = await analyzeDiff({
+    repoRoot,
+    changedFiles: ['src/auth/session.ts'],
+    writeReport: true
+  });
+
+  const before = await exportImpactGraph({ repoRoot, reportId: report.id, format: 'json' });
+  const beforeParsed = JSON.parse(before.rendered) as {
+    nodes: Array<{ id: string; group: string; confidence?: string }>;
+    edges: Array<{ id: string; confidence: string; kind: string; source: string; target: string }>;
+  };
+  assert.ok(beforeParsed.edges.some((edge) => edge.kind === 'DEPENDS_ON'));
+
+  const db = new DatabaseSync(databasePath(repoRoot));
+  try {
+    db.prepare(
+      `UPDATE relations
+          SET confidence = 'heuristic',
+              provenance = 'mutated-canonical-row'
+        WHERE index_run_id = ?`
+    ).run(report.indexRunId);
+    db.prepare(
+      `UPDATE relation_evidence
+          SET confidence = 'heuristic',
+              snippet = 'mutated evidence row'
+        WHERE index_run_id = ?`
+    ).run(report.indexRunId);
+  } finally {
+    db.close();
+  }
+
+  const after = await exportImpactGraph({ repoRoot, reportId: report.id, format: 'json' });
+  const afterParsed = JSON.parse(after.rendered) as typeof beforeParsed;
+  const edgeSnapshot = (edges: typeof beforeParsed.edges) =>
+    edges.map((edge) => `${edge.source}\0${edge.kind}\0${edge.target}\0${edge.confidence}`).sort();
+  assert.deepEqual(edgeSnapshot(afterParsed.edges), edgeSnapshot(beforeParsed.edges));
+  assert.deepEqual(
+    afterParsed.nodes.map((node) => `${node.id}\0${node.group}\0${node.confidence ?? ''}`).sort(),
+    beforeParsed.nodes.map((node) => `${node.id}\0${node.group}\0${node.confidence ?? ''}`).sort()
+  );
+  assert.doesNotMatch(after.rendered, /mutated-canonical-row|mutated evidence row/);
+});
+
+test('exportImpactGraph reconstructs multiple changed targets from report evidence', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-report-multi-target-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/a.ts'), 'export const a = 1;\n');
+  await writeFile(path.join(repoRoot, 'src/b.ts'), 'export const b = 2;\n');
+  await writeFile(
+    path.join(repoRoot, 'src/shared.ts'),
+    [
+      'import { a } from "./a";',
+      'import { b } from "./b";',
+      'export const shared = a + b;',
+      ''
+    ].join('\n')
+  );
+  await initProject({ repoRoot });
+  await indexProject({ repoRoot });
+
+  const report = await analyzeDiff({
+    repoRoot,
+    changedFiles: ['src/a.ts', 'src/b.ts'],
+    writeReport: true
+  });
+  const graph = await exportImpactGraph({ repoRoot, reportId: report.id, format: 'json' });
+  const parsed = JSON.parse(graph.rendered) as {
+    edges: Array<{ id: string; kind: string; source: string; target: string }>;
+  };
+
+  const sharedDependencyEdges = parsed.edges
+    .filter((edge) => edge.source === 'file:src/shared.ts' && edge.kind === 'DEPENDS_ON')
+    .sort((a, b) => a.target.localeCompare(b.target));
+  assert.deepEqual(
+    sharedDependencyEdges.map((edge) => edge.target),
+    ['file:src/a.ts', 'file:src/b.ts']
+  );
+  assert.equal(
+    new Set(sharedDependencyEdges.map((edge) => `${edge.source}\0${edge.kind}\0${edge.target}`)).size,
+    sharedDependencyEdges.length
+  );
+});
+
+test('exportImpactGraph preserves exact context target from report evidence', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-report-context-target-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/config.ts'), 'export const config = { mode: "test" };\n');
+  await writeFile(
+    path.join(repoRoot, 'src/app.ts'),
+    [
+      'import { config } from "./config";',
+      'export const mode = config.mode;',
+      ''
+    ].join('\n')
+  );
+  await initProject({ repoRoot });
+  await indexProject({ repoRoot });
+
+  const report = await analyzeDiff({
+    repoRoot,
+    changedFiles: ['src/app.ts'],
+    writeReport: true
+  });
+  assert.ok(
+    report.evidence.some((evidence) =>
+      evidence.subject?.id === 'file:src/app.ts'
+      && evidence.target?.id === 'file:src/config.ts'
+      && evidence.relationKind === 'DEPENDS_ON'
+    ),
+    'expected analyzeDiff to persist the exact outgoing context target'
+  );
+
+  const graph = await exportImpactGraph({ repoRoot, reportId: report.id, format: 'json' });
+  const parsed = JSON.parse(graph.rendered) as {
+    nodes: Array<{ id: string; group: string }>;
+    edges: Array<{ kind: string; source: string; target: string }>;
+  };
+  assert.ok(
+    parsed.edges.some((edge) =>
+      edge.source === 'file:src/app.ts'
+      && edge.target === 'file:src/config.ts'
+      && edge.kind === 'DEPENDS_ON'
+    ),
+    'expected graph export to preserve the exact context target edge'
+  );
+  assert.equal(
+    parsed.nodes.find((node) => node.id === 'file:src/config.ts')?.group,
+    'context'
+  );
+});
+
 test('analyzeDiff follows bounded multi-hop relations with cycle protection', async () => {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-depth-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });

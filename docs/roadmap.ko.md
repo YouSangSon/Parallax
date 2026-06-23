@@ -102,7 +102,7 @@ MCP는 read-only로 안정화됐다. 다음은 agent 사용성을 깊게 보는 
   - 현재 gate: deterministic bench가 모델별 recall@1과 cross-model isolation을 확인하는 semantic model matrix를 포함한다. live provider 호출에 의존하지 않고 embedding 모델 namespace 회귀를 잡는 offline gate이며, LLM provider의 네트워크 품질 평가는 CI 밖에 두고 provider contract는 offline test가 계속 검증한다.
 - [x] CI에서 매 PR마다 bench delta를 자동 리포트
   - 현재 gate: CI가 pull request에서 base SHA의 bench report를 준비하고, head에서 canonical `npm run verify` gate를 실행한 뒤, `npm run bench:report` Markdown을 GitHub Step Summary에 append해 score, relation, affected-file, retrieval, semantic recall delta를 표시한다.
-- [ ] indexing write path를 pragma 튜닝에만 의존하지 않고 하나의 explicit transaction으로 감싸 crash-atomic 하게 만들기
+- [x] indexing graph/current-state write를 하나의 explicit transaction으로 commit해 crashed run이 partial current graph cohort를 남기지 못하게 만들기
 - [ ] 나중 incremental re-index가 돌아도 saved report / exported artifact를 immutable snapshot으로 보존하기
 
 ---

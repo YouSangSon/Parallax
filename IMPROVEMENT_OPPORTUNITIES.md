@@ -61,21 +61,22 @@ off MCP by I-8). Context-pack telemetry is recorded but nothing acts on it.
 
 ## 3. Architecture, scale & performance
 
-Incremental indexing now exists for the unchanged-file carry-forward path, but `scanFiles` still
-walks the repo, the write path still lacks an explicit crash-atomic transaction, and saved/exported
-artifacts still need a stronger immutability contract. Analyzer traversal is N+1 per frontier node.
+Incremental indexing now exists for the unchanged-file carry-forward path, and indexing now commits
+the graph/current-state cohort in one explicit crash-atomic transaction after adapter extraction
+finishes. `scanFiles` still walks the repo, saved/exported artifacts still need a stronger
+immutability contract, and analyzer traversal is N+1 per frontier node.
 
 | # | Opportunity | Effort | Value |
 | :-- | :-- | :-- | :-- |
-| S1 | **Incremental indexing follow-through (content-hash-gated)** — the core arc is partially shipped: content-hash/extractor-version delta classification, unchanged-file carry-forward into the new `index_run_id`, saved-report graph preservation after incremental re-index, and `bench:perf` slices for full/no-op incremental/edited-file incremental/analyze phases are all in place. Still open: make the write path crash-atomic, keep saved/exported artifacts explicitly immutable as later index cohorts land, and reduce the remaining all-files bookkeeping cost for unchanged files. | L | HIGH |
-| S2 | **Single transaction + SQLite pragmas** — ✅ **pragmas shipped** (`synchronous=NORMAL` + 16 MiB `cache_size` + 256 MiB `mmap_size` on the write-mode DB). Still open: wrap the write loop in one explicit `BEGIN/COMMIT` so indexing is crash-atomic end-to-end (must interleave safely with the existing `CurrentStateSnapshot` restore + SAVEPOINT path). | S | HIGH |
+| S1 | **Incremental indexing follow-through (content-hash-gated)** — the core arc is partially shipped: content-hash/extractor-version delta classification, unchanged-file carry-forward into the new `index_run_id`, saved-report graph preservation after incremental re-index, crash-atomic graph/current-state commits, and `bench:perf` slices for full/no-op incremental/edited-file incremental/analyze phases are all in place. Still open: keep saved/exported artifacts explicitly immutable as later index cohorts land, and reduce the remaining all-files bookkeeping cost for unchanged files. | L | HIGH |
+| S2 | ✅ **shipped** — write-mode SQLite pragmas are in place, and indexing now commits the graph/current-state cohort in one explicit transaction after adapter extraction finishes. A child-process crash regression proves partial files/relations/evidence/transactions from a crashed run do not become current. | S | HIGH |
 | S3 | ⛔ **deprioritized — premise refuted by measurement.** The idea was to batch the per-node traversal query (`loadCanonicalImpactRows`) to cut round-trips. Built and verified byte-identical, then `bench:perf` showed it **flat** (2k files: 7545→7475 ms) even on a 200-node frontier: **in-process SQLite has no per-query latency, so N+1 query *count* is ~free** — and local-first is an invariant, so it can never matter. Reverted as premature optimization (KISS/YAGNI). The traversal-semantics characterization test (`tests/analyzer-traversal-batch.test.ts`) was kept as a guard for any future change. | M | ~~HIGH~~ LOW |
 | S4 | **Large-repo perf benchmark + documented limits** — foundation ✅: deterministic synthetic-repo generator (`bench/synthetic-repo.ts`, guarded by `tests/synthetic-repo.test.ts`) + `npm run bench:perf` (`bench/impact-perf.ts`) now reporting full initial index, no-op incremental index, edited-file incremental index, analyze-without-persist, and analyze-with-persist phases at scale, isolated from the determinism-locked accuracy bench, with an optional `--max-ms-per-kfile` CI gate. The perf run already exposes super-linear analyze cost (the S3 hotspot). Still open: standard 10k/50k scales + peak-RSS capture + published baseline limits; deterministic `verify` should continue to avoid exact timing assertions. | M | MED-HIGH |
 | S7 | **Saved-artifact immutability guardrail** — incremental carry-forward fixed saved report graph loss for the current path, but the larger contract is still implicit. Persisted reports/exports should remain inspectable snapshots even as later index cohorts land, rather than depending on mutable canonical rows staying query-compatible forever. Make that invariant explicit in storage/docs/tests before more scale work lands on top. | M | HIGH |
 | S5 | **Retention / prune superseded index runs (+ VACUUM)** — every run inserts a new cohort; nothing prunes old ones, so the DB grows by a full snapshot per run. Add deterministic retention (keep last N completed) inside a transaction + optional VACUUM. | M | MED |
 | S6 | **Committable / shareable index artifact** — define export/import of a compacted single-cohort DB + a `{extractor_version, git_commit_sha, content_hash set}` manifest; on import warn when hashes diverge from the working tree. "Index once in CI, everyone consumes." Depends on S5. | M | MED |
 
-**Sequencing:** S2 (tiny, compounding) → S1 (biggest structural win) with S4 alongside to guard → S3 → S5 → S6. Watch-mode is a thin follow-on to S1.
+**Sequencing:** S1 (biggest structural win) with S4 alongside to guard → S5 → S6. Watch-mode is a thin follow-on to S1.
 
 ---
 
@@ -119,12 +120,12 @@ also remain thinly bench-covered.
 
 ## Top cross-dimension picks (highest value-to-effort)
 
-1. **S2** — single transaction + pragmas (S, HIGH): biggest perf win for the smallest diff.
+1. **S2** ✅ — single transaction + pragmas shipped: graph/current-state writes now commit after adapter extraction in one explicit transaction.
 2. **A5** ✅ — resolution-strength confidence (S, MED-HIGH): cheap honesty win in the TS/JS call lane.
 3. **M2 + M6** ✅ — telemetered query responses and shipped workflow prompts make the agent surface coherent; the next agent-surface lift is M4/M5 guidance from real drift/telemetry.
 4. **D3 → D1** — report JSON Schema plus the shipped confidence-aware `--fail-on`, then the still-open official Action (S→M, HIGH): the CI-guardrail story.
 5. **M1** ✅ — multi-hop + aggregation Cypher (M, HIGH): turns `parallax_query` into the blast-radius primitive.
-6. **S1 / S2 / S7** — incremental indexing is partially shipped; the remaining structural scale/correctness arc is crash-atomic writes, explicit artifact immutability, and cheaper unchanged-file handling, paired with S4 guardrails.
+6. **S1 / S7** — incremental indexing is partially shipped; the remaining structural scale/correctness arc is explicit artifact immutability and cheaper unchanged-file handling, paired with S4 guardrails.
 
 Larger bets (L) that change the tool's ceiling: **A1** (TS TypeChecker), **A3** (Spring DI/persistence),
 **W3** (monorepo), **S1** (incremental). Sequence these after the quick wins land and are bench-guarded.
@@ -132,7 +133,7 @@ Larger bets (L) that change the tool's ceiling: **A1** (TS TypeChecker), **A3** 
 ## Larger-bet reassessment (2026-06-21)
 
 The quick-win layer has largely shipped (A5, M1, M2, M3 + co-change context fold,
-M6, D3, S2-pragmas), and the first S4 perf measurement guardrail now exists via
+M6, D3, S2), and the first S4 perf measurement guardrail now exists via
 `bench:perf`. The remaining gap is narrower: D2 feature bench coverage is still
 open, and S4 still needs standard large-scale baselines plus peak-RSS capture.
 Every larger bet is a structural change to the determinism/honesty core, so
@@ -162,8 +163,8 @@ Reassessed order across the four L bets:
 2. **S1 — incremental indexing.** Highest structural leverage; prereqs already
    exist (`files.content_hash` + `index_run.extractor_version` columns are
    present — only carry-forward logic is missing). Risk lives in reproducing an
-   identical graph for unchanged files and in the second `files` write path
-   (snapshot/SAVEPOINT restore). De-risk with S2-transaction + S3-batch first.
+   identical graph for unchanged files and in the second `files` write path.
+   De-risk with the shipped S2 transaction guardrail and S4 perf measurements.
    S1 also sets the **cost budget** A1 must later fit inside.
 3. **A1 — TS TypeChecker.** Highest accuracy ceiling, but `createProgram` is
    whole-repo and pulls *against* S1's incremental cost model — so it must land
@@ -176,7 +177,7 @@ Reassessed order across the four L bets:
    (JVM-only) audience, partially started (regex bean lane already exists), and
    gated on building the offline-parser harness (A2). Pursue only after A2.
 
-Net: **S4 → S1 (with S2) → A1 → W3 (after W1/W2) → A3 (after A2)**. Pick
+Net: **S4 → S1 → A1 → W3 (after W1/W2) → A3 (after A2)**. Pick
 one arc at a time — each L bet is its own multi-session effort.
 
 ### Measured findings from the S4 perf bench (2026-06-21)

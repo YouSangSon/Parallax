@@ -116,6 +116,19 @@ type AdapterGroup = {
   languageIds: string[];
 };
 
+type CollectedIndexEvent = {
+  adapter: SemanticAdapter;
+  adapterRunId: number;
+  adapterId: string;
+  file: ScannedFile;
+  event: IndexEvent;
+};
+
+type CollectedIndexRun = {
+  events: CollectedIndexEvent[];
+  completedFilePathsByAdapterId: Map<string, Set<string>>;
+};
+
 type AdapterRunStatus = 'completed' | 'failed' | 'skipped';
 
 type FileSnapshotRow = {
@@ -667,29 +680,7 @@ async function indexProjectInternal(
       memoryTs,
       'indexer'
     );
-    db.prepare(
-      'INSERT OR IGNORE INTO transactions (id, parent_tx_id, branch_id, ts, agent, index_run_id) VALUES (?, ?, ?, ?, ?, ?)'
-    ).run(memoryTxId, mainBranch.head_tx_id, mainBranch.id, memoryTs, 'indexer', indexRunId);
-    if (mainBranch.head_tx_id) {
-      db.prepare(
-        'INSERT OR IGNORE INTO transaction_parents (tx_id, parent_tx_id) VALUES (?, ?)'
-      ).run(memoryTxId, mainBranch.head_tx_id);
-    }
-
     const stmts = prepareStatements(db);
-    const persistCtx: Omit<PersistContext, 'adapterRunId' | 'adapterId'> = {
-      stmts,
-      repoId,
-      indexRunId,
-      memoryTxId,
-      fileIdByPath: new Map<string, number>(),
-      fileContentHashByPath: new Map(indexedFiles.map((file) => [file.relativePath, file.hash])),
-      canonicalEntityIds: new Set<string>(),
-      canonicalRelationIds: new Set<string>(),
-      counters: { symbolsIndexed: 0, edgesIndexed: 0 },
-      currentStateSnapshot
-    };
-
     for (const { file: skipped, adapterId } of skippedCoverage) {
       stmts.insertCoverage.run(
         indexRunId,
@@ -715,27 +706,264 @@ async function indexProjectInternal(
     for (const file of indexedFiles) {
       const adapter = fileAdapterByPath.get(file.relativePath);
       if (!adapter) continue;
-      currentStateSnapshot.captureFile(file.relativePath);
-      stmts.upsertFile.run(repoId, file.relativePath, file.language, file.hash, indexRunId);
-      const row = stmts.selectFile.get(repoId, file.relativePath) as { id: number };
+      stmts.insertCoverage.run(
+        indexRunId,
+        adapter.id,
+        file.relativePath,
+        file.language,
+        'indexed',
+        'matched source extension'
+      );
+    }
+
+    const collected = await collectAdapterEvents({
+      repoRoot,
+      indexRunId,
+      indexedFiles,
+      adapterGroups,
+      adapterRunIds,
+      fileAdapterByPath,
+      isIncremental,
+      changedSet,
+      db,
+      insertCoverage: stmts.insertCoverage
+    });
+
+    const result = persistCollectedIndexRun({
+      db,
+      repoId,
+      repoRoot,
+      indexRunId,
+      indexedFiles,
+      unsupportedFiles,
+      unsupportedLanguageIds,
+      scan,
+      adapterGroups,
+      fileAdapterByPath,
+      collected,
+      priorRun,
+      delta,
+      mainBranch,
+      memoryTxId,
+      memoryTs,
+      currentStateSnapshot
+    });
+    db.close();
+
+    return result;
+  } catch (error) {
+    currentStateSnapshot.restore();
+    failRunningAdapterRuns(db, indexRunId, error instanceof Error ? error.message : String(error));
+    db.prepare("UPDATE index_runs SET status = ?, finished_at = datetime('now') WHERE id = ?").run(
+      'failed',
+      indexRunId
+    );
+    db.close();
+    throw error;
+  }
+}
+
+async function collectAdapterEvents(input: {
+  repoRoot: string;
+  indexRunId: number;
+  indexedFiles: readonly ScannedFile[];
+  adapterGroups: readonly AdapterGroup[];
+  adapterRunIds: ReadonlyMap<SemanticAdapter, number>;
+  fileAdapterByPath: ReadonlyMap<string, SemanticAdapter>;
+  isIncremental: boolean;
+  changedSet: ReadonlySet<string>;
+  db: Db;
+  insertCoverage: Statement;
+}): Promise<CollectedIndexRun> {
+  const appendAdapterRunErrorSummary = input.db.prepare(`
+    UPDATE adapter_runs
+    SET error_summary = CASE
+      WHEN error_summary IS NULL OR error_summary = '' THEN ?
+      ELSE error_summary || char(10) || ?
+    END
+    WHERE id = ?
+  `);
+  const events: CollectedIndexEvent[] = [];
+  const completedFilePathsByAdapterId = new Map<string, Set<string>>();
+  void input.fileAdapterByPath;
+
+  for (let groupIndex = 0; groupIndex < input.adapterGroups.length; groupIndex++) {
+    const { adapter, files: adapterFiles } = input.adapterGroups[groupIndex]!;
+    const adapterRunId = input.adapterRunIds.get(adapter);
+    if (adapterRunId === undefined) {
+      throw new Error(`adapter run missing for ${adapter.id}`);
+    }
+    if (adapterFiles.length === 0) {
+      updateAdapterRun(input.db, adapterRunId, 'skipped');
+      completedFilePathsByAdapterId.set(adapter.id, new Set<string>());
+      continue;
+    }
+    const ctx: ExtractCtx = {
+      repoRoot: input.repoRoot,
+      indexRunId: input.indexRunId,
+      adapterRunId,
+      indexedFiles: immutableIndexedFilesSnapshot(input.indexedFiles)
+    };
+    const completedFilePaths = new Set<string>();
+    completedFilePathsByAdapterId.set(adapter.id, completedFilePaths);
+    try {
+      const run = await adapter.start(ctx, adapterFiles);
+      try {
+        for (const file of adapterFiles) {
+          // Incremental: unchanged files are carried forward during persistence,
+          // so extraction is skipped but failure coverage still treats them as done.
+          if (input.isIncremental && !input.changedSet.has(file.relativePath)) {
+            completedFilePaths.add(file.relativePath);
+            continue;
+          }
+          for await (const event of run.process(file)) {
+            if (event.kind === 'diagnostic') {
+              recordDiagnostic(event, file, {
+                insertCoverage: input.insertCoverage,
+                appendAdapterRunErrorSummary,
+                indexRunId: input.indexRunId,
+                adapterId: adapter.id,
+                adapterRunId
+              });
+              continue;
+            }
+            events.push({ adapter, adapterRunId, adapterId: adapter.id, file, event });
+          }
+          completedFilePaths.add(file.relativePath);
+        }
+      } finally {
+        if (run.dispose) {
+          await run.dispose();
+        }
+      }
+      updateAdapterRun(input.db, adapterRunId, 'completed');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      updateAdapterRun(input.db, adapterRunId, 'failed', message);
+      markAdapterCoverageSkipped(
+        input.insertCoverage,
+        input.indexRunId,
+        adapter,
+        adapterFiles.filter((file) => !completedFilePaths.has(file.relativePath)),
+        `adapter failed: ${redactSecrets(message)}`
+      );
+      markUnstartedAdapterRunsSkipped(
+        input.db,
+        input.insertCoverage,
+        input.indexRunId,
+        input.adapterGroups.slice(groupIndex + 1),
+        input.adapterRunIds,
+        adapter.id
+      );
+      throw error;
+    }
+  }
+
+  return { events, completedFilePathsByAdapterId };
+}
+
+function persistCollectedIndexRun(input: {
+  db: Db;
+  repoId: number;
+  repoRoot: string;
+  indexRunId: number;
+  indexedFiles: readonly ScannedFile[];
+  unsupportedFiles: readonly ScannedFile[];
+  unsupportedLanguageIds: readonly string[];
+  scan: ScanResult;
+  adapterGroups: readonly AdapterGroup[];
+  fileAdapterByPath: ReadonlyMap<string, SemanticAdapter>;
+  collected: CollectedIndexRun;
+  priorRun: PriorIndexRun | null;
+  delta: IndexDelta;
+  mainBranch: { id: string; head_tx_id: string | null };
+  memoryTxId: string;
+  memoryTs: string;
+  currentStateSnapshot: CurrentStateSnapshot;
+}): IndexResult {
+  const stmts = prepareStatements(input.db);
+  const persistCtx: Omit<PersistContext, 'adapterRunId' | 'adapterId'> = {
+    stmts,
+    repoId: input.repoId,
+    indexRunId: input.indexRunId,
+    memoryTxId: input.memoryTxId,
+    fileIdByPath: new Map<string, number>(),
+    fileContentHashByPath: new Map(
+      input.indexedFiles.map((file) => [file.relativePath, file.hash])
+    ),
+    canonicalEntityIds: new Set<string>(),
+    canonicalRelationIds: new Set<string>(),
+    counters: { symbolsIndexed: 0, edgesIndexed: 0 },
+    currentStateSnapshot: input.currentStateSnapshot
+  };
+  const indexedPaths = new Set(input.indexedFiles.map((file) => file.relativePath));
+  const coChangePairs = computeCoChanges(readCommitHistory(input.repoRoot), indexedPaths);
+  const coChangeRunId =
+    coChangePairs.length > 0
+      ? Number(
+          input.db
+            .prepare(
+              `INSERT INTO adapter_runs (
+                 index_run_id, adapter_id, adapter_version, language_ids, confidence, known_gaps_json, status, started_at
+               )
+               VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`
+            )
+            .run(
+              input.indexRunId,
+              'co-change',
+              '1',
+              JSON.stringify([]),
+              'heuristic',
+              JSON.stringify([
+                'co-change relations are derived from git commit history, not code semantics — coupling is correlational, not a proven dependency',
+                'squashed/rebased history, renames, and history-poor repos may miss or distort couplings'
+              ]),
+              'running'
+            ).lastInsertRowid
+        )
+      : null;
+
+  withIndexWriteTransaction(input.db, () => {
+    input.db
+      .prepare(
+        'INSERT OR IGNORE INTO transactions (id, parent_tx_id, branch_id, ts, agent, index_run_id) VALUES (?, ?, ?, ?, ?, ?)'
+      )
+      .run(
+        input.memoryTxId,
+        input.mainBranch.head_tx_id,
+        input.mainBranch.id,
+        input.memoryTs,
+        'indexer',
+        input.indexRunId
+      );
+    if (input.mainBranch.head_tx_id) {
+      input.db
+        .prepare('INSERT OR IGNORE INTO transaction_parents (tx_id, parent_tx_id) VALUES (?, ?)')
+        .run(input.memoryTxId, input.mainBranch.head_tx_id);
+    }
+
+    for (const file of input.indexedFiles) {
+      input.currentStateSnapshot.captureFile(file.relativePath);
+      stmts.upsertFile.run(input.repoId, file.relativePath, file.language, file.hash, input.indexRunId);
+      const row = stmts.selectFile.get(input.repoId, file.relativePath) as { id: number };
       persistCtx.fileIdByPath.set(file.relativePath, row.id);
       const fileEntId = fileEntityId(file.relativePath);
       const kind = entityKindForPath(file.relativePath, file.language);
-      currentStateSnapshot.captureEntity(fileEntId);
+      input.currentStateSnapshot.captureEntity(fileEntId);
       stmts.upsertEntity.run(
         fileEntId,
-        repoId,
+        input.repoId,
         kind,
         file.relativePath,
         null,
         file.language,
         file.relativePath,
-        indexRunId,
-        indexRunId
+        input.indexRunId,
+        input.indexRunId
       );
       stmts.insertEntityVersion.run(
         fileEntId,
-        indexRunId,
+        input.indexRunId,
         file.hash,
         JSON.stringify({ path: file.relativePath }),
         'active'
@@ -752,162 +980,90 @@ async function indexProjectInternal(
         },
         persistCtx
       );
-      stmts.insertCoverage.run(
-        indexRunId,
-        adapter.id,
-        file.relativePath,
-        file.language,
-        'indexed',
-        'matched source extension'
-      );
       persistCtx.canonicalEntityIds.add(fileEntId);
     }
 
-    for (let groupIndex = 0; groupIndex < adapterGroups.length; groupIndex++) {
-      const { adapter, files: adapterFiles } = adapterGroups[groupIndex]!;
-      const adapterRunId = adapterRunIds.get(adapter);
-      if (adapterRunId === undefined) {
-        throw new Error(`adapter run missing for ${adapter.id}`);
-      }
-      if (adapterFiles.length === 0) {
-        updateAdapterRun(db, adapterRunId, 'skipped');
-        continue;
-      }
-      const ctx: ExtractCtx = {
-        repoRoot,
-        indexRunId,
-        adapterRunId,
-        indexedFiles: immutableIndexedFilesSnapshot(indexedFiles)
-      };
+    for (const collectedEvent of input.collected.events) {
       const adapterPersistCtx: PersistContext = {
         ...persistCtx,
-        adapterRunId,
-        adapterId: adapter.id
+        adapterRunId: collectedEvent.adapterRunId,
+        adapterId: collectedEvent.adapterId
       };
-      const completedFilePaths = new Set<string>();
-      try {
-        const run = await adapter.start(ctx, adapterFiles);
-        try {
-          for (const file of adapterFiles) {
-            // Incremental: an unchanged file's rows are carried forward after this
-            // loop, so skip its (expensive) re-extraction. It still counts as
-            // covered — the main file loop already wrote its 'indexed' coverage —
-            // so record it as completed to keep the on-failure coverage correct.
-            if (isIncremental && !changedSet.has(file.relativePath)) {
-              completedFilePaths.add(file.relativePath);
-              continue;
-            }
-            for await (const event of run.process(file)) {
-              handleEvent(event, file, adapterPersistCtx);
-            }
-            const scanEvidenceId = evidenceId(file.relativePath, 'scan');
-            currentStateSnapshot.captureEvidence(scanEvidenceId);
-            stmts.insertEvidence.run(
-              scanEvidenceId,
-              repoId,
-              file.relativePath,
-              'scan',
-              redactSecrets(file.content),
-              'proven',
-              indexRunId
-            );
-            completedFilePaths.add(file.relativePath);
-          }
-        } finally {
-          if (run.dispose) {
-            await run.dispose();
-          }
-        }
-        updateAdapterRun(db, adapterRunId, 'completed');
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        updateAdapterRun(db, adapterRunId, 'failed', message);
-        markAdapterCoverageSkipped(
-          stmts.insertCoverage,
-          indexRunId,
-          adapter,
-          adapterFiles.filter((file) => !completedFilePaths.has(file.relativePath)),
-          `adapter failed: ${redactSecrets(message)}`
-        );
-        markUnstartedAdapterRunsSkipped(
-          db,
-          stmts.insertCoverage,
-          indexRunId,
-          adapterGroups.slice(groupIndex + 1),
-          adapterRunIds,
-          adapter.id
-        );
-        throw error;
-      }
+      handleEvent(collectedEvent.event, collectedEvent.file, adapterPersistCtx);
     }
 
-    // Carry unchanged files' extraction rows into this run's cohort. Runs after
-    // all changed-file extraction (so a changed file's vanished rows stay on the
-    // prior run) and before co-change (which is always recomputed below).
-    if (isIncremental && priorRun) {
-      carryForwardUnchanged(db, repoId, priorRun.runId, indexRunId, delta.changed);
-    }
-
-    // Repo-level pass: derive heuristic file<->file coupling from git history.
-    // Only materializes when git history actually yields couplings, so it adds
-    // no adapter_run noise to non-git repos. When present it runs as its own
-    // adapter_run, so the CO_CHANGES relations carry an honest 'heuristic'
-    // confidence and a knownGaps disclosure, consistent with the
-    // confidence-first model.
-    const indexedPaths = new Set(indexedFiles.map((file) => file.relativePath));
-    const coChangePairs = computeCoChanges(readCommitHistory(repoRoot), indexedPaths);
-    if (coChangePairs.length > 0) {
-      const coChangeRunId = Number(
-        insertAdapterRun.run(
-          indexRunId,
-          'co-change',
-          '1',
-          JSON.stringify([]),
-          'heuristic',
-          JSON.stringify([
-            'co-change relations are derived from git commit history, not code semantics — coupling is correlational, not a proven dependency',
-            'squashed/rebased history, renames, and history-poor repos may miss or distort couplings'
-          ]),
-          'running'
-        ).lastInsertRowid
+    const extractedFiles =
+      input.delta.mode === 'incremental'
+        ? input.indexedFiles.filter((file) => input.delta.changed.includes(file.relativePath))
+        : input.indexedFiles;
+    for (const file of extractedFiles) {
+      const scanEvidenceId = evidenceId(file.relativePath, 'scan');
+      input.currentStateSnapshot.captureEvidence(scanEvidenceId);
+      stmts.insertEvidence.run(
+        scanEvidenceId,
+        input.repoId,
+        file.relativePath,
+        'scan',
+        redactSecrets(file.content),
+        'proven',
+        input.indexRunId
       );
+    }
+
+    // Carry unchanged files' extraction rows into this run's cohort after replaying
+    // changed-file events, so vanished rows for changed files remain on the prior run.
+    if (input.delta.mode === 'incremental' && input.priorRun) {
+      carryForwardUnchanged(
+        input.db,
+        input.repoId,
+        input.priorRun.runId,
+        input.indexRunId,
+        input.delta.changed
+      );
+    }
+
+    if (coChangeRunId !== null) {
+      input.db.exec('SAVEPOINT s2_co_change_graph');
       try {
         for (const pair of coChangePairs) {
-        insertCanonicalRelation({
-          repoId,
-          sourceEntityId: fileEntityId(pair.source),
-          targetEntityId: fileEntityId(pair.target),
-          kind: 'CO_CHANGES',
-          confidence: 'heuristic',
-          provenance: `co-change:${pair.coChangeCount}:${pair.couplingScore.toFixed(2)}`,
-          adapterRunId: coChangeRunId,
-          indexRunId,
-          evidence: [
-            {
-              file: pair.source,
-              snippet: `co-changed with ${pair.target} in ${pair.coChangeCount} commits (coupling ${pair.couplingScore.toFixed(2)})`,
-              confidence: 'heuristic',
-              startLine: 1,
-              endLine: 1,
-              startCol: 1,
-              endCol: 1
-            }
-          ],
-          insertRelation: stmts.insertRelation,
-          insertRelationEvidence: stmts.insertRelationEvidence,
-          canonicalRelationIds: persistCtx.canonicalRelationIds,
-          upsertAttributeDef: stmts.upsertAttributeDef,
-          insertFact: stmts.insertFact,
-          memoryTxId,
-          upsertTextAttribute: stmts.upsertTextAttribute,
-          insertFactProvenance: stmts.insertFactProvenance,
-          currentStateSnapshot
-        });
-      }
-      updateAdapterRun(db, coChangeRunId, 'completed');
-    } catch (error) {
+          insertCanonicalRelation({
+            repoId: input.repoId,
+            sourceEntityId: fileEntityId(pair.source),
+            targetEntityId: fileEntityId(pair.target),
+            kind: 'CO_CHANGES',
+            confidence: 'heuristic',
+            provenance: `co-change:${pair.coChangeCount}:${pair.couplingScore.toFixed(2)}`,
+            adapterRunId: coChangeRunId,
+            indexRunId: input.indexRunId,
+            evidence: [
+              {
+                file: pair.source,
+                snippet: `co-changed with ${pair.target} in ${pair.coChangeCount} commits (coupling ${pair.couplingScore.toFixed(2)})`,
+                confidence: 'heuristic',
+                startLine: 1,
+                endLine: 1,
+                startCol: 1,
+                endCol: 1
+              }
+            ],
+            insertRelation: stmts.insertRelation,
+            insertRelationEvidence: stmts.insertRelationEvidence,
+            canonicalRelationIds: persistCtx.canonicalRelationIds,
+            upsertAttributeDef: stmts.upsertAttributeDef,
+            insertFact: stmts.insertFact,
+            memoryTxId: input.memoryTxId,
+            upsertTextAttribute: stmts.upsertTextAttribute,
+            insertFactProvenance: stmts.insertFactProvenance,
+            currentStateSnapshot: input.currentStateSnapshot
+          });
+        }
+        input.db.exec('RELEASE SAVEPOINT s2_co_change_graph');
+        updateAdapterRun(input.db, coChangeRunId, 'completed');
+      } catch (error) {
+        input.db.exec('ROLLBACK TO SAVEPOINT s2_co_change_graph');
+        input.db.exec('RELEASE SAVEPOINT s2_co_change_graph');
         updateAdapterRun(
-          db,
+          input.db,
           coChangeRunId,
           'failed',
           error instanceof Error ? error.message : String(error)
@@ -915,58 +1071,51 @@ async function indexProjectInternal(
       }
     }
 
-    db.prepare("UPDATE index_runs SET status = ?, finished_at = datetime('now') WHERE id = ?").run(
-      'completed',
-      indexRunId
-    );
-    db.prepare('UPDATE branches SET head_tx_id = ? WHERE id = ?').run(memoryTxId, mainBranch.id);
-    db.close();
+    input.db
+      .prepare("UPDATE index_runs SET status = ?, finished_at = datetime('now') WHERE id = ?")
+      .run('completed', input.indexRunId);
+    input.db
+      .prepare('UPDATE branches SET head_tx_id = ? WHERE id = ?')
+      .run(input.memoryTxId, input.mainBranch.id);
+  });
 
-    return {
-      indexRunId,
-      mode: delta.mode,
-      filesIndexed: indexedFiles.length,
-      symbolsIndexed: persistCtx.counters.symbolsIndexed,
-      edgesIndexed: persistCtx.counters.edgesIndexed,
-      entitiesIndexed: persistCtx.canonicalEntityIds.size,
-      relationsIndexed: persistCtx.canonicalRelationIds.size,
-      adaptersUsed: adapterGroups.map((group) => ({
-        id: group.adapter.id,
-        version: group.adapter.version,
-        languageIds: group.languageIds,
-        confidence: adapterConfidence(group.adapter),
-        knownGaps: adapterKnownGaps(group.adapter)
-      })),
-      coverage: {
-        indexedPaths: indexedFiles.length,
-        skippedPaths: scan.skipped.length + unsupportedFiles.length,
-        unsupportedLanguageIds,
-        skipped: [
-          ...scan.skipped.map((file) => ({
-            path: file.relativePath,
-            ...(file.language ? { languageId: file.language } : {}),
-            status: 'skipped',
-            reason: file.reason
-          }) as const),
-          ...unsupportedFiles.map((file) => ({
-            path: file.relativePath,
-            languageId: file.language,
-            status: 'skipped',
-            reason: 'no registered adapter supports language'
-          }) as const)
-        ]
-      }
-    };
-  } catch (error) {
-    currentStateSnapshot.restore();
-    failRunningAdapterRuns(db, indexRunId, error instanceof Error ? error.message : String(error));
-    db.prepare("UPDATE index_runs SET status = ?, finished_at = datetime('now') WHERE id = ?").run(
-      'failed',
-      indexRunId
-    );
-    db.close();
-    throw error;
-  }
+  void input.fileAdapterByPath;
+  void input.collected.completedFilePathsByAdapterId;
+  return {
+    indexRunId: input.indexRunId,
+    mode: input.delta.mode,
+    filesIndexed: input.indexedFiles.length,
+    symbolsIndexed: persistCtx.counters.symbolsIndexed,
+    edgesIndexed: persistCtx.counters.edgesIndexed,
+    entitiesIndexed: persistCtx.canonicalEntityIds.size,
+    relationsIndexed: persistCtx.canonicalRelationIds.size,
+    adaptersUsed: input.adapterGroups.map((group) => ({
+      id: group.adapter.id,
+      version: group.adapter.version,
+      languageIds: group.languageIds,
+      confidence: adapterConfidence(group.adapter),
+      knownGaps: adapterKnownGaps(group.adapter)
+    })),
+    coverage: {
+      indexedPaths: input.indexedFiles.length,
+      skippedPaths: input.scan.skipped.length + input.unsupportedFiles.length,
+      unsupportedLanguageIds: [...input.unsupportedLanguageIds],
+      skipped: [
+        ...input.scan.skipped.map((file) => ({
+          path: file.relativePath,
+          ...(file.language ? { languageId: file.language } : {}),
+          status: 'skipped',
+          reason: file.reason
+        }) as const),
+        ...input.unsupportedFiles.map((file) => ({
+          path: file.relativePath,
+          languageId: file.language,
+          status: 'skipped',
+          reason: 'no registered adapter supports language'
+        }) as const)
+      ]
+    }
+  };
 }
 
 // Registration order is load-bearing: pickAdapter is first-match-wins, and the
@@ -1071,6 +1220,18 @@ function failRunningAdapterRuns(db: Db, indexRunId: number, errorSummary: string
      SET status = ?, finished_at = datetime('now'), error_summary = ?
      WHERE index_run_id = ? AND status = ?`
   ).run('failed', redactSecrets(errorSummary), indexRunId, 'running');
+}
+
+function withIndexWriteTransaction<T>(db: Db, body: () => T): T {
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const result = body();
+    db.exec('COMMIT');
+    return result;
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
 }
 
 function adapterGroupsInRegistryOrder(
@@ -1415,9 +1576,29 @@ function persistDiagnostic(
   file: ScannedFile,
   ctx: PersistContext
 ): void {
+  recordDiagnostic(event, file, {
+    insertCoverage: ctx.stmts.insertCoverage,
+    appendAdapterRunErrorSummary: ctx.stmts.appendAdapterRunErrorSummary,
+    indexRunId: ctx.indexRunId,
+    adapterId: ctx.adapterId,
+    adapterRunId: ctx.adapterRunId
+  });
+}
+
+function recordDiagnostic(
+  event: Extract<IndexEvent, { kind: 'diagnostic' }>,
+  file: ScannedFile,
+  ctx: {
+    insertCoverage: Statement;
+    appendAdapterRunErrorSummary: Statement;
+    indexRunId: number;
+    adapterId: string;
+    adapterRunId: number;
+  }
+): void {
   const reason = diagnosticReason(event.level, event.message);
   if (event.file) {
-    ctx.stmts.insertCoverage.run(
+    ctx.insertCoverage.run(
       ctx.indexRunId,
       ctx.adapterId,
       diagnosticCoveragePath(event.file, event.level, reason),
@@ -1427,7 +1608,7 @@ function persistDiagnostic(
     );
     return;
   }
-  ctx.stmts.appendAdapterRunErrorSummary.run(reason, reason, ctx.adapterRunId);
+  ctx.appendAdapterRunErrorSummary.run(reason, reason, ctx.adapterRunId);
 }
 
 function diagnosticReason(level: 'warn' | 'error', message: string): string {

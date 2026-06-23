@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
+import { pathToFileURL } from 'node:url';
 
 import { AdapterRegistry } from '../src/adapters/registry.js';
 import {
@@ -3154,6 +3155,118 @@ test('indexProject preserves per-adapter terminal status when a later adapter fa
   }
 });
 
+test('indexProject crash during adapter processing does not strand a partial current graph cohort', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-crash-atomic-index-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/a.ts'), 'import { core } from "./core";\nexport const a = core;\n');
+  await writeFile(path.join(repoRoot, 'src/core.ts'), 'export const core = 1;\n');
+  await initProject({ repoRoot });
+
+  const crashScript = path.join(repoRoot, 'crash-index.mjs');
+  await writeFile(
+    crashScript,
+    [
+      `import { AdapterRegistry } from ${JSON.stringify(pathToFileURL(path.resolve('src/adapters/registry.ts')).href)};`,
+      `import { indexProjectWithRegistryForTest } from ${JSON.stringify(pathToFileURL(path.resolve('src/indexer.ts')).href)};`,
+      '',
+      'const registry = new AdapterRegistry();',
+      'registry.register({',
+      "  id: 'crash-after-relation-adapter',",
+      "  version: '1',",
+      "  capabilities: ['imports'],",
+      "  supports: (file) => file.language === 'typescript',",
+      '  start: () => ({',
+      '    async *process(file) {',
+      "      if (file.relativePath === 'src/a.ts') {",
+      '        yield {',
+      "          kind: 'relation',",
+      '          relation: {',
+      "            source: { kind: 'file', path: 'src/a.ts', languageId: file.language },",
+      "            target: { kind: 'file', path: 'src/core.ts', languageId: file.language },",
+      "            kind: 'DEPENDS_ON',",
+      "            metadata: { confidence: 'proven', provenance: 'crash-after-relation-adapter:import' },",
+      "            evidence: [{ file: file.relativePath, snippet: file.content, confidence: 'proven' }]",
+      '          }',
+      '        };',
+      '        process.exit(42);',
+      '      }',
+      '    }',
+      '  })',
+      '});',
+      'await indexProjectWithRegistryForTest({ repoRoot: process.argv[2] }, registry);',
+      ''
+    ].join('\n'),
+    'utf8'
+  );
+
+  const result = spawnSync(process.execPath, ['--import', tsxLoaderPath, crashScript, repoRoot], {
+    cwd: path.resolve('.'),
+    encoding: 'utf8'
+  });
+  assert.equal(result.status, 42, result.stderr);
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const crashedRun = db
+      .prepare("SELECT id, status FROM index_runs WHERE status = 'running' ORDER BY id DESC LIMIT 1")
+      .get() as { id: number; status: string } | undefined;
+    assert.ok(crashedRun, 'crashed run should leave only audit metadata in running state');
+
+    const graphRows = db
+      .prepare(
+        `SELECT
+           (SELECT count(*) FROM files WHERE index_run_id = ?) AS files,
+           (SELECT count(*) FROM relations WHERE index_run_id = ?) AS relations,
+           (SELECT count(*) FROM relation_evidence WHERE index_run_id = ?) AS relation_evidence,
+           (SELECT count(*) FROM evidence WHERE index_run_id = ?) AS evidence,
+           (SELECT count(*) FROM symbols WHERE index_run_id = ?) AS symbols,
+           (SELECT count(*) FROM edges WHERE index_run_id = ?) AS edges,
+           (SELECT count(*) FROM transactions WHERE index_run_id = ?) AS transactions,
+           (SELECT count(*) FROM facts WHERE tx_id IN (SELECT id FROM transactions WHERE index_run_id = ?)) AS facts,
+           (SELECT count(*) FROM fact_provenance WHERE tx_id IN (SELECT id FROM transactions WHERE index_run_id = ?)) AS fact_provenance`
+      )
+      .get(
+        crashedRun.id,
+        crashedRun.id,
+        crashedRun.id,
+        crashedRun.id,
+        crashedRun.id,
+        crashedRun.id,
+        crashedRun.id,
+        crashedRun.id,
+        crashedRun.id
+      ) as {
+      files: number;
+      relations: number;
+      relation_evidence: number;
+      evidence: number;
+      symbols: number;
+      edges: number;
+      transactions: number;
+      facts: number;
+      fact_provenance: number;
+    };
+    assert.deepEqual({ ...graphRows }, {
+      files: 0,
+      relations: 0,
+      relation_evidence: 0,
+      evidence: 0,
+      symbols: 0,
+      edges: 0,
+      transactions: 0,
+      facts: 0,
+      fact_provenance: 0
+    });
+
+    const main = db
+      .prepare("SELECT head_tx_id FROM branches WHERE name = 'main'")
+      .get() as { head_tx_id: string | null };
+    assert.equal(main.head_tx_id, null);
+  } finally {
+    db.close();
+  }
+});
+
 test('failed reruns preserve last completed current-state snapshot for analyzeDiff', async () => {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-failed-rerun-snapshot-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
@@ -3413,13 +3526,7 @@ test('indexProject preserves completed same-adapter file coverage after later fi
         targetEntityId: row.target_entity_id,
         provenance: row.provenance
       })),
-      [
-        {
-          sourceEntityId: 'file:src/a-ok.ts',
-          targetEntityId: 'file:src/a-ok.ts',
-          provenance: 'typescript-partial-failing-adapter:src/a-ok.ts'
-        }
-      ]
+      []
     );
   } finally {
     db.close();

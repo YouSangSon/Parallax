@@ -11,7 +11,7 @@
 | 경로 | [`schemas/impact-report.schema.json`](../schemas/impact-report.schema.json) |
 | Dialect | JSON Schema draft 2020-12 |
 | `$id` | `https://raw.githubusercontent.com/YouSangSon/Parallax/main/schemas/impact-report.schema.json` |
-| `version` | 리포트 형태의 시맨틱 버전(현재 `1.0.0`) |
+| `version` | 리포트 형태의 시맨틱 버전(현재 `1.1.0`) |
 
 이 스키마는 `parallax analyze --json`이 내보내는 객체(`ImpactReport`)를 기술한다: `id`, `indexRunId`, `changedFiles`, `affectedFiles`, `changed`, `affected`, `actions`, `evidence`, 그리고 선택적 `adapterInsights` / `warnings`. `--json`은 리포트를 저장하지 않으므로 선택 필드 `reportPath`는 이 출력에서 빠진다.
 

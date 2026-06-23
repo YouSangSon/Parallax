@@ -103,6 +103,16 @@ function gitHead(repoRoot: string): string {
   return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim();
 }
 
+function reportRowCount(repoRoot: string): number {
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const row = db.prepare('SELECT count(*) AS count FROM reports').get() as { count: number };
+    return row.count;
+  } finally {
+    db.close();
+  }
+}
+
 function downgradeSnapshotAndSpanSchemaForReadOnlyTest(repoRoot: string): void {
   const db = new DatabaseSync(databasePath(repoRoot));
   try {
@@ -4102,6 +4112,42 @@ test('CLI analyze accepts --base and --head git merge-base diff input', async ()
   assert.deepEqual(report.changedFiles, ['src/auth/session.ts']);
   assert.equal(report.changedFiles.includes('README.md'), false);
   assert.ok(report.affectedFiles.some((file) => file.path === 'src/routes/private.ts'));
+});
+
+test('CLI analyze --json prints report without persisting, while default analyze persists', async () => {
+  const repoRoot = await makeFixtureRepo();
+  await initProject({ repoRoot });
+  await indexProject({ repoRoot });
+
+  assert.equal(reportRowCount(repoRoot), 0);
+
+  const jsonResult = spawnSync(
+    process.execPath,
+    ['--import', tsxLoaderPath, path.resolve('src/cli.ts'), 'analyze', '--changed', 'src/auth/session.ts', '--json'],
+    {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      env: { ...process.env, PARALLAX_EMBEDDING_MODEL: 'stub-sha256' }
+    }
+  );
+  assert.equal(jsonResult.status, 1, jsonResult.stderr);
+  const report = JSON.parse(jsonResult.stdout) as { changedFiles: string[]; reportPath?: string };
+  assert.deepEqual(report.changedFiles, ['src/auth/session.ts']);
+  assert.equal(report.reportPath, undefined);
+  assert.equal(reportRowCount(repoRoot), 0);
+
+  const defaultResult = spawnSync(
+    process.execPath,
+    ['--import', tsxLoaderPath, path.resolve('src/cli.ts'), 'analyze', '--changed', 'src/auth/session.ts'],
+    {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      env: { ...process.env, PARALLAX_EMBEDDING_MODEL: 'stub-sha256' }
+    }
+  );
+  assert.equal(defaultResult.status, 1, defaultResult.stderr);
+  assert.match(defaultResult.stdout, /Impact report/);
+  assert.equal(reportRowCount(repoRoot), 1);
 });
 
 test('remember populates fact_embeddings (model, vector, dim) for non-redacted facts', async () => {

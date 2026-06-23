@@ -3,7 +3,7 @@
   "$id": "https://raw.githubusercontent.com/YouSangSon/Parallax/main/schemas/impact-report.schema.json",
   "title": "Parallax Impact Report",
   "description": "Schema for `parallax analyze --json` output (ImpactReport).",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "object",
   "properties": {
     "id": {

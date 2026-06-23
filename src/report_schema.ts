@@ -11,7 +11,7 @@ import { z } from 'zod';
  */
 
 /** Bump (semver) whenever the emitted report shape changes. */
-export const IMPACT_REPORT_SCHEMA_VERSION = '1.0.0';
+export const IMPACT_REPORT_SCHEMA_VERSION = '1.1.0';
 
 const SCHEMA_ID =
   'https://raw.githubusercontent.com/YouSangSon/Parallax/main/schemas/impact-report.schema.json';

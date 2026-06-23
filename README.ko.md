@@ -61,7 +61,7 @@ parallax analyze --changed src/auth/session.ts --depth 2
 git diff 범위를 그대로 분석할 수도 있다.
 
 ```bash
-parallax analyze --base main --head HEAD --json
+parallax analyze --base main --head HEAD
 ```
 
 Markdown report는 repo-local 경로에 저장된다.
@@ -69,6 +69,8 @@ Markdown report는 repo-local 경로에 저장된다.
 ```text
 .parallax/reports/
 ```
+
+기계 판독용 stdout만 필요하면 `--json`을 사용한다. JSON 출력은 저장되지 않는다.
 
 로컬 UI로 최신 report를 바로 열 수 있다.
 

@@ -55,6 +55,7 @@
     "dist/src",
     "README.md",
     "docs",
+    "!docs/superpowers/plans",
     "schemas"
   ],
   "devDependencies": {

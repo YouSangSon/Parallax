@@ -43,7 +43,7 @@ test('package exports only the public module entrypoint and metadata', async () 
     packageJson.scripts?.['test:install-smoke'],
     'npm run build && node dist/src/cli.js --help'
   );
-  assert.deepEqual(packageJson.files, ['dist/src', 'README.md', 'docs', 'schemas']);
+  assert.deepEqual(packageJson.files, ['dist/src', 'README.md', 'docs', '!docs/superpowers/plans', 'schemas']);
   assert.equal(packageJson.files?.includes('dist'), false);
   assert.equal(packageJson.files?.includes('schemas'), true);
 });

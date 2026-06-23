@@ -191,6 +191,7 @@ async function main(): Promise<void> {
       repoRoot,
       changedFiles,
       writeReport: !args.includes('--json'),
+      persistReport: !args.includes('--json'),
       ...(maxDepth === undefined ? {} : { maxDepth }),
       ...(maxFanout === undefined ? {} : { maxFanout })
     });

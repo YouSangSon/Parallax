@@ -132,23 +132,26 @@ Larger bets (L) that change the tool's ceiling: **A1** (TS TypeChecker), **A3** 
 ## Larger-bet reassessment (2026-06-21)
 
 The quick-win layer has largely shipped (A5, M1, M2, M3 + co-change context fold,
-M6, D3, S2-pragmas), so the "do these after quick wins" precondition is **half**
-met: the wins landed, but the **bench guardrail did not** (S4 perf bench + D2
-feature bench are still open). Every larger bet is a structural change to the
-determinism/honesty core, so guarding must come first.
+M6, D3, S2-pragmas), and the first S4 perf measurement guardrail now exists via
+`bench:perf`. The remaining gap is narrower: D2 feature bench coverage is still
+open, and S4 still needs standard large-scale baselines plus peak-RSS capture.
+Every larger bet is a structural change to the determinism/honesty core, so
+guarding must keep moving first.
 
 Reassessed order across the four L bets:
 
 1. **Lay the guardrail — S4 first, then D2 (prerequisite, not optional).** S1/A1
    both move the indexer's cost and output; without a guard their regressions
    land invisibly. Two evidence-based refinements after re-checking the code:
-   - **S4 (perf bench) is the genuine gap and the higher-value half.** There is
-     no perf/scale measurement anywhere, and it is the specific guard S1 needs.
-     Caveat: timing/peak-RSS are **inherently non-deterministic**, so S4 cannot
-     fold into `ImpactBenchReport` (its `tests/impact-bench.test.ts` asserts a
-     byte-identical, path-free report across runs). S4 must be a **separate
-     perf-bench path** (e.g. `bench:perf`) over a deterministic synthetic-repo
-     generator, publishing thresholds — not exact millisecond values.
+   - **S4 (perf bench) is partially shipped and remains the higher-value half.**
+     `bench:perf` now measures full initial index, no-op incremental index,
+     edited-file incremental index, analyze-without-persist, and
+     analyze-with-persist phases over a deterministic synthetic repo. Caveat:
+     timing/peak-RSS are **inherently non-deterministic**, so S4 remains separate
+     from `ImpactBenchReport` (its `tests/impact-bench.test.ts` asserts a
+     byte-identical, path-free report across runs). Still open: standard 10k/50k
+     scale baselines, peak-RSS capture, and published threshold guidance rather
+     than exact millisecond assertions.
    - **D2's marginal value is lower than the catalog implies.** All four
      "thinly benched" features already have unit/integration coverage in the
      verify gate (`trace-promotion-index`, `cross-repo-resolver`,

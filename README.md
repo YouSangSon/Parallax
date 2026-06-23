@@ -61,7 +61,7 @@ parallax analyze --changed src/auth/session.ts --depth 2
 Or analyze a git diff range directly:
 
 ```bash
-parallax analyze --base main --head HEAD --json
+parallax analyze --base main --head HEAD
 ```
 
 Markdown reports are saved to a repo-local path:
@@ -69,6 +69,8 @@ Markdown reports are saved to a repo-local path:
 ```text
 .parallax/reports/
 ```
+
+Use `--json` when you want machine-readable stdout only; JSON output is not persisted.
 
 Open the latest report in the local UI:
 

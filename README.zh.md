@@ -61,7 +61,7 @@ parallax analyze --changed src/auth/session.ts --depth 2
 也可以直接分析一个 git diff 范围：
 
 ```bash
-parallax analyze --base main --head HEAD --json
+parallax analyze --base main --head HEAD
 ```
 
 Markdown 报告保存在仓库本地路径：
@@ -69,6 +69,8 @@ Markdown 报告保存在仓库本地路径：
 ```text
 .parallax/reports/
 ```
+
+需要仅输出机器可读 stdout 时使用 `--json`；JSON 输出不会持久化。
 
 用本地 UI 直接打开最新报告：
 

@@ -51,6 +51,20 @@ async function writeConsumerClient(repoRoot: string, routePath: string): Promise
   );
 }
 
+async function writeConsumerClientForRoutes(repoRoot: string, routePaths: string[]): Promise<void> {
+  await writeFile(
+    path.join(repoRoot, 'src/client.ts'),
+    [
+      'export async function loadResources() {',
+      '  return Promise.all([',
+      ...routePaths.map((routePath) => `    fetch("https://users.example.test${routePath}"),`),
+      '  ]);',
+      '}',
+      ''
+    ].join('\n')
+  );
+}
+
 async function writeProtobufContract(
   repoRoot: string,
   options: {
@@ -1682,6 +1696,44 @@ async function setupProviderOwnedWorkspaceWithBreakingOpenApiLink(): Promise<{
   return { consumerRoot, providerRoot };
 }
 
+async function setupProviderOwnedWorkspaceWithBreakingOpenApiLinks(routePaths: string[]): Promise<{
+  consumerRoot: string;
+  providerRoot: string;
+}> {
+  const consumerRoot = await makeRepo('parallax-primary-impact-consumer-');
+  const providerRoot = await makeRepo('parallax-primary-impact-provider-');
+  await writeConsumerClientForRoutes(consumerRoot, routePaths);
+  await writeOpenApiContract(providerRoot, [...routePaths, '/api/status']);
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+
+  initWorkspace({ repoRoot: providerRoot, name: 'platform', serviceName: 'users-api' });
+  addWorkspaceRepo({
+    repoRoot: providerRoot,
+    workspaceName: 'platform',
+    localPath: consumerRoot,
+    serviceName: 'web'
+  });
+  const resolved = resolveCrossRepoContracts({ repoRoot: providerRoot, workspaceName: 'platform' });
+  assert.equal(resolved.links.length, routePaths.length);
+
+  await writeOpenApiContract(providerRoot, ['/api/status']);
+  const diff = analyzeContractDiff({
+    repoRoot: providerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/openapi.yaml'
+  });
+  assert.equal(diff.summary.classification, 'breaking');
+  assert.equal(diff.summary.breakingChangeCount, routePaths.length);
+  assert.equal(diff.summary.impactedConsumerCount, routePaths.length);
+
+  return { consumerRoot, providerRoot };
+}
+
 async function setupWorkspaceWithResolvedYamlSchemaContract(): Promise<{
   consumerRoot: string;
   providerRoot: string;
@@ -2516,6 +2568,70 @@ test('analyzeDiff surfaces persisted cross-repo breaking consumers for changed p
       && edge.source.includes('cross-repo')
       && edge.target.includes('openapi')
     ));
+  } finally {
+    await unlink(path.join(consumerRoot, '.parallax', 'workspace.json')).catch(() => undefined);
+  }
+});
+
+test('analyzeDiff preserves multiple cross-repo breaking changes in the same consumer file', async () => {
+  const { consumerRoot, providerRoot } = await setupProviderOwnedWorkspaceWithBreakingOpenApiLinks([
+    '/api/admin',
+    '/api/users'
+  ]);
+  try {
+    const report = await analyzeDiff({
+      repoRoot: providerRoot,
+      changedFiles: ['contracts/openapi.yaml']
+    });
+
+    assert.equal(report.crossRepoImpacts?.length, 2);
+    assert.deepEqual(
+      report.crossRepoImpacts?.map((impact) => impact.consumer.path),
+      ['src/client.ts', 'src/client.ts']
+    );
+    assert.deepEqual(
+      new Set(report.crossRepoImpacts?.map((impact) => impact.change.path)),
+      new Set(['/api/admin', '/api/users'])
+    );
+    assert.equal(
+      report.evidence.filter((item) => item.extractorId === 'cross-repo-contract-impact').length,
+      2
+    );
+  } finally {
+    await unlink(path.join(consumerRoot, '.parallax', 'workspace.json')).catch(() => undefined);
+  }
+});
+
+test('analyzeDiff sanitizes absolute evidence file paths from legacy cross-repo provenance', async () => {
+  const { consumerRoot, providerRoot } = await setupProviderOwnedWorkspaceWithBreakingOpenApiLink();
+  const absoluteEvidencePath = path.join(consumerRoot, 'src/client.ts');
+  const db = new DatabaseSync(databasePath(providerRoot));
+  try {
+    const rows = db
+      .prepare("SELECT id, provenance FROM cross_repo_links WHERE kind = 'BREAKS_COMPATIBILITY_WITH'")
+      .all() as Array<{ id: string; provenance: string }>;
+    const update = db.prepare('UPDATE cross_repo_links SET provenance = ? WHERE id = ?');
+    for (const row of rows) {
+      const provenance = JSON.parse(row.provenance) as { evidence: { filePath: string } };
+      provenance.evidence.filePath = absoluteEvidencePath;
+      update.run(JSON.stringify(provenance), row.id);
+    }
+  } finally {
+    db.close();
+  }
+
+  try {
+    const report = await analyzeDiff({
+      repoRoot: providerRoot,
+      changedFiles: ['contracts/openapi.yaml']
+    });
+
+    assert.equal(report.crossRepoImpacts?.length, 1);
+    assert.equal(report.crossRepoImpacts?.[0]?.evidence.filePath, 'web:src/client.ts');
+    assert.ok(!path.isAbsolute(report.crossRepoImpacts?.[0]?.evidence.filePath ?? ''));
+    const publicJson = JSON.stringify(report);
+    assert.ok(!publicJson.includes(consumerRoot));
+    assert.ok(!publicJson.includes(realpathSync(consumerRoot)));
   } finally {
     await unlink(path.join(consumerRoot, '.parallax', 'workspace.json')).catch(() => undefined);
   }

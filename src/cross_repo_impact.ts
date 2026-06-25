@@ -135,6 +135,7 @@ export function loadCrossRepoImpactsForChangedContract(
     const resources = workspaceResources(workspaceName);
     const publicProviderRepoPath = publicRepoPath(parsed.provider.repoPath);
     const publicConsumerRepoPath = publicRepoPath(parsed.consumer.repoPath);
+    const publicEvidenceFilePath = publicFilePath(parsed.evidence.filePath, displayPath);
     const evidenceId = createHash('sha1')
       .update(`${row.id}:${displayPath}:BREAKS_COMPATIBILITY_WITH:${providerDisplayPath}`)
       .digest('hex')
@@ -155,7 +156,7 @@ export function loadCrossRepoImpactsForChangedContract(
       change: parsed.change,
       confidence,
       evidence: {
-        filePath: parsed.evidence.filePath,
+        filePath: publicEvidenceFilePath,
         snippet: parsed.evidence.snippet
       },
       resources: {
@@ -287,13 +288,18 @@ function publicRepoPath(repoPath: string | undefined): string | undefined {
   return repoPath;
 }
 
+function publicFilePath(filePath: string, fallbackDisplayPath: string): string {
+  return path.isAbsolute(filePath) ? fallbackDisplayPath : filePath;
+}
+
 function dedupeCandidates(candidates: CrossRepoImpactCandidate[]): CrossRepoImpactCandidate[] {
   const deduped = new Map<string, CrossRepoImpactCandidate>();
   for (const candidate of candidates.sort(compareCandidates)) {
     const key = [
       candidate.affectedFile.path,
       candidate.evidence.relationKind ?? candidate.evidence.kind,
-      candidate.evidence.target?.id ?? ''
+      candidate.evidence.target?.id ?? '',
+      candidate.evidence.id
     ].join('\0');
     if (!deduped.has(key)) deduped.set(key, candidate);
   }
@@ -303,5 +309,6 @@ function dedupeCandidates(candidates: CrossRepoImpactCandidate[]): CrossRepoImpa
 function compareCandidates(left: CrossRepoImpactCandidate, right: CrossRepoImpactCandidate): number {
   return left.affectedFile.path.localeCompare(right.affectedFile.path)
     || (left.evidence.relationKind ?? left.evidence.kind).localeCompare(right.evidence.relationKind ?? right.evidence.kind)
-    || (left.evidence.target?.id ?? '').localeCompare(right.evidence.target?.id ?? '');
+    || (left.evidence.target?.id ?? '').localeCompare(right.evidence.target?.id ?? '')
+    || left.evidence.id.localeCompare(right.evidence.id);
 }

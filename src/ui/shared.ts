@@ -75,6 +75,7 @@ export function topAffectedFilesForSummary(report: UiReportPreview): UiReportPre
 export function classifyImpactLane(pathValue: string, reason: string, actionTargets: ReadonlySet<string>): ImpactLane['id'] {
   const pathLower = pathValue.toLowerCase();
   const reasonLower = reason.toLowerCase();
+  if (/\bcross-repo\b/i.test(reasonLower) || reasonLower.includes('breaks_compatibility_with')) return 'crossRepo';
   if (actionTargets.has(pathValue) || isUiTestPath(pathLower)) return 'tests';
   if (isUiKnowledgePath(pathLower) || /\b(governs|documents|requires|proposes)\b/.test(reasonLower)) return 'knowledge';
   if (isUiContractPath(pathLower) || /\bcontract|endpoint|asyncapi|openapi|graphql|protobuf\b/.test(reasonLower)) return 'contracts';
@@ -134,7 +135,17 @@ export function impactEvidenceMatchesPath(item: UiEvidencePreview, pathValue: st
   return item.file === pathValue || item.subject?.path === pathValue || item.snippet.includes(pathValue);
 }
 
+export function isCrossRepoEvidence(item: UiEvidencePreview): boolean {
+  return item.extractorId === 'cross-repo-contract-impact';
+}
+
+export function isCrossRepoImpactPath(item: UiReportPreview['affectedFiles'][number]): boolean {
+  return /\bcross-repo\b/i.test(item.reason)
+    || item.relationPath?.some((part) => part.includes('BREAKS_COMPATIBILITY_WITH')) === true;
+}
+
 export function evidenceSourceLocation(item: UiEvidencePreview, context: SourceLinkContext = {}): SourceLocation | undefined {
+  if (isCrossRepoEvidence(item)) return undefined;
   if (!item.file || item.file.includes('\0')) return undefined;
   const line = item.startLine ?? 1;
   if (!Number.isInteger(line) || line < 1) return undefined;

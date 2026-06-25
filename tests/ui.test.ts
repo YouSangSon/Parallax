@@ -345,6 +345,31 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
   }
 });
 
+test('UI snapshot and HTML render cross-repo consumer impacts', async () => {
+  const { repoRoot, reportId } = await makeUiRepo();
+  try {
+    const crossRepoReportId = seedCrossRepoConsumerReport(repoRoot, reportId);
+
+    const snapshot = await buildUiSnapshot({ repoRoot, reportId: crossRepoReportId });
+    assert.equal(snapshot.selectedReportId, crossRepoReportId);
+    assert.equal(snapshot.selectedReport?.crossRepoImpacts.length, 1);
+
+    const html = renderUiHtml(snapshot);
+    assert.match(html, /Cross-repo consumers/);
+    assert.match(html, /web:src\/client\.ts/);
+    assert.match(html, /parallax:\/\/workspaces\/platform\/cross-repo-links/);
+    assert.doesNotMatch(html, /\/source\?path=web%3Asrc%2Fclient\.ts/);
+
+    const koHtml = renderUiHtml(snapshot, 'ko');
+    assert.match(koHtml, /교차 저장소 소비자/);
+
+    const zhHtml = renderUiHtml(snapshot, 'zh');
+    assert.match(zhHtml, /跨仓库消费者/);
+  } finally {
+    await rm(repoRoot, { recursive: true, force: true });
+  }
+});
+
 test('UI snapshot and HTML compare the selected report to the previous saved report', async () => {
   const { repoRoot, reportId } = await makeUiRepo();
   try {
@@ -780,6 +805,108 @@ function seedPreviousReportBaseline(repoRoot: string, currentReportId: string): 
     db.prepare('INSERT OR REPLACE INTO reports (id, repo_id, index_run_id, json, created_at) VALUES (?, ?, ?, ?, ?)')
       .run(baselineId, repoId, currentRow.index_run_id, JSON.stringify(baseline), '1999-01-01 00:00:00');
     return baselineId;
+  } finally {
+    db.close();
+  }
+}
+
+function seedCrossRepoConsumerReport(repoRoot: string, currentReportId: string): string {
+  const normalizedRepoRoot = normalizeRepoRoot(repoRoot);
+  const db = openDatabase(normalizedRepoRoot);
+  try {
+    const repoId = getRepoId(db, normalizedRepoRoot);
+    const currentRow = db
+      .prepare('SELECT index_run_id, json FROM reports WHERE repo_id = ? AND id = ?')
+      .get(repoId, currentReportId) as { index_run_id: number; json: string } | undefined;
+    assert.ok(currentRow);
+    const current = JSON.parse(currentRow.json) as ImpactReport;
+    const crossRepoReportId = `${currentReportId}-cross-repo`;
+    const consumerPath = 'web:src/client.ts';
+    const providerPath = 'users-api:contracts/openapi.yaml';
+    const relation = `${consumerPath} BREAKS_COMPATIBILITY_WITH ${providerPath}`;
+    const crossRepoReport: ImpactReport = {
+      ...current,
+      id: crossRepoReportId,
+      changedFiles: ['contracts/openapi.yaml'],
+      changed: [{
+        id: 'contract:openapi:users-api:contracts/openapi.yaml',
+        kind: 'contract',
+        path: 'contracts/openapi.yaml',
+        displayName: providerPath
+      }],
+      affectedFiles: [{
+        path: consumerPath,
+        reason: 'breaks cross-repo consumer web via contracts/openapi.yaml',
+        confidence: 'heuristic',
+        depth: 1,
+        relationPath: [relation]
+      }],
+      affected: [{
+        target: {
+          id: `cross-repo:platform:${consumerPath}`,
+          kind: 'external_entity',
+          path: consumerPath,
+          displayName: consumerPath
+        },
+        relations: [relation],
+        confidence: 'heuristic'
+      }],
+      actions: [],
+      testCommands: [],
+      evidence: [{
+        id: `cross-repo-evidence:${consumerPath}`,
+        file: consumerPath,
+        kind: 'BREAKS_COMPATIBILITY_WITH',
+        snippet: 'return fetch("https://users.example.test/api/users");',
+        confidence: 'heuristic',
+        startLine: 1,
+        subject: {
+          id: `cross-repo:platform:${consumerPath}`,
+          kind: 'external_entity',
+          path: consumerPath,
+          displayName: consumerPath
+        },
+        target: {
+          id: 'contract:openapi:users-api:contracts/openapi.yaml',
+          kind: 'contract',
+          path: 'contracts/openapi.yaml',
+          displayName: providerPath
+        },
+        relationKind: 'BREAKS_COMPATIBILITY_WITH',
+        relationConfidence: 'heuristic',
+        extractorId: 'cross-repo-contract-impact'
+      }],
+      crossRepoImpacts: [{
+        workspace: 'platform',
+        provider: {
+          serviceName: 'users-api',
+          contractPath: 'contracts/openapi.yaml'
+        },
+        consumer: {
+          serviceName: 'web',
+          path: 'src/client.ts'
+        },
+        change: {
+          kind: 'removed_endpoint',
+          method: 'GET',
+          path: '/api/users',
+          previousEndpointId: 'endpoint:yaml:GET /api/users'
+        },
+        confidence: 'heuristic',
+        evidence: {
+          filePath: consumerPath,
+          snippet: 'return fetch("https://users.example.test/api/users");'
+        },
+        resources: {
+          workspace: 'parallax://workspaces/platform',
+          crossRepoLinks: 'parallax://workspaces/platform/cross-repo-links'
+        }
+      }],
+      warnings: []
+    };
+    db.prepare('INSERT OR REPLACE INTO reports (id, repo_id, index_run_id, json, created_at) VALUES (?, ?, ?, ?, ?)')
+      .run(crossRepoReportId, repoId, currentRow.index_run_id, JSON.stringify(crossRepoReport), '1999-01-01 00:00:00');
+    return crossRepoReportId;
   } finally {
     db.close();
   }

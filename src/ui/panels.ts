@@ -25,6 +25,7 @@ import {
   entityLabel,
   escapeHtml,
   impactEvidenceMatchesPath,
+  isCrossRepoImpactPath,
   shortenMiddle,
   sourceHref,
   type SourceLinkContext,
@@ -236,6 +237,7 @@ export function buildImpactLanes(
     { id: 'code', label: m?.runtimeCode ?? 'Runtime code', count: 0, summary: m?.noSourceFilesAffected ?? 'No source files affected', tone: 'green' },
     { id: 'tests', label: m?.testsToVerify ?? 'Tests to verify', count: 0, summary: m?.noTestTargetDetected ?? 'No test target detected', tone: 'amber' },
     { id: 'knowledge', label: m?.docsPolicy ?? 'Docs & policy', count: 0, summary: m?.noKnowledgeArtifactAffected ?? 'No knowledge artifact affected', tone: 'teal' },
+    { id: 'crossRepo', label: m?.crossRepoLane ?? 'Cross-repo consumers', count: 0, summary: m?.noCrossRepoImpact ?? 'No cross-repo consumer impact', tone: 'red' },
     { id: 'contracts', label: m?.contractsLane ?? 'Contracts', count: 0, summary: m?.noApiContractAffected ?? 'No API contract affected', tone: 'red' },
     { id: 'config', label: m?.configInfra ?? 'Config & infra', count: 0, summary: m?.noConfigSurfaceAffected ?? 'No config surface affected', tone: 'blue' }
   ];
@@ -338,6 +340,9 @@ export function renderImpactPathRow(
     evidenceCount ? `${evidenceCount} evidence` : '',
     actionCommand ?? ''
   ].filter(Boolean).join(' ');
+  const sourceLink = isCrossRepoImpactPath(item)
+    ? ''
+    : `<a class="source-link" href="${escapeHtml(sourceHref(item.path, 1, sourceContext))}" target="_blank" rel="noreferrer">${escapeHtml(m.source)}</a>`;
 
   return `
     <li class="impact-row impact-path-row selectable-impact" tabindex="0" role="button" data-impact-path="${escapeHtml(item.path)}" data-filter-text="${escapeHtml(filterText)}">
@@ -349,7 +354,7 @@ export function renderImpactPathRow(
       <div class="impact-path-meta">
         <span class="badge confidence-${escapeHtml(item.confidence)}">${escapeHtml(item.confidence)}</span>
         <span class="evidence-pill">${escapeHtml(String(evidenceCount))} ${escapeHtml(m.evidence)}</span>
-        <a class="source-link" href="${escapeHtml(sourceHref(item.path, 1, sourceContext))}" target="_blank" rel="noreferrer">${escapeHtml(m.source)}</a>
+        ${sourceLink}
         ${actionCommand ? `<button class="copy-command" type="button" data-command="${escapeHtml(actionCommand)}" aria-label="${escapeHtml(`${m.ariaCopyVerifyForPrefix} ${item.path}`)}">${escapeHtml(m.copyVerify)}</button>` : ''}
       </div>
     </li>

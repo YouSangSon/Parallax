@@ -40,6 +40,12 @@ export const UI_CLIENT_JS = `    const snapshot = JSON.parse(document.getElement
       const endLine = Number.isInteger(evidence.endLine) && evidence.endLine > line ? evidence.endLine : undefined;
       return endLine ? 'L' + line + '-L' + endLine : 'L' + line;
     }
+    function isCrossRepoEvidence(evidence) {
+      return evidence?.extractorId === 'cross-repo-contract-impact';
+    }
+    function evidenceHasLocalSource(evidence) {
+      return !isCrossRepoEvidence(evidence) && typeof evidence?.file === 'string' && !evidence.file.includes('\\0');
+    }
     function actionCommandText(action) {
       if (!action?.command) return '';
       return [action.command, ...(action.args || [])].map(shellQuoteForUi).join(' ');
@@ -128,23 +134,30 @@ export const UI_CLIENT_JS = `    const snapshot = JSON.parse(document.getElement
         const meta = document.createElement('span');
         meta.textContent = item.kind + ' · ' + item.confidence;
         const line = Number.isInteger(item.startLine) && item.startLine > 0 ? item.startLine : 1;
-        const link = document.createElement('a');
-        link.className = 'source-link';
-        link.href = sourceHrefFor(item.file, line);
-        link.target = '_blank';
-        link.rel = 'noreferrer';
-        link.textContent = evidenceSourceLabel(item);
         const snippet = document.createElement('pre');
         snippet.textContent = String(item.snippet || '').length > 120
           ? String(item.snippet || '').slice(0, 117) + '...'
           : String(item.snippet || '');
-        row.append(file, meta, link, snippet);
+        row.append(file, meta);
+        if (evidenceHasLocalSource(item)) {
+          const link = document.createElement('a');
+          link.className = 'source-link';
+          link.href = sourceHrefFor(item.file, line);
+          link.target = '_blank';
+          link.rel = 'noreferrer';
+          link.textContent = evidenceSourceLabel(item);
+          row.append(link);
+        }
+        row.append(snippet);
         target.append(row);
       }
     }
     function laneLabelForImpact(item, hasCommand) {
       const pathLower = String(item?.path || '').toLowerCase();
       const reasonLower = String(item?.reason || '').toLowerCase();
+      if (/\\bcross-repo\\b/i.test(reasonLower) || reasonLower.includes('breaks_compatibility_with')) {
+        return uiMessage('crossRepoLane', 'Cross-repo consumers');
+      }
       if (hasCommand || /(^|\\/)(tests?|__tests__)\\/|(^|\\/)src\\/test\\//.test(pathLower) || /(\\.|-)(test|spec)\\.[cm]?[tj]sx?$/.test(pathLower)) {
         return uiMessage('testsToVerify', 'Tests to verify');
       }

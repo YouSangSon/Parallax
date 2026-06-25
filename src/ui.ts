@@ -64,7 +64,7 @@ export type UiServerOptions = UiOptions & {
   port?: number;
 };
 
-export type ImpactLaneId = 'code' | 'tests' | 'knowledge' | 'contracts' | 'config';
+export type ImpactLaneId = 'code' | 'tests' | 'knowledge' | 'contracts' | 'config' | 'crossRepo';
 export type ImpactLaneTone = 'green' | 'amber' | 'teal' | 'blue' | 'red';
 type ReportDeltaSummary = 'wider' | 'narrower' | 'unchanged';
 
@@ -106,6 +106,7 @@ export type UiReportPreview = UiReportSummary & {
   changed: ImpactReport['changed'];
   affectedFiles: ImpactReport['affectedFiles'];
   evidence: UiEvidencePreview[];
+  crossRepoImpacts: NonNullable<ImpactReport['crossRepoImpacts']>;
   adapterInsights: NonNullable<ImpactReport['adapterInsights']>;
   actions: ImpactAction[];
   warnings: string[];
@@ -543,9 +544,9 @@ type UiMessageKey =
   | 'blastRadius' | 'changedRoot' | 'affectedTargets' | 'nextVerification' | 'affectedTargetEmpty'
   | 'contextNode' | 'source' | 'target' | 'affectedTargetRole' | 'changedInput'
   | 'targets' | 'totalAffected' | 'totalTargets' | 'mappedPaths' | 'confidenceInline'
-  | 'runtimeCode' | 'testsToVerify' | 'docsPolicy' | 'contractsLane' | 'configInfra'
+  | 'runtimeCode' | 'testsToVerify' | 'docsPolicy' | 'contractsLane' | 'crossRepoLane' | 'configInfra'
   | 'noSourceFilesAffected' | 'noTestTargetDetected' | 'noKnowledgeArtifactAffected'
-  | 'noApiContractAffected' | 'noConfigSurfaceAffected' | 'moreAffected'
+  | 'noApiContractAffected' | 'noCrossRepoImpact' | 'noConfigSurfaceAffected' | 'moreAffected'
   | 'impactVerdict' | 'readyToVerify' | 'evidenceReady' | 'reviewBeforeChange'
   | 'needsEvidence' | 'commandReady' | 'noCommandShort'
   | 'backToWorkbench' | 'lineLabel'
@@ -617,10 +618,10 @@ const UI_MESSAGES: Record<UiLanguage, UiMessages> = {
     targets: 'targets', totalAffected: 'total affected', totalTargets: 'total targets',
     mappedPaths: 'mapped paths', confidenceInline: 'confidence',
     runtimeCode: 'Runtime code', testsToVerify: 'Tests to verify',
-    docsPolicy: 'Docs & policy', contractsLane: 'Contracts', configInfra: 'Config & infra',
+    docsPolicy: 'Docs & policy', contractsLane: 'Contracts', crossRepoLane: 'Cross-repo consumers', configInfra: 'Config & infra',
     noSourceFilesAffected: 'No source files affected', noTestTargetDetected: 'No test target detected',
     noKnowledgeArtifactAffected: 'No knowledge artifact affected',
-    noApiContractAffected: 'No API contract affected', noConfigSurfaceAffected: 'No config surface affected',
+    noApiContractAffected: 'No API contract affected', noCrossRepoImpact: 'No cross-repo consumer impact', noConfigSurfaceAffected: 'No config surface affected',
     moreAffected: 'more', impactVerdict: 'Impact verdict', readyToVerify: 'Ready to verify',
     evidenceReady: 'Evidence ready', reviewBeforeChange: 'Review before change',
     needsEvidence: 'Needs evidence', commandReady: 'command ready', noCommandShort: 'no command',
@@ -702,10 +703,10 @@ const UI_MESSAGES: Record<UiLanguage, UiMessages> = {
     targets: '대상', totalAffected: '전체 영향', totalTargets: '전체 대상',
     mappedPaths: '표시 경로', confidenceInline: '신뢰도',
     runtimeCode: '런타임 코드', testsToVerify: '검증할 테스트',
-    docsPolicy: '문서 및 정책', contractsLane: '계약', configInfra: '설정 및 인프라',
+    docsPolicy: '문서 및 정책', contractsLane: '계약', crossRepoLane: '교차 저장소 소비자', configInfra: '설정 및 인프라',
     noSourceFilesAffected: '영향받은 소스 파일 없음', noTestTargetDetected: '감지된 테스트 대상 없음',
     noKnowledgeArtifactAffected: '영향받은 지식 산출물 없음',
-    noApiContractAffected: '영향받은 API 계약 없음', noConfigSurfaceAffected: '영향받은 설정 표면 없음',
+    noApiContractAffected: '영향받은 API 계약 없음', noCrossRepoImpact: '교차 저장소 소비자 영향 없음', noConfigSurfaceAffected: '영향받은 설정 표면 없음',
     moreAffected: '추가', impactVerdict: '영향 판정', readyToVerify: '검증 준비됨',
     evidenceReady: '증거 준비됨', reviewBeforeChange: '변경 전 검토 필요',
     needsEvidence: '증거 필요', commandReady: '명령 준비됨', noCommandShort: '명령 없음',
@@ -787,10 +788,10 @@ const UI_MESSAGES: Record<UiLanguage, UiMessages> = {
     targets: '目标', totalAffected: '总受影响', totalTargets: '总目标',
     mappedPaths: '已绘制路径', confidenceInline: '置信度',
     runtimeCode: '运行时代码', testsToVerify: '需验证测试',
-    docsPolicy: '文档与策略', contractsLane: '契约', configInfra: '配置与基础设施',
+    docsPolicy: '文档与策略', contractsLane: '契约', crossRepoLane: '跨仓库消费者', configInfra: '配置与基础设施',
     noSourceFilesAffected: '无受影响源文件', noTestTargetDetected: '未检测到测试目标',
     noKnowledgeArtifactAffected: '无受影响知识产物',
-    noApiContractAffected: '无受影响 API 契约', noConfigSurfaceAffected: '无受影响配置表面',
+    noApiContractAffected: '无受影响 API 契约', noCrossRepoImpact: '无跨仓库消费者影响', noConfigSurfaceAffected: '无受影响配置表面',
     moreAffected: '更多', impactVerdict: '影响判定', readyToVerify: '可验证',
     evidenceReady: '证据就绪', reviewBeforeChange: '变更前需审查',
     needsEvidence: '需要证据', commandReady: '命令就绪', noCommandShort: '无命令',

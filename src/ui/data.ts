@@ -90,6 +90,7 @@ export function reportPreviewFromRow(row: ReportRow): UiReportPreview {
     changed: report.changed,
     affectedFiles: report.affectedFiles,
     evidence: evidencePreviewFromReport(report),
+    crossRepoImpacts: report.crossRepoImpacts ?? [],
     adapterInsights: report.adapterInsights ?? [],
     actions: report.actions,
     warnings: report.warnings ?? []

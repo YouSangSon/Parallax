@@ -2,7 +2,7 @@
 
 [English](2026-06-25-cross-repo-primary-impact-design.md) · **한국어** · [中文](2026-06-25-cross-repo-primary-impact-design.zh.md)
 
-**상태:** 설계 작성은 승인됨. 구현은 이 written spec 리뷰 후 별도 승인 필요.
+**상태:** 구현 승인됨. 구현 계획: `docs/superpowers/plans/2026-06-25-cross-repo-primary-impact.ko.md`.
 
 **백로그 항목:** W1, `analyzeDiff` 안의 cross-repo contract impact.
 

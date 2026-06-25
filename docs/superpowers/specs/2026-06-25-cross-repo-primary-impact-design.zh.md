@@ -2,7 +2,7 @@
 
 [English](2026-06-25-cross-repo-primary-impact-design.md) · [한국어](2026-06-25-cross-repo-primary-impact-design.ko.md) · **中文**
 
-**状态:** 已批准写设计。实现仍需要先审阅这份 written spec。
+**状态:** 已批准实施。实施计划：`docs/superpowers/plans/2026-06-25-cross-repo-primary-impact.zh.md`。
 
 **Backlog item:** W1，`analyzeDiff` 中的 cross-repo contract impact。
 

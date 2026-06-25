@@ -2,7 +2,7 @@
 
 **English** · [한국어](2026-06-25-cross-repo-primary-impact-design.ko.md) · [中文](2026-06-25-cross-repo-primary-impact-design.zh.md)
 
-**Status:** Approved for design. Implementation still requires review of this written spec.
+**Status:** Approved for implementation. Implementation plan: `docs/superpowers/plans/2026-06-25-cross-repo-primary-impact.md`.
 
 **Backlog item:** W1, cross-repo contract impact in `analyzeDiff`.
 

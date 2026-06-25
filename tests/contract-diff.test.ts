@@ -11,6 +11,8 @@ import { test } from 'node:test';
 import {
   addWorkspaceRepo,
   analyzeContractDiff,
+  analyzeDiff,
+  exportImpactGraph,
   indexProject,
   initProject,
   initWorkspace,
@@ -1643,6 +1645,43 @@ async function setupWorkspaceWithResolvedContract(): Promise<{
   };
 }
 
+async function setupProviderOwnedWorkspaceWithBreakingOpenApiLink(): Promise<{
+  consumerRoot: string;
+  providerRoot: string;
+}> {
+  const consumerRoot = await makeRepo('parallax-primary-impact-consumer-');
+  const providerRoot = await makeRepo('parallax-primary-impact-provider-');
+  await writeConsumerClient(consumerRoot, '/api/users');
+  await writeOpenApiContract(providerRoot, ['/api/users', '/api/status']);
+
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+
+  initWorkspace({ repoRoot: providerRoot, name: 'platform', serviceName: 'users-api' });
+  addWorkspaceRepo({
+    repoRoot: providerRoot,
+    workspaceName: 'platform',
+    localPath: consumerRoot,
+    serviceName: 'web'
+  });
+  const resolved = resolveCrossRepoContracts({ repoRoot: providerRoot, workspaceName: 'platform' });
+  assert.equal(resolved.links.length, 1);
+
+  await writeOpenApiContract(providerRoot, ['/api/status']);
+  const diff = analyzeContractDiff({
+    repoRoot: providerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/openapi.yaml'
+  });
+  assert.equal(diff.summary.classification, 'breaking');
+  assert.equal(diff.summary.impactedConsumerCount, 1);
+
+  return { consumerRoot, providerRoot };
+}
+
 async function setupWorkspaceWithResolvedYamlSchemaContract(): Promise<{
   consumerRoot: string;
   providerRoot: string;
@@ -2412,6 +2451,107 @@ test('analyzeContractDiff classifies removed OpenAPI endpoints as breaking and l
   ]);
   assert.equal(cliRun.status, 0, `workspace contract-diff failed: ${cliRun.stderr}`);
   assert.deepEqual(JSON.parse(cliRun.stdout), result);
+});
+
+test('analyzeDiff surfaces persisted cross-repo breaking consumers for changed provider contracts', async () => {
+  const { consumerRoot, providerRoot } = await setupProviderOwnedWorkspaceWithBreakingOpenApiLink();
+  try {
+    const report = await analyzeDiff({
+      repoRoot: providerRoot,
+      changedFiles: ['contracts/openapi.yaml'],
+      writeReport: true
+    });
+
+    assert.equal(report.crossRepoImpacts?.length, 1);
+    const impact = report.crossRepoImpacts?.[0];
+    assert.equal(impact?.workspace, 'platform');
+    assert.equal(impact?.provider.serviceName, 'users-api');
+    assert.equal(impact?.provider.contractPath, 'contracts/openapi.yaml');
+    assert.equal(impact?.provider.repoPath, undefined);
+    assert.equal(impact?.consumer.serviceName, 'web');
+    assert.equal(impact?.consumer.path, 'src/client.ts');
+    assert.equal(impact?.consumer.repoPath, undefined);
+    assert.deepEqual(impact?.change, {
+      kind: 'removed_endpoint',
+      method: 'GET',
+      path: '/api/users',
+      previousEndpointId: 'endpoint:yaml:GET /api/users'
+    });
+    assert.equal(impact?.resources?.workspace, 'parallax://workspaces/platform');
+    assert.equal(impact?.resources?.crossRepoLinks, 'parallax://workspaces/platform/cross-repo-links');
+
+    const affected = report.affectedFiles.find((item) => item.path === 'web:src/client.ts');
+    assert.ok(affected);
+    assert.equal(affected.reason, 'breaks cross-repo consumer web via contracts/openapi.yaml');
+    assert.equal(affected.confidence, 'heuristic');
+    assert.equal(affected.depth, 1);
+    assert.deepEqual(affected.relationPath, [
+      'web:src/client.ts BREAKS_COMPATIBILITY_WITH users-api:contracts/openapi.yaml'
+    ]);
+
+    const target = report.affected.find((item) => item.target.path === 'web:src/client.ts');
+    assert.equal(target?.target.kind, 'external_entity');
+    assert.equal(target?.confidence, 'heuristic');
+
+    const evidence = report.evidence.find((item) => item.extractorId === 'cross-repo-contract-impact');
+    assert.ok(evidence);
+    assert.equal(evidence.file, 'web:src/client.ts');
+    assert.equal(evidence.kind, 'BREAKS_COMPATIBILITY_WITH');
+    assert.equal(evidence.confidence, 'heuristic');
+    assert.equal(evidence.relationKind, 'BREAKS_COMPATIBILITY_WITH');
+    assert.equal(evidence.relationConfidence, 'heuristic');
+    assert.equal(evidence.subject?.kind, 'external_entity');
+    assert.equal(evidence.subject?.path, 'web:src/client.ts');
+    assert.equal(evidence.target?.kind, 'contract');
+    assert.equal(evidence.target?.path, 'contracts/openapi.yaml');
+    assert.match(evidence.snippet, /users\.example\.test\/api\/users/);
+
+    const graph = await exportImpactGraph({ repoRoot: providerRoot, reportId: report.id, format: 'json' });
+    const parsed = JSON.parse(graph.rendered) as {
+      edges: Array<{ source: string; target: string; kind: string; confidence: string }>;
+    };
+    assert.ok(parsed.edges.some((edge) =>
+      edge.kind === 'BREAKS_COMPATIBILITY_WITH'
+      && edge.confidence === 'heuristic'
+      && edge.source.includes('cross-repo')
+      && edge.target.includes('openapi')
+    ));
+  } finally {
+    await unlink(path.join(consumerRoot, '.parallax', 'workspace.json')).catch(() => undefined);
+  }
+});
+
+test('analyzeDiff skips malformed cross-repo breaking provenance with one warning', async () => {
+  const { providerRoot } = await setupProviderOwnedWorkspaceWithBreakingOpenApiLink();
+  const db = new DatabaseSync(databasePath(providerRoot));
+  try {
+    db.prepare("UPDATE cross_repo_links SET provenance = '{not-json' WHERE kind = 'BREAKS_COMPATIBILITY_WITH'").run();
+  } finally {
+    db.close();
+  }
+
+  const report = await analyzeDiff({
+    repoRoot: providerRoot,
+    changedFiles: ['contracts/openapi.yaml']
+  });
+
+  assert.equal(report.crossRepoImpacts, undefined);
+  assert.deepEqual(
+    report.warnings?.filter((warning) => warning.includes('malformed BREAKS_COMPATIBILITY_WITH')),
+    ['cross-repo impact: skipped 1 malformed BREAKS_COMPATIBILITY_WITH link']
+  );
+});
+
+test('analyzeDiff leaves non-contract changed files on the existing local path', async () => {
+  const { providerRoot } = await setupProviderOwnedWorkspaceWithBreakingOpenApiLink();
+  const report = await analyzeDiff({
+    repoRoot: providerRoot,
+    changedFiles: ['README.md']
+  });
+
+  assert.equal(report.crossRepoImpacts, undefined);
+  assert.ok(report.affectedFiles.every((item) => !item.path.startsWith('web:')));
+  assert.ok((report.warnings ?? []).every((warning) => !warning.includes('cross-repo impact')));
 });
 
 test('analyzeContractDiff treats added OpenAPI endpoints as non-breaking without creating breaking links', async () => {

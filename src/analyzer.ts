@@ -4,6 +4,7 @@ import path from 'node:path';
 
 import { PRODUCT_NAME } from './branding.js';
 import { asConfidence } from './confidence.js';
+import { loadCrossRepoImpactsForChangedContract } from './cross_repo_impact.js';
 import {
   entityKindForPath,
   isTestPath as isSharedTestPath,
@@ -16,6 +17,7 @@ import type {
   AdapterRunInsight,
   AnalyzeOptions,
   Confidence,
+  CrossRepoImpact,
   EntityKind,
   EntityRef,
   Evidence,
@@ -147,6 +149,7 @@ export async function analyzeDiff(options: AnalyzeOptions): Promise<ImpactReport
   }>();
   const evidence: Evidence[] = [];
   const warnings: string[] = [];
+  const crossRepoImpacts: CrossRepoImpact[] = [];
   const schemaFeatures = detectAnalyzerSchemaFeatures(db);
   if (schemaFeatures.gitSnapshotColumns) {
     appendGitSnapshotWarnings(db, repoId, indexRunId, repoRoot, warnings);
@@ -230,6 +233,36 @@ export async function analyzeDiff(options: AnalyzeOptions): Promise<ImpactReport
       evidence.push(row.evidence);
     }
 
+    const crossRepo = loadCrossRepoImpactsForChangedContract({
+      db,
+      repoRoot,
+      repoId,
+      indexRunId,
+      changedFile
+    });
+    for (const candidate of crossRepo.candidates) {
+      const current = affected.get(candidate.affectedFile.path);
+      const next = {
+        path: candidate.affectedFile.path,
+        reason: candidate.affectedFile.reason,
+        confidence: candidate.affectedFile.confidence,
+        target: candidate.affectedTarget.target,
+        depth: candidate.affectedFile.depth ?? 1,
+        relationPath: candidate.affectedFile.relationPath ?? candidate.affectedTarget.relations
+      };
+      if (!current || isBetterImpact(next, current)) {
+        affected.set(candidate.affectedFile.path, next);
+      }
+      evidence.push(candidate.evidence);
+      crossRepoImpacts.push(candidate.impact);
+    }
+    if (crossRepo.malformedLinkCount > 0) {
+      warnings.push(
+        `cross-repo impact: skipped ${crossRepo.malformedLinkCount} malformed BREAKS_COMPATIBILITY_WITH link`
+        + `${crossRepo.malformedLinkCount === 1 ? '' : 's'}`
+      );
+    }
+
     evidence.push(makeEvidence(repoRoot, changedFile, 'changed-file', 'proven'));
   }
 
@@ -270,6 +303,7 @@ export async function analyzeDiff(options: AnalyzeOptions): Promise<ImpactReport
     actions,
     testCommands: actions,
     evidence: dedupeEvidence(evidence),
+    ...(crossRepoImpacts.length > 0 ? { crossRepoImpacts } : {}),
     ...(adapterInsights.length > 0 ? { adapterInsights } : {}),
     ...(warnings.length > 0 ? { warnings: [...new Set(warnings)].sort() } : {})
   };

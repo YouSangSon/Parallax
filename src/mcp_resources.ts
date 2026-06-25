@@ -7,6 +7,12 @@ import { getRepoId, latestCompletedIndexRun, openDatabase } from './store.js';
 import type { EntityRef, GraphExport, GraphExportFormat } from './types.js';
 import { listWorkspaces } from './workspace.js';
 import {
+  workspaceContractsResourceUri,
+  workspaceCrossRepoLinksResourceUri,
+  workspaceResourceUri,
+  workspaceResources
+} from './workspace_resources.js';
+import {
   compactEvidenceResource,
   errorMessage,
   evidenceSpanColumnSelect,
@@ -43,25 +49,7 @@ type WorkspaceCrossRepoLinkRow = {
   target_service: string;
 };
 
-function workspaceResourceUri(workspaceName: string): string {
-  return `parallax://workspaces/${encodeURIComponent(workspaceName)}`;
-}
-
-function workspaceContractsResourceUri(workspaceName: string): string {
-  return `${workspaceResourceUri(workspaceName)}/contracts`;
-}
-
-function workspaceCrossRepoLinksResourceUri(workspaceName: string): string {
-  return `${workspaceResourceUri(workspaceName)}/cross-repo-links`;
-}
-
-export function workspaceResources(workspaceName: string): { workspace: string; contracts: string; crossRepoLinks: string } {
-  return {
-    workspace: workspaceResourceUri(workspaceName),
-    contracts: workspaceContractsResourceUri(workspaceName),
-    crossRepoLinks: workspaceCrossRepoLinksResourceUri(workspaceName)
-  };
-}
+export { workspaceResources } from './workspace_resources.js';
 
 function selectMcpWorkspace(context: McpContext, workspaceName: string): ReturnType<typeof listWorkspaces>['workspaces'][number] {
   const workspace = listWorkspaces({ repoRoot: context.repoRoot, name: workspaceName }).workspaces[0];

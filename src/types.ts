@@ -181,6 +181,35 @@ export type IndexCoverageItem = {
   reason: string;
 };
 
+export type CrossRepoImpact = {
+  workspace: string;
+  provider: {
+    serviceName: string;
+    repoPath?: string;
+    contractPath: string;
+  };
+  consumer: {
+    serviceName: string;
+    repoPath?: string;
+    path: string;
+  };
+  change: {
+    kind: string;
+    method?: string;
+    path?: string;
+    previousEndpointId?: string;
+  };
+  confidence: Confidence;
+  evidence: {
+    filePath: string;
+    snippet: string;
+  };
+  resources?: {
+    workspace?: string;
+    crossRepoLinks?: string;
+  };
+};
+
 export type ImpactReport = {
   id: string;
   indexRunId: number;
@@ -194,6 +223,7 @@ export type ImpactReport = {
    */
   testCommands: ImpactAction[];
   evidence: Evidence[];
+  crossRepoImpacts?: CrossRepoImpact[];
   adapterInsights?: AdapterRunInsight[];
   warnings?: string[];
   reportPath?: string;

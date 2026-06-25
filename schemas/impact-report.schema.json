@@ -3,7 +3,7 @@
   "$id": "https://raw.githubusercontent.com/YouSangSon/Parallax/main/schemas/impact-report.schema.json",
   "title": "Parallax Impact Report",
   "description": "Schema for `parallax analyze --json` output (ImpactReport).",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "type": "object",
   "properties": {
     "id": {
@@ -558,6 +558,122 @@
           "kind",
           "snippet",
           "confidence"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "crossRepoImpacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "object",
+            "properties": {
+              "serviceName": {
+                "type": "string"
+              },
+              "repoPath": {
+                "type": "string"
+              },
+              "contractPath": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "serviceName",
+              "contractPath"
+            ],
+            "additionalProperties": false
+          },
+          "consumer": {
+            "type": "object",
+            "properties": {
+              "serviceName": {
+                "type": "string"
+              },
+              "repoPath": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "serviceName",
+              "path"
+            ],
+            "additionalProperties": false
+          },
+          "change": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "method": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "previousEndpointId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "additionalProperties": false
+          },
+          "confidence": {
+            "type": "string",
+            "enum": [
+              "proven",
+              "inferred",
+              "heuristic",
+              "unknown"
+            ]
+          },
+          "evidence": {
+            "type": "object",
+            "properties": {
+              "filePath": {
+                "type": "string"
+              },
+              "snippet": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "filePath",
+              "snippet"
+            ],
+            "additionalProperties": false
+          },
+          "resources": {
+            "type": "object",
+            "properties": {
+              "workspace": {
+                "type": "string"
+              },
+              "crossRepoLinks": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "workspace",
+          "provider",
+          "consumer",
+          "change",
+          "confidence",
+          "evidence"
         ],
         "additionalProperties": false
       }

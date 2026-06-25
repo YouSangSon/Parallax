@@ -11,7 +11,7 @@ import { z } from 'zod';
  */
 
 /** Bump (semver) whenever the emitted report shape changes. */
-export const IMPACT_REPORT_SCHEMA_VERSION = '1.2.0';
+export const IMPACT_REPORT_SCHEMA_VERSION = '1.3.0';
 
 const SCHEMA_ID =
   'https://raw.githubusercontent.com/YouSangSon/Parallax/main/schemas/impact-report.schema.json';
@@ -105,6 +105,35 @@ const adapterRunInsightSchema = z.object({
   errorSummary: z.string().optional()
 });
 
+const crossRepoImpactSchema = z.object({
+  workspace: z.string(),
+  provider: z.object({
+    serviceName: z.string(),
+    repoPath: z.string().optional(),
+    contractPath: z.string()
+  }),
+  consumer: z.object({
+    serviceName: z.string(),
+    repoPath: z.string().optional(),
+    path: z.string()
+  }),
+  change: z.object({
+    kind: z.string(),
+    method: z.string().optional(),
+    path: z.string().optional(),
+    previousEndpointId: z.string().optional()
+  }),
+  confidence: confidenceSchema,
+  evidence: z.object({
+    filePath: z.string(),
+    snippet: z.string()
+  }),
+  resources: z.object({
+    workspace: z.string().optional(),
+    crossRepoLinks: z.string().optional()
+  }).optional()
+});
+
 export const impactReportSchema = z.object({
   id: z.string(),
   indexRunId: z.number(),
@@ -115,6 +144,7 @@ export const impactReportSchema = z.object({
   actions: z.array(impactActionSchema),
   testCommands: z.array(impactActionSchema),
   evidence: z.array(evidenceSchema),
+  crossRepoImpacts: z.array(crossRepoImpactSchema).optional(),
   adapterInsights: z.array(adapterRunInsightSchema).optional(),
   warnings: z.array(z.string()).optional(),
   reportPath: z.string().optional()

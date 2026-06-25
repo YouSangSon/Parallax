@@ -54,6 +54,91 @@ test('the zod schema accepts a real `analyze --json` payload', async () => {
   }
 });
 
+test('the zod schema accepts optional cross-repo impact payloads', () => {
+  const report: ImpactReport = {
+    id: 'cross-repo-report',
+    indexRunId: 1,
+    changedFiles: ['contracts/openapi.yaml'],
+    affectedFiles: [{
+      path: 'web:src/client.ts',
+      reason: 'breaks cross-repo consumer web via contracts/openapi.yaml',
+      confidence: 'heuristic',
+      depth: 1,
+      relationPath: ['web:src/client.ts BREAKS_COMPATIBILITY_WITH users-api:contracts/openapi.yaml']
+    }],
+    changed: [{
+      id: 'file:contracts/openapi.yaml',
+      kind: 'file',
+      path: 'contracts/openapi.yaml',
+      displayName: 'contracts/openapi.yaml'
+    }],
+    affected: [{
+      target: {
+        id: 'external:cross-repo:web:src/client.ts',
+        kind: 'external_entity',
+        path: 'web:src/client.ts',
+        displayName: 'web:src/client.ts'
+      },
+      relations: ['web:src/client.ts BREAKS_COMPATIBILITY_WITH users-api:contracts/openapi.yaml'],
+      confidence: 'heuristic'
+    }],
+    actions: [],
+    testCommands: [],
+    evidence: [{
+      id: 'cross-repo:fixture',
+      file: 'web:src/client.ts',
+      kind: 'BREAKS_COMPATIBILITY_WITH',
+      snippet: 'return fetch("https://users.example.test/api/users");',
+      confidence: 'heuristic',
+      subject: {
+        id: 'external:cross-repo:web:src/client.ts',
+        kind: 'external_entity',
+        path: 'web:src/client.ts',
+        displayName: 'web:src/client.ts'
+      },
+      target: {
+        id: 'contract:openapi:users-api:contracts/openapi.yaml',
+        kind: 'contract',
+        path: 'contracts/openapi.yaml',
+        displayName: 'users-api:contracts/openapi.yaml'
+      },
+      relationKind: 'BREAKS_COMPATIBILITY_WITH',
+      relationConfidence: 'heuristic',
+      extractorId: 'cross-repo-contract-impact'
+    }],
+    crossRepoImpacts: [{
+      workspace: 'platform',
+      provider: {
+        serviceName: 'users-api',
+        contractPath: 'contracts/openapi.yaml'
+      },
+      consumer: {
+        serviceName: 'web',
+        path: 'src/client.ts'
+      },
+      change: {
+        kind: 'removed_endpoint',
+        method: 'GET',
+        path: '/api/users',
+        previousEndpointId: 'endpoint:yaml:GET /api/users'
+      },
+      confidence: 'heuristic',
+      evidence: {
+        filePath: 'src/client.ts',
+        snippet: 'return fetch("https://users.example.test/api/users");'
+      },
+      resources: {
+        workspace: 'parallax://workspaces/platform',
+        crossRepoLinks: 'parallax://workspaces/platform/cross-repo-links'
+      }
+    }]
+  };
+
+  const emitted = JSON.parse(JSON.stringify(report)) as unknown;
+  const parsed = impactReportSchema.safeParse(emitted);
+  assert.ok(parsed.success, `expected cross-repo report to validate; got ${JSON.stringify(parsed.error?.issues)}`);
+});
+
 test('the zod schema rejects an unknown confidence value', () => {
   // Arrange: a minimal-but-invalid report (confidence outside the enum).
   const invalid = {

@@ -72,6 +72,13 @@ export type {
   WorkspaceSummary,
   WorkspaceTrustPolicy
 } from './workspace.js';
+export {
+  workspaceContractsResourceUri,
+  workspaceCrossRepoLinksResourceUri,
+  workspaceResourceUri,
+  workspaceResources
+} from './workspace_resources.js';
+export type { WorkspaceResourceUris } from './workspace_resources.js';
 export { createMcpServer, serveMcp } from './mcp.js';
 export { buildUiSnapshot, renderUiHtml, startUiServer } from './ui.js';
 export type { UiContextPackSummary, UiCoverageSnapshot, UiGraphPreview, UiReportPreview, UiReportSummary, UiServerOptions, UiSnapshot } from './ui.js';
@@ -118,6 +125,7 @@ export type {
   ContextPackChangedEntity,
   ContextPackEvidence,
   ContextPackItem,
+  CrossRepoImpact,
   EntityKind,
   EntityRef,
   Evidence,

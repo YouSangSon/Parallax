@@ -13,6 +13,7 @@ import {
 } from '../work_artifacts.js';
 import { getRepoId, latestCompletedIndexRun, openDatabase } from '../store.js';
 import type { ImpactReport } from '../types.js';
+import { workspaceResourceUri, workspaceResources } from '../workspace_resources.js';
 import type {
   ReportRow,
   UiContextPackSummary,
@@ -401,21 +402,8 @@ export function readWorkspaceLinksForUi(
   };
 }
 
-export function workspaceResourceUri(workspaceName: string): string {
-  return `parallax://workspaces/${encodeURIComponent(workspaceName)}`;
-}
-
 export function entityResourceUri(entity: ImpactReport['changed'][number]): string {
   return `parallax://entities/${encodeURIComponent(entity.id)}`;
-}
-
-export function workspaceResources(workspaceName: string): UiWorkspaceSnapshot['resources'] {
-  const workspace = workspaceResourceUri(workspaceName);
-  return {
-    workspace,
-    contracts: `${workspace}/contracts`,
-    crossRepoLinks: `${workspace}/cross-repo-links`
-  };
 }
 
 export function parsedProvenance(value: string): unknown {

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { realpathSync } from 'node:fs';
-import { mkdir, mkdtemp, symlink, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, unlink, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -28,6 +28,17 @@ async function makeRepo(prefix: string): Promise<string> {
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
   await writeFile(path.join(repoRoot, 'README.md'), `${prefix}\n`);
   return repoRoot;
+}
+
+async function makeRepoAt(repoRoot: string, label: string): Promise<void> {
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'README.md'), `${label}\n`);
+}
+
+function assertPublicJsonExcludesPath(publicJson: string, privatePath: string): void {
+  const escapedPrivatePath = JSON.stringify(privatePath).slice(1, -1);
+  assert.ok(!publicJson.includes(privatePath), `public JSON leaked private path: ${privatePath}`);
+  assert.ok(!publicJson.includes(escapedPrivatePath), `public JSON leaked escaped private path: ${privatePath}`);
 }
 
 function runCli(repoRoot: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
@@ -2634,6 +2645,107 @@ test('analyzeDiff sanitizes absolute evidence file paths from legacy cross-repo 
     assert.ok(!publicJson.includes(realpathSync(consumerRoot)));
   } finally {
     await unlink(path.join(consumerRoot, '.parallax', 'workspace.json')).catch(() => undefined);
+  }
+});
+
+test('analyzeDiff sanitizes Windows absolute cross-repo paths from public report JSON', async () => {
+  const tempRoot = await mkdtemp(path.join(tmpdir(), 'parallax-windows-cross-repo-'));
+  const fakeWindowsProviderRepoPath = String.raw`C:\Users\alice\repo`;
+  const windowsConsumerRepoPath = String.raw`C:\Users\alice\consumer`;
+  const windowsEvidenceFilePath = String.raw`C:\Users\alice\consumer\src\client.ts`;
+
+  const providerRoot = path.join(tempRoot, 'provider');
+  const consumerRoot = path.join(tempRoot, 'consumer');
+  const windowsProviderRepoPath = process.platform === 'win32'
+    ? providerRoot
+    : fakeWindowsProviderRepoPath;
+  assert.ok(path.win32.isAbsolute(windowsProviderRepoPath));
+  assert.ok(path.win32.isAbsolute(windowsConsumerRepoPath));
+  assert.ok(path.win32.isAbsolute(windowsEvidenceFilePath));
+  assert.equal(path.relative(tempRoot, providerRoot), 'provider');
+  assert.equal(path.relative(tempRoot, consumerRoot), 'consumer');
+
+  try {
+    await makeRepoAt(consumerRoot, 'windows-consumer');
+    await makeRepoAt(providerRoot, 'windows-provider');
+    if (process.platform !== 'win32') {
+      // Let the provider provenance stay Windows-looking while resolving to the portable temp repo.
+      await symlink(providerRoot, path.join(tempRoot, windowsProviderRepoPath), 'dir');
+    }
+    await writeConsumerClient(consumerRoot, '/api/users');
+    await writeOpenApiContract(providerRoot, ['/api/users', '/api/status']);
+
+    await initProject({ repoRoot: consumerRoot });
+    await initProject({ repoRoot: providerRoot });
+    await indexProject({ repoRoot: consumerRoot });
+    await indexProject({ repoRoot: providerRoot });
+
+    initWorkspace({ repoRoot: providerRoot, name: 'platform', serviceName: 'users-api' });
+    addWorkspaceRepo({
+      repoRoot: providerRoot,
+      workspaceName: 'platform',
+      localPath: consumerRoot,
+      serviceName: 'web'
+    });
+    const resolved = resolveCrossRepoContracts({ repoRoot: providerRoot, workspaceName: 'platform' });
+    assert.equal(resolved.links.length, 1);
+
+    await writeOpenApiContract(providerRoot, ['/api/status']);
+    const diff = analyzeContractDiff({
+      repoRoot: providerRoot,
+      workspaceName: 'platform',
+      providerServiceName: 'users-api',
+      contractPath: 'contracts/openapi.yaml'
+    });
+    assert.equal(diff.summary.classification, 'breaking');
+    assert.equal(diff.summary.impactedConsumerCount, 1);
+
+    const db = new DatabaseSync(databasePath(providerRoot));
+    try {
+      const rows = db
+        .prepare("SELECT id, provenance FROM cross_repo_links WHERE kind = 'BREAKS_COMPATIBILITY_WITH'")
+        .all() as Array<{ id: string; provenance: string }>;
+      const update = db.prepare('UPDATE cross_repo_links SET provenance = ? WHERE id = ?');
+      for (const row of rows) {
+        const provenance = JSON.parse(row.provenance) as {
+          consumer: { repoPath?: string };
+          provider: { repoPath?: string };
+          evidence: { filePath: string };
+        };
+        provenance.consumer.repoPath = windowsConsumerRepoPath;
+        provenance.provider.repoPath = windowsProviderRepoPath;
+        provenance.evidence.filePath = windowsEvidenceFilePath;
+        update.run(JSON.stringify(provenance), row.id);
+      }
+    } finally {
+      db.close();
+    }
+
+    const originalCwd = process.cwd();
+    const report = await (async () => {
+      try {
+        process.chdir(tempRoot);
+        return await analyzeDiff({
+          repoRoot: providerRoot,
+          changedFiles: ['contracts/openapi.yaml']
+        });
+      } finally {
+        process.chdir(originalCwd);
+      }
+    })();
+
+    assert.equal(report.crossRepoImpacts?.length, 1);
+    const impact = report.crossRepoImpacts?.[0];
+    assert.equal(impact?.provider.repoPath, undefined);
+    assert.equal(impact?.consumer.repoPath, undefined);
+    assert.equal(impact?.evidence.filePath, 'web:src/client.ts');
+
+    const publicJson = JSON.stringify(report);
+    assertPublicJsonExcludesPath(publicJson, windowsProviderRepoPath);
+    assertPublicJsonExcludesPath(publicJson, windowsConsumerRepoPath);
+    assertPublicJsonExcludesPath(publicJson, windowsEvidenceFilePath);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
   }
 });
 

@@ -284,12 +284,16 @@ function providerRepoMatches(providerRepoPath: string | undefined, repoRoot: str
 }
 
 function publicRepoPath(repoPath: string | undefined): string | undefined {
-  if (!repoPath || path.isAbsolute(repoPath)) return undefined;
+  if (!repoPath || isAbsolutePath(repoPath)) return undefined;
   return repoPath;
 }
 
 function publicFilePath(filePath: string, fallbackDisplayPath: string): string {
-  return path.isAbsolute(filePath) ? fallbackDisplayPath : filePath;
+  return isAbsolutePath(filePath) ? fallbackDisplayPath : filePath;
+}
+
+function isAbsolutePath(value: string): boolean {
+  return path.isAbsolute(value) || path.win32.isAbsolute(value);
 }
 
 function dedupeCandidates(candidates: CrossRepoImpactCandidate[]): CrossRepoImpactCandidate[] {

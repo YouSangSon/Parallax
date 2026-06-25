@@ -27,8 +27,9 @@ Continue this goal until the broad objective is genuinely complete:
 
 ## Operating Rules
 
-- Before starting the next implementation slice, present the design/spec and get
-  user approval because `superpowers:brainstorming` is part of the active goal.
+- Follow the current gate in `.superpowers/sdd/CLAUDE_HANDOFF.md`. If that
+  handoff says the design/spec is approved and an implementation plan exists,
+  continue from the named plan instead of restarting discovery.
 - Preserve user changes. Do not reset, checkout, or remove files unless the user
   explicitly asks.
 - Keep finished slices verified and push only when the user has approved that

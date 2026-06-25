@@ -20,8 +20,8 @@ Continue this goal until the broad objective is genuinely complete:
 
 - Repo: current checkout
 - Branch: `main`
-- Latest completed and pushed commit: `199589a fix(graph): make saved report exports immutable`
-- `main` was even with `origin/main` when this handoff entry point was created.
+- Use `git status --short --branch` and `git log --oneline --decorate -5` to
+  confirm the current local and remote commit state.
 - `.superpowers/` is local-only and ignored by git, but it contains the detailed
   progress and Claude handoff files for this ongoing goal.
 

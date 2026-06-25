@@ -83,8 +83,8 @@ and analyzer traversal is N+1 per frontier node.
 ## 4. Workspace, contracts & cross-repo
 
 A cross-repo workspace catalog, provider↔consumer resolver, and OpenAPI/GraphQL/Protobuf/AsyncAPI
-breaking-change diff exist. The contract nested-schema *traversal* already exists; the field-level
-fidelity and the integration into the primary report are the gaps.
+breaking-change diff exist. W1 now surfaces persisted breaking workspace links in the primary report;
+remaining work deepens link consistency, contract fidelity, package modeling, and agent-facing tools.
 
 | # | Opportunity | Effort | Value |
 | :-- | :-- | :-- | :-- |
@@ -95,7 +95,7 @@ fidelity and the integration into the primary report are the gaps.
 | W5 | **JSON Schema (and Avro) contract kinds** — contract kinds are hardcoded to four; the OpenAPI object-schema signature is ~90% of a JSON Schema diff already. Add a `json-schema` kind reusing it (one synthetic endpoint per top-level schema); Avro as a mechanical follow-on. | S (JSON Schema) / M (Avro) | MED |
 | W6 | **Cross-repo resolve + reverse-consumer MCP tools** — agents can read pre-computed links but cannot trigger resolution or ask "who consumes provider X". Add read-only `resolve_cross_repo_contracts` and `cross_repo_consumers` (confirm against I-8). | S | MED |
 
-**Sequencing:** W6 (cheap) → W1 / W2 (most user-visible per effort) → W4 / W5 (deepen the diff) → W3 (biggest scope, monorepo users).
+**Sequencing remaining work:** W6 (cheap) → W2 (highest user-visible consistency gap) → W4 / W5 (deepen the diff) → W3 (biggest scope, monorepo users). W1 is already shipped.
 
 ---
 

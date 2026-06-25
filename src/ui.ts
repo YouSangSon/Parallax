@@ -128,11 +128,15 @@ export type UiReportComparison = {
   actionDelta: number;
   addedAffectedPaths: string[];
   removedAffectedPaths: string[];
+  addedAffectedFiles: UiReportComparisonAffectedFile[];
+  removedAffectedFiles: UiReportComparisonAffectedFile[];
   addedActionTargets: string[];
   removedActionTargets: string[];
   confidenceDeltas: UiReportComparisonBucket[];
   laneDeltas: UiReportComparisonLane[];
 };
+
+export type UiReportComparisonAffectedFile = UiReportPreview['affectedFiles'][number];
 
 export type UiReportComparisonBucket = {
   label: string;
@@ -462,6 +466,8 @@ function reportComparisonFromRows(
   const previous = reportPreviewFromRow(previousRow);
   const currentAffectedPaths = new Set(current.affectedFiles.map((item) => item.path));
   const previousAffectedPaths = new Set(previous.affectedFiles.map((item) => item.path));
+  const addedAffectedFiles = sortedAffectedFileDifference(current.affectedFiles, previousAffectedPaths);
+  const removedAffectedFiles = sortedAffectedFileDifference(previous.affectedFiles, currentAffectedPaths);
   const currentActionTargets = actionTargetLabels(current.actions);
   const previousActionTargets = actionTargetLabels(previous.actions);
   const currentLoad = reportReviewLoad(current, policy);
@@ -487,8 +493,10 @@ function reportComparisonFromRows(
     affectedDelta: current.affectedCount - previous.affectedCount,
     evidenceDelta: current.evidenceCount - previous.evidenceCount,
     actionDelta: current.actionCount - previous.actionCount,
-    addedAffectedPaths: sortedSetDifference(currentAffectedPaths, previousAffectedPaths),
-    removedAffectedPaths: sortedSetDifference(previousAffectedPaths, currentAffectedPaths),
+    addedAffectedPaths: addedAffectedFiles.map((item) => item.path),
+    removedAffectedPaths: removedAffectedFiles.map((item) => item.path),
+    addedAffectedFiles,
+    removedAffectedFiles,
     addedActionTargets: sortedSetDifference(currentActionTargets, previousActionTargets),
     removedActionTargets: sortedSetDifference(previousActionTargets, currentActionTargets),
     confidenceDeltas: ['proven', 'inferred', 'heuristic', 'unknown'].map((label) =>
@@ -521,6 +529,15 @@ function actionTargetLabels(actions: readonly ImpactAction[]): Set<string> {
 
 function sortedSetDifference(left: ReadonlySet<string>, right: ReadonlySet<string>): string[] {
   return [...left].filter((item) => !right.has(item)).sort((a, b) => a.localeCompare(b));
+}
+
+function sortedAffectedFileDifference(
+  affectedFiles: readonly UiReportPreview['affectedFiles'][number][],
+  excludedPaths: ReadonlySet<string>
+): UiReportComparisonAffectedFile[] {
+  return affectedFiles
+    .filter((item) => !excludedPaths.has(item.path))
+    .sort((a, b) => a.path.localeCompare(b.path));
 }
 
 export type UiLanguage = 'en' | 'ko' | 'zh';

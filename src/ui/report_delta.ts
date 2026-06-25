@@ -3,10 +3,11 @@
 // Functions moved verbatim. Type-only imports from ui.ts are erased at compile
 // time, so there is no runtime import cycle; runtime helpers come from shared.ts.
 
-import { escapeHtml, sourceHref, type SourceLinkContext } from './shared.js';
+import { escapeHtml, isCrossRepoImpactPath, sourceHref, type SourceLinkContext } from './shared.js';
 import type {
   UiMessages,
   UiReportComparison,
+  UiReportComparisonAffectedFile,
   UiReportComparisonBucket,
   UiReportDeltaPolicy,
   UiReportDeltaPolicyPreset,
@@ -56,8 +57,8 @@ export function renderReportDeltaPanel(
         <b>${escapeHtml(formatSignedDelta(item.delta))}</b>${escapeHtml(item.label)}
       </span>
     `).join('');
-  const addedRows = renderDeltaPathRows(comparison.addedAffectedPaths, 'added', m, sourceContext);
-  const removedRows = renderDeltaPathRows(comparison.removedAffectedPaths, 'removed', m, sourceContext);
+  const addedRows = renderDeltaPathRows(comparison.addedAffectedFiles ?? comparison.addedAffectedPaths, 'added', m, sourceContext);
+  const removedRows = renderDeltaPathRows(comparison.removedAffectedFiles ?? comparison.removedAffectedPaths, 'removed', m, sourceContext);
   const presetRows = comparison.policyPresets.map((preset) => `
     <li class="delta-preset delta-preset-${escapeHtml(preset.summary)}">
       <strong>${escapeHtml(preset.label)}</strong>
@@ -143,13 +144,19 @@ function copyCommandAttribute(value: string): string {
 }
 
 function renderDeltaPathRows(
-  paths: readonly string[],
+  paths: readonly (string | UiReportComparisonAffectedFile)[],
   mode: 'added' | 'removed',
   m: UiMessages,
   sourceContext: SourceLinkContext
 ): string {
-  return paths.slice(0, 4).map((pathValue) => {
-    const sourceLink = `<a class="source-link" href="${escapeHtml(sourceHref(pathValue, 1, sourceContext))}" target="_blank" rel="noreferrer">${escapeHtml(m.source)}</a>`;
+  return paths.slice(0, 4).map((item) => {
+    const pathValue = typeof item === 'string' ? item : item.path;
+    const isExternalImpact = typeof item === 'string'
+      ? isNonLocalImpactPath(pathValue)
+      : isCrossRepoImpactPath(item) || isNonLocalImpactPath(pathValue);
+    const sourceLink = isExternalImpact
+      ? ''
+      : `<a class="source-link" href="${escapeHtml(sourceHref(pathValue, 1, sourceContext))}" target="_blank" rel="noreferrer">${escapeHtml(m.source)}</a>`;
     if (mode === 'added') {
       return `
         <li class="delta-path-row selectable-impact" tabindex="0" role="button" data-impact-path="${escapeHtml(pathValue)}" data-filter-text="${escapeHtml(`added impact ${pathValue}`)}">
@@ -167,6 +174,10 @@ function renderDeltaPathRows(
       </li>
     `;
   }).join('');
+}
+
+function isNonLocalImpactPath(pathValue: string): boolean {
+  return pathValue.includes('\0') || /^[^/\\:]+:[^/\\]/.test(pathValue);
 }
 
 export function formatSignedDelta(delta: number): string {

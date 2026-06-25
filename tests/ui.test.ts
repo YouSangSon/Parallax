@@ -353,9 +353,13 @@ test('UI snapshot and HTML render cross-repo consumer impacts', async () => {
     const snapshot = await buildUiSnapshot({ repoRoot, reportId: crossRepoReportId });
     assert.equal(snapshot.selectedReportId, crossRepoReportId);
     assert.equal(snapshot.selectedReport?.crossRepoImpacts.length, 1);
+    assert.ok(snapshot.comparison?.addedAffectedPaths.includes('web:src/client.ts'));
 
     const html = renderUiHtml(snapshot);
     assert.match(html, /Cross-repo consumers/);
+    assert.match(html, /Impact Inspector[\s\S]*Cross-repo consumers · heuristic/);
+    assert.match(html, /map-node-lane-red[\s\S]*Cross-repo consumers[\s\S]*confidence-text-heuristic/);
+    assert.match(html, /Added impact[\s\S]*web:src\/client\.ts/);
     assert.match(html, /web:src\/client\.ts/);
     assert.match(html, /parallax:\/\/workspaces\/platform\/cross-repo-links/);
     assert.doesNotMatch(html, /\/source\?path=web%3Asrc%2Fclient\.ts/);
@@ -905,7 +909,7 @@ function seedCrossRepoConsumerReport(repoRoot: string, currentReportId: string):
       warnings: []
     };
     db.prepare('INSERT OR REPLACE INTO reports (id, repo_id, index_run_id, json, created_at) VALUES (?, ?, ?, ?, ?)')
-      .run(crossRepoReportId, repoId, currentRow.index_run_id, JSON.stringify(crossRepoReport), '1999-01-01 00:00:00');
+      .run(crossRepoReportId, repoId, currentRow.index_run_id, JSON.stringify(crossRepoReport), '2999-01-01 00:00:00');
     return crossRepoReportId;
   } finally {
     db.close();

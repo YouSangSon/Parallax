@@ -412,6 +412,7 @@ function uniqueImpactMapNodes(nodes: ImpactMapNode[]): ImpactMapNode[] {
 function impactLaneDisplay(id: ImpactLaneId, m?: UiMessages): Pick<ImpactLane, 'label' | 'tone'> {
   if (id === 'tests') return { label: m?.testsToVerify ?? 'Tests to verify', tone: 'amber' };
   if (id === 'knowledge') return { label: m?.docsPolicy ?? 'Docs & policy', tone: 'teal' };
+  if (id === 'crossRepo') return { label: m?.crossRepoLane ?? 'Cross-repo consumers', tone: 'red' };
   if (id === 'contracts') return { label: m?.contractsLane ?? 'Contracts', tone: 'red' };
   if (id === 'config') return { label: m?.configInfra ?? 'Config & infra', tone: 'blue' };
   return { label: m?.runtimeCode ?? 'Runtime code', tone: 'green' };
@@ -421,6 +422,7 @@ function impactPathLabel(item: UiReportPreview['affectedFiles'][number], actionT
   const lane = classifyImpactLane(item.path, item.reason, actionTargets);
   if (lane === 'tests') return 'VERIFY';
   if (lane === 'knowledge') return 'DOCUMENTS';
+  if (lane === 'crossRepo') return 'CROSS-REPO';
   if (lane === 'contracts') return 'CONTRACT';
   if (lane === 'config') return 'CONFIG';
   const relationCount = item.relationPath?.length ?? 0;

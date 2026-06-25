@@ -47,6 +47,8 @@ All registered tools use the `parallax_` prefix. This table is checked against t
 | `parallax_restore_branch` | Move an abandoned branch back to active and un-archive its transactions (idempotent) | No |
 | `parallax_trace` | Walk `fact_provenance` edges from a fact back through its evidence chain | Yes |
 
+`parallax_analyze_diff` returns the same `crossRepoImpacts` section as `parallax analyze` when matching workspace breaking links already exist. The MCP tool remains read-only with respect to workspace resolution; it surfaces persisted evidence and does not create new cross-repo links.
+
 ## MCP prompts
 
 Prompts are workflow templates (surfaced via `prompts/list` and fetched with `prompts/get`) that teach an agent how to chain the read-only tools into a coherent investigation. Each returns a user message sequencing analyze → context → query/co-change → remember, and biases toward high-confidence (proven > inferred > heuristic) signal. Both accept an optional `changedFiles` string.

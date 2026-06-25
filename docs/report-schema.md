@@ -11,11 +11,15 @@
 | Path | [`schemas/impact-report.schema.json`](../schemas/impact-report.schema.json) |
 | Dialect | JSON Schema draft 2020-12 |
 | `$id` | `https://raw.githubusercontent.com/YouSangSon/Parallax/main/schemas/impact-report.schema.json` |
-| `version` | semantic version of the report shape (currently `1.1.0`) |
+| `version` | semantic version of the report shape (currently `1.3.0`) |
 
 The schema describes the object emitted by `parallax analyze --json` (the `ImpactReport`): `id`, `indexRunId`, `changedFiles`, `affectedFiles`, `changed`, `affected`, `actions`, `evidence`, and the optional `adapterInsights` / `warnings`. Note that `--json` does not persist the report, so the optional `reportPath` field is absent from that output.
 
 The same artifact is published in the npm package, so packaged consumers can validate `report.json` without cloning the source checkout.
+
+### `crossRepoImpacts`
+
+Optional. Present when a changed provider contract matches persisted workspace `BREAKS_COMPATIBILITY_WITH` links. Each item includes `workspace`, `provider.serviceName`, `provider.contractPath`, `consumer.serviceName`, `consumer.path`, `change`, `confidence`, `evidence`, and `resources`. Absolute local repo paths are omitted from public report JSON.
 
 ## Validating output
 

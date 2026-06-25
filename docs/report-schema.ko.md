@@ -11,11 +11,15 @@
 | 경로 | [`schemas/impact-report.schema.json`](../schemas/impact-report.schema.json) |
 | Dialect | JSON Schema draft 2020-12 |
 | `$id` | `https://raw.githubusercontent.com/YouSangSon/Parallax/main/schemas/impact-report.schema.json` |
-| `version` | 리포트 형태의 시맨틱 버전(현재 `1.1.0`) |
+| `version` | 리포트 형태의 시맨틱 버전(현재 `1.3.0`) |
 
 이 스키마는 `parallax analyze --json`이 내보내는 객체(`ImpactReport`)를 기술한다: `id`, `indexRunId`, `changedFiles`, `affectedFiles`, `changed`, `affected`, `actions`, `evidence`, 그리고 선택적 `adapterInsights` / `warnings`. `--json`은 리포트를 저장하지 않으므로 선택 필드 `reportPath`는 이 출력에서 빠진다.
 
 같은 산출물은 npm package에도 포함되므로, packaged consumer는 source checkout 없이도 `report.json`을 검증할 수 있다.
+
+### `crossRepoImpacts`
+
+선택 필드. 변경된 provider contract가 저장된 workspace `BREAKS_COMPATIBILITY_WITH` link와 일치할 때 존재한다. 각 항목은 `workspace`, `provider.serviceName`, `provider.contractPath`, `consumer.serviceName`, `consumer.path`, `change`, `confidence`, `evidence`, `resources`를 포함한다. 절대 local repo path는 public report JSON에서 생략된다.
 
 ## 출력 검증
 

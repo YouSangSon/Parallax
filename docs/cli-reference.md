@@ -37,6 +37,8 @@ Flags:
 
 By default (no `--json`) the report is persisted and a short summary is printed; the report path is shown when written.
 
+When the changed file is an indexed provider contract and the workspace already contains persisted `BREAKS_COMPATIBILITY_WITH` links, `analyze` also includes `crossRepoImpacts`. These entries identify the consumer service, consumer file, provider contract, breaking change, confidence, evidence snippet, and workspace resource URIs. `analyze` does not run contract diff automatically; refresh links first with `parallax workspace contract-diff` when the workspace is stale.
+
 ## Graph
 
 | Command | Purpose |

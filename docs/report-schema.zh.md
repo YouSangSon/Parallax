@@ -11,11 +11,15 @@
 | 路径 | [`schemas/impact-report.schema.json`](../schemas/impact-report.schema.json) |
 | Dialect | JSON Schema draft 2020-12 |
 | `$id` | `https://raw.githubusercontent.com/YouSangSon/Parallax/main/schemas/impact-report.schema.json` |
-| `version` | 报告形态的语义化版本（当前为 `1.1.0`） |
+| `version` | 报告形态的语义化版本（当前为 `1.3.0`） |
 
 该 schema 描述 `parallax analyze --json` 输出的对象（`ImpactReport`）：`id`、`indexRunId`、`changedFiles`、`affectedFiles`、`changed`、`affected`、`actions`、`evidence`，以及可选的 `adapterInsights` / `warnings`。注意 `--json` 不会持久化报告，因此该输出中不含可选字段 `reportPath`。
 
 同一份产物也会随 npm package 一起发布，因此 packaged consumer 无需克隆 source checkout 也能校验 `report.json`。
+
+### `crossRepoImpacts`
+
+可选字段。当变更的 provider contract 匹配已持久化的 workspace `BREAKS_COMPATIBILITY_WITH` link 时出现。每个条目包含 `workspace`、`provider.serviceName`、`provider.contractPath`、`consumer.serviceName`、`consumer.path`、`change`、`confidence`、`evidence` 和 `resources`。public report JSON 会省略本地 repo 的绝对路径。
 
 ## 校验输出
 

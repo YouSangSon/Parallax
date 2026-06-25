@@ -37,6 +37,8 @@
 
 默认（无 `--json`）会持久化 report 并打印简短摘要；写入时显示 report 路径。
 
+当变更文件是已索引的 provider contract，且 workspace 中已经存在持久化的 `BREAKS_COMPATIBILITY_WITH` link 时，`analyze` 也会包含 `crossRepoImpacts`。这些条目会标识 consumer service、consumer file、provider contract、breaking change、confidence、evidence snippet 和 workspace resource URI。`analyze` 不会自动运行 contract diff；如果 workspace 已陈旧，请先用 `parallax workspace contract-diff` 刷新 link。
+
 ## Graph
 
 | 命令 | 用途 |

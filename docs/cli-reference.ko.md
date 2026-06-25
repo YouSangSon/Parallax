@@ -37,6 +37,8 @@
 
 기본(`--json` 없음)에서는 report가 저장되고 짧은 요약이 출력되며, 기록 시 report 경로가 표시된다.
 
+변경 파일이 인덱싱된 provider contract이고 workspace에 저장된 `BREAKS_COMPATIBILITY_WITH` link가 이미 있으면, `analyze`는 `crossRepoImpacts`도 포함한다. 각 항목은 consumer service, consumer file, provider contract, breaking change, confidence, evidence snippet, workspace resource URI를 식별한다. `analyze`는 contract diff를 자동 실행하지 않는다. workspace가 오래됐으면 먼저 `parallax workspace contract-diff`로 link를 갱신한다.
+
 ## Graph
 
 | 명령 | 목적 |

@@ -218,3 +218,62 @@ test('consumersOf and providersFor expose bidirectional views from canonical row
     routePath: '/api/users'
   }]);
 });
+
+test('CLI workspace verify prints JSON and exits non-zero for orphan diagnostics', async () => {
+  const { consumerRoot } = await makeLinkedWorkspace();
+  const ok = runCli(consumerRoot, ['workspace', 'verify', '--name', 'platform', '--json']);
+  assert.equal(ok.status, 0, ok.stderr);
+  const okJson = JSON.parse(ok.stdout) as { summary: { passed: boolean; totalLinks: number } };
+  assert.equal(okJson.summary.passed, true);
+  assert.equal(okJson.summary.totalLinks, 2);
+
+  const db = new DatabaseSync(databasePath(consumerRoot));
+  try {
+    db.prepare("DELETE FROM cross_repo_links WHERE kind = 'CONSUMES_HTTP_ENDPOINT'").run();
+  } finally {
+    db.close();
+  }
+
+  const bad = runCli(consumerRoot, ['workspace', 'verify', '--name', 'platform']);
+  assert.equal(bad.status, 1);
+  assert.match(bad.stdout, /Workspace platform cross-repo links: failed/);
+  assert.match(bad.stdout, /Orphan breaking links: 1/);
+});
+
+test('CLI workspace consumers and providers return persisted reverse queries', async () => {
+  const { consumerRoot } = await makeLinkedWorkspace();
+
+  const consumers = runCli(consumerRoot, [
+    'workspace',
+    'consumers',
+    '--name',
+    'platform',
+    '--provider',
+    'users-api',
+    '--contract',
+    'contracts/openapi.yaml',
+    '--method',
+    'get',
+    '--path',
+    '/api/users',
+    '--json'
+  ]);
+  assert.equal(consumers.status, 0, consumers.stderr);
+  const consumersJson = JSON.parse(consumers.stdout) as { consumers: Array<{ consumerService: string; consumerPath: string }> };
+  assert.deepEqual(consumersJson.consumers.map((consumer) => [consumer.consumerService, consumer.consumerPath]), [
+    ['web', 'src/client.ts']
+  ]);
+
+  const providers = runCli(consumerRoot, [
+    'workspace',
+    'providers',
+    '--name',
+    'platform',
+    '--consumer',
+    'web',
+    '--file',
+    'src/client.ts'
+  ]);
+  assert.equal(providers.status, 0, providers.stderr);
+  assert.match(providers.stdout, /web:src\/client\.ts <- users-api:GET \/api\/users \(contracts\/openapi\.yaml\)/);
+});

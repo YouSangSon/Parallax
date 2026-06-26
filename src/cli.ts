@@ -177,7 +177,79 @@ async function main(): Promise<void> {
       }
       return;
     }
-    throw new Error('workspace requires init, add-repo, list, resolve-contracts, or contract-diff');
+    if (subcommand === 'verify') {
+      const { verifyCrossRepoLinks } = await import('./index.js');
+      const name = parseOptionalWorkspaceArg(workspaceArgs, '--name');
+      const result = verifyCrossRepoLinks({
+        repoRoot,
+        ...(name !== undefined ? { workspaceName: name } : {})
+      });
+      if (workspaceArgs.includes('--json')) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.log(`Workspace ${result.workspace.name} cross-repo links: ${result.summary.passed ? 'passed' : 'failed'}`);
+        console.log(`Links: ${result.summary.totalLinks} total, ${result.summary.consumesLinks} consumes, ${result.summary.breakingLinks} breaking`);
+        console.log(`Malformed links: ${result.summary.malformedLinks}`);
+        console.log(`Stale workspace links: ${result.summary.staleWorkspaceLinks}`);
+        console.log(`Orphan breaking links: ${result.summary.orphanBreakingLinks}`);
+        for (const diagnostic of [
+          ...result.diagnostics.malformedLinks,
+          ...result.diagnostics.staleWorkspaceLinks,
+          ...result.diagnostics.orphanBreakingLinks
+        ]) {
+          console.log(`diagnostic: ${diagnostic.id}: ${diagnostic.message}`);
+        }
+      }
+      process.exitCode = result.summary.passed ? 0 : 1;
+      return;
+    }
+    if (subcommand === 'consumers') {
+      const { consumersOf } = await import('./index.js');
+      const name = parseOptionalWorkspaceArg(workspaceArgs, '--name');
+      const providerServiceName = parseRequiredArg(workspaceArgs, '--provider');
+      const providerContractPath = parseOptionalWorkspaceArg(workspaceArgs, '--contract');
+      const method = parseOptionalWorkspaceArg(workspaceArgs, '--method');
+      const routePath = parseOptionalWorkspaceArg(workspaceArgs, '--path');
+      const result = consumersOf({
+        repoRoot,
+        providerServiceName,
+        ...(name !== undefined ? { workspaceName: name } : {}),
+        ...(providerContractPath !== undefined ? { providerContractPath } : {}),
+        ...(method !== undefined ? { method } : {}),
+        ...(routePath !== undefined ? { routePath } : {})
+      });
+      if (workspaceArgs.includes('--json')) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        for (const consumer of result.consumers) {
+          console.log(`${consumer.consumerService}:${consumer.consumerPath} -> ${consumer.providerService}:${consumer.httpMethod} ${consumer.routePath} (${consumer.providerContractPath})`);
+        }
+        for (const warning of result.warnings) console.error(`warning: ${warning}`);
+      }
+      return;
+    }
+    if (subcommand === 'providers') {
+      const { providersFor } = await import('./index.js');
+      const name = parseOptionalWorkspaceArg(workspaceArgs, '--name');
+      const consumerServiceName = parseRequiredArg(workspaceArgs, '--consumer');
+      const consumerPath = parseOptionalWorkspaceArg(workspaceArgs, '--file');
+      const result = providersFor({
+        repoRoot,
+        consumerServiceName,
+        ...(name !== undefined ? { workspaceName: name } : {}),
+        ...(consumerPath !== undefined ? { consumerPath } : {})
+      });
+      if (workspaceArgs.includes('--json')) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        for (const provider of result.providers) {
+          console.log(`${provider.consumerService}:${provider.consumerPath} <- ${provider.providerService}:${provider.httpMethod} ${provider.routePath} (${provider.providerContractPath})`);
+        }
+        for (const warning of result.warnings) console.error(`warning: ${warning}`);
+      }
+      return;
+    }
+    throw new Error('workspace requires init, add-repo, list, resolve-contracts, contract-diff, verify, consumers, or providers');
   }
 
   if (command === 'analyze') {
@@ -595,6 +667,7 @@ function parsePositionals(args: string[]): string[] {
   const valueFlags = new Set([
     '--changed', '--base', '--head', '--depth', '--max-fanout', '--max-file-bytes',
     '--report', '--format', '--file', '--port', '--service', '--remote',
+    '--provider', '--provider-path', '--contract', '--method', '--path', '--consumer',
     '--entity', '--attribute', '--value', '--branch', '--agent', '--evidence-fact-ids',
     '--name', '--from', '--fact-id', '--k', '--op', '--as-of-tx',
     '--target', '--source', '--query', '--model',
@@ -636,6 +709,9 @@ Commands:
   ${PACKAGE_NAME} workspace resolve-contracts [--name <name>] [--json]
   ${PACKAGE_NAME} workspace contract-diff --contract <path> [--name <name>]
                                       [--provider <service>] [--provider-path <path>] [--json]
+  ${PACKAGE_NAME} workspace verify [--name <name>] [--json]
+  ${PACKAGE_NAME} workspace consumers --provider <service> [--contract <path>] [--method <method>] [--path <route>] [--name <name>] [--json]
+  ${PACKAGE_NAME} workspace providers --consumer <service> [--file <path>] [--name <name>] [--json]
   ${PACKAGE_NAME} analyze --changed src/file.ts [--depth 2] [--fail-on <level>] [--json]
   ${PACKAGE_NAME} analyze --base main [--head HEAD] [--depth 2] [--fail-on <level>] [--json]
   ${PACKAGE_NAME} graph export --report <id> [--format mermaid|json|dot]

@@ -253,6 +253,22 @@ class McpProcessClient {
   }
 }
 
+function assertNoMcpRepoRootLeak(payload: unknown, repoRoots: string[]): void {
+  const serialized = JSON.stringify(payload);
+  for (const field of ['consumerRepoPath', 'providerRepoPath', 'consumerRoot', 'providerRoot']) {
+    assert.equal(serialized.includes(`"${field}"`), false, `MCP payload must not include ${field}`);
+  }
+
+  const forbiddenPaths = new Set<string>();
+  for (const repoRoot of repoRoots) {
+    forbiddenPaths.add(repoRoot);
+    forbiddenPaths.add(realpathSync(repoRoot));
+  }
+  for (const repoRoot of forbiddenPaths) {
+    assert.equal(serialized.includes(repoRoot), false, `MCP payload must not include absolute repo path ${repoRoot}`);
+  }
+}
+
 async function makeRepo(): Promise<string> {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-mcp-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
@@ -1618,7 +1634,7 @@ test('MCP contract_diff returns compact workspace resources and persists breakin
 });
 
 test('MCP cross-repo consumers and providers query persisted workspace links', async () => {
-  const { consumerRoot } = await makeContractWorkspaceRepo();
+  const { consumerRoot, providerRoot } = await makeContractWorkspaceRepo();
   const client = new McpProcessClient(consumerRoot);
   try {
     await client.initialize();
@@ -1635,9 +1651,13 @@ test('MCP cross-repo consumers and providers query persisted workspace links', a
     });
     assert.equal(consumers.error, undefined);
     const consumersJson = JSON.parse(consumers.result.content[0].text) as {
+      workspace: { name: string; repos: Array<{ serviceName: string }> };
       consumers: Array<{ consumerService: string; consumerPath: string; providerService: string }>;
       resources: { crossRepoLinks: string };
     };
+    assertNoMcpRepoRootLeak(consumersJson, [consumerRoot, providerRoot]);
+    assert.equal(consumersJson.workspace.name, 'platform');
+    assert.deepEqual(consumersJson.workspace.repos.map((repo) => repo.serviceName).sort(), ['users-api', 'web']);
     assert.deepEqual(consumersJson.consumers.map((consumer) => ({
       consumerService: consumer.consumerService,
       consumerPath: consumer.consumerPath,
@@ -1659,8 +1679,12 @@ test('MCP cross-repo consumers and providers query persisted workspace links', a
     });
     assert.equal(providers.error, undefined);
     const providersJson = JSON.parse(providers.result.content[0].text) as {
+      workspace: { name: string; repos: Array<{ serviceName: string }> };
       providers: Array<{ providerService: string; providerContractPath: string; httpMethod: string; routePath: string }>;
     };
+    assertNoMcpRepoRootLeak(providersJson, [consumerRoot, providerRoot]);
+    assert.equal(providersJson.workspace.name, 'platform');
+    assert.deepEqual(providersJson.workspace.repos.map((repo) => repo.serviceName).sort(), ['users-api', 'web']);
     assert.deepEqual(providersJson.providers.map((provider) => ({
       providerService: provider.providerService,
       providerContractPath: provider.providerContractPath,
@@ -1678,7 +1702,7 @@ test('MCP cross-repo consumers and providers query persisted workspace links', a
 });
 
 test('MCP resolve_cross_repo_contracts previews links without mutating persisted links', async () => {
-  const { consumerRoot } = await makeContractWorkspaceRepo({ skipResolve: true });
+  const { consumerRoot, providerRoot } = await makeContractWorkspaceRepo({ skipResolve: true });
   const client = new McpProcessClient(consumerRoot);
   try {
     await client.initialize();
@@ -1688,16 +1712,33 @@ test('MCP resolve_cross_repo_contracts previews links without mutating persisted
     });
     assert.equal(response.error, undefined);
     const preview = JSON.parse(response.result.content[0].text) as {
-      links: Array<{ consumerService: string; providerService: string; routePath: string }>;
+      workspace: { name: string; repos: Array<{ serviceName: string }> };
+      links: Array<{
+        consumerService: string;
+        consumerPath: string;
+        providerService: string;
+        providerContractPath: string;
+        providerEndpointId: string;
+        routePath: string;
+      }>;
       resources: { crossRepoLinks: string };
     };
+    assertNoMcpRepoRootLeak(preview, [consumerRoot, providerRoot]);
+    assert.equal(preview.workspace.name, 'platform');
+    assert.deepEqual(preview.workspace.repos.map((repo) => repo.serviceName).sort(), ['users-api', 'web']);
     assert.deepEqual(preview.links.map((link) => ({
       consumerService: link.consumerService,
+      consumerPath: link.consumerPath,
       providerService: link.providerService,
+      providerContractPath: link.providerContractPath,
+      providerEndpointId: link.providerEndpointId,
       routePath: link.routePath
     })), [{
       consumerService: 'web',
+      consumerPath: 'src/client.ts',
       providerService: 'users-api',
+      providerContractPath: 'contracts/openapi.yaml',
+      providerEndpointId: 'endpoint:yaml:GET /api/users',
       routePath: '/api/users'
     }]);
 

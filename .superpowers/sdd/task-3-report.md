@@ -208,3 +208,48 @@ Note: both focused Node test invocations executed the full target test file in t
 
 - No blocking issues.
 - The Node test-name pattern did not narrow execution in this environment; the full referenced test files passed.
+
+## Review Fix: Compact MCP Cross-Repo Payloads
+
+- Added MCP-only compact shaping for `parallax_cross_repo_consumers`, `parallax_cross_repo_providers`, and `parallax_resolve_cross_repo_contracts`.
+- Compact workspace payloads now retain the workspace name and service names while omitting workspace repo roots.
+- Compact consumer/provider rows retain `linkId`, `kind`, `confidence`, service names, consumer/contract paths, HTTP method, and route path while omitting `consumerRepoPath` and `providerRepoPath`.
+- Compact resolver preview links retain service names, `consumerPath`, `providerContractPath`, provider endpoint id, method, route, and `eventTopology` when present while omitting repo roots.
+- Workspace warning strings are best-effort scrubbed against known workspace repo paths before returning through these MCP tools.
+- Added negative MCP assertions that all three compact payloads omit `consumerRepoPath`, `providerRepoPath`, `consumerRoot`, `providerRoot`, and the fixture consumer/provider absolute repo path strings.
+
+### Review Fix Test Results
+
+Command:
+
+```bash
+npm run test:mcp -- --test-name-pattern "cross-repo consumers|resolve_cross_repo"
+```
+
+GREEN result:
+
+```text
+ℹ tests 57
+ℹ suites 0
+ℹ pass 57
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 28171.947959
+```
+
+Command:
+
+```bash
+npm run check
+```
+
+GREEN result:
+
+```text
+> parallax@0.1.0 check
+> tsc -p tsconfig.json --noEmit
+```
+
+Exit code: 0.

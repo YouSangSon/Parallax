@@ -21,6 +21,16 @@ import type { PersistedContextPack } from './context_pack.js';
 import { doctorProject, redactDoctorReportForMcp } from './doctor.js';
 import { executeGraphQuery } from './graph_query.js';
 import { queryCoChanges } from './co_change_query.js';
+import type {
+  CrossRepoConsumer,
+  CrossRepoConsumersResult,
+  CrossRepoProvider,
+  CrossRepoProvidersResult
+} from './cross_repo_links.js';
+import type {
+  CrossRepoContractLink,
+  ResolveCrossRepoContractsResult
+} from './cross_repo_resolver.js';
 import { readGitSnapshot } from './git-snapshot.js';
 import { reflectFacts, repairReflections } from './reflection.js';
 import { profileEntity } from './profile.js';
@@ -71,6 +81,8 @@ import type {
   ImpactAction,
   ImpactReport
 } from './types.js';
+import type { WorkspaceSummary } from './workspace.js';
+import type { WorkspaceResourceUris } from './workspace_resources.js';
 
 export type McpContext = {
   repoRoot: string;
@@ -309,9 +321,10 @@ export function createMcpServer(context: McpContext): McpServer {
           ...(method !== undefined ? { method } : {}),
           ...(routePath !== undefined ? { routePath } : {})
         });
-        return toolJsonResponse(context, 'parallax_cross_repo_consumers', result, {
+        const response = compactMcpCrossRepoConsumersResult(result);
+        return toolJsonResponse(context, 'parallax_cross_repo_consumers', response, {
           query: providerServiceName,
-          resourceCount: resourceCountOf(result)
+          resourceCount: resourceCountOf(response)
         });
       } catch (error) {
         return typedToolErrorResponse(error);
@@ -347,9 +360,10 @@ export function createMcpServer(context: McpContext): McpServer {
           ...(workspaceName !== undefined ? { workspaceName } : {}),
           ...(consumerPath !== undefined ? { consumerPath } : {})
         });
-        return toolJsonResponse(context, 'parallax_cross_repo_providers', result, {
+        const response = compactMcpCrossRepoProvidersResult(result);
+        return toolJsonResponse(context, 'parallax_cross_repo_providers', response, {
           query: consumerServiceName,
-          resourceCount: resourceCountOf(result)
+          resourceCount: resourceCountOf(response)
         });
       } catch (error) {
         return typedToolErrorResponse(error);
@@ -382,10 +396,7 @@ export function createMcpServer(context: McpContext): McpServer {
           ...(workspaceName !== undefined ? { workspaceName } : {}),
           persist: false
         });
-        const response = {
-          ...result,
-          resources: workspaceResources(result.workspace.name)
-        };
+        const response = compactMcpResolveCrossRepoContractsResult(result);
         return toolJsonResponse(context, 'parallax_resolve_cross_repo_contracts', response, {
           query: result.workspace.name,
           resourceCount: resourceCountOf(response)
@@ -1264,6 +1275,153 @@ type ResourceTelemetryInput = {
   indexRunId?: number | null;
   returnedBytes: number;
 };
+
+type CompactMcpWorkspace = {
+  name: string;
+  repos: Array<{ serviceName: string }>;
+};
+
+type CompactMcpCrossRepoRow = {
+  linkId: string;
+  kind: CrossRepoConsumer['kind'];
+  confidence: CrossRepoConsumer['confidence'];
+  consumerService: string;
+  consumerPath: string;
+  providerService: string;
+  providerContractPath: string;
+  httpMethod: string;
+  routePath: string;
+};
+
+type CompactMcpCrossRepoConsumersResult = {
+  version: CrossRepoConsumersResult['version'];
+  workspace: CompactMcpWorkspace;
+  consumers: CompactMcpCrossRepoRow[];
+  warnings: string[];
+  resources: WorkspaceResourceUris;
+};
+
+type CompactMcpCrossRepoProvidersResult = {
+  version: CrossRepoProvidersResult['version'];
+  workspace: CompactMcpWorkspace;
+  providers: CompactMcpCrossRepoRow[];
+  warnings: string[];
+  resources: WorkspaceResourceUris;
+};
+
+type CompactMcpCrossRepoPreviewLink = {
+  kind: CrossRepoContractLink['kind'];
+  confidence: CrossRepoContractLink['confidence'];
+  consumerService: string;
+  consumerPath: string;
+  providerService: string;
+  providerContractPath: string;
+  providerEndpointId: string;
+  httpMethod: string;
+  routePath: string;
+  eventTopology?: CrossRepoContractLink['eventTopology'];
+};
+
+type CompactMcpResolveCrossRepoContractsResult = {
+  workspace: CompactMcpWorkspace;
+  links: CompactMcpCrossRepoPreviewLink[];
+  warnings: string[];
+  resources: WorkspaceResourceUris;
+};
+
+function compactMcpCrossRepoConsumersResult(
+  result: CrossRepoConsumersResult
+): CompactMcpCrossRepoConsumersResult {
+  return {
+    version: result.version,
+    workspace: compactMcpWorkspace(result.workspace),
+    consumers: result.consumers.map(compactMcpCrossRepoRow),
+    warnings: compactMcpWorkspaceWarnings(result.warnings, result.workspace),
+    resources: result.resources
+  };
+}
+
+function compactMcpCrossRepoProvidersResult(
+  result: CrossRepoProvidersResult
+): CompactMcpCrossRepoProvidersResult {
+  return {
+    version: result.version,
+    workspace: compactMcpWorkspace(result.workspace),
+    providers: result.providers.map(compactMcpCrossRepoRow),
+    warnings: compactMcpWorkspaceWarnings(result.warnings, result.workspace),
+    resources: result.resources
+  };
+}
+
+function compactMcpResolveCrossRepoContractsResult(
+  result: ResolveCrossRepoContractsResult
+): CompactMcpResolveCrossRepoContractsResult {
+  return {
+    workspace: compactMcpWorkspace(result.workspace),
+    links: result.links.map(compactMcpCrossRepoPreviewLink),
+    warnings: compactMcpWorkspaceWarnings(result.warnings, result.workspace),
+    resources: workspaceResources(result.workspace.name)
+  };
+}
+
+function compactMcpWorkspace(workspace: WorkspaceSummary): CompactMcpWorkspace {
+  return {
+    name: workspace.name,
+    repos: workspace.repos.map((repo) => ({ serviceName: repo.serviceName }))
+  };
+}
+
+function compactMcpCrossRepoRow(row: CrossRepoConsumer | CrossRepoProvider): CompactMcpCrossRepoRow {
+  return {
+    linkId: row.linkId,
+    kind: row.kind,
+    confidence: row.confidence,
+    consumerService: row.consumerService,
+    consumerPath: row.consumerPath,
+    providerService: row.providerService,
+    providerContractPath: row.providerContractPath,
+    httpMethod: row.httpMethod,
+    routePath: row.routePath
+  };
+}
+
+function compactMcpCrossRepoPreviewLink(link: CrossRepoContractLink): CompactMcpCrossRepoPreviewLink {
+  return {
+    kind: link.kind,
+    confidence: link.confidence,
+    consumerService: link.consumerService,
+    consumerPath: link.consumerPath,
+    providerService: link.providerService,
+    providerContractPath: link.providerContractPath,
+    providerEndpointId: link.providerEndpointId,
+    httpMethod: link.httpMethod,
+    routePath: link.routePath,
+    ...(link.eventTopology !== undefined ? { eventTopology: link.eventTopology } : {})
+  };
+}
+
+function compactMcpWorkspaceWarnings(warnings: string[], workspace: WorkspaceSummary): string[] {
+  const replacements = workspace.repos
+    .flatMap((repo) => workspacePathReplacementCandidates(repo.localPath, repo.serviceName))
+    .sort((left, right) => right.path.length - left.path.length);
+  if (replacements.length === 0) return warnings;
+  return warnings.map((warning) => replacements.reduce(
+    (text, replacement) => text.split(replacement.path).join(replacement.serviceName),
+    warning
+  ));
+}
+
+function workspacePathReplacementCandidates(localPath: string, serviceName: string): Array<{ path: string; serviceName: string }> {
+  const paths = new Set([localPath]);
+  try {
+    paths.add(normalizeRepoRoot(localPath));
+  } catch {
+    // Keep warning scrubbing best-effort; the compact payload must still return.
+  }
+  return [...paths]
+    .filter((pathValue) => pathValue.length > 0)
+    .map((pathValue) => ({ path: pathValue, serviceName }));
+}
 
 function patchToolErrorFactory(server: McpServer): void {
   const errorFactory = server as unknown as {

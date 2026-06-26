@@ -53,6 +53,7 @@ export type CrossRepoDiagnostic = {
 export type CrossRepoLinkVerifyOptions = {
   repoRoot: string;
   workspaceName?: string;
+  syncCatalog?: boolean;
 };
 
 export type CrossRepoLinkVerifyResult = {
@@ -78,6 +79,7 @@ export type CrossRepoLinkVerifyResult = {
 export type CrossRepoConsumersOptions = {
   repoRoot: string;
   workspaceName?: string;
+  syncCatalog?: boolean;
   providerServiceName: string;
   providerContractPath?: string;
   method?: string;
@@ -87,6 +89,7 @@ export type CrossRepoConsumersOptions = {
 export type CrossRepoProvidersOptions = {
   repoRoot: string;
   workspaceName?: string;
+  syncCatalog?: boolean;
   consumerServiceName: string;
   consumerPath?: string;
 };
@@ -155,7 +158,7 @@ type RequiredLinkFields = {
 };
 
 export function verifyCrossRepoLinks(options: CrossRepoLinkVerifyOptions): CrossRepoLinkVerifyResult {
-  const workspace = selectWorkspace(options.repoRoot, options.workspaceName);
+  const workspace = selectWorkspace(options.repoRoot, options.workspaceName, options.syncCatalog);
   const db = openDatabase(options.repoRoot, { readOnly: true });
   try {
     const loaded = loadWorkspaceLinkRecords(db, workspace.name);
@@ -185,7 +188,7 @@ export function verifyCrossRepoLinks(options: CrossRepoLinkVerifyOptions): Cross
 }
 
 export function consumersOf(options: CrossRepoConsumersOptions): CrossRepoConsumersResult {
-  const workspace = selectWorkspace(options.repoRoot, options.workspaceName);
+  const workspace = selectWorkspace(options.repoRoot, options.workspaceName, options.syncCatalog);
   const db = openDatabase(options.repoRoot, { readOnly: true });
   try {
     const loaded = loadWorkspaceLinkRecords(db, workspace.name);
@@ -211,7 +214,7 @@ export function consumersOf(options: CrossRepoConsumersOptions): CrossRepoConsum
 }
 
 export function providersFor(options: CrossRepoProvidersOptions): CrossRepoProvidersResult {
-  const workspace = selectWorkspace(options.repoRoot, options.workspaceName);
+  const workspace = selectWorkspace(options.repoRoot, options.workspaceName, options.syncCatalog);
   const db = openDatabase(options.repoRoot, { readOnly: true });
   try {
     const loaded = loadWorkspaceLinkRecords(db, workspace.name);
@@ -233,10 +236,11 @@ export function providersFor(options: CrossRepoProvidersOptions): CrossRepoProvi
   }
 }
 
-function selectWorkspace(repoRoot: string, workspaceName?: string): WorkspaceSummary {
+function selectWorkspace(repoRoot: string, workspaceName?: string, syncCatalog?: boolean): WorkspaceSummary {
   const listed = listWorkspaces({
     repoRoot,
-    ...(workspaceName !== undefined ? { name: workspaceName } : {})
+    ...(workspaceName !== undefined ? { name: workspaceName } : {}),
+    ...(syncCatalog !== undefined ? { syncCatalog } : {})
   });
   const workspace = listed.workspaces[0];
   if (!workspace) {
@@ -369,19 +373,21 @@ function makeRecord(
   const targetRepoPath = fields.provider.repoPath ?? row.target_member_path ?? row.target_repo_root ?? undefined;
   const sourceInWorkspace = isCurrentWorkspaceMember(row.source_member_path, fields.consumer.repoPath);
   const targetInWorkspace = isCurrentWorkspaceMember(row.target_member_path, fields.provider.repoPath);
+  const sourceServiceName = currentWorkspaceServiceName(row.source_service_name, sourceInWorkspace, fields.consumer.serviceName);
+  const targetServiceName = currentWorkspaceServiceName(row.target_service_name, targetInWorkspace, fields.provider.serviceName);
   return {
     id: row.id,
     workspace: row.workspace_name ?? workspaceName,
     kind,
     confidence: asConfidence(row.confidence),
     source: {
-      serviceName: fields.consumer.serviceName,
+      serviceName: sourceServiceName,
       ...(sourceRepoPath !== undefined ? { repoPath: sourceRepoPath } : {}),
       path: fields.consumer.path,
       inWorkspace: sourceInWorkspace
     },
     target: {
-      serviceName: fields.provider.serviceName,
+      serviceName: targetServiceName,
       ...(targetRepoPath !== undefined ? { repoPath: targetRepoPath } : {}),
       contractPath: fields.provider.contractPath,
       inWorkspace: targetInWorkspace
@@ -390,6 +396,16 @@ function makeRecord(
     ...(fields.evidence !== undefined ? { evidence: fields.evidence } : {}),
     provenance
   };
+}
+
+function currentWorkspaceServiceName(
+  memberServiceName: string | null,
+  inWorkspace: boolean,
+  provenanceServiceName: string
+): string {
+  return inWorkspace && memberServiceName !== null && memberServiceName.length > 0
+    ? memberServiceName
+    : provenanceServiceName;
 }
 
 function parseRequiredLinkFields(

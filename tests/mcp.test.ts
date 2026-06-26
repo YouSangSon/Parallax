@@ -14,7 +14,8 @@ import {
   indexProject,
   initProject,
   initWorkspace,
-  resolveCrossRepoContracts
+  resolveCrossRepoContracts,
+  workspaceCatalogPath
 } from '../src/index.js';
 import { computeEmbeddingSync, STUB_MODEL_NAME } from '../src/embeddings.js';
 import {
@@ -353,6 +354,46 @@ async function makeContractWorkspaceRepo(options: { skipResolve?: boolean } = {}
     assert.equal(resolved.links.length, 1);
   }
   return { consumerRoot, providerRoot };
+}
+
+async function writeMcpWorkspaceCatalogServices(options: {
+  consumerRoot: string;
+  providerRoot: string;
+  consumerServiceName: string;
+  providerServiceName: string;
+}): Promise<void> {
+  const catalogPath = workspaceCatalogPath(options.consumerRoot);
+  const catalogDir = path.dirname(catalogPath);
+  await writeFile(catalogPath, `${JSON.stringify({
+    schemaVersion: 1,
+    name: 'platform',
+    repos: [
+      {
+        localPath: path.relative(catalogDir, realpathSync(options.consumerRoot)),
+        serviceName: options.consumerServiceName,
+        remoteUrl: null,
+        trustPolicy: { readOnly: true }
+      },
+      {
+        localPath: path.relative(catalogDir, realpathSync(options.providerRoot)),
+        serviceName: options.providerServiceName,
+        remoteUrl: null,
+        trustPolicy: { readOnly: true }
+      }
+    ]
+  }, null, 2)}\n`);
+}
+
+function workspaceRepoServiceNames(repoRoot: string): string[] {
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const rows = db
+      .prepare('SELECT service_name FROM workspace_repos ORDER BY service_name')
+      .all() as Array<{ service_name: string | null }>;
+    return rows.map((row) => row.service_name ?? '');
+  } finally {
+    db.close();
+  }
 }
 
 function seedMcpConsumesEventTopology(repoRoot: string): void {
@@ -1696,6 +1737,57 @@ test('MCP cross-repo consumers and providers query persisted workspace links', a
       httpMethod: 'GET',
       routePath: '/api/users'
     }]);
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP cross-repo consumers providers and resolve_cross_repo do not sync catalog renames', async () => {
+  const { consumerRoot, providerRoot } = await makeContractWorkspaceRepo();
+  assert.deepEqual(workspaceRepoServiceNames(consumerRoot), ['users-api', 'web']);
+
+  await writeMcpWorkspaceCatalogServices({
+    consumerRoot,
+    providerRoot,
+    consumerServiceName: 'frontend-file',
+    providerServiceName: 'accounts-api-file'
+  });
+  assert.deepEqual(workspaceRepoServiceNames(consumerRoot), ['users-api', 'web']);
+
+  const client = new McpProcessClient(consumerRoot);
+  try {
+    await client.initialize();
+
+    const consumers = await client.request('tools/call', {
+      name: 'parallax_cross_repo_consumers',
+      arguments: {
+        workspaceName: 'platform',
+        providerServiceName: 'users-api',
+        providerContractPath: 'contracts/openapi.yaml',
+        method: 'get',
+        routePath: '/api/users'
+      }
+    });
+    assert.equal(consumers.error, undefined);
+    assert.deepEqual(workspaceRepoServiceNames(consumerRoot), ['users-api', 'web']);
+
+    const providers = await client.request('tools/call', {
+      name: 'parallax_cross_repo_providers',
+      arguments: {
+        workspaceName: 'platform',
+        consumerServiceName: 'web',
+        consumerPath: 'src/client.ts'
+      }
+    });
+    assert.equal(providers.error, undefined);
+    assert.deepEqual(workspaceRepoServiceNames(consumerRoot), ['users-api', 'web']);
+
+    const preview = await client.request('tools/call', {
+      name: 'parallax_resolve_cross_repo_contracts',
+      arguments: { workspaceName: 'platform' }
+    });
+    assert.equal(preview.error, undefined);
+    assert.deepEqual(workspaceRepoServiceNames(consumerRoot), ['users-api', 'web']);
   } finally {
     await client.close();
   }

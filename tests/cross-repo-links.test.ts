@@ -66,6 +66,23 @@ async function makeLinkedWorkspace(): Promise<{ consumerRoot: string; providerRo
   return { consumerRoot, providerRoot, consumerReal, providerReal };
 }
 
+async function writeWorkspaceCatalogServices(
+  repoRoot: string,
+  repos: Array<{ repoPath: string; serviceName: string }>
+): Promise<void> {
+  const catalogPath = workspaceCatalogPath(repoRoot);
+  await writeFile(catalogPath, `${JSON.stringify({
+    schemaVersion: 1,
+    name: 'platform',
+    repos: repos.map((repo) => ({
+      localPath: path.relative(path.dirname(catalogPath), repo.repoPath),
+      serviceName: repo.serviceName,
+      remoteUrl: null,
+      trustPolicy: { readOnly: true }
+    }))
+  }, null, 2)}\n`);
+}
+
 function openApiContract(routes: string[]): string {
   return [
     'openapi: 3.0.0',
@@ -120,17 +137,9 @@ test('verifyCrossRepoLinks flags orphan breaking links when the parent consume l
 
 test('verifyCrossRepoLinks flags stale links whose repo membership left the workspace', async () => {
   const { consumerRoot, consumerReal } = await makeLinkedWorkspace();
-  const catalogPath = workspaceCatalogPath(consumerRoot);
-  await writeFile(catalogPath, `${JSON.stringify({
-    schemaVersion: 1,
-    name: 'platform',
-    repos: [{
-      localPath: path.relative(path.dirname(catalogPath), consumerReal),
-      serviceName: 'web',
-      remoteUrl: null,
-      trustPolicy: { readOnly: true }
-    }]
-  }, null, 2)}\n`);
+  await writeWorkspaceCatalogServices(consumerRoot, [
+    { repoPath: consumerReal, serviceName: 'web' }
+  ]);
 
   const result = verifyCrossRepoLinks({ repoRoot: consumerRoot, workspaceName: 'platform' });
 
@@ -162,6 +171,90 @@ test('verifyCrossRepoLinks counts malformed provenance without crashing', async 
   assert.equal(result.summary.passed, false);
   assert.equal(result.summary.malformedLinks, 1);
   assert.equal(result.diagnostics.malformedLinks[0]?.id, 'malformed-cross-repo-link');
+});
+
+test('cross-repo queries use current provider service name after persisted links survive rename', async () => {
+  const { consumerRoot, consumerReal, providerReal } = await makeLinkedWorkspace();
+  await writeWorkspaceCatalogServices(consumerRoot, [
+    { repoPath: consumerReal, serviceName: 'web' },
+    { repoPath: providerReal, serviceName: 'accounts-api' }
+  ]);
+
+  const verified = verifyCrossRepoLinks({ repoRoot: consumerRoot, workspaceName: 'platform' });
+  assert.equal(verified.summary.passed, true);
+
+  const renamedConsumers = consumersOf({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'accounts-api',
+    providerContractPath: 'contracts/openapi.yaml',
+    method: 'get',
+    routePath: '/api/users'
+  });
+  assert.deepEqual(renamedConsumers.consumers.map((consumer) => ({
+    consumerService: consumer.consumerService,
+    providerService: consumer.providerService
+  })), [{
+    consumerService: 'web',
+    providerService: 'accounts-api'
+  }]);
+
+  const staleConsumers = consumersOf({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api'
+  });
+  assert.deepEqual(staleConsumers.consumers, []);
+
+  const providers = providersFor({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    consumerServiceName: 'web',
+    consumerPath: 'src/client.ts'
+  });
+  assert.deepEqual(providers.providers.map((provider) => provider.providerService), ['accounts-api']);
+});
+
+test('cross-repo queries use current consumer service name after persisted links survive rename', async () => {
+  const { consumerRoot, consumerReal, providerReal } = await makeLinkedWorkspace();
+  await writeWorkspaceCatalogServices(consumerRoot, [
+    { repoPath: consumerReal, serviceName: 'frontend' },
+    { repoPath: providerReal, serviceName: 'users-api' }
+  ]);
+
+  const verified = verifyCrossRepoLinks({ repoRoot: consumerRoot, workspaceName: 'platform' });
+  assert.equal(verified.summary.passed, true);
+
+  const renamedProviders = providersFor({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    consumerServiceName: 'frontend',
+    consumerPath: 'src/client.ts'
+  });
+  assert.deepEqual(renamedProviders.providers.map((provider) => ({
+    consumerService: provider.consumerService,
+    providerService: provider.providerService
+  })), [{
+    consumerService: 'frontend',
+    providerService: 'users-api'
+  }]);
+
+  const staleProviders = providersFor({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    consumerServiceName: 'web'
+  });
+  assert.deepEqual(staleProviders.providers, []);
+
+  const consumers = consumersOf({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    providerContractPath: 'contracts/openapi.yaml',
+    method: 'get',
+    routePath: '/api/users'
+  });
+  assert.deepEqual(consumers.consumers.map((consumer) => consumer.consumerService), ['frontend']);
 });
 
 test('consumersOf and providersFor expose bidirectional views from canonical rows', async () => {
@@ -276,4 +369,16 @@ test('CLI workspace consumers and providers return persisted reverse queries', a
   ]);
   assert.equal(providers.status, 0, providers.stderr);
   assert.match(providers.stdout, /web:src\/client\.ts <- users-api:GET \/api\/users \(contracts\/openapi\.yaml\)/);
+});
+
+test('CLI workspace consumers and providers reject flag-looking required values', async () => {
+  const repoRoot = await makeRepo('parallax-cli-required-');
+
+  const consumers = runCli(repoRoot, ['workspace', 'consumers', '--provider', '--json']);
+  assert.equal(consumers.status, 2);
+  assert.match(consumers.stderr, /missing value for --provider/);
+
+  const providers = runCli(repoRoot, ['workspace', 'providers', '--consumer', '--json']);
+  assert.equal(providers.status, 2);
+  assert.match(providers.stderr, /missing value for --consumer/);
 });

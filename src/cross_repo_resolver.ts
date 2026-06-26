@@ -22,6 +22,7 @@ export type { CrossRepoEventTopology } from './cross_repo/types.js';
 export type ResolveCrossRepoContractsOptions = {
   repoRoot: string;
   workspaceName?: string;
+  syncCatalog?: boolean;
   persist?: boolean;
 };
 
@@ -101,7 +102,7 @@ export function resolveCrossRepoContracts(
   options: ResolveCrossRepoContractsOptions
 ): ResolveCrossRepoContractsResult {
   const repoRoot = normalizeRepoRoot(options.repoRoot);
-  const workspace = selectWorkspace(repoRoot, options.workspaceName);
+  const workspace = selectWorkspace(repoRoot, options.workspaceName, options.syncCatalog);
   const warnings: string[] = [];
   const warnedFiles = new Set<string>();
   const indexedRepos = openIndexedWorkspaceRepos(workspace, warnings);
@@ -123,10 +124,11 @@ export function resolveCrossRepoContracts(
   }
 }
 
-function selectWorkspace(repoRoot: string, workspaceName?: string): WorkspaceSummary {
+function selectWorkspace(repoRoot: string, workspaceName?: string, syncCatalog?: boolean): WorkspaceSummary {
   const listed = listWorkspaces({
     repoRoot,
-    ...(workspaceName !== undefined ? { name: workspaceName } : {})
+    ...(workspaceName !== undefined ? { name: workspaceName } : {}),
+    ...(syncCatalog !== undefined ? { syncCatalog } : {})
   });
   const workspace = listed.workspaces[0];
   if (!workspace) {

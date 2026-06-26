@@ -619,8 +619,14 @@ function formatEventTopology(topology: {
 
 function parseRequiredArg(args: string[], name: string): string {
   const index = args.indexOf(name);
-  if (index >= 0 && args[index + 1]) return args[index + 1]!;
-  throw new Error(`missing required ${name}`);
+  if (index < 0) {
+    throw new Error(`missing required ${name}`);
+  }
+  const value = args[index + 1];
+  if (!value || value.startsWith('--')) {
+    throw new Error(`missing value for ${name}`);
+  }
+  return value;
 }
 
 function parseOptionalArg(args: string[], name: string): string | undefined {

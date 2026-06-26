@@ -316,6 +316,7 @@ export function createMcpServer(context: McpContext): McpServer {
         const result = consumersOf({
           repoRoot: context.repoRoot,
           providerServiceName,
+          syncCatalog: false,
           ...(workspaceName !== undefined ? { workspaceName } : {}),
           ...(providerContractPath !== undefined ? { providerContractPath } : {}),
           ...(method !== undefined ? { method } : {}),
@@ -357,6 +358,7 @@ export function createMcpServer(context: McpContext): McpServer {
         const result = providersFor({
           repoRoot: context.repoRoot,
           consumerServiceName,
+          syncCatalog: false,
           ...(workspaceName !== undefined ? { workspaceName } : {}),
           ...(consumerPath !== undefined ? { consumerPath } : {})
         });
@@ -394,6 +396,7 @@ export function createMcpServer(context: McpContext): McpServer {
         const result = resolveCrossRepoContracts({
           repoRoot: context.repoRoot,
           ...(workspaceName !== undefined ? { workspaceName } : {}),
+          syncCatalog: false,
           persist: false
         });
         const response = compactMcpResolveCrossRepoContractsResult(result);

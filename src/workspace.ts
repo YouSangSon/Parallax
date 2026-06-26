@@ -70,6 +70,7 @@ export type SyncWorkspaceCatalogResult = {
 export type ListWorkspacesOptions = {
   repoRoot: string;
   name?: string;
+  syncCatalog?: boolean;
 };
 
 export type ListWorkspacesResult = {
@@ -197,7 +198,7 @@ export function syncWorkspaceCatalog(options: SyncWorkspaceCatalogOptions): Sync
 
 export function listWorkspaces(options: ListWorkspacesOptions): ListWorkspacesResult {
   const repoRoot = normalizeRepoRoot(options.repoRoot);
-  if (existsSync(workspaceCatalogPath(repoRoot))) {
+  if (options.syncCatalog !== false && existsSync(workspaceCatalogPath(repoRoot))) {
     syncWorkspaceCatalog({ repoRoot });
   }
   return listWorkspacesFromDatabase(repoRoot, options.name);

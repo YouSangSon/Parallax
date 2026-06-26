@@ -85,9 +85,9 @@ claude mcp add --transport stdio parallax -- parallax mcp serve
 | `parallax_context_for_change` | ❌ | 변경된 파일에 대한 budget이 적용된 compact context pack 반환 |
 | `parallax_search_context` | ❌ | keyword/path/symbol/relation/evidence로 최신 인덱싱된 entity를 검색하고, resource link와 함께 순위가 매겨진 context 반환 |
 | `parallax_contract_diff` | ❌ | 현재 OpenAPI contract 파일을 최신 인덱싱된 workspace baseline과 비교해 compact한 breaking-change impact 반환 |
-| `parallax_cross_repo_consumers` | ✅ | provider service/contract/route의 consumer를 persisted workspace link에서 질의 |
-| `parallax_cross_repo_providers` | ✅ | consumer service/file이 사용하는 provider를 persisted workspace link에서 질의 |
-| `parallax_resolve_cross_repo_contracts` | ✅ | workspace link row를 저장하지 않고 cross-repo provider/consumer contract link를 미리보기 |
+| `parallax_cross_repo_consumers` | ✅ | 이미 동기화된 workspace DB view에서 provider service/contract/route의 consumer를 질의 |
+| `parallax_cross_repo_providers` | ✅ | 이미 동기화된 workspace DB view에서 consumer service/file이 사용하는 provider를 질의 |
+| `parallax_resolve_cross_repo_contracts` | ✅ | 동기화된 workspace DB view에서 cross-repo provider/consumer contract link를 미리보고 `cross_repo_links`는 변경하지 않음 |
 | `parallax_remember` | ❌ | agent fact(entity, attribute, value)를 branch에 저장 |
 | `parallax_recall` | ✅ | branch / entity / attribute / semantic query로 fact 조회 (brute-force fallback이 있는 sqlite-vec ANN) |
 | `parallax_query` | ✅ | 인덱싱된 그래프에 읽기전용 Cypher 서브셋(정/역/가변 길이 hop, label, WHERE =/CONTAINS, 투영, COUNT 집계, ORDER BY, LIMIT)을 실행 |

@@ -83,8 +83,8 @@ and analyzer traversal is N+1 per frontier node.
 ## 4. Workspace, contracts & cross-repo
 
 A cross-repo workspace catalog, provider↔consumer resolver, and OpenAPI/GraphQL/Protobuf/AsyncAPI
-breaking-change diff exist. W1 now surfaces persisted breaking workspace links in the primary report;
-remaining work deepens link consistency, contract fidelity, package modeling, and agent-facing tools.
+breaking-change diff exist. W1/W2/W6 are shipped; remaining work focuses on W4/W5
+contract fidelity and W3 package modeling.
 
 | # | Opportunity | Effort | Value |
 | :-- | :-- | :-- | :-- |

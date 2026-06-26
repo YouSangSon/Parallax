@@ -96,6 +96,7 @@ Without regression signals, there is no guarantee that every change works.
 
 - [x] A deterministic bench harness based on multi-language fixtures
   - Current gate: `bench/impact-bench.ts` builds a fixed TypeScript/JavaScript, JVM/Spring Boot, Python, Go, Rust, OpenAPI, and build-manifest fixture; scores relation recall/precision, affected-file recall, evidence/span coverage, adapter attribution, context-pack readiness, and retrieval quality; and is run by `npm run bench`, `npm test`, and the CI `npm run verify` gate.
+  - Current cross-repo gate: the bench includes a two-repo contract-impact fixture that verifies W1 primary cross-repo consumer impact and report graph edges remain visible.
 - [x] A separate scale/perf bench that reports full index, no-op incremental index, edited-file incremental index, and analyze phases without pretending exact timings are deterministic
   - Current tool: `npm run bench:perf` measures those phases on the synthetic-repo generator outside `npm run verify`, so timing remains advisory rather than a byte-for-byte CI contract.
 - [x] Recall quality regression detection when crossing embedding models / LLM providers

@@ -60,6 +60,8 @@ runner 写出一份确定性 JSON 报告，当 suite 未通过时设置 non-zero
 - `tests/impact-bench.test.ts` 作为 `npm test` 的一部分运行 bench，并断言报告形态、pin 住的期望 relation 集合，以及 score/recall 阈值。
 - `npm run bench` 直接运行 `bench/impact-bench.ts`，并在任何 recall/score 回归时以 non-zero 退出——这是 CI 使用的形式。
 
+Deterministic bench 也包含 cross-repo contract-impact lane。该 lane 构建 two-repo workspace fixture，通过 `analyzeContractDiff` persist breaking contract link，然后检查 `analyzeDiff` 与 report-scoped graph export 是否仍暴露 expected `web:src/client.ts` consumer impact。该 lane 不会 reweight 历史 `summary.score`，而是通过 `crossRepoContracts.summary.passed` gate `summary.passed`。
+
 凡是触及 relation 抽取、排序或 retrieval 的变更之后，都运行 `npm run bench`。
 
 `npm run bench:report` 会把 `.parallax/bench/impact-bench-report.json` 转成紧凑的 Markdown summary。传入 `--baseline <json>` 时会包含相对上一份 report 的 delta column；传入 `--github-step-summary` 时会 append 到 GitHub Actions step summary。CI 在 pull request 中会先从 PR base SHA 生成 baseline report，然后在 `npm run verify` 之后报告 head-vs-base bench delta。

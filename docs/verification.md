@@ -60,6 +60,8 @@ The runner writes a deterministic JSON report and sets a non-zero exit code when
 - `tests/impact-bench.test.ts` runs the bench as part of `npm test` and asserts the report shape, the pinned expected relations, and the score/recall thresholds.
 - `npm run bench` runs `bench/impact-bench.ts` directly and exits non-zero on any recall/score regression — this is the form CI uses.
 
+The deterministic bench also includes a cross-repo contract-impact lane. It builds a two-repo workspace fixture, persists a breaking contract link through `analyzeContractDiff`, then checks that `analyzeDiff` and report-scoped graph export still expose the expected `web:src/client.ts` consumer impact. This lane gates `summary.passed` through `crossRepoContracts.summary.passed` without reweighting the historical `summary.score`.
+
 Run `npm run bench` after any change that touches relation extraction, ranking, or retrieval.
 
 `npm run bench:report` converts `.parallax/bench/impact-bench-report.json` into a compact Markdown summary. Pass `--baseline <json>` to include delta columns against a previous report, or `--github-step-summary` to append the summary to GitHub Actions' step summary. CI uses this on pull requests by generating a baseline report from the PR base SHA, then reporting the head-vs-base bench delta after `npm run verify`.

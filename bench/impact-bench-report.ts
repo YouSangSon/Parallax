@@ -6,8 +6,12 @@ import type { ImpactBenchReport } from './impact-bench.js';
 
 const defaultReportPath = '.parallax/bench/impact-bench-report.json';
 
+type LoadedBenchReport = Omit<ImpactBenchReport, 'crossRepoContracts'> & {
+  crossRepoContracts?: ImpactBenchReport['crossRepoContracts'];
+};
+
 type FormatOptions = {
-  baseline?: ImpactBenchReport | undefined;
+  baseline?: LoadedBenchReport | undefined;
 };
 
 export type GenerateBenchSummaryOptions = {
@@ -26,7 +30,7 @@ export async function generateBenchSummaryMarkdown(
   options: GenerateBenchSummaryOptions = {}
 ): Promise<string> {
   const reportPath = options.reportPath ?? defaultReportPath;
-  let report: ImpactBenchReport;
+  let report: LoadedBenchReport;
   try {
     report = await loadBenchReport(reportPath);
   } catch (error) {
@@ -61,17 +65,18 @@ export async function writeBenchSummary(
   return markdown;
 }
 
-export async function loadBenchReport(filePath: string): Promise<ImpactBenchReport> {
+export async function loadBenchReport(filePath: string): Promise<LoadedBenchReport> {
   const parsed = JSON.parse(await readFile(filePath, 'utf8')) as unknown;
   assertBenchReport(parsed, filePath);
   return parsed;
 }
 
 export function formatBenchSummaryMarkdown(
-  report: ImpactBenchReport,
+  report: LoadedBenchReport,
   options: FormatOptions = {}
 ): string {
   const baseline = options.baseline;
+  const currentCrossRepoContracts = report.crossRepoContracts;
   const metricRows = [
     metricRow('Overall score', report.summary.score, baseline?.summary.score),
     metricRow('Relation recall', report.scores.relationRecall, baseline?.scores.relationRecall),
@@ -85,31 +90,17 @@ export function formatBenchSummaryMarkdown(
       report.scores.contextPackReadiness,
       baseline?.scores.contextPackReadiness
     ),
-    metricRow(
+    ...(currentCrossRepoContracts ? [metricRow(
       'Cross-repo contract impact',
-      report.crossRepoContracts.summary.score,
+      currentCrossRepoContracts.summary.score,
       baseline?.crossRepoContracts?.summary.score
-    ),
+    )] : []),
     metricRow('Retrieval recall@5', report.retrieval.summary.recallAt5, baseline?.retrieval.summary.recallAt5),
     metricRow('Retrieval MRR', report.retrieval.summary.mrr, baseline?.retrieval.summary.mrr),
     metricRow('Retrieval nDCG@10', report.retrieval.summary.ndcgAt10, baseline?.retrieval.summary.ndcgAt10),
     ...semanticMetricRows(report, baseline)
   ];
-
-  const lines = [
-    '## Impact Bench',
-    '',
-    `**Status:** ${report.summary.passed ? 'passed' : 'failed'}${baseline ? ` (baseline: ${baseline.summary.passed ? 'passed' : 'failed'})` : ''}`,
-    '',
-    `Fixture: \`${report.fixtureId}\``,
-    `Report: \`${report.outputPath}\``,
-    '',
-    '| Metric | Current | Delta |',
-    '| :--- | ---: | ---: |',
-    ...metricRows,
-    '',
-    '| Coverage | Current | Delta |',
-    '| :--- | ---: | ---: |',
+  const coverageRows = [
     countRow(
       'Matched relations',
       `${report.summary.matchedRelations}/${report.summary.expectedRelations}`,
@@ -129,18 +120,42 @@ export function formatBenchSummaryMarkdown(
       report.analyzeDiff.matchedAffectedFiles.length,
       baseline?.analyzeDiff.matchedAffectedFiles.length
     ),
-    countRow(
-      'Cross-repo impacts',
-      `${report.crossRepoContracts.summary.matchedImpacts}/${report.crossRepoContracts.summary.expectedImpacts}`,
-      report.crossRepoContracts.summary.matchedImpacts,
-      baseline?.crossRepoContracts?.summary.matchedImpacts
-    ),
-    countRow(
-      'Cross-repo graph edges',
-      `${report.crossRepoContracts.summary.matchedGraphEdges}/${report.crossRepoContracts.summary.expectedGraphEdges}`,
-      report.crossRepoContracts.summary.matchedGraphEdges,
-      baseline?.crossRepoContracts?.summary.matchedGraphEdges
-    ),
+    ...(currentCrossRepoContracts ? [
+      countRow(
+        'Cross-repo impacts',
+        `${currentCrossRepoContracts.summary.matchedImpacts}/${currentCrossRepoContracts.summary.expectedImpacts}`,
+        currentCrossRepoContracts.summary.matchedImpacts,
+        baseline?.crossRepoContracts?.summary.matchedImpacts
+      ),
+      countRow(
+        'Cross-repo graph edges',
+        `${currentCrossRepoContracts.summary.matchedGraphEdges}/${currentCrossRepoContracts.summary.expectedGraphEdges}`,
+        currentCrossRepoContracts.summary.matchedGraphEdges,
+        baseline?.crossRepoContracts?.summary.matchedGraphEdges
+      )
+    ] : [])
+  ];
+  const listSections = [
+    ...(currentCrossRepoContracts ? [listSection('Missing cross-repo consumers', currentCrossRepoContracts.missingConsumerPaths)] : []),
+    listSection('Missing relations', report.missingRelations),
+    listSection('Unexpected relations', report.unexpectedRelations)
+  ];
+
+  const lines = [
+    '## Impact Bench',
+    '',
+    `**Status:** ${report.summary.passed ? 'passed' : 'failed'}${baseline ? ` (baseline: ${baseline.summary.passed ? 'passed' : 'failed'})` : ''}`,
+    '',
+    `Fixture: \`${report.fixtureId}\``,
+    `Report: \`${report.outputPath}\``,
+    '',
+    '| Metric | Current | Delta |',
+    '| :--- | ---: | ---: |',
+    ...metricRows,
+    '',
+    '| Coverage | Current | Delta |',
+    '| :--- | ---: | ---: |',
+    ...coverageRows,
     '',
     '| Retrieval query | Recall@5 | MRR | Returned bytes | Budget exceeded |',
     '| :--- | ---: | ---: | ---: | :--- |',
@@ -154,19 +169,15 @@ export function formatBenchSummaryMarkdown(
     '',
     ...semanticModelTableRows(report),
     '',
-    listSection('Missing cross-repo consumers', report.crossRepoContracts.missingConsumerPaths),
-    '',
-    listSection('Missing relations', report.missingRelations),
-    '',
-    listSection('Unexpected relations', report.unexpectedRelations)
+    ...listSections.flatMap((section, index) => index === 0 ? [section] : ['', section])
   ];
 
   return ensureTrailingNewline(lines.join('\n'));
 }
 
 function semanticMetricRows(
-  report: ImpactBenchReport,
-  baseline: ImpactBenchReport | undefined
+  report: LoadedBenchReport,
+  baseline: LoadedBenchReport | undefined
 ): string[] {
   const current = report.retrieval.semanticModels?.summary;
   if (!current) return [];
@@ -177,7 +188,7 @@ function semanticMetricRows(
   ];
 }
 
-function semanticModelTableRows(report: ImpactBenchReport): string[] {
+function semanticModelTableRows(report: LoadedBenchReport): string[] {
   const semanticModels = report.retrieval.semanticModels;
   if (!semanticModels) return [];
   return [
@@ -202,7 +213,7 @@ function formatMissingBenchReportMarkdown(reportPath: string): string {
   ].join('\n'));
 }
 
-async function loadOptionalBenchReport(filePath: string): Promise<ImpactBenchReport | undefined> {
+async function loadOptionalBenchReport(filePath: string): Promise<LoadedBenchReport | undefined> {
   try {
     return await loadBenchReport(filePath);
   } catch (error) {

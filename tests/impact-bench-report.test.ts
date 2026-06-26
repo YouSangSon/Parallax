@@ -11,7 +11,11 @@ import {
   writeBenchSummary
 } from '../bench/impact-bench-report.js';
 
-function makeReport(overrides: Partial<ImpactBenchReport> = {}): ImpactBenchReport {
+type BenchReportOverrides = Omit<Partial<ImpactBenchReport>, 'crossRepoContracts'> & {
+  crossRepoContracts?: ImpactBenchReport['crossRepoContracts'] | undefined;
+};
+
+function makeReport(overrides: BenchReportOverrides = {}): ImpactBenchReport {
   const report: ImpactBenchReport = {
     schemaVersion: 4,
     fixtureId: 'phase6b-multilanguage-v0',
@@ -146,15 +150,22 @@ function makeReport(overrides: Partial<ImpactBenchReport> = {}): ImpactBenchRepo
     outputPath: '.parallax/bench/impact-bench-report.json'
   };
 
-  return {
+  const merged = {
     ...report,
     ...overrides,
     summary: { ...report.summary, ...overrides.summary },
     scores: { ...report.scores, ...overrides.scores },
     analyzeDiff: { ...report.analyzeDiff, ...overrides.analyzeDiff },
-    crossRepoContracts: { ...report.crossRepoContracts, ...overrides.crossRepoContracts },
     retrieval: { ...report.retrieval, ...overrides.retrieval }
-  };
+  } as ImpactBenchReport;
+  if ('crossRepoContracts' in overrides) {
+    merged.crossRepoContracts = (overrides.crossRepoContracts === undefined
+      ? undefined
+      : { ...report.crossRepoContracts, ...overrides.crossRepoContracts }) as ImpactBenchReport['crossRepoContracts'];
+  } else {
+    merged.crossRepoContracts = report.crossRepoContracts;
+  }
+  return merged;
 }
 
 test('bench report summary renders current metrics without a baseline', () => {
@@ -287,6 +298,62 @@ test('bench report summary accepts a schema v2 baseline without semantic metrics
   assert.match(markdown, /\| Overall score \| 0\.9987 \| \+0\.0000 \|/);
   assert.match(markdown, /\| Semantic recall@1 \| 1\.0000 \| n\/a \|/);
   assert.match(markdown, /\| Semantic model isolation \| 1\.0000 \| n\/a \|/);
+});
+
+test('bench report summary skips cross-repo rows for a schema v3 current report without crossRepoContracts', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'parallax-bench-report-current-v3-'));
+  const reportPath = path.join(root, 'current-v3.json');
+  const current = makeReport({
+    schemaVersion: 3,
+    crossRepoContracts: undefined
+  });
+  await writeFile(reportPath, JSON.stringify(current, null, 2));
+
+  const markdown = await generateBenchSummaryMarkdown({ reportPath });
+
+  assert.doesNotMatch(markdown, /\| Cross-repo contract impact \|/);
+  assert.doesNotMatch(markdown, /\| Cross-repo impacts \|/);
+  assert.doesNotMatch(markdown, /\| Cross-repo graph edges \|/);
+  assert.doesNotMatch(markdown, /### Missing cross-repo consumers/);
+});
+
+test('loadBenchReport rejects a schema v4 current report without crossRepoContracts', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'parallax-bench-report-invalid-v4-'));
+  const reportPath = path.join(root, 'current-v4.json');
+  const invalid = makeReport({
+    schemaVersion: 4,
+    crossRepoContracts: undefined
+  });
+  await writeFile(reportPath, JSON.stringify(invalid, null, 2));
+
+  await assert.rejects(
+    () => generateBenchSummaryMarkdown({ reportPath }),
+    /invalid bench report .*crossRepoContracts/
+  );
+});
+
+test('loadBenchReport rejects malformed schema v3 crossRepoContracts when present', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'parallax-bench-report-malformed-v3-'));
+  const reportPath = path.join(root, 'current-v3-malformed.json');
+  const invalid = {
+    ...makeReport({ schemaVersion: 3 }),
+    crossRepoContracts: {
+      fixtureId: 'cross-repo-contract-impact-v0',
+      summary: {
+        passed: true,
+        score: 1,
+        expectedImpacts: 1,
+        matchedImpacts: 1,
+        expectedGraphEdges: 1
+      }
+    }
+  };
+  await writeFile(reportPath, JSON.stringify(invalid, null, 2));
+
+  await assert.rejects(
+    () => generateBenchSummaryMarkdown({ reportPath }),
+    /invalid bench report .*crossRepoContracts\.summary\.matchedGraphEdges/
+  );
 });
 
 test('bench report summary can write to GitHub step summary and allow missing reports', async () => {

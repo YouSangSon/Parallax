@@ -667,22 +667,32 @@ async function runCrossRepoContractBench(): Promise<CrossRepoContractBench> {
       && report.affectedFiles.some((file) => file.path === consumerPath)
     );
     const expectedEvidenceKinds = ['BREAKS_COMPATIBILITY_WITH'];
+    const expectedCrossRepoEvidence = report.evidence.filter((evidence) =>
+      evidence.extractorId === 'cross-repo-contract-impact'
+      && evidence.kind === 'BREAKS_COMPATIBILITY_WITH'
+      && evidence.relationKind === 'BREAKS_COMPATIBILITY_WITH'
+      && evidence.subject?.id === 'cross-repo:platform:web:src/client.ts'
+      && evidence.subject.path === 'web:src/client.ts'
+      && evidence.target?.id === 'contract:users-api:contracts/openapi.yaml'
+      && evidence.target.path === 'contracts/openapi.yaml'
+    );
     const matchedEvidenceKinds = expectedEvidenceKinds.filter((kind) =>
-      report.evidence.some((evidence) =>
-        evidence.extractorId === 'cross-repo-contract-impact'
-        && evidence.kind === kind
-        && evidence.relationKind === kind
-        && evidence.subject?.path === 'web:src/client.ts'
-        && evidence.target?.path === 'contracts/openapi.yaml'
-      )
+      expectedCrossRepoEvidence.some((evidence) => evidence.kind === kind)
+    );
+    const expectedGraphEdgeKeys = new Set(
+      expectedCrossRepoEvidence.map((evidence) => {
+        if (!evidence.subject?.id || !evidence.target?.id) {
+          throw new Error('cross-repo bench expected evidence with subject and target ids');
+        }
+        return `${evidence.subject.id}->${evidence.target.id}`;
+      })
     );
     const matchedGraphEdges = graphJson.edges.filter((edge) =>
       edge.kind === 'BREAKS_COMPATIBILITY_WITH'
       && edge.confidence === 'heuristic'
-      && edge.source.includes('cross-repo')
-      && edge.target.includes('openapi')
+      && expectedGraphEdgeKeys.has(`${edge.source}->${edge.target}`)
     ).length;
-    const expectedGraphEdges = 1;
+    const expectedGraphEdges = expectedGraphEdgeKeys.size;
     const score = ratio(
       matchedConsumerPaths.length + matchedEvidenceKinds.length + Math.min(matchedGraphEdges, expectedGraphEdges),
       expectedConsumerPaths.length + expectedEvidenceKinds.length + expectedGraphEdges

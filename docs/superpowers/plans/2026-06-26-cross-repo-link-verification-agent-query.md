@@ -84,7 +84,8 @@ import {
   initWorkspace,
   providersFor,
   resolveCrossRepoContracts,
-  verifyCrossRepoLinks
+  verifyCrossRepoLinks,
+  workspaceCatalogPath
 } from '../src/index.js';
 import { databasePath } from '../src/store.js';
 
@@ -189,13 +190,18 @@ test('verifyCrossRepoLinks flags orphan breaking links when the parent consume l
 });
 
 test('verifyCrossRepoLinks flags stale links whose repo membership left the workspace', async () => {
-  const { consumerRoot, providerReal } = await makeLinkedWorkspace();
-  const db = new DatabaseSync(databasePath(consumerRoot));
-  try {
-    db.prepare('DELETE FROM workspace_repos WHERE local_path = ?').run(providerReal);
-  } finally {
-    db.close();
-  }
+  const { consumerRoot, consumerReal } = await makeLinkedWorkspace();
+  const catalogPath = workspaceCatalogPath(consumerRoot);
+  await writeFile(catalogPath, `${JSON.stringify({
+    schemaVersion: 1,
+    name: 'platform',
+    repos: [{
+      localPath: path.relative(path.dirname(catalogPath), consumerReal),
+      serviceName: 'web',
+      remoteUrl: null,
+      trustPolicy: { readOnly: true }
+    }]
+  }, null, 2)}\n`);
 
   const result = verifyCrossRepoLinks({ repoRoot: consumerRoot, workspaceName: 'platform' });
 

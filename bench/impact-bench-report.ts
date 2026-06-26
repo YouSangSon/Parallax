@@ -85,6 +85,11 @@ export function formatBenchSummaryMarkdown(
       report.scores.contextPackReadiness,
       baseline?.scores.contextPackReadiness
     ),
+    metricRow(
+      'Cross-repo contract impact',
+      report.crossRepoContracts.summary.score,
+      baseline?.crossRepoContracts?.summary.score
+    ),
     metricRow('Retrieval recall@5', report.retrieval.summary.recallAt5, baseline?.retrieval.summary.recallAt5),
     metricRow('Retrieval MRR', report.retrieval.summary.mrr, baseline?.retrieval.summary.mrr),
     metricRow('Retrieval nDCG@10', report.retrieval.summary.ndcgAt10, baseline?.retrieval.summary.ndcgAt10),
@@ -124,6 +129,18 @@ export function formatBenchSummaryMarkdown(
       report.analyzeDiff.matchedAffectedFiles.length,
       baseline?.analyzeDiff.matchedAffectedFiles.length
     ),
+    countRow(
+      'Cross-repo impacts',
+      `${report.crossRepoContracts.summary.matchedImpacts}/${report.crossRepoContracts.summary.expectedImpacts}`,
+      report.crossRepoContracts.summary.matchedImpacts,
+      baseline?.crossRepoContracts?.summary.matchedImpacts
+    ),
+    countRow(
+      'Cross-repo graph edges',
+      `${report.crossRepoContracts.summary.matchedGraphEdges}/${report.crossRepoContracts.summary.expectedGraphEdges}`,
+      report.crossRepoContracts.summary.matchedGraphEdges,
+      baseline?.crossRepoContracts?.summary.matchedGraphEdges
+    ),
     '',
     '| Retrieval query | Recall@5 | MRR | Returned bytes | Budget exceeded |',
     '| :--- | ---: | ---: | ---: | :--- |',
@@ -136,6 +153,8 @@ export function formatBenchSummaryMarkdown(
     ].join(' | ') + ' |'),
     '',
     ...semanticModelTableRows(report),
+    '',
+    listSection('Missing cross-repo consumers', report.crossRepoContracts.missingConsumerPaths),
     '',
     listSection('Missing relations', report.missingRelations),
     '',
@@ -279,6 +298,57 @@ function assertBenchReport(value: unknown, label: string): asserts value is Impa
   assertRecord(value.analyzeDiff, label, 'analyzeDiff');
   assertStringArray(value.analyzeDiff.expectedAffectedFiles, label, 'analyzeDiff.expectedAffectedFiles');
   assertStringArray(value.analyzeDiff.matchedAffectedFiles, label, 'analyzeDiff.matchedAffectedFiles');
+  if (value.schemaVersion >= 4 || value.crossRepoContracts !== undefined) {
+    assertRecord(value.crossRepoContracts, label, 'crossRepoContracts');
+    assertString(value.crossRepoContracts.fixtureId, label, 'crossRepoContracts.fixtureId');
+    assertRecord(value.crossRepoContracts.summary, label, 'crossRepoContracts.summary');
+    assertBoolean(value.crossRepoContracts.summary.passed, label, 'crossRepoContracts.summary.passed');
+    for (const key of [
+      'score',
+      'expectedImpacts',
+      'matchedImpacts',
+      'expectedGraphEdges',
+      'matchedGraphEdges'
+    ]) {
+      assertNumber(value.crossRepoContracts.summary[key], label, `crossRepoContracts.summary.${key}`);
+    }
+    assertStringArray(
+      value.crossRepoContracts.expectedConsumerPaths,
+      label,
+      'crossRepoContracts.expectedConsumerPaths'
+    );
+    assertStringArray(
+      value.crossRepoContracts.matchedConsumerPaths,
+      label,
+      'crossRepoContracts.matchedConsumerPaths'
+    );
+    assertStringArray(
+      value.crossRepoContracts.missingConsumerPaths,
+      label,
+      'crossRepoContracts.missingConsumerPaths'
+    );
+    assertStringArray(
+      value.crossRepoContracts.expectedEvidenceKinds,
+      label,
+      'crossRepoContracts.expectedEvidenceKinds'
+    );
+    assertStringArray(
+      value.crossRepoContracts.matchedEvidenceKinds,
+      label,
+      'crossRepoContracts.matchedEvidenceKinds'
+    );
+    assertRecord(value.crossRepoContracts.graphEdges, label, 'crossRepoContracts.graphEdges');
+    assertNumber(
+      value.crossRepoContracts.graphEdges.expected,
+      label,
+      'crossRepoContracts.graphEdges.expected'
+    );
+    assertNumber(
+      value.crossRepoContracts.graphEdges.matched,
+      label,
+      'crossRepoContracts.graphEdges.matched'
+    );
+  }
   assertRecord(value.retrieval, label, 'retrieval');
   assertRecord(value.retrieval.summary, label, 'retrieval.summary');
   for (const key of ['recallAt5', 'recallAt10', 'precisionAt5', 'mrr', 'ndcgAt10']) {

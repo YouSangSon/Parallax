@@ -13,7 +13,7 @@ import {
 
 function makeReport(overrides: Partial<ImpactBenchReport> = {}): ImpactBenchReport {
   const report: ImpactBenchReport = {
-    schemaVersion: 3,
+    schemaVersion: 4,
     fixtureId: 'phase6b-multilanguage-v0',
     summary: {
       passed: true,
@@ -38,6 +38,26 @@ function makeReport(overrides: Partial<ImpactBenchReport> = {}): ImpactBenchRepo
       changedFiles: ['src/ts/session.ts'],
       expectedAffectedFiles: ['src/ts/namespace-consumer.ts', 'tests/session.test.ts'],
       matchedAffectedFiles: ['src/ts/namespace-consumer.ts', 'tests/session.test.ts']
+    },
+    crossRepoContracts: {
+      fixtureId: 'cross-repo-contract-impact-v0',
+      summary: {
+        passed: true,
+        score: 1,
+        expectedImpacts: 1,
+        matchedImpacts: 1,
+        expectedGraphEdges: 1,
+        matchedGraphEdges: 1
+      },
+      expectedConsumerPaths: ['web:src/client.ts'],
+      matchedConsumerPaths: ['web:src/client.ts'],
+      missingConsumerPaths: [],
+      expectedEvidenceKinds: ['BREAKS_COMPATIBILITY_WITH'],
+      matchedEvidenceKinds: ['BREAKS_COMPATIBILITY_WITH'],
+      graphEdges: {
+        expected: 1,
+        matched: 1
+      }
     },
     retrieval: {
       fixtureId: 'search-context-retrieval-v0',
@@ -132,6 +152,7 @@ function makeReport(overrides: Partial<ImpactBenchReport> = {}): ImpactBenchRepo
     summary: { ...report.summary, ...overrides.summary },
     scores: { ...report.scores, ...overrides.scores },
     analyzeDiff: { ...report.analyzeDiff, ...overrides.analyzeDiff },
+    crossRepoContracts: { ...report.crossRepoContracts, ...overrides.crossRepoContracts },
     retrieval: { ...report.retrieval, ...overrides.retrieval }
   };
 }
@@ -143,10 +164,14 @@ test('bench report summary renders current metrics without a baseline', () => {
   assert.match(markdown, /\*\*Status:\*\* passed/);
   assert.match(markdown, /\| Overall score \| 0\.9987 \| n\/a \|/);
   assert.match(markdown, /\| Matched relations \| 78\/78 \| n\/a \|/);
+  assert.match(markdown, /\| Cross-repo contract impact \| 1\.0000 \| n\/a \|/);
+  assert.match(markdown, /\| Cross-repo impacts \| 1\/1 \| n\/a \|/);
+  assert.match(markdown, /\| Cross-repo graph edges \| 1\/1 \| n\/a \|/);
   assert.match(markdown, /\| Semantic recall@1 \| 1\.0000 \| n\/a \|/);
   assert.match(markdown, /\| Semantic model isolation \| 1\.0000 \| n\/a \|/);
   assert.match(markdown, /\| `evidence-fts-policy` \| 1\.0000 \| 1\.0000 \| 966 \| no \|/);
   assert.match(markdown, /\| `bench-semantic-model-a` \| 1\.0000 \| yes \| `bench:model-a-policy` \|/);
+  assert.match(markdown, /### Missing cross-repo consumers\n\nNone\./);
   assert.match(markdown, /### Missing relations\n\nNone\./);
   assert.match(markdown, /### Unexpected relations\n\nNone\./);
 });
@@ -173,6 +198,24 @@ test('bench report summary renders metric and count deltas against a baseline', 
       changedFiles: ['src/ts/session.ts'],
       expectedAffectedFiles: ['src/ts/namespace-consumer.ts', 'tests/session.test.ts'],
       matchedAffectedFiles: ['src/ts/namespace-consumer.ts']
+    },
+    crossRepoContracts: {
+      ...makeReport().crossRepoContracts,
+      summary: {
+        passed: false,
+        score: 0,
+        expectedImpacts: 1,
+        matchedImpacts: 0,
+        expectedGraphEdges: 1,
+        matchedGraphEdges: 0
+      },
+      matchedConsumerPaths: [],
+      missingConsumerPaths: ['web:src/client.ts'],
+      matchedEvidenceKinds: [],
+      graphEdges: {
+        expected: 1,
+        matched: 0
+      }
     },
     retrieval: {
       ...makeReport().retrieval,
@@ -203,6 +246,9 @@ test('bench report summary renders metric and count deltas against a baseline', 
   assert.match(markdown, /\| Matched relations \| 78\/78 \| \+8 \|/);
   assert.match(markdown, /\| Unexpected relations \| 0 \| -2 better \|/);
   assert.match(markdown, /\| Matched affected files \| 2\/2 \| \+1 \|/);
+  assert.match(markdown, /\| Cross-repo contract impact \| 1\.0000 \| \+1\.0000 \|/);
+  assert.match(markdown, /\| Cross-repo impacts \| 1\/1 \| \+1 \|/);
+  assert.match(markdown, /\| Cross-repo graph edges \| 1\/1 \| \+1 \|/);
   assert.match(markdown, /\| Retrieval recall@5 \| 1\.0000 \| \+0\.5000 \|/);
   assert.match(markdown, /\| Semantic recall@1 \| 1\.0000 \| \+0\.5000 \|/);
   assert.match(markdown, /\| Semantic model isolation \| 1\.0000 \| \+0\.5000 \|/);

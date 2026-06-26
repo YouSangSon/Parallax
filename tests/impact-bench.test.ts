@@ -25,7 +25,8 @@ test('ImpactBench runner writes deterministic report shape', async () => {
     assert.equal(serializedReport.includes(workspaceRoot), false);
     assert.equal(serializedReport.includes(tmpdir()), false);
     assert.equal(serializedReport.includes('impact-bench-fixture-'), false);
-    assert.equal(report.schemaVersion, 3);
+    assert.equal(serializedReport.includes('impact-bench-cross-repo-'), false);
+    assert.equal(report.schemaVersion, 4);
     assert.equal(report.fixtureId, 'phase6b-multilanguage-v0');
     assert.equal(report.outputPath, '.parallax/bench/impact-bench-report.json');
     assert.equal(report.summary.passed, true);
@@ -65,6 +66,19 @@ test('ImpactBench runner writes deterministic report shape', async () => {
       assert.equal(model.topFactId, model.expectedFactId);
       assert.equal(model.returnedFactIds.includes(model.disallowedFactId), false);
     }
+    assert.equal(report.crossRepoContracts.fixtureId, 'cross-repo-contract-impact-v0');
+    assert.equal(report.crossRepoContracts.summary.passed, true);
+    assert.equal(report.crossRepoContracts.summary.score, 1);
+    assert.equal(report.crossRepoContracts.summary.expectedImpacts, 1);
+    assert.equal(report.crossRepoContracts.summary.matchedImpacts, 1);
+    assert.equal(report.crossRepoContracts.summary.expectedGraphEdges, 1);
+    assert.equal(report.crossRepoContracts.summary.matchedGraphEdges, 1);
+    assert.deepEqual(report.crossRepoContracts.expectedConsumerPaths, ['web:src/client.ts']);
+    assert.deepEqual(report.crossRepoContracts.matchedConsumerPaths, ['web:src/client.ts']);
+    assert.deepEqual(report.crossRepoContracts.missingConsumerPaths, []);
+    assert.deepEqual(report.crossRepoContracts.expectedEvidenceKinds, ['BREAKS_COMPATIBILITY_WITH']);
+    assert.deepEqual(report.crossRepoContracts.matchedEvidenceKinds, ['BREAKS_COMPATIBILITY_WITH']);
+    assert.deepEqual(report.crossRepoContracts.graphEdges, { expected: 1, matched: 1 });
     assert.ok(report.retrieval.budgets.brief.maxReturnedBytes <= 5_000);
     assert.equal(report.retrieval.budgets.brief.budgetExceededCount, 0);
     assert.ok(

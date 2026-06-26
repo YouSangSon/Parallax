@@ -4,7 +4,16 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 
-import { analyzeDiff, indexProject, initProject } from '../src/index.js';
+import {
+  addWorkspaceRepo,
+  analyzeContractDiff,
+  analyzeDiff,
+  exportImpactGraph,
+  indexProject,
+  initProject,
+  initWorkspace,
+  resolveCrossRepoContracts
+} from '../src/index.js';
 import { searchContextForRepo } from '../src/mcp.js';
 import { recallSemantic } from '../src/agent_memory.js';
 import type { EmbeddingResult } from '../src/embeddings.js';
@@ -20,7 +29,8 @@ import { BUILD_SYSTEM_PACKAGE_ADAPTER_ID } from '../src/adapters/build-system-pa
 import { CONFIG_INFRA_SEMANTIC_ADAPTER_ID } from '../src/adapters/config-infra.js';
 
 const fixtureId = 'phase6b-multilanguage-v0';
-const schemaVersion = 3;
+const schemaVersion = 4;
+const crossRepoContractFixtureId = 'cross-repo-contract-impact-v0';
 const defaultOutputPath = '.parallax/bench/impact-bench-report.json';
 const regexAdapterId = MULTI_LANG_REGEX_ADAPTER_ID;
 const retrievalFixtureId = 'search-context-retrieval-v0';
@@ -29,7 +39,7 @@ const semanticModelA = 'bench-semantic-model-a';
 const semanticModelB = 'bench-semantic-model-b';
 
 export type ImpactBenchReport = {
-  schemaVersion: 2 | 3;
+  schemaVersion: 2 | 3 | 4;
   fixtureId: typeof fixtureId;
   summary: {
     passed: boolean;
@@ -55,6 +65,7 @@ export type ImpactBenchReport = {
     expectedAffectedFiles: string[];
     matchedAffectedFiles: string[];
   };
+  crossRepoContracts: CrossRepoContractBench;
   retrieval: RetrievalBenchReport;
   outputPath: string;
 };
@@ -167,6 +178,27 @@ type RetrievalQueryReport = RetrievalQuerySpec & RetrievalMetrics & {
 type SearchContextBenchResult = {
   results: Array<{ entity: { id: string }; resourceUri: string }>;
   limits: { returnedBytes: number; budgetExceeded: boolean };
+};
+
+type CrossRepoContractBench = {
+  fixtureId: typeof crossRepoContractFixtureId;
+  summary: {
+    passed: boolean;
+    score: number;
+    expectedImpacts: number;
+    matchedImpacts: number;
+    expectedGraphEdges: number;
+    matchedGraphEdges: number;
+  };
+  expectedConsumerPaths: string[];
+  matchedConsumerPaths: string[];
+  missingConsumerPaths: string[];
+  expectedEvidenceKinds: string[];
+  matchedEvidenceKinds: string[];
+  graphEdges: {
+    expected: number;
+    matched: number;
+  };
 };
 
 const retrievalQueries: readonly RetrievalQuerySpec[] = [
@@ -358,6 +390,7 @@ export async function runImpactBench(options: RunImpactBenchOptions = {}): Promi
       ? 1
       : 0;
     const retrieval = await runRetrievalBench(fixtureRoot);
+    const crossRepoContracts = await runCrossRepoContractBench();
 
     const scores = {
       relationRecall,
@@ -380,6 +413,7 @@ export async function runImpactBench(options: RunImpactBenchOptions = {}): Promi
       retrieval.summary.recallAt5 === 1 &&
       retrieval.summary.mrr === 1 &&
       retrieval.semanticModels?.summary.passed === true &&
+      crossRepoContracts.summary.passed === true &&
       score >= 0.9;
 
     const report: ImpactBenchReport = {
@@ -401,6 +435,7 @@ export async function runImpactBench(options: RunImpactBenchOptions = {}): Promi
         expectedAffectedFiles: [...expectedAffectedFiles],
         matchedAffectedFiles
       },
+      crossRepoContracts,
       retrieval,
       outputPath: outputPathForReport
     };
@@ -531,6 +566,150 @@ function seedRetrievalFixture(repoRoot: string, indexRunId: number): void {
     }
   } finally {
     db.close();
+  }
+}
+
+async function writeCrossRepoBenchConsumer(repoRoot: string): Promise<void> {
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(
+    path.join(repoRoot, 'src/client.ts'),
+    [
+      'export async function loadUsers() {',
+      '  return fetch("https://users.example.test/api/users");',
+      '}',
+      ''
+    ].join('\n'),
+    'utf8'
+  );
+}
+
+async function writeCrossRepoBenchOpenApiContract(repoRoot: string, routes: string[]): Promise<void> {
+  await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
+  const routeLines = routes.flatMap((route) => [
+    `  ${route}:`,
+    '    get:',
+    `      operationId: ${route.replace(/[^a-z0-9]/gi, '') || 'root'}`,
+    '      responses:',
+    "        '200':",
+    '          description: ok'
+  ]);
+  await writeFile(
+    path.join(repoRoot, 'contracts/openapi.yaml'),
+    [
+      'openapi: 3.0.0',
+      'info:',
+      '  title: Users API',
+      '  version: 1.0.0',
+      'paths:',
+      ...routeLines,
+      ''
+    ].join('\n'),
+    'utf8'
+  );
+}
+
+async function runCrossRepoContractBench(): Promise<CrossRepoContractBench> {
+  const fixtureRoot = await mkdtemp(path.join(tmpdir(), 'impact-bench-cross-repo-'));
+  try {
+    const providerRoot = path.join(fixtureRoot, 'provider');
+    const consumerRoot = path.join(fixtureRoot, 'consumer');
+    await mkdir(providerRoot, { recursive: true });
+    await mkdir(consumerRoot, { recursive: true });
+    await writeFile(path.join(providerRoot, 'README.md'), 'provider\n', 'utf8');
+    await writeFile(path.join(consumerRoot, 'README.md'), 'consumer\n', 'utf8');
+    await writeCrossRepoBenchConsumer(consumerRoot);
+    await writeCrossRepoBenchOpenApiContract(providerRoot, ['/api/users', '/api/status']);
+
+    await initProject({ repoRoot: consumerRoot });
+    await initProject({ repoRoot: providerRoot });
+    await indexProject({ repoRoot: consumerRoot });
+    await indexProject({ repoRoot: providerRoot });
+
+    initWorkspace({ repoRoot: providerRoot, name: 'platform', serviceName: 'users-api' });
+    addWorkspaceRepo({
+      repoRoot: providerRoot,
+      workspaceName: 'platform',
+      localPath: consumerRoot,
+      serviceName: 'web'
+    });
+
+    const resolved = resolveCrossRepoContracts({ repoRoot: providerRoot, workspaceName: 'platform' });
+    if (resolved.links.length !== 1) {
+      throw new Error(`cross-repo bench expected 1 resolved link, got ${resolved.links.length}`);
+    }
+
+    await writeCrossRepoBenchOpenApiContract(providerRoot, ['/api/status']);
+    analyzeContractDiff({
+      repoRoot: providerRoot,
+      workspaceName: 'platform',
+      providerServiceName: 'users-api',
+      contractPath: 'contracts/openapi.yaml'
+    });
+
+    const report = await analyzeDiff({
+      repoRoot: providerRoot,
+      changedFiles: ['contracts/openapi.yaml'],
+      writeReport: true
+    });
+    const graph = await exportImpactGraph({ repoRoot: providerRoot, reportId: report.id, format: 'json' });
+    const graphJson = JSON.parse(graph.rendered) as {
+      edges: Array<{ source: string; target: string; kind: string; confidence: string }>;
+    };
+
+    const expectedConsumerPaths = ['web:src/client.ts'];
+    const matchedConsumerPaths = expectedConsumerPaths.filter((consumerPath) =>
+      report.crossRepoImpacts?.some((impact) =>
+        impact.consumer.serviceName === 'web'
+        && impact.consumer.path === 'src/client.ts'
+        && impact.provider.serviceName === 'users-api'
+        && impact.provider.contractPath === 'contracts/openapi.yaml'
+      ) === true
+      && report.affectedFiles.some((file) => file.path === consumerPath)
+    );
+    const expectedEvidenceKinds = ['BREAKS_COMPATIBILITY_WITH'];
+    const matchedEvidenceKinds = expectedEvidenceKinds.filter((kind) =>
+      report.evidence.some((evidence) =>
+        evidence.extractorId === 'cross-repo-contract-impact'
+        && evidence.kind === kind
+        && evidence.relationKind === kind
+        && evidence.subject?.path === 'web:src/client.ts'
+        && evidence.target?.path === 'contracts/openapi.yaml'
+      )
+    );
+    const matchedGraphEdges = graphJson.edges.filter((edge) =>
+      edge.kind === 'BREAKS_COMPATIBILITY_WITH'
+      && edge.confidence === 'heuristic'
+      && edge.source.includes('cross-repo')
+      && edge.target.includes('openapi')
+    ).length;
+    const expectedGraphEdges = 1;
+    const score = ratio(
+      matchedConsumerPaths.length + matchedEvidenceKinds.length + Math.min(matchedGraphEdges, expectedGraphEdges),
+      expectedConsumerPaths.length + expectedEvidenceKinds.length + expectedGraphEdges
+    );
+
+    return {
+      fixtureId: crossRepoContractFixtureId,
+      summary: {
+        passed: score === 1,
+        score,
+        expectedImpacts: expectedConsumerPaths.length,
+        matchedImpacts: matchedConsumerPaths.length,
+        expectedGraphEdges,
+        matchedGraphEdges
+      },
+      expectedConsumerPaths,
+      matchedConsumerPaths,
+      missingConsumerPaths: expectedConsumerPaths.filter((consumerPath) => !matchedConsumerPaths.includes(consumerPath)),
+      expectedEvidenceKinds,
+      matchedEvidenceKinds,
+      graphEdges: {
+        expected: expectedGraphEdges,
+        matched: matchedGraphEdges
+      }
+    };
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
   }
 }
 

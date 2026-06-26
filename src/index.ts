@@ -29,6 +29,23 @@ export type {
   ContractDiffProvider,
   ImpactedContractConsumer
 } from './contract_diff.js';
+export {
+  consumersOf,
+  providersFor,
+  verifyCrossRepoLinks
+} from './cross_repo_links.js';
+export type {
+  CrossRepoConsumer,
+  CrossRepoConsumersOptions,
+  CrossRepoConsumersResult,
+  CrossRepoDiagnostic,
+  CrossRepoLinkRecord,
+  CrossRepoLinkVerifyOptions,
+  CrossRepoLinkVerifyResult,
+  CrossRepoProvider,
+  CrossRepoProvidersOptions,
+  CrossRepoProvidersResult
+} from './cross_repo_links.js';
 export { resolveCrossRepoContracts } from './cross_repo_resolver.js';
 export type {
   CrossRepoContractLink,

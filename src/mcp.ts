@@ -278,6 +278,125 @@ export function createMcpServer(context: McpContext): McpServer {
   );
 
   server.registerTool(
+    'parallax_cross_repo_consumers',
+    {
+      title: 'Find cross-repo consumers',
+      description:
+        'Query persisted workspace cross-repo links and return consumers of a provider service, contract, method, or route without mutating workspace links.',
+      inputSchema: {
+        workspaceName: z.string().trim().min(1).optional(),
+        providerServiceName: z.string().trim().min(1),
+        providerContractPath: z.string().trim().min(1).optional(),
+        method: z.string().trim().min(1).optional(),
+        routePath: z.string().trim().min(1).optional()
+      },
+      annotations: {
+        title: 'Find cross-repo consumers',
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      }
+    },
+    async ({ workspaceName, providerServiceName, providerContractPath, method, routePath }) => {
+      try {
+        const { consumersOf } = await import('./cross_repo_links.js');
+        const result = consumersOf({
+          repoRoot: context.repoRoot,
+          providerServiceName,
+          ...(workspaceName !== undefined ? { workspaceName } : {}),
+          ...(providerContractPath !== undefined ? { providerContractPath } : {}),
+          ...(method !== undefined ? { method } : {}),
+          ...(routePath !== undefined ? { routePath } : {})
+        });
+        return toolJsonResponse(context, 'parallax_cross_repo_consumers', result, {
+          query: providerServiceName,
+          resourceCount: resourceCountOf(result)
+        });
+      } catch (error) {
+        return typedToolErrorResponse(error);
+      }
+    }
+  );
+
+  server.registerTool(
+    'parallax_cross_repo_providers',
+    {
+      title: 'Find cross-repo providers',
+      description:
+        'Query persisted workspace cross-repo links and return providers used by a consumer service or file without mutating workspace links.',
+      inputSchema: {
+        workspaceName: z.string().trim().min(1).optional(),
+        consumerServiceName: z.string().trim().min(1),
+        consumerPath: z.string().trim().min(1).optional()
+      },
+      annotations: {
+        title: 'Find cross-repo providers',
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      }
+    },
+    async ({ workspaceName, consumerServiceName, consumerPath }) => {
+      try {
+        const { providersFor } = await import('./cross_repo_links.js');
+        const result = providersFor({
+          repoRoot: context.repoRoot,
+          consumerServiceName,
+          ...(workspaceName !== undefined ? { workspaceName } : {}),
+          ...(consumerPath !== undefined ? { consumerPath } : {})
+        });
+        return toolJsonResponse(context, 'parallax_cross_repo_providers', result, {
+          query: consumerServiceName,
+          resourceCount: resourceCountOf(result)
+        });
+      } catch (error) {
+        return typedToolErrorResponse(error);
+      }
+    }
+  );
+
+  server.registerTool(
+    'parallax_resolve_cross_repo_contracts',
+    {
+      title: 'Preview cross-repo contract links',
+      description:
+        'Preview cross-repo provider/consumer contract links for a workspace without clearing or inserting cross_repo_links rows.',
+      inputSchema: {
+        workspaceName: z.string().trim().min(1).optional()
+      },
+      annotations: {
+        title: 'Preview cross-repo contract links',
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      }
+    },
+    async ({ workspaceName }) => {
+      try {
+        const { resolveCrossRepoContracts } = await import('./cross_repo_resolver.js');
+        const result = resolveCrossRepoContracts({
+          repoRoot: context.repoRoot,
+          ...(workspaceName !== undefined ? { workspaceName } : {}),
+          persist: false
+        });
+        const response = {
+          ...result,
+          resources: workspaceResources(result.workspace.name)
+        };
+        return toolJsonResponse(context, 'parallax_resolve_cross_repo_contracts', response, {
+          query: result.workspace.name,
+          resourceCount: resourceCountOf(response)
+        });
+      } catch (error) {
+        return typedToolErrorResponse(error);
+      }
+    }
+  );
+
+  server.registerTool(
     'parallax_remember',
     {
       title: 'Remember a fact',

@@ -30,6 +30,9 @@ All registered tools use the `parallax_` prefix. This table is checked against t
 | `parallax_context_for_change` | Return a budgeted context pack (`brief`/`standard`/`deep`) of ranked impact paths, evidence refs, git co-change advisories, and resource links for changed files | No |
 | `parallax_search_context` | Search the latest index by keyword, path, symbol, relation provenance, or evidence snippet and return ranked entity context | No |
 | `parallax_contract_diff` | Compare a current OpenAPI contract file against the indexed workspace baseline and return compact breaking-change impact | No |
+| `parallax_cross_repo_consumers` | Query persisted workspace links for consumers of a provider service/contract/route | Yes |
+| `parallax_cross_repo_providers` | Query persisted workspace links for providers used by a consumer service/file | Yes |
+| `parallax_resolve_cross_repo_contracts` | Preview cross-repo provider/consumer contract links without persisting workspace link rows | Yes |
 | `parallax_remember` | Persist an agent observation as a content-addressable fact on a branch (`assert`/`retract`) | No |
 | `parallax_recall` | Query facts by entity, attribute, and branch (optionally semantic) | Yes |
 | `parallax_query` | Run a read-only Cypher subset (forward/reverse/variable-length hop, labels, WHERE =/CONTAINS, projection, COUNT aggregation, ORDER BY, LIMIT) over the indexed entity/relation graph and return JSON rows plus the queried index run and navigable entity resources | Yes |

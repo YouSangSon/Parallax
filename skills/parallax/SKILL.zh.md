@@ -77,7 +77,7 @@ parallax gc-branches
 claude mcp add --transport stdio parallax -- parallax mcp serve
 ```
 
-## MCP tools surfaced (20)
+## MCP tools surfaced (23)
 
 | Tool | Read-only? | What it does |
 |---|---|---|
@@ -85,6 +85,9 @@ claude mcp add --transport stdio parallax -- parallax mcp serve
 | `parallax_context_for_change` | ❌ | 为变更文件返回一个受预算约束的紧凑 context pack |
 | `parallax_search_context` | ❌ | 按 keyword/path/symbol/relation/evidence 搜索最新已索引的 entity，并返回带 resource link 的排序后 context |
 | `parallax_contract_diff` | ❌ | 将当前 OpenAPI contract 文件与最新已索引的 workspace baseline 对比，返回紧凑的 breaking-change impact |
+| `parallax_cross_repo_consumers` | ✅ | 从已持久化的 workspace link 查询某个 provider service/contract/route 的 consumer |
+| `parallax_cross_repo_providers` | ✅ | 从已持久化的 workspace link 查询某个 consumer service/file 使用的 provider |
+| `parallax_resolve_cross_repo_contracts` | ✅ | 预览 cross-repo provider/consumer contract link，但不持久化 workspace link row |
 | `parallax_remember` | ❌ | 在某个 branch 上持久化一条 agent fact (entity, attribute, value) |
 | `parallax_recall` | ✅ | 按 branch / entity / attribute / 语义查询检索 fact (sqlite-vec ANN，brute-force 兜底) |
 | `parallax_query` | ✅ | 在已索引的图上运行只读 Cypher 子集（正向/反向/可变长度 hop、label、WHERE =/CONTAINS、投影、COUNT 聚合、ORDER BY、LIMIT） |

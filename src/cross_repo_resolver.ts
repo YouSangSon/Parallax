@@ -22,6 +22,7 @@ export type { CrossRepoEventTopology } from './cross_repo/types.js';
 export type ResolveCrossRepoContractsOptions = {
   repoRoot: string;
   workspaceName?: string;
+  persist?: boolean;
 };
 
 export type CrossRepoContractLink = {
@@ -107,7 +108,9 @@ export function resolveCrossRepoContracts(
   try {
     const providerEndpoints = indexedRepos.flatMap((repo) => loadProviderEndpoints(repo, warnings, warnedFiles));
     const links = resolveLinks(providerEndpoints, indexedRepos, warnings, warnedFiles);
-    persistCrossRepoLinks(repoRoot, workspace.name, links);
+    if (options.persist !== false) {
+      persistCrossRepoLinks(repoRoot, workspace.name, links);
+    }
     return {
       workspace,
       links: links.map(({ evidenceSnippet: _evidenceSnippet, ...link }) => link),

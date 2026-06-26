@@ -87,21 +87,21 @@ const mcpDocsToolTables: McpDocsToolTable[] = [
   },
   {
     filePath: 'skills/parallax/SKILL.md',
-    toolsHeading: '## MCP tools surfaced (20)',
+    toolsHeading: '## MCP tools surfaced (23)',
     yesLabel: '✅',
     noLabel: '❌',
     readOnlyColumnIndex: 1
   },
   {
     filePath: 'skills/parallax/SKILL.ko.md',
-    toolsHeading: '## MCP tools surfaced (20)',
+    toolsHeading: '## MCP tools surfaced (23)',
     yesLabel: '✅',
     noLabel: '❌',
     readOnlyColumnIndex: 1
   },
   {
     filePath: 'skills/parallax/SKILL.zh.md',
-    toolsHeading: '## MCP tools surfaced (20)',
+    toolsHeading: '## MCP tools surfaced (23)',
     yesLabel: '✅',
     noLabel: '❌',
     readOnlyColumnIndex: 1
@@ -306,7 +306,7 @@ async function makeMcpWorkArtifactRepo(): Promise<string> {
   return repoRoot;
 }
 
-async function makeContractWorkspaceRepo(): Promise<{ consumerRoot: string; providerRoot: string }> {
+async function makeContractWorkspaceRepo(options: { skipResolve?: boolean } = {}): Promise<{ consumerRoot: string; providerRoot: string }> {
   const consumerRoot = await mkdtemp(path.join(tmpdir(), 'parallax-mcp-contract-consumer-'));
   const providerRoot = await mkdtemp(path.join(tmpdir(), 'parallax-mcp-contract-provider-'));
   await mkdir(path.join(consumerRoot, 'src'), { recursive: true });
@@ -332,8 +332,10 @@ async function makeContractWorkspaceRepo(): Promise<{ consumerRoot: string; prov
     localPath: providerRoot,
     serviceName: 'users-api'
   });
-  const resolved = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
-  assert.equal(resolved.links.length, 1);
+  if (options.skipResolve !== true) {
+    const resolved = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform' });
+    assert.equal(resolved.links.length, 1);
+  }
   return { consumerRoot, providerRoot };
 }
 
@@ -1178,6 +1180,9 @@ test('MCP stdio server initializes and exposes the full agent memory tool surfac
       'parallax_profile',
       'parallax_explain_entity',
       'parallax_contract_diff',
+      'parallax_cross_repo_consumers',
+      'parallax_cross_repo_providers',
+      'parallax_resolve_cross_repo_contracts',
       'parallax_repair_reflections',
       'parallax_restore_branch',
       'parallax_context_telemetry',
@@ -1224,6 +1229,12 @@ test('MCP stdio server initializes and exposes the full agent memory tool surfac
     assert.equal(toolByName.get('parallax_explain_entity')!.annotations?.idempotentHint, false);
     assert.equal(toolByName.get('parallax_contract_diff')!.annotations?.readOnlyHint, false);
     assert.equal(toolByName.get('parallax_contract_diff')!.annotations?.idempotentHint, false);
+    assert.equal(toolByName.get('parallax_cross_repo_consumers')!.annotations?.readOnlyHint, true);
+    assert.equal(toolByName.get('parallax_cross_repo_consumers')!.annotations?.idempotentHint, true);
+    assert.equal(toolByName.get('parallax_cross_repo_providers')!.annotations?.readOnlyHint, true);
+    assert.equal(toolByName.get('parallax_cross_repo_providers')!.annotations?.idempotentHint, true);
+    assert.equal(toolByName.get('parallax_resolve_cross_repo_contracts')!.annotations?.readOnlyHint, true);
+    assert.equal(toolByName.get('parallax_resolve_cross_repo_contracts')!.annotations?.idempotentHint, true);
     assert.equal(toolByName.get('parallax_context_telemetry')!.annotations?.readOnlyHint, true);
     assert.equal(toolByName.get('parallax_context_telemetry')!.annotations?.idempotentHint, true);
     assert.equal(toolByName.get('parallax_doctor')!.annotations?.readOnlyHint, true);
@@ -1601,6 +1612,102 @@ test('MCP contract_diff returns compact workspace resources and persists breakin
     assert.ok(resourceUris.includes('parallax://workspaces/platform'));
     assert.ok(resourceUris.includes('parallax://workspaces/platform/contracts'));
     assert.ok(resourceUris.includes('parallax://workspaces/platform/cross-repo-links'));
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP cross-repo consumers and providers query persisted workspace links', async () => {
+  const { consumerRoot } = await makeContractWorkspaceRepo();
+  const client = new McpProcessClient(consumerRoot);
+  try {
+    await client.initialize();
+
+    const consumers = await client.request('tools/call', {
+      name: 'parallax_cross_repo_consumers',
+      arguments: {
+        workspaceName: 'platform',
+        providerServiceName: 'users-api',
+        providerContractPath: 'contracts/openapi.yaml',
+        method: 'get',
+        routePath: '/api/users'
+      }
+    });
+    assert.equal(consumers.error, undefined);
+    const consumersJson = JSON.parse(consumers.result.content[0].text) as {
+      consumers: Array<{ consumerService: string; consumerPath: string; providerService: string }>;
+      resources: { crossRepoLinks: string };
+    };
+    assert.deepEqual(consumersJson.consumers.map((consumer) => ({
+      consumerService: consumer.consumerService,
+      consumerPath: consumer.consumerPath,
+      providerService: consumer.providerService
+    })), [{
+      consumerService: 'web',
+      consumerPath: 'src/client.ts',
+      providerService: 'users-api'
+    }]);
+    assert.equal(consumersJson.resources.crossRepoLinks, 'parallax://workspaces/platform/cross-repo-links');
+
+    const providers = await client.request('tools/call', {
+      name: 'parallax_cross_repo_providers',
+      arguments: {
+        workspaceName: 'platform',
+        consumerServiceName: 'web',
+        consumerPath: 'src/client.ts'
+      }
+    });
+    assert.equal(providers.error, undefined);
+    const providersJson = JSON.parse(providers.result.content[0].text) as {
+      providers: Array<{ providerService: string; providerContractPath: string; httpMethod: string; routePath: string }>;
+    };
+    assert.deepEqual(providersJson.providers.map((provider) => ({
+      providerService: provider.providerService,
+      providerContractPath: provider.providerContractPath,
+      httpMethod: provider.httpMethod,
+      routePath: provider.routePath
+    })), [{
+      providerService: 'users-api',
+      providerContractPath: 'contracts/openapi.yaml',
+      httpMethod: 'GET',
+      routePath: '/api/users'
+    }]);
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP resolve_cross_repo_contracts previews links without mutating persisted links', async () => {
+  const { consumerRoot } = await makeContractWorkspaceRepo({ skipResolve: true });
+  const client = new McpProcessClient(consumerRoot);
+  try {
+    await client.initialize();
+    const response = await client.request('tools/call', {
+      name: 'parallax_resolve_cross_repo_contracts',
+      arguments: { workspaceName: 'platform' }
+    });
+    assert.equal(response.error, undefined);
+    const preview = JSON.parse(response.result.content[0].text) as {
+      links: Array<{ consumerService: string; providerService: string; routePath: string }>;
+      resources: { crossRepoLinks: string };
+    };
+    assert.deepEqual(preview.links.map((link) => ({
+      consumerService: link.consumerService,
+      providerService: link.providerService,
+      routePath: link.routePath
+    })), [{
+      consumerService: 'web',
+      providerService: 'users-api',
+      routePath: '/api/users'
+    }]);
+
+    const db = new DatabaseSync(databasePath(consumerRoot), { readOnly: true });
+    try {
+      const row = db.prepare('SELECT count(*) AS count FROM cross_repo_links').get() as { count: number };
+      assert.equal(row.count, 0);
+    } finally {
+      db.close();
+    }
   } finally {
     await client.close();
   }

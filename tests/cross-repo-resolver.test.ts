@@ -142,6 +142,49 @@ test('resolveCrossRepoContracts links workspace consumer files to provider OpenA
   assert.deepEqual(JSON.parse(cliRun.stdout), result);
 });
 
+test('resolveCrossRepoContracts persist false previews links without mutating cross_repo_links', async () => {
+  const consumerRoot = await makeRepo('parallax-preview-consumer-');
+  const providerRoot = await makeRepo('parallax-preview-provider-');
+  await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
+  await writeFile(path.join(consumerRoot, 'src/client.ts'), [
+    'export async function loadUsers() {',
+    '  return fetch("https://users.example.test/api/users");',
+    '}',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(providerRoot, 'contracts/openapi.yaml'), [
+    'openapi: 3.0.0',
+    'info:',
+    '  title: Users API',
+    '  version: 1.0.0',
+    'paths:',
+    '  /api/users:',
+    '    get:',
+    '      operationId: listUsers',
+    '      responses:',
+    "        '200':",
+    '          description: ok',
+    ''
+  ].join('\n'));
+  await initProject({ repoRoot: consumerRoot });
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: consumerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: consumerRoot, name: 'platform', serviceName: 'web' });
+  addWorkspaceRepo({ repoRoot: consumerRoot, workspaceName: 'platform', localPath: providerRoot, serviceName: 'users-api' });
+
+  const preview = resolveCrossRepoContracts({ repoRoot: consumerRoot, workspaceName: 'platform', persist: false });
+  assert.equal(preview.links.length, 1);
+
+  const db = new DatabaseSync(databasePath(consumerRoot), { readOnly: true });
+  try {
+    const row = db.prepare('SELECT count(*) AS count FROM cross_repo_links').get() as { count: number };
+    assert.equal(row.count, 0);
+  } finally {
+    db.close();
+  }
+});
+
 test('resolveCrossRepoContracts links OpenAPI HTTP consumers through same-file Java route constants', async () => {
   const consumerRoot = await makeRepo('parallax-http-alias-consumer-');
   const providerRoot = await makeRepo('parallax-http-alias-provider-');

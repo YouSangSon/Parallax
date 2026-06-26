@@ -77,7 +77,7 @@ Or via the Claude Code CLI:
 claude mcp add --transport stdio parallax -- parallax mcp serve
 ```
 
-## MCP tools surfaced (20)
+## MCP tools surfaced (23)
 
 | Tool | Read-only? | What it does |
 |---|---|---|
@@ -85,6 +85,9 @@ claude mcp add --transport stdio parallax -- parallax mcp serve
 | `parallax_context_for_change` | ❌ | Return a budgeted compact context pack for changed files |
 | `parallax_search_context` | ❌ | Search latest indexed entities by keyword/path/symbol/relation/evidence and return ranked context with resource links |
 | `parallax_contract_diff` | ❌ | Compare a current OpenAPI contract file against the latest indexed workspace baseline and return compact breaking-change impact |
+| `parallax_cross_repo_consumers` | ✅ | Query persisted workspace links for consumers of a provider service/contract/route |
+| `parallax_cross_repo_providers` | ✅ | Query persisted workspace links for providers used by a consumer service/file |
+| `parallax_resolve_cross_repo_contracts` | ✅ | Preview cross-repo provider/consumer contract links without persisting workspace link rows |
 | `parallax_remember` | ❌ | Persist an agent fact (entity, attribute, value) on a branch |
 | `parallax_recall` | ✅ | Retrieve facts by branch / entity / attribute / semantic query (sqlite-vec ANN with brute-force fallback) |
 | `parallax_query` | ✅ | Run a read-only Cypher subset (forward/reverse/variable-length hop, labels, WHERE =/CONTAINS, projection, COUNT aggregation, ORDER BY, LIMIT) over the indexed graph |

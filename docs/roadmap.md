@@ -38,7 +38,7 @@ Cross-repo impact is at a v0 state. It works only among the local repos the user
 - [ ] Take the generated-client / event topology resolver beyond heuristics
 - [ ] Have the workspace catalog recognize sub-packages inside a monorepo as first-class
 - [x] Surface persisted cross-repo breaking contract links in primary analyze reports, graph exports, MCP payloads, and the UI workbench
-- [ ] Keep cross-repo links bidirectional (provider→consumer, consumer→provider) and always consistent
+- [x] Keep cross-repo links queryable in both directions and verify malformed, stale, or orphan workspace rows
 
 ## 3. Package / Build resolution
 

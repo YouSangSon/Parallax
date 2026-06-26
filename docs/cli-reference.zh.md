@@ -76,6 +76,11 @@
 | `parallax workspace list [--name <name>] [--json]` | 列出 workspace 及其成员 repo |
 | `parallax workspace resolve-contracts [--name <name>] [--json]` | 解析 cross-repo 的 provider/consumer contract link |
 | `parallax workspace contract-diff --contract <path> [--name <name>] [--provider <service>] [--provider-path <path>] [--json]` | 将 contract 文件与已索引的 workspace baseline 做 diff |
+| `parallax workspace verify [--name <name>] [--json]` | 验证已持久化的 cross-repo link，并标记 malformed、stale 或 orphan row |
+| `parallax workspace consumers --provider <service> [--contract <path>] [--method <method>] [--path <route>] [--name <name>] [--json]` | 从已持久化的 workspace link 列出某个 provider 的 consumer |
+| `parallax workspace providers --consumer <service> [--file <path>] [--name <name>] [--json]` | 从已持久化的 workspace link 列出某个 consumer 使用的 provider |
+
+`workspace verify`、`workspace consumers` 和 `workspace providers` 只读取已持久化的 link。它们不会运行 resolution 或 contract diff。使用 `workspace resolve-contracts` 刷新 `CONSUMES_HTTP_ENDPOINT` link，使用 `workspace contract-diff` 刷新 `BREAKS_COMPATIBILITY_WITH` link。
 
 `workspace add-repo` 以 repo 路径作为 positional 参数。cross-repo 范围仅限用户显式注册的本地 repo——无 clone 或网络访问。
 

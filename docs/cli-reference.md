@@ -76,6 +76,11 @@ The `remember`/`recall` value passed via `--value` is parsed as JSON when possib
 | `parallax workspace list [--name <name>] [--json]` | List workspaces and their member repos |
 | `parallax workspace resolve-contracts [--name <name>] [--json]` | Resolve cross-repo provider/consumer contract links |
 | `parallax workspace contract-diff --contract <path> [--name <name>] [--provider <service>] [--provider-path <path>] [--json]` | Diff a contract file against the indexed workspace baseline |
+| `parallax workspace verify [--name <name>] [--json]` | Verify persisted cross-repo links and flag malformed, stale, or orphan rows |
+| `parallax workspace consumers --provider <service> [--contract <path>] [--method <method>] [--path <route>] [--name <name>] [--json]` | List consumers of a provider from persisted workspace links |
+| `parallax workspace providers --consumer <service> [--file <path>] [--name <name>] [--json]` | List providers used by a consumer from persisted workspace links |
+
+`workspace verify`, `workspace consumers`, and `workspace providers` read persisted links only. They do not run resolution or contract diff. Use `workspace resolve-contracts` to refresh `CONSUMES_HTTP_ENDPOINT` links and `workspace contract-diff` to refresh `BREAKS_COMPATIBILITY_WITH` links.
 
 `workspace add-repo` takes the repo path as a positional argument. Cross-repo coverage is limited to local repos the user explicitly registers — no clone or network access.
 

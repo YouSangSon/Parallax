@@ -76,6 +76,11 @@
 | `parallax workspace list [--name <name>] [--json]` | workspace와 멤버 repo를 나열 |
 | `parallax workspace resolve-contracts [--name <name>] [--json]` | cross-repo provider/consumer contract link를 해석 |
 | `parallax workspace contract-diff --contract <path> [--name <name>] [--provider <service>] [--provider-path <path>] [--json]` | contract 파일을 인덱싱된 workspace baseline과 diff |
+| `parallax workspace verify [--name <name>] [--json]` | 저장된 cross-repo link를 검증하고 malformed, stale, orphan row를 표시 |
+| `parallax workspace consumers --provider <service> [--contract <path>] [--method <method>] [--path <route>] [--name <name>] [--json]` | 저장된 workspace link에서 provider의 consumer를 나열 |
+| `parallax workspace providers --consumer <service> [--file <path>] [--name <name>] [--json]` | 저장된 workspace link에서 consumer가 사용하는 provider를 나열 |
+
+`workspace verify`, `workspace consumers`, `workspace providers`는 저장된 link만 읽는다. resolution이나 contract diff를 실행하지 않는다. `CONSUMES_HTTP_ENDPOINT` link를 갱신하려면 `workspace resolve-contracts`를 사용하고, `BREAKS_COMPATIBILITY_WITH` link를 갱신하려면 `workspace contract-diff`를 사용한다.
 
 `workspace add-repo`는 repo 경로를 positional 인자로 받는다. cross-repo 범위는 사용자가 명시적으로 등록한 로컬 repo로 한정된다 — clone이나 네트워크 접근 없음.
 

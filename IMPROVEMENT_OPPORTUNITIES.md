@@ -54,8 +54,11 @@ off MCP by I-8). Context-pack telemetry is recorded but nothing acts on it.
 | M5 | **Context-budget advisory from telemetry** — `context_tool_runs`/`hit_count` are recorded but unused. Add `parallax_context_advice` computing omitted-vs-returned and expanded-resource ratios → a suggested budget (advisory only, I-9). | M | MED |
 | M6 | ✅ **shipped** — MCP workflow prompts now exist: `impact_workflow` and `triage_change` lay out the analyze→context→query/co_change→remember flow so agents discover the intended read path without guessing. | S | MED |
 | M7 | **Permissioned write surface for trace ingestion (I-8)** — Phase A: read-only `parallax_trace_preview` (dry-run match, returns promoted/unmatched, no write). Phase B: gated `parallax_ingest_traces` behind explicit opt-in. Closes the observe→prove loop while honoring read-only-first. | L | LOW-MED |
+| M8 | **GitHub-native agent package** — generate `.github/copilot-instructions.md`, optional custom-agent profiles, and client-specific MCP snippets that tell Copilot / Claude / Cursor to run Parallax before editing PR-impactful code. GitHub's current Copilot surfaces make repository instructions and custom agents first-class project context, so Parallax should become installable into those surfaces instead of expecting users to hand-write prompts. | S-M | HIGH |
+| M9 | **Token-budgeted repo map / context card** — add `parallax repo-map --changed/--query --budget` and MCP `parallax_repo_map`, ranking changed roots, affected files, key symbols, contracts, tests, confidence, evidence, provenance, `knownGaps`, and next verification actions. Aider-style repo maps, Sourcegraph MCP, and newer code-graph MCP tools all compete on "the agent reads only what matters"; Parallax can differentiate by adding impact confidence, source provenance, contract evidence, and honest coverage gaps. | M | HIGH |
+| M10 | **SCIP import/export bridge** — ingest SCIP indexes as an optional precision layer for go-to-definition / find-references / implementations, and optionally export Parallax graph slices into SCIP-compatible tooling. This gives JVM/Go/Rust/Python precision a standards-based bridge before Parallax owns every parser deeply. | M-L | MED-HIGH |
 
-**Sequencing remaining work:** M4 / M5 → M7-Phase-A → M7-Phase-B. The quick-win prompt/query layer (M1/M2/M3/M6) is now in place.
+**Sequencing remaining work:** M8 / M9 → M4 / M5 → M10 → M7-Phase-A → M7-Phase-B. The quick-win prompt/query layer (M1/M2/M3/M6) is now in place; ecosystem research now pushes installability and token-budgeted repo-map output ahead of lower-signal telemetry advice.
 
 ---
 
@@ -113,22 +116,60 @@ also remain thinly bench-covered.
 | D4 | **UI export + deep-linkable state** — the workbench is a sharing dead-end: no JSON/CSV/PNG export, URL encodes only `?report&lang`. Add client-side export buttons and encode selected path / filter / preset into the URL. Surgical `ui/client.ts` additions. | S-M | MED-HIGH |
 | D5 | ✅ **shipped** — trilingual getting-started tutorials now exist (`docs/getting-started*.md`) with a worked init→index→analyze walkthrough, expected affected output, and MCP / CI / UI next steps. | S | MED |
 | D6 | **Pre-commit / pre-push impact-gate installer** — `install-agent` proves the scaffold pattern; add `parallax install-hook` dropping a hook that runs `analyze --changed <staged> --fail-on=<level>` (reuses D1's flag). Shift-left to the commit. | S | MED |
+| D7 | **SARIF / GitHub Code Scanning export** — emit SARIF 2.1.0 for affected-file findings, contract breaks, confidence, provenance, evidence locations, adapter `knownGaps`, coverage gaps, and recommended verification actions. Wire it into D1's Action so Parallax output appears as native code-scanning alerts / PR annotations rather than only a Markdown report. | M | HIGH |
+| D8 | **Dependency PR dogfood lane** — add a local `parallax pr triage` or documented workflow that analyzes dependency-update PRs with `--fail-on`, SARIF, and repo-map output. As of 2026-06-26, the Parallax repo had a short-lived Dependabot queue (#23-#31; refresh the list before execution), making dependency bumps a useful real maintenance workflow rather than a permanent roadmap assumption. | S | MED-HIGH |
 
-**Sequencing:** D3 → D1 → D6 still maximizes reuse, but the `--fail-on` primitive is already landed; the remaining D1 work is the official Action and wiring that gate into more guardrail surfaces. D2 is independently high-value; D4 is still open while D5 is shipped.
+**Sequencing:** D7 → D1 → D8 → D6. The `--fail-on` primitive is already landed; SARIF should come before the official Action because it defines the GitHub-native result contract that the Action uploads. D2 is independently high-value; D4 remains the UI sharing slice.
 
 ---
 
 ## Top cross-dimension picks (highest value-to-effort)
 
-1. **S2** ✅ — single transaction + pragmas shipped: graph/current-state writes now commit after adapter extraction in one explicit transaction.
-2. **A5** ✅ — resolution-strength confidence (S, MED-HIGH): cheap honesty win in the TS/JS call lane.
-3. **M2 + M6** ✅ — telemetered query responses and shipped workflow prompts make the agent surface coherent; the next agent-surface lift is M4/M5 guidance from real drift/telemetry.
-4. **D3 → D1** — report JSON Schema plus the shipped confidence-aware `--fail-on`, then the still-open official Action (S→M, HIGH): the CI-guardrail story.
-5. **M1** ✅ — multi-hop + aggregation Cypher (M, HIGH): turns `parallax_query` into the blast-radius primitive.
+1. **D7 → D1** — SARIF export plus the official GitHub Action (M, HIGH): turns Parallax from a local report into native PR/code-scanning feedback.
+2. **M8 + M9** — GitHub-native agent package and token-budgeted repo map/context card (S-M→M, HIGH): makes Parallax discoverable and useful inside Copilot / Claude / Cursor workflows.
+3. **D4** — UI export + deep-linkable state (S-M, MED-HIGH): lets a PR reviewer share the exact selected impact path, evidence, and policy preset.
+4. **S2** ✅ — single transaction + pragmas shipped: graph/current-state writes now commit after adapter extraction in one explicit transaction.
+5. **A5** ✅ — resolution-strength confidence (S, MED-HIGH): cheap honesty win in the TS/JS call lane.
 6. **S1 / S4** — incremental indexing is partially shipped; the remaining structural scale/correctness arc is cheaper unchanged-file handling paired with S4 guardrails.
 
 Larger bets (L) that change the tool's ceiling: **A1** (TS TypeChecker), **A3** (Spring DI/persistence),
 **W3** (monorepo), **S1** (incremental). Sequence these after the quick wins land and are bench-guarded.
+
+## Ecosystem reassessment (2026-06-26)
+
+The web/GitHub review changes the short-term adoption order without invalidating the core-engine order above. The durable product thesis is still local-first impact intelligence, but the highest-friction gap is now **where the result appears**: coding agents and reviewers live in Copilot / Claude / Cursor, GitHub PRs, Code Scanning, and compact repo-map context windows.
+
+### Sources checked
+
+- GitHub Copilot repository instructions: <https://docs.github.com/copilot/customizing-copilot/adding-custom-instructions-for-github-copilot>
+- GitHub Copilot custom agents: <https://docs.github.com/en/copilot/how-tos/copilot-on-github/customize-copilot/customize-cloud-agent/create-custom-agents>
+- GitHub SARIF upload: <https://docs.github.com/en/code-security/how-tos/find-and-fix-code-vulnerabilities/integrate-with-existing-tools/upload-sarif-file>
+- GitHub SARIF support: <https://docs.github.com/en/code-security/reference/code-scanning/sarif-files/sarif-support>
+- Sourcegraph MCP: <https://sourcegraph.com/mcp>
+- SCIP: <https://github.com/scip-code/scip>
+- Aider repo map: <https://aider.chat/docs/repomap.html>
+- CodeGraphContext: <https://github.com/CodeGraphContext/CodeGraphContext>
+- code-review-graph: <https://github.com/tirth8205/code-review-graph>
+- agentmap: <https://github.com/raymondchins/agentmap>
+- Semgrep MCP: <https://github.com/semgrep/mcp>
+- OpenRewrite docs: <https://docs.openrewrite.org/>
+- Parallax dependency PR queue, refreshed 2026-06-26: <https://github.com/YouSangSon/Parallax/pulls?q=is%3Apr+is%3Aopen+dependabot>
+
+### What the search implies
+
+1. **GitHub-native output is the strongest next adoption slice.** GitHub supports repository instructions for Copilot and SARIF upload for third-party tools, so Parallax should emit both an agent setup package and a code-scanning artifact. This is D7 → D1 → M8.
+2. **Repo-map output is now table stakes for agent UX.** Aider, Sourcegraph, CodeGraphContext, code-review-graph, and agentmap all frame success as ranked, compact, tool-call-efficient code context. Parallax already has the richer graph and evidence model; the missing surface is a named repo-map/context-card command with a token budget. This is M9.
+3. **SCIP is the standards bridge for precision.** It is a practical path to cross-language definitions/references before Parallax owns parser-grade precision for every language. This is M10, and it complements A1/A2/A3 instead of replacing them.
+4. **Security and codemod systems should be integrations first.** Semgrep and OpenRewrite are mature in their own lanes. Parallax should recommend and scope scans/refactors based on affected files and evidence, not rebuild those engines.
+5. **Current repo state gives an immediate dogfood target, but only as a dated queue.** As of 2026-06-26, open Dependabot PRs (#23-#31) make dependency-impact triage a useful real workflow: analyze the bump, emit SARIF/Markdown, provide repo-map context, and show verification actions. Refresh the queue before starting D8.
+
+### Reprioritized adoption lane
+
+1. **D7 SARIF export** — define the GitHub-native result schema and mapping from impact findings, confidence, provenance, and known-gap disclosure to code-scanning alerts.
+2. **D1 official Action** — run init → index → analyze over PR diffs, upload SARIF, append Markdown summary, and support `--fail-on`.
+3. **M8 Copilot / agent install package** — generate instructions and MCP snippets that teach agents to call Parallax before editing.
+4. **M9 repo-map/context card** — expose ranked context with budgets so agents see changed roots, high-confidence affected nodes, contracts, tests, evidence, provenance, known gaps, and verification actions in one compact response.
+5. **D4 deep-linkable UI/export** — let humans share the same selected impact path the agent saw.
 
 ## Larger-bet reassessment (2026-06-21)
 

@@ -272,8 +272,9 @@ test('bench report summary accepts a schema v2 baseline without semantic metrics
   const root = await mkdtemp(path.join(tmpdir(), 'parallax-bench-report-legacy-'));
   const reportPath = path.join(root, 'current.json');
   const baselinePath = path.join(root, 'baseline-v2.json');
-  const baseline = makeReport({ schemaVersion: 2 });
-  delete baseline.crossRepoContracts;
+  const { crossRepoContracts: _crossRepoContracts, ...baseline } = makeReport({
+    schemaVersion: 2
+  });
   delete baseline.retrieval.semanticModels;
   await writeFile(reportPath, JSON.stringify(makeReport(), null, 2));
   await writeFile(baselinePath, JSON.stringify(baseline, null, 2));

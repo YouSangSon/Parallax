@@ -2,7 +2,7 @@
 
 [English](2026-06-26-cross-repo-link-verification-agent-query-design.md) · [한국어](2026-06-26-cross-repo-link-verification-agent-query-design.ko.md) · **中文**
 
-**状态:** 设计已批准进入 written spec review。Implementation plan 等 written spec review 之后再写。
+**状态:** 已批准实施。Implementation plan：`docs/superpowers/plans/2026-06-26-cross-repo-link-verification-agent-query.md`。
 
 **Backlog 项:** W2，bidirectional cross-repo link consistency；W6，cross-repo resolve 与 reverse-consumer MCP tools。
 

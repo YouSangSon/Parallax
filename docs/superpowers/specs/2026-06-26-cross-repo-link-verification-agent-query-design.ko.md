@@ -2,7 +2,7 @@
 
 [English](2026-06-26-cross-repo-link-verification-agent-query-design.md) · **한국어** · [中文](2026-06-26-cross-repo-link-verification-agent-query-design.zh.md)
 
-**상태:** written spec review용 설계 승인. 구현 계획은 written spec review 이후 작성.
+**상태:** 구현 승인. 구현 계획: `docs/superpowers/plans/2026-06-26-cross-repo-link-verification-agent-query.md`.
 
 **Backlog 항목:** W2, bidirectional cross-repo link consistency; W6, cross-repo resolve 및 reverse-consumer MCP tools.
 

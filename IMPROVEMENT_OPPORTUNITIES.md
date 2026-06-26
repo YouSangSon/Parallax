@@ -95,7 +95,7 @@ remaining work deepens link consistency, contract fidelity, package modeling, an
 | W5 | **JSON Schema (and Avro) contract kinds** — contract kinds are hardcoded to four; the OpenAPI object-schema signature is ~90% of a JSON Schema diff already. Add a `json-schema` kind reusing it (one synthetic endpoint per top-level schema); Avro as a mechanical follow-on. | S (JSON Schema) / M (Avro) | MED |
 | W6 | ✅ **shipped** — agents can query provider consumers/providers through read-only MCP tools and preview cross-repo resolution without mutating `cross_repo_links`; CLI persistence remains the explicit write workflow. | S | MED |
 
-**Sequencing remaining work:** W6 (cheap) → W2 (highest user-visible consistency gap) → W4 / W5 (deepen the diff) → W3 (biggest scope, monorepo users). W1 is already shipped.
+**Sequencing remaining work:** W4 / W5 (deepen the diff) → W3 (biggest scope, monorepo users). W1/W2/W6 are already shipped.
 
 ---
 

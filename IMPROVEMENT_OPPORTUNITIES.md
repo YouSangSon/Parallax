@@ -116,10 +116,10 @@ also remain thinly bench-covered.
 | D4 | **UI export + deep-linkable state** — the workbench is a sharing dead-end: no JSON/CSV/PNG export, URL encodes only `?report&lang`. Add client-side export buttons and encode selected path / filter / preset into the URL. Surgical `ui/client.ts` additions. | S-M | MED-HIGH |
 | D5 | ✅ **shipped** — trilingual getting-started tutorials now exist (`docs/getting-started*.md`) with a worked init→index→analyze walkthrough, expected affected output, and MCP / CI / UI next steps. | S | MED |
 | D6 | **Pre-commit / pre-push impact-gate installer** — `install-agent` proves the scaffold pattern; add `parallax install-hook` dropping a hook that runs `analyze --changed <staged> --fail-on=<level>` (reuses D1's flag). Shift-left to the commit. | S | MED |
-| D7 | **SARIF / GitHub Code Scanning export** — ✅ **affected-file SARIF projection shipped** from `ImpactReport` via `parallax analyze --sarif-output <path> [--sarif-category <category>]`, plus evidence locations, relation paths, confidence rules, stable fingerprints, and docs for Code Scanning upload. ✅ **cross-repo contract breaks**, ✅ **recommended verification actions**, and ✅ **adapter `knownGaps`** now emit as SARIF results. Still open: coverage gaps. | M | HIGH |
+| D7 | ✅ **shipped** — SARIF / GitHub Code Scanning export now projects `ImpactReport` via `parallax analyze --sarif-output <path> [--sarif-category <category>]`, with affected-file findings, index coverage-gap warnings, cross-repo contract-break warnings, recommended verification-action notes, adapter `knownGaps`, evidence locations, relation paths, confidence rules, stable fingerprints, and docs for Code Scanning upload. | M | HIGH |
 | D8 | ✅ **shipped** — local dependency/PR dogfood lane exists as `parallax pr triage`. It accepts `--changed` or `--base/--head`, persists the impact report, writes SARIF (default `.parallax/pr-triage.sarif`), applies `--fail-on`, and prints a dependency-focused repo map without calling GitHub or changing remote state. The open Dependabot queue was refreshed on 2026-06-27 (#23-#31) as the first real dogfood target. | S | MED-HIGH |
 
-**Sequencing:** continue D7 breadth → D1 fuller PR wrapper → D6. The `--fail-on` primitive, affected-file SARIF projection, repo-map, and local PR triage wrapper are landed; remaining SARIF breadth should define the rest of the GitHub-native result contract before adding heavier PR automation. D2 is independently high-value; D4 remains the UI sharing slice.
+**Sequencing:** continue D1 fuller PR wrapper → D6 → D4. The `--fail-on` primitive, broad SARIF projection, repo-map, and local PR triage wrapper are landed; the next adoption step is the fuller PR wrapper around the now-broader GitHub-native result contract. D2 is independently high-value; D4 remains the UI sharing slice.
 
 ---
 
@@ -170,7 +170,7 @@ The web/GitHub review changes the short-term adoption order without invalidating
 
 1. ✅ **M9 hardening / dogfood** — repo-map human and MCP output expose query matches, resource URIs, provenance, omissions, and verification actions clearly.
 2. ✅ **D8 dependency PR dogfood lane** — `parallax pr triage` now supports PR diff → `analyze` / SARIF → repo-map → verification planning for the live Dependabot queue (#23-#31).
-3. **D7 SARIF breadth** — extend Code Scanning projection beyond affected files to coverage gaps.
+3. ✅ **D7 SARIF breadth** — Code Scanning projection now covers affected files, coverage gaps, contract breaks, verification actions, and adapter known gaps.
 4. **D1 official PR wrapper** — run init → index → PR diff discovery → analyze, upload SARIF, append Markdown summary, and support `--fail-on`.
 5. **D4 deep-linkable UI/export** — let humans share the same selected impact path the agent saw.
 6. **M10 SCIP bridge** — ingest/export SCIP as a standards-based precision layer after the adoption lane is dogfooded.

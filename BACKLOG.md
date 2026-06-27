@@ -4,9 +4,8 @@ Canonical detailed backlog: `IMPROVEMENT_OPPORTUNITIES.md`.
 
 ## Now
 
-1. D7 SARIF breadth for coverage gaps.
-2. D1 official PR wrapper.
-3. D4 deep-linkable UI/export.
+1. D1 official PR wrapper.
+2. D4 deep-linkable UI/export.
 
 ## Later
 
@@ -20,3 +19,4 @@ Canonical detailed backlog: `IMPROVEMENT_OPPORTUNITIES.md`.
 3. D7 SARIF verification-action notes.
 4. D7 SARIF adapter known-gap notes.
 5. D7 SARIF contract-break warnings.
+6. D7 SARIF coverage-gap warnings.

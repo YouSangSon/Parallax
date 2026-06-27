@@ -63,8 +63,8 @@ Why:
   warning visible without pretending it is a defect in a specific affected file.
 - If a report has no uploadable changed-file anchor, Parallax omits the note and
   records the omitted count in SARIF run properties.
-- Contract breaks and coverage gaps remain separate D7 slices because they need
-  more precise path mapping.
+- Contract breaks and coverage gaps were handled as separate later D7 slices
+  because they needed more precise path mapping.
 
 ## 2026-06-27: SARIF Contract Breaks
 
@@ -82,3 +82,19 @@ Why:
 - If the provider contract path is not uploadable as a repo-relative path,
   Parallax omits the result and records the omitted count in SARIF run
   properties.
+
+## 2026-06-27: SARIF Coverage Gaps
+
+Decision: emit changed files whose impact state is `changed file not in index`
+as SARIF `warning` results under `parallax.coverage-gap`.
+
+Why:
+- The existing affected-file projection already shows the path as an `unknown`
+  impact, but coverage gaps are a trust problem with the analysis itself.
+- Anchoring the warning to the changed file makes the missing-index condition
+  visible in Code Scanning without adding new report JSON fields.
+- The result is derived only when the changed file and affected file agree on
+  the same path and the affected reason is the analyzer's existing
+  `changed file not in index` state.
+- If the changed path is not uploadable as a repo-relative path, Parallax omits
+  the result and records the omitted count in SARIF run properties.

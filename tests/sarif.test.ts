@@ -95,6 +95,51 @@ test('impactReportToSarif emits recommended verification actions as note results
   assert.equal(sarif.runs[0]?.properties?.omittedVerificationActionCount, 0);
 });
 
+test('impactReportToSarif emits index coverage gaps as warning results', () => {
+  const report = reportFixture();
+  report.changedFiles = ['src/new-api.ts'];
+  report.affectedFiles = [{
+    path: 'src/new-api.ts',
+    reason: 'changed file not in index',
+    confidence: 'unknown'
+  }];
+  report.affected = [];
+  report.actions = [];
+  report.testCommands = [];
+  report.evidence = [];
+
+  const sarif = impactReportToSarif(report);
+
+  const result = sarif.runs[0]?.results.find((item) => item.ruleId === 'parallax.coverage-gap');
+  assert.equal(result?.level, 'warning');
+  assert.equal(result?.message.text, 'Index coverage gap: src/new-api.ts was not present in index run 1');
+  assert.equal(result?.locations[0]?.physicalLocation.artifactLocation.uri, 'src/new-api.ts');
+  assert.equal(result?.properties?.changedPath, 'src/new-api.ts');
+  assert.ok(result?.partialFingerprints?.parallaxImpact);
+  assert.equal(sarif.runs[0]?.properties?.coverageGapCount, 1);
+  assert.equal(sarif.runs[0]?.properties?.omittedCoverageGapCount, 0);
+});
+
+test('impactReportToSarif omits coverage-gap results without an uploadable changed file anchor', () => {
+  const report = reportFixture();
+  report.changedFiles = ['workspace:src/new-api.ts'];
+  report.affectedFiles = [{
+    path: 'workspace:src/new-api.ts',
+    reason: 'changed file not in index',
+    confidence: 'unknown'
+  }];
+  report.affected = [];
+  report.actions = [];
+  report.testCommands = [];
+  report.evidence = [];
+
+  const sarif = impactReportToSarif(report);
+
+  assert.equal(sarif.runs[0]?.results.length, 0);
+  assert.equal(sarif.runs[0]?.properties?.coverageGapCount, 0);
+  assert.equal(sarif.runs[0]?.properties?.omittedCoverageGapCount, 1);
+});
+
 test('impactReportToSarif emits cross-repo contract breaks on provider contracts', () => {
   const report = reportFixture();
   report.changedFiles = ['contracts/openapi.yaml'];

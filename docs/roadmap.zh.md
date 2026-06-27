@@ -59,9 +59,9 @@ MCP 已稳定为 read-only。接下来是深入审视 agent 可用性的阶段�
 - [x] GitHub-native agent package：生成 Copilot repository instructions、MCP 配置片段，以及用于 PR 工作的 least-privilege "先运行 Parallax" workflow
 - [x] 面向 affected-file impact finding 的 SARIF / code-scanning export，以及生成 SARIF 文件的 composite GitHub Action
 - [x] 将 cross-repo contract-break warning 作为锚定到 provider contract 的 SARIF result 输出
+- [x] 将 index coverage-gap warning 作为锚定到 changed file 的 SARIF result 输出
 - [x] 将 recommended verification action 作为 SARIF note result 输出
 - [x] 将 adapter known-gap note 作为锚定到 changed file 的 SARIF note result 输出
-- [ ] 将 SARIF coverage 扩展到 coverage gap
 - [x] 通过 `parallax repo-map` 和 MCP `parallax_repo_map` 暴露 token-budgeted repo map / context card，对 changed root、affected file、test/docs/config/work artifact、evidence ref、verification action、resource、confidence、provenance、known gap 与 omitted count 排序
 - [x] Dependency/PR triage dogfood lane：`parallax pr triage` 在不写 GitHub 的前提下串起本地 diff 分析、SARIF 输出、`--fail-on` 与 repo-map context
 - [ ] 用使用 telemetry 验证 `context_for_change` 的 budget tuning (brief/standard/deep)

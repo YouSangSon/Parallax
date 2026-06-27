@@ -6,7 +6,10 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Active Loop
 
-- Next loop: continue D7 SARIF breadth for coverage gaps.
+- Next loop: continue D1 official PR wrapper work now that SARIF breadth is
+  complete.
+- Completed slice: D7 coverage gaps now emit as SARIF warnings anchored to
+  changed files.
 - Completed slice: D7 cross-repo contract breaks now emit as SARIF warnings
   anchored to provider contracts.
 - Completed slice: D7 adapter known gaps now emit as SARIF note results anchored
@@ -22,6 +25,5 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Next
 
-1. Continue SARIF breadth with coverage gaps.
-2. Revisit D1 official PR wrapper once the SARIF result contract is broader.
-3. Keep D4 deep-linkable UI/export queued for human sharing.
+1. Revisit D1 official PR wrapper now that the SARIF result contract is broader.
+2. Keep D4 deep-linkable UI/export queued for human sharing.

@@ -109,6 +109,7 @@ export interface SarifInvocation {
 const packageMetadata = loadPackageMetadata();
 
 const confidences: Confidence[] = ['proven', 'inferred', 'heuristic', 'unknown'];
+const coverageGapRuleId = 'parallax.coverage-gap';
 const contractBreakRuleId = 'parallax.contract-break';
 const verificationRuleId = 'parallax.verification';
 const adapterKnownGapRuleId = 'parallax.adapter-known-gap';
@@ -129,6 +130,7 @@ export function impactReportToSarif(report: ImpactReport, options: SarifOptions 
   const informationUri = options.informationUri ?? packageMetadata.homepage;
   const rules = [
     ...confidences.map((confidence) => ruleForConfidence(confidence)),
+    coverageGapRule(),
     contractBreakRule(),
     verificationActionRule(),
     adapterKnownGapRule()
@@ -186,6 +188,11 @@ export function impactReportToSarif(report: ImpactReport, options: SarifOptions 
   const verificationResults = uploadableActions.map((action) =>
     verificationResultFor(report, action, ruleIndex, options.checkoutRoot)
   );
+  const coverageGapFiles = coverageGapFilesFor(report);
+  const uploadableCoverageGapFiles = coverageGapFiles.filter(isRepoRelativeFilePath);
+  const coverageGapResults = uploadableCoverageGapFiles.map((filePath) =>
+    coverageGapResultFor(report, filePath, ruleIndex, options.checkoutRoot)
+  );
   const contractBreakImpacts = report.crossRepoImpacts ?? [];
   const uploadableContractBreakImpacts = contractBreakImpacts.filter((impact) =>
     isRepoRelativeFilePath(impact.provider.contractPath)
@@ -199,7 +206,13 @@ export function impactReportToSarif(report: ImpactReport, options: SarifOptions 
       adapterKnownGapResultFor(report, knownGap, uploadableChangedFiles, ruleIndex, options.checkoutRoot)
     )
     : [];
-  const results = [...impactResults, ...contractBreakResults, ...verificationResults, ...adapterKnownGapResults];
+  const results = [
+    ...impactResults,
+    ...coverageGapResults,
+    ...contractBreakResults,
+    ...verificationResults,
+    ...adapterKnownGapResults
+  ];
 
   const run: SarifRun = {
     tool: {
@@ -221,6 +234,8 @@ export function impactReportToSarif(report: ImpactReport, options: SarifOptions 
         omittedAffectedFiles,
         verificationActionCount: uploadableActions.length,
         omittedVerificationActionCount: report.actions.length - uploadableActions.length,
+        coverageGapCount: coverageGapResults.length,
+        omittedCoverageGapCount: coverageGapFiles.length - coverageGapResults.length,
         contractBreakCount: contractBreakResults.length,
         omittedContractBreakCount: contractBreakImpacts.length - contractBreakResults.length,
         adapterKnownGapCount: adapterKnownGapResults.length,
@@ -236,6 +251,8 @@ export function impactReportToSarif(report: ImpactReport, options: SarifOptions 
       omittedAffectedFiles,
       verificationActionCount: uploadableActions.length,
       omittedVerificationActionCount: report.actions.length - uploadableActions.length,
+      coverageGapCount: coverageGapResults.length,
+      omittedCoverageGapCount: coverageGapFiles.length - coverageGapResults.length,
       contractBreakCount: contractBreakResults.length,
       omittedContractBreakCount: contractBreakImpacts.length - contractBreakResults.length,
       adapterKnownGapCount: adapterKnownGapResults.length,
@@ -262,6 +279,22 @@ function verificationActionRule(): SarifReportingDescriptor {
     },
     defaultConfiguration: {
       level: 'note'
+    }
+  };
+}
+
+function coverageGapRule(): SarifReportingDescriptor {
+  return {
+    id: coverageGapRuleId,
+    name: 'Parallax coverage gap',
+    shortDescription: {
+      text: 'Parallax index coverage gap'
+    },
+    fullDescription: {
+      text: 'Parallax could not find a changed file in the latest completed index run, so impact analysis may be incomplete.'
+    },
+    defaultConfiguration: {
+      level: 'warning'
     }
   };
 }
@@ -316,6 +349,39 @@ function ruleForConfidence(confidence: Confidence): SarifReportingDescriptor {
 
 function levelForConfidence(confidence: Confidence): SarifResultLevel {
   return confidence === 'unknown' ? 'note' : 'warning';
+}
+
+function coverageGapResultFor(
+  report: ImpactReport,
+  filePath: string,
+  ruleIndex: Map<string, number>,
+  checkoutRoot: string | undefined
+): SarifResult {
+  return {
+    ruleId: coverageGapRuleId,
+    ruleIndex: ruleIndex.get(coverageGapRuleId) ?? 0,
+    level: 'warning',
+    message: {
+      text: `Index coverage gap: ${filePath} was not present in index run ${report.indexRunId}`
+    },
+    locations: [{
+      physicalLocation: {
+        artifactLocation: artifactLocation(filePath, checkoutRoot)
+      },
+      message: {
+        text: 'Changed file not present in latest index'
+      }
+    }],
+    partialFingerprints: {
+      parallaxImpact: fingerprintForCoverageGap(report, filePath)
+    },
+    properties: {
+      reportId: report.id,
+      indexRunId: report.indexRunId,
+      changedPath: filePath,
+      reason: 'changed file not in index'
+    }
+  };
 }
 
 function contractBreakResultFor(
@@ -415,6 +481,18 @@ function adapterKnownGapResultFor(
       anchorPath
     }
   };
+}
+
+function coverageGapFilesFor(report: ImpactReport): string[] {
+  const changedPaths = new Set(report.changedFiles.map(normalizeReportPath));
+  const coverageGapFiles = new Set<string>();
+  for (const affectedFile of report.affectedFiles) {
+    const normalizedPath = normalizeReportPath(affectedFile.path);
+    if (affectedFile.reason !== 'changed file not in index') continue;
+    if (!changedPaths.has(normalizedPath)) continue;
+    coverageGapFiles.add(normalizedPath);
+  }
+  return [...coverageGapFiles].sort();
 }
 
 function consumerLabel(impact: CrossRepoImpact): string {
@@ -632,6 +710,15 @@ function fingerprintFor(affectedFile: AffectedFile, evidenceIds: readonly string
     confidence: affectedFile.confidence,
     relationPath: affectedFile.relationPath?.map(normalizeReportPath) ?? [],
     evidenceIds: [...evidenceIds].sort()
+  };
+  return createHash('sha256').update(JSON.stringify(payload)).digest('hex').slice(0, 32);
+}
+
+function fingerprintForCoverageGap(report: ImpactReport, filePath: string): string {
+  const payload = {
+    indexRunId: report.indexRunId,
+    path: normalizeReportPath(filePath),
+    reason: 'changed file not in index'
   };
   return createHash('sha256').update(JSON.stringify(payload)).digest('hex').slice(0, 32);
 }

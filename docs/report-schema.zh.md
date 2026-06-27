@@ -19,7 +19,7 @@
 
 ## SARIF projection
 
-`parallax analyze --sarif-output <path>` 会写出用于 GitHub Code Scanning 的 SARIF 2.1.0，其中包含 affected-file finding、cross-repo contract-break warning、recommended verification-action note 与 adapter known-gap note，但 SARIF 只是从 `ImpactReport` 派生出的纯 projection。它不会 bump 此报告 schema，不会给 `analyze --json` 增加字段，也不会改变已持久化的报告形态。需要 Parallax 完整数据契约的 consumer 应继续校验 `analyze --json`；需要 GitHub annotation 的 consumer 则上传 SARIF 文件。
+`parallax analyze --sarif-output <path>` 会写出用于 GitHub Code Scanning 的 SARIF 2.1.0，其中包含 affected-file finding、index coverage-gap warning、cross-repo contract-break warning、recommended verification-action note 与 adapter known-gap note，但 SARIF 只是从 `ImpactReport` 派生出的纯 projection。它不会 bump 此报告 schema，不会给 `analyze --json` 增加字段，也不会改变已持久化的报告形态。需要 Parallax 完整数据契约的 consumer 应继续校验 `analyze --json`；需要 GitHub annotation 的 consumer 则上传 SARIF 文件。
 
 ### `crossRepoImpacts`
 

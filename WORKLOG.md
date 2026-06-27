@@ -66,7 +66,16 @@
     results when no uploadable provider contract anchor exists.
   - `docs/cli-reference*.md`, `docs/report-schema*.md`,
     `docs/roadmap*.md`, and `IMPROVEMENT_OPPORTUNITIES.md` document that
-    contract breaks are covered while coverage gaps remain open.
+    contract breaks are covered; remaining SARIF breadth continues below.
+- Shipped fourth D7 SARIF breadth slice.
+  - `src/sarif.ts` now projects changed files with `changed file not in index`
+    impact state as `parallax.coverage-gap` warning results anchored to the
+    changed file.
+  - `tests/sarif.test.ts` covers emitted coverage-gap warnings and omitted
+    warnings when no uploadable changed-file anchor exists.
+  - `docs/cli-reference*.md`, `docs/report-schema*.md`,
+    `docs/roadmap*.md`, and `IMPROVEMENT_OPPORTUNITIES.md` document D7 SARIF
+    breadth as complete.
 - D7 verification:
   - `node --import tsx --test tests/sarif.test.ts`
   - `npm run check`

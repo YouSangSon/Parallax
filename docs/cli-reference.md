@@ -23,6 +23,7 @@ Most machine-oriented commands can print JSON through command-specific flags. `a
 | `parallax analyze --base <ref> [--head <ref>] [--depth <n>] [--max-fanout <n>] [--json] [--sarif-output <path>]` | Derive the changed file list from `git diff <base>...<head>` (default head `HEAD`) |
 | `parallax repo-map --changed <file[,file]> [--query <text>] [--budget <tokens>] [--json]` | Build a token-budgeted repo map/context card with changed roots, affected files, tests, docs, work artifacts, evidence refs, verification actions, resources, confidence, provenance, known gaps, and omitted counts |
 | `parallax pr triage --base <ref> [--head <ref>] [--fail-on <level>] [--sarif-output <path>] [--query <text>] [--budget <tokens>]` | Run the local dependency/PR triage path: analyze the diff, write SARIF, and print a repo map |
+| `parallax install-hook [--hook pre-commit\|pre-push\|all] [--fail-on <level>] [--command <bin>] [--dry-run] [--force]` | Install local Git hooks that run Parallax impact gates before commits or pushes |
 | `parallax query "<cypher>"` | Run a read-only Cypher subset over the indexed graph and print JSON rows |
 | `parallax ingest-traces --file <traces.json>` | Promote relations matching observed runtime `source -> target` edges to `proven` confidence |
 
@@ -49,6 +50,8 @@ By default (no `--json`) the report is persisted and a short summary is printed;
 parallax index
 parallax pr triage --base origin/main --head HEAD --fail-on proven
 ```
+
+`install-hook` is an opt-in local installer. It writes executable `pre-commit` and/or `pre-push` hook files into the active Git hooks directory, including repositories that use `core.hooksPath`. The generated `pre-commit` hook gates the staged changed-file list from `git diff --cached`; the generated `pre-push` hook gates the pushed diff using Git's pre-push input first and falls back to `PARALLAX_BASE`, the upstream merge-base, or `origin/main`. Existing non-Parallax hooks are skipped unless `--force` is supplied; `--dry-run` prints the plan without writing. Use `PARALLAX_SKIP_HOOK=1` or Git's `--no-verify` to bypass a local hook intentionally.
 
 When the changed file is an indexed provider contract and the workspace already contains persisted `BREAKS_COMPATIBILITY_WITH` links, `analyze` also includes `crossRepoImpacts`. These entries identify the consumer service, consumer file, provider contract, breaking change, confidence, evidence snippet, and workspace resource URIs. `analyze` does not run contract diff automatically; refresh links first with `parallax workspace contract-diff` when the workspace is stale.
 

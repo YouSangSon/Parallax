@@ -4,8 +4,8 @@ Canonical detailed backlog: `IMPROVEMENT_OPPORTUNITIES.md`.
 
 ## Now
 
-1. D6 pre-commit / pre-push impact-gate installer.
-2. D4 deep-linkable UI/export.
+1. D4 deep-linkable UI/export.
+2. M10 SCIP bridge.
 
 ## Later
 
@@ -18,3 +18,4 @@ Canonical detailed backlog: `IMPROVEMENT_OPPORTUNITIES.md`.
 2. D8 dependency PR dogfood lane.
 3. D7 SARIF breadth.
 4. D1 official PR action wrapper.
+5. D6 pre-commit / pre-push impact-gate installer.

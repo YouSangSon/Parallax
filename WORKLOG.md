@@ -36,6 +36,7 @@
   - `npm run build`
   - `git diff --check`
   - `npm test`
+  - `npm test`
 - Review:
   - spec reviewer approved the D8 diff.
   - code quality reviewer found depth/fanout and docs-boundary issues; both
@@ -98,3 +99,25 @@
 - D1 verification:
   - `node --import tsx --test tests/package_metadata.test.ts`
   - `npm run docs:lint`
+  - `npm run build`
+  - `git diff --check`
+  - `npm test`
+- Shipped D6 local Git hook installer slice.
+  - `src/git_hooks.ts` adds pure planning and install functions for managed
+    `pre-commit` / `pre-push` Parallax hooks.
+  - `src/cli.ts` adds `parallax install-hook [--hook pre-commit|pre-push|all]`
+    with `--fail-on`, `--command`, `--dry-run`, and `--force`.
+  - Generated hooks run `parallax init`, `parallax index`, and
+    `parallax analyze --changed ... --fail-on ...`; `pre-commit` uses staged
+    files and `pre-push` uses Git's pre-push input with safe fallbacks.
+  - Existing non-Parallax hooks are skipped unless forced; managed hooks are
+    idempotently overwritten; `core.hooksPath` is respected.
+  - `README*.md`, `docs/cli-reference*.md`, `docs/roadmap*.md`,
+    `PLAN.md`, `BACKLOG.md`, `DECISIONS.md`, and
+    `IMPROVEMENT_OPPORTUNITIES.md` document the shipped hook workflow.
+- D6 verification:
+  - `node --import tsx --test tests/git-hooks.test.ts`
+  - `npm run check`
+  - `npm run docs:lint`
+  - `npm run build`
+  - `git diff --check`

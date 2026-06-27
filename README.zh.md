@@ -99,6 +99,16 @@ steps:
 
 SARIF 生成步骤应保持不失败，这样存在 findings 时 upload step 仍会运行。如需在高置信 impact 时让 CI 失败，可将 action 的 `fail-on` 输入改为 `proven`，或增加单独的 `parallax analyze ... --fail-on proven` gate step。
 
+如果想在 commit 或 push 之前运行同样的 impact gate，可以安装本地 Git hook：
+
+```bash
+parallax install-hook --hook pre-commit --fail-on proven
+parallax install-hook --hook pre-push --fail-on proven
+parallax install-hook --hook all --dry-run
+```
+
+installer 只写入当前生效的 Git hooks 目录，尊重 `core.hooksPath`；没有 `--force` 时会跳过已有的非 Parallax hook。需要临时绕过时可用 `PARALLAX_SKIP_HOOK=1` 或 Git 的 `--no-verify`。
+
 用本地 UI 直接打开最新报告：
 
 ```bash

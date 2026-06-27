@@ -115,11 +115,11 @@ also remain thinly bench-covered.
 | D3 | ✅ **shipped** (impact report) — `parallax analyze --json` output now has a published, versioned JSON Schema (`schemas/impact-report.schema.json`, draft 2020-12). The hand-written `ImpactReport` stays authoritative; a zod mirror (`src/report_schema.ts`) generates the artifact, with a compile-time conformance assertion + a `npm run lint` drift guard + a test that validates real `analyze --json` output against the schema. Still open: **bench-report schema** (deferred — `bench/` is outside `tsc` scope and `RetrievalBenchReport` isn't exported; it is an internal artifact, not an external contract). | S | MED-HIGH |
 | D4 | **UI export + deep-linkable state** — the workbench is a sharing dead-end: no JSON/CSV/PNG export, URL encodes only `?report&lang`. Add client-side export buttons and encode selected path / filter / preset into the URL. Surgical `ui/client.ts` additions. | S-M | MED-HIGH |
 | D5 | ✅ **shipped** — trilingual getting-started tutorials now exist (`docs/getting-started*.md`) with a worked init→index→analyze walkthrough, expected affected output, and MCP / CI / UI next steps. | S | MED |
-| D6 | **Pre-commit / pre-push impact-gate installer** — `install-agent` proves the scaffold pattern; add `parallax install-hook` dropping a hook that runs `analyze --changed <staged> --fail-on=<level>` (reuses D1's flag). Shift-left to the commit. | S | MED |
+| D6 | ✅ **shipped** — `parallax install-hook` plans or installs managed `pre-commit` / `pre-push` impact gates. It writes executable hooks into the active Git hooks directory, respects `core.hooksPath`, skips existing non-Parallax hooks unless `--force` is supplied, supports `--dry-run`, uses `--fail-on`, and allows intentional bypass with `PARALLAX_SKIP_HOOK=1` or Git's `--no-verify`. | S | MED |
 | D7 | ✅ **shipped** — SARIF / GitHub Code Scanning export now projects `ImpactReport` via `parallax analyze --sarif-output <path> [--sarif-category <category>]`, with affected-file findings, index coverage-gap warnings, cross-repo contract-break warnings, recommended verification-action notes, adapter `knownGaps`, evidence locations, relation paths, confidence rules, stable fingerprints, and docs for Code Scanning upload. | M | HIGH |
 | D8 | ✅ **shipped** — local dependency/PR dogfood lane exists as `parallax pr triage`. It accepts `--changed` or `--base/--head`, persists the impact report, writes SARIF (default `.parallax/pr-triage.sarif`), applies `--fail-on`, and prints a dependency-focused repo map without calling GitHub or changing remote state. The open Dependabot queue was refreshed on 2026-06-27 (#23-#31) as the first real dogfood target. | S | MED-HIGH |
 
-**Sequencing:** continue D6 → D4 → M10. The `--fail-on` primitive, broad SARIF projection, repo-map, local PR triage wrapper, and official PR action wrapper are landed; the next adoption step is shifting the same impact gate left into local hooks. D2 is independently high-value; D4 remains the UI sharing slice.
+**Sequencing:** continue D4 → M10. The `--fail-on` primitive, broad SARIF projection, repo-map, local PR triage wrapper, official PR action wrapper, and local Git hook installer are landed. The next adoption step is making UI state shareable. D2 is independently high-value; D4 remains the UI sharing slice.
 
 ---
 
@@ -155,6 +155,11 @@ The web/GitHub review changes the short-term adoption order without invalidating
 - agentmap: <https://github.com/raymondchins/agentmap>
 - Semgrep MCP: <https://github.com/semgrep/mcp>
 - OpenRewrite docs: <https://docs.openrewrite.org/>
+- Git hooks documentation: <https://git-scm.com/docs/githooks>
+- Git `core.hooksPath`: <https://git-scm.com/docs/git-config#Documentation/git-config.txt-corehooksPath>
+- pre-commit: <https://pre-commit.com/>
+- Lefthook: <https://lefthook.dev/>
+- Husky: <https://typicode.github.io/husky/>
 - Parallax dependency PR queue, refreshed 2026-06-27: <https://github.com/YouSangSon/Parallax/pulls?q=is%3Apr+is%3Aopen+dependabot>
 
 ### What the search implies
@@ -165,6 +170,7 @@ The web/GitHub review changes the short-term adoption order without invalidating
 4. **Security and codemod systems should be integrations first.** Semgrep and OpenRewrite are mature in their own lanes. Parallax should recommend and scope scans/refactors based on affected files and evidence, not rebuild those engines.
 5. **Current repo state gives an immediate dogfood target.** As of 2026-06-27, open Dependabot PRs #23-#31 are still available: GitHub Actions major bumps (#23-#28), `@types/node` (#29), TypeScript 6 (#30), and Zod (#31). This makes dependency-impact triage a useful real workflow: analyze the bump, emit SARIF/Markdown, provide repo-map context, and show verification actions.
 6. **Agentic workflow safety reinforces Parallax's I-8 boundary.** GitHub Agentic Workflows emphasizes read-only defaults, guarded writes, sandboxing, and approval gates. Parallax should keep PR/action automation read-only by default, with explicit opt-in for any write surface.
+7. **Hook adoption should stay dependency-free.** Git, pre-commit, Lefthook, and Husky all converge on explicit local installation and skippable hooks, but Parallax can satisfy D6 with Git's native hook directory and `core.hooksPath` instead of adding a framework dependency.
 
 ### Reprioritized adoption lane
 
@@ -172,8 +178,9 @@ The web/GitHub review changes the short-term adoption order without invalidating
 2. ✅ **D8 dependency PR dogfood lane** — `parallax pr triage` now supports PR diff → `analyze` / SARIF → repo-map → verification planning for the live Dependabot queue (#23-#31).
 3. ✅ **D7 SARIF breadth** — Code Scanning projection now covers affected files, coverage gaps, contract breaks, verification actions, and adapter known gaps.
 4. ✅ **D1 official PR wrapper** — run init → index → PR diff discovery → triage, write SARIF, append Markdown summary, and support `fail-on` while keeping upload explicit.
-5. **D4 deep-linkable UI/export** — let humans share the same selected impact path the agent saw.
-6. **M10 SCIP bridge** — ingest/export SCIP as a standards-based precision layer after the adoption lane is dogfooded.
+5. ✅ **D6 local Git hook installer** — shift the same impact gate left into opt-in `pre-commit` / `pre-push` without adding a hook framework dependency.
+6. **D4 deep-linkable UI/export** — let humans share the same selected impact path the agent saw.
+7. **M10 SCIP bridge** — ingest/export SCIP as a standards-based precision layer after the adoption lane is dogfooded.
 
 ## Larger-bet reassessment (2026-06-21)
 

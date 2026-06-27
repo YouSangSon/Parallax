@@ -23,6 +23,7 @@
 | `parallax analyze --base <ref> [--head <ref>] [--depth <n>] [--max-fanout <n>] [--json] [--sarif-output <path>]` | `git diff <base>...<head>`(기본 head `HEAD`)에서 변경 파일 목록을 도출 |
 | `parallax repo-map --changed <file[,file]> [--query <text>] [--budget <tokens>] [--json]` | changed root, affected file, test, 문서, work artifact, evidence ref, verification action, resource, confidence, provenance, known gap, omitted count가 담긴 token-budgeted repo map/context card를 생성 |
 | `parallax pr triage --base <ref> [--head <ref>] [--fail-on <level>] [--sarif-output <path>] [--query <text>] [--budget <tokens>]` | 로컬 dependency/PR triage 경로 실행: diff 분석, SARIF 작성, repo map 출력 |
+| `parallax install-hook [--hook pre-commit\|pre-push\|all] [--fail-on <level>] [--command <bin>] [--dry-run] [--force]` | commit 또는 push 전에 Parallax impact gate를 실행하는 로컬 Git hook 설치 |
 | `parallax query "<cypher>"` | 인덱싱된 그래프에 읽기전용 Cypher 서브셋을 실행하고 JSON 행을 출력 |
 | `parallax ingest-traces --file <traces.json>` | 관측된 런타임 `source -> target` 엣지와 매칭되는 관계를 `proven` 신뢰도로 승격 |
 
@@ -49,6 +50,8 @@
 parallax index
 parallax pr triage --base origin/main --head HEAD --fail-on proven
 ```
+
+`install-hook`은 opt-in 로컬 installer다. 실행 가능한 `pre-commit` 또는 `pre-push` hook 파일을 활성 Git hooks 디렉터리에 쓰며, `core.hooksPath`를 쓰는 저장소도 지원한다. 생성된 `pre-commit` hook은 `git diff --cached`의 staged changed-file 목록을 gate하고, `pre-push` hook은 Git pre-push input으로 push diff를 먼저 계산한 뒤 `PARALLAX_BASE`, upstream merge-base, `origin/main` 순서로 fallback한다. 기존 non-Parallax hook은 `--force`가 없으면 건너뛰며, `--dry-run`은 쓰지 않고 계획만 출력한다. 의도적으로 우회할 때는 `PARALLAX_SKIP_HOOK=1` 또는 Git의 `--no-verify`를 사용한다.
 
 변경 파일이 인덱싱된 provider contract이고 workspace에 저장된 `BREAKS_COMPATIBILITY_WITH` link가 이미 있으면, `analyze`는 `crossRepoImpacts`도 포함한다. 각 항목은 consumer service, consumer file, provider contract, breaking change, confidence, evidence snippet, workspace resource URI를 식별한다. `analyze`는 contract diff를 자동 실행하지 않는다. workspace가 오래됐으면 먼저 `parallax workspace contract-diff`로 link를 갱신한다.
 

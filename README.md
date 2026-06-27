@@ -99,6 +99,16 @@ The action runs `parallax init`, `parallax index`, and `parallax pr triage`, wri
 
 Keep SARIF generation non-failing so the upload step still runs when findings exist. Set the action's `fail-on` input to `proven` or add a separate `parallax analyze ... --fail-on proven` gate step if you want CI to fail on high-confidence impact.
 
+Install a local Git hook when you want the same impact gate before commits or pushes:
+
+```bash
+parallax install-hook --hook pre-commit --fail-on proven
+parallax install-hook --hook pre-push --fail-on proven
+parallax install-hook --hook all --dry-run
+```
+
+The installer writes only the active Git hooks directory, respects `core.hooksPath`, skips existing non-Parallax hooks unless `--force` is supplied, and can be bypassed with `PARALLAX_SKIP_HOOK=1` or Git's `--no-verify`.
+
 Open the latest report in the local UI:
 
 ```bash

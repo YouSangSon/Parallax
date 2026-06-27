@@ -82,6 +82,17 @@ export type {
   PlannedCopilotPackageFile
 } from './agent_config.js';
 export {
+  installParallaxGitHooks,
+  planParallaxGitHooks
+} from './git_hooks.js';
+export type {
+  ParallaxGitHookAction,
+  ParallaxGitHookName,
+  ParallaxGitHookOptions,
+  ParallaxGitHookPlan,
+  PlannedParallaxGitHook
+} from './git_hooks.js';
+export {
   addWorkspaceRepo,
   initWorkspace,
   listWorkspaces,

@@ -114,3 +114,27 @@ Why:
   action preserves the project's read-only-by-default boundary.
 - Appending `$GITHUB_STEP_SUMMARY` gives reviewers the repo-map/triage summary
   even before they open Code Scanning.
+
+## 2026-06-27: Local Git Hook Installer
+
+Decision: add `parallax install-hook` as a dependency-free local installer for
+managed `pre-commit` and `pre-push` hooks instead of adopting Husky, Lefthook,
+or pre-commit as a runtime dependency.
+
+Sources:
+- Git hook execution model: <https://git-scm.com/docs/githooks>
+- Git `core.hooksPath`: <https://git-scm.com/docs/git-config#Documentation/git-config.txt-corehooksPath>
+- Hook-framework ecosystem checked: <https://pre-commit.com/>,
+  <https://lefthook.dev/>, <https://typicode.github.io/husky/>
+
+Why:
+- Git already provides executable hook files and `core.hooksPath`, so Parallax
+  can shift impact gating left without increasing install cost.
+- The installer follows the existing `install-agent` scaffold pattern: a pure
+  plan, a thin write layer, `--dry-run`, and explicit `--force`.
+- Existing non-Parallax hooks are user-owned and are skipped by default.
+- `pre-commit` should gate staged paths, while `pre-push` should prefer Git's
+  pushed ref input and only fall back to configured or conventional bases.
+- Local hooks remain intentionally bypassable with Git's `--no-verify` or
+  `PARALLAX_SKIP_HOOK=1`; CI and GitHub Code Scanning remain the authoritative
+  shared review surfaces.

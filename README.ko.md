@@ -99,6 +99,16 @@ steps:
 
 SARIF 생성은 실패하지 않게 두어야 finding이 있을 때도 upload step이 실행된다. 고신뢰 impact에서 CI를 실패시키고 싶다면 action의 `fail-on` 입력을 `proven`으로 바꾸거나 별도의 `parallax analyze ... --fail-on proven` gate step을 추가한다.
 
+commit이나 push 전에 같은 impact gate를 로컬 Git hook으로 실행하고 싶다면 hook을 설치한다.
+
+```bash
+parallax install-hook --hook pre-commit --fail-on proven
+parallax install-hook --hook pre-push --fail-on proven
+parallax install-hook --hook all --dry-run
+```
+
+installer는 활성 Git hooks 디렉터리에만 쓰고, `core.hooksPath`를 존중하며, `--force`가 없으면 기존 non-Parallax hook을 건너뛴다. 필요하면 `PARALLAX_SKIP_HOOK=1` 또는 Git의 `--no-verify`로 우회할 수 있다.
+
 로컬 UI로 최신 report를 바로 열 수 있다.
 
 ```bash

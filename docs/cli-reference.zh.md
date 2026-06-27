@@ -23,6 +23,7 @@
 | `parallax analyze --base <ref> [--head <ref>] [--depth <n>] [--max-fanout <n>] [--json] [--sarif-output <path>]` | 从 `git diff <base>...<head>`（默认 head `HEAD`）推导变更文件列表 |
 | `parallax repo-map --changed <file[,file]> [--query <text>] [--budget <tokens>] [--json]` | 构建 token-budgeted repo map/context card，包含 changed root、affected file、test、文档、work artifact、evidence ref、verification action、resource、confidence、provenance、known gap 与 omitted count |
 | `parallax pr triage --base <ref> [--head <ref>] [--fail-on <level>] [--sarif-output <path>] [--query <text>] [--budget <tokens>]` | 运行本地 dependency/PR triage 路径：分析 diff、写入 SARIF、打印 repo map |
+| `parallax install-hook [--hook pre-commit\|pre-push\|all] [--fail-on <level>] [--command <bin>] [--dry-run] [--force]` | 安装本地 Git hook，在 commit 或 push 前运行 Parallax impact gate |
 | `parallax query "<cypher>"` | 在已索引的图上运行只读 Cypher 子集并打印 JSON 行 |
 | `parallax ingest-traces --file <traces.json>` | 将与观测到的运行时 `source -> target` 边匹配的关系提升为 `proven` 置信度 |
 
@@ -49,6 +50,8 @@
 parallax index
 parallax pr triage --base origin/main --head HEAD --fail-on proven
 ```
+
+`install-hook` 是一个 opt-in 的本地 installer。它会把可执行的 `pre-commit` 和/或 `pre-push` hook 文件写入当前生效的 Git hooks 目录，也支持使用 `core.hooksPath` 的仓库。生成的 `pre-commit` hook 会用 `git diff --cached` 得到 staged changed-file 列表并执行 gate；生成的 `pre-push` hook 会优先使用 Git pre-push input 计算 push diff，然后依次回退到 `PARALLAX_BASE`、upstream merge-base、`origin/main`。已有的非 Parallax hook 在没有 `--force` 时会被跳过；`--dry-run` 只打印计划不写文件。需要有意绕过时，使用 `PARALLAX_SKIP_HOOK=1` 或 Git 的 `--no-verify`。
 
 当变更文件是已索引的 provider contract，且 workspace 中已经存在持久化的 `BREAKS_COMPATIBILITY_WITH` link 时，`analyze` 也会包含 `crossRepoImpacts`。这些条目会标识 consumer service、consumer file、provider contract、breaking change、confidence、evidence snippet 和 workspace resource URI。`analyze` 不会自动运行 contract diff；如果 workspace 已陈旧，请先用 `parallax workspace contract-diff` 刷新 link。
 

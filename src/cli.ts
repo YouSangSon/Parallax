@@ -667,6 +667,35 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === 'install-hook') {
+    const {
+      installParallaxGitHooks,
+      planParallaxGitHooks
+    } = await import('./index.js');
+    const hook = parseOptionalArg(args, '--hook') ?? 'pre-commit';
+    const failOn = parseOptionalValueArg(args, '--fail-on');
+    const commandOverride = parseOptionalArg(args, '--command');
+    const options = {
+      repoRoot,
+      hooks: parseHookNames(hook),
+      ...(failOn !== undefined ? { failOn } : {}),
+      ...(commandOverride !== undefined ? { command: commandOverride } : {}),
+      ...(args.includes('--force') ? { force: true } : {})
+    };
+    const plan = args.includes('--dry-run')
+      ? planParallaxGitHooks(options)
+      : installParallaxGitHooks(options);
+    console.log(JSON.stringify({
+      repoRoot: plan.repoRoot,
+      hooks: plan.hooks.map((planned) => ({
+        hook: planned.hook,
+        path: planned.path,
+        action: planned.action
+      }))
+    }, null, 2));
+    return;
+  }
+
   if (command === 'query') {
     const { executeGraphQuery } = await import('./index.js');
     const cypher = parsePositionals(args).join(' ') || parseOptionalArg(args, '--query');
@@ -858,7 +887,7 @@ function parsePositionals(args: string[]): string[] {
     '--provider', '--provider-path', '--contract', '--method', '--path', '--consumer',
     '--entity', '--attribute', '--value', '--branch', '--agent', '--evidence-fact-ids',
     '--name', '--from', '--fact-id', '--k', '--op', '--as-of-tx',
-    '--target', '--source', '--query', '--model', '--budget',
+    '--target', '--source', '--query', '--model', '--budget', '--hook', '--command',
     '--older-than-days', '--abandon', '--restore', '--max-age', '--limit', '--cursor'
   ]);
   const positionals: string[] = [];
@@ -871,6 +900,12 @@ function parsePositionals(args: string[]): string[] {
     if (!arg.startsWith('--')) positionals.push(arg);
   }
   return positionals;
+}
+
+function parseHookNames(raw: string): Array<'pre-commit' | 'pre-push'> {
+  if (raw === 'all') return ['pre-commit', 'pre-push'];
+  if (raw === 'pre-commit' || raw === 'pre-push') return [raw];
+  throw new Error('install-hook --hook must be pre-commit, pre-push, or all');
 }
 
 function parseGraphFormat(args: string[]): 'json' | 'mermaid' | 'dot' {
@@ -936,6 +971,8 @@ Agent memory:
   ${PACKAGE_NAME} install-agent [--config .mcp.json] [--name parallax] [--dry-run]
   ${PACKAGE_NAME} install-agent --copilot-package --target <repo> [--config .mcp.json]
                           [--name parallax] [--dry-run] [--force]
+  ${PACKAGE_NAME} install-hook [--hook pre-commit|pre-push|all] [--fail-on proven]
+                          [--command parallax] [--dry-run] [--force]
 `);
 }
 

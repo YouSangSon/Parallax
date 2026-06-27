@@ -6,7 +6,10 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Active Loop
 
-- Next loop: continue D6 pre-commit / pre-push impact-gate installer work.
+- Next loop: continue D4 deep-linkable UI/export work.
+- Completed slice: D6 local Git hook installer now adds `parallax install-hook`
+  for managed `pre-commit` / `pre-push` impact gates, preserving existing
+  non-Parallax hooks unless forced.
 - Completed slice: D1 official PR action wrapper now runs init/index/pr triage,
   supports changed-file or base/head diff discovery, writes SARIF, and appends a
   GitHub step summary while leaving SARIF upload explicit.
@@ -27,5 +30,5 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Next
 
-1. Build D6 pre-commit / pre-push impact-gate installer.
-2. Keep D4 deep-linkable UI/export queued for human sharing.
+1. Build D4 deep-linkable UI/export for human sharing.
+2. Keep M10 SCIP bridge queued after the adoption lane.

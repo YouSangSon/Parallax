@@ -12,8 +12,11 @@
 | :--- | :--- |
 | `parallax init` | 为 repo 创建本地 `.parallax/` 存储与全新数据库 |
 | `parallax index [--max-file-bytes <n>]` | 扫描 repo 并提取 entity/relation graph；`--max-file-bytes` 限制每文件扫描大小 |
+| `parallax scip import --file <index.scip.json>` | 导入官方 SCIP CLI 输出的 JSON，并用 SCIP reference edge 增强最新完成的 index |
 | `parallax reindex-vec [--model <hf-model>]` | 重建 sqlite-vec ANN 索引；`--model` 选择 embedding 模型 |
 | `parallax reembed [--model <hf-model>] [--all]` | 重新计算 fact embedding；`--all` 重嵌入所有 fact，否则仅缺失部分 |
+
+`scip import` 需要已有完成的 Parallax index。先用官方 SCIP CLI 生成 JSON，例如 `scip print --json > index.scip.json`，再运行 `parallax scip import --file index.scip.json`。importer 会用 SCIP 的 definition/reference edge 增强最新完成的 index run；直接读取二进制 `index.scip` 和 Parallax-to-SCIP export 仍是后续工作。
 
 ## Analysis
 

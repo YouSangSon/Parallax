@@ -12,8 +12,11 @@
 | :--- | :--- |
 | `parallax init` | repo의 로컬 `.parallax/` 저장소와 새 데이터베이스를 생성 |
 | `parallax index [--max-file-bytes <n>]` | repo를 스캔해 entity/relation graph를 추출; `--max-file-bytes`는 파일당 스캔 크기를 제한 |
+| `parallax scip import --file <index.scip.json>` | 공식 SCIP CLI가 출력한 JSON을 가져와 최신 완료 index에 SCIP reference edge를 보강 |
 | `parallax reindex-vec [--model <hf-model>]` | sqlite-vec ANN 인덱스를 재구축; `--model`은 embedding 모델을 선택 |
 | `parallax reembed [--model <hf-model>] [--all]` | fact embedding을 재계산; `--all`은 모든 fact를 재임베딩, 아니면 누락분만 |
+
+`scip import`는 완료된 Parallax index가 이미 있어야 한다. 공식 SCIP CLI로 `scip print --json > index.scip.json`처럼 JSON을 만든 뒤 `parallax scip import --file index.scip.json`을 실행한다. importer는 최신 완료 index run에 SCIP 기반 definition/reference edge를 추가한다. 바이너리 `index.scip` 직접 ingest와 Parallax-to-SCIP export는 아직 후속 작업이다.
 
 ## Analysis
 

@@ -118,6 +118,15 @@ parallax ui --report <report-id> --port 3717
 
 The UI keeps the selected impact path, filter, and policy preset in the URL. It can export the current workbench as JSON, affected-path CSV, or a PNG/SVG impact map from the toolbar.
 
+Bring in a SCIP precision layer after `parallax index` by converting an `index.scip` file to JSON with the official SCIP CLI, then importing it:
+
+```bash
+scip print --json > index.scip.json
+parallax scip import --file index.scip.json
+```
+
+The importer augments the latest completed Parallax index run with SCIP-derived definition/reference edges. Direct binary `index.scip` ingestion and Parallax-to-SCIP export remain follow-up work.
+
 For a worked tutorial that continues from the UI into MCP and CI guardrails, see [`docs/getting-started.md`](docs/getting-started.md).
 
 > 💡 `analyze` returns exit code `1` when there are affected files. This is intentional, so CI or agent guardrails can use "has impact" as a signal.
@@ -147,6 +156,7 @@ For a worked tutorial that continues from the UI into MCP and CI guardrails, see
 | **Markdown / work artifacts** | Classifies policy, proposal, PRD, and decision docs as first-class artifacts and links them to code |
 | **Config / Infra** | Indexes system/config candidates: shell, YAML, JSON, TOML, Dockerfile, Makefile, Terraform, CODEOWNERS, etc. |
 | **Package manifests & locks** | Manifest graph for `package.json`, `pom.xml`, `build.gradle(.kts)`, `go.mod`, `Cargo.toml`, `pyproject.toml`, plus npm `package-lock.json` transitive dependencies |
+| **SCIP JSON import** | `parallax scip import --file <index.scip.json>` augments the latest index with SCIP definition/reference edges from external indexers |
 
 ### 🌐 Workspace & contracts
 

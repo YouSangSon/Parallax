@@ -56,7 +56,7 @@ off MCP by I-8). Context-pack telemetry is recorded but nothing acts on it.
 | M7 | **Permissioned write surface for trace ingestion (I-8)** — Phase A: read-only `parallax_trace_preview` (dry-run match, returns promoted/unmatched, no write). Phase B: gated `parallax_ingest_traces` behind explicit opt-in. Closes the observe→prove loop while honoring read-only-first. | L | LOW-MED |
 | M8 | ✅ **shipped** — `parallax install-agent --copilot-package --target <repo>` now plans or installs `.github/copilot-instructions.md`, `.github/agents/parallax-impact.agent.md`, and an optional target-repo MCP config snippet. Dry-run reports planned relative paths/actions, existing files are skipped unless `--force` is explicit, and the command never calls GitHub. | S-M | HIGH |
 | M9 | ✅ **shipped** — token-budgeted repo map / context card now exists as `parallax repo-map --changed <files> [--query <text>] [--budget <tokens>] [--json]` and read-only MCP `parallax_repo_map`, ranking changed roots, affected files, tests/docs/config/work artifacts, evidence refs, verification actions, resources, confidence, provenance, `knownGaps`, and omitted counts. It reuses `buildContextPack`, `searchContext`, and `parallax://` resources; token use is documented as `Math.ceil(text.length / 4)`. | M | HIGH |
-| M10 | **SCIP import/export bridge** — ingest SCIP indexes as an optional precision layer for go-to-definition / find-references / implementations, and optionally export Parallax graph slices into SCIP-compatible tooling. This gives JVM/Go/Rust/Python precision a standards-based bridge before Parallax owns every parser deeply. | M-L | MED-HIGH |
+| M10 | **SCIP import/export bridge** — first slice ✅ **shipped**: `parallax scip import --file <index.scip.json>` ingests JSON from the official SCIP CLI and augments the latest completed Parallax index with SCIP definition/reference edges. Still open: direct binary `index.scip` ingest and Parallax-to-SCIP export. | M-L | MED-HIGH |
 
 **Sequencing remaining work:** M4 / M5 → M10 → M7-Phase-A → M7-Phase-B, with M8/M9 now available for dogfooding in PR/dependency workflows. The quick-win prompt/query/repo-map layer (M1/M2/M3/M6/M9) is now in place.
 
@@ -148,6 +148,9 @@ The web/GitHub review changes the short-term adoption order without invalidating
 - GitHub SARIF support: <https://docs.github.com/en/code-security/reference/code-scanning/sarif-files/sarif-support>
 - Sourcegraph MCP: <https://sourcegraph.com/mcp>
 - SCIP: <https://github.com/scip-code/scip>
+- SCIP protobuf schema: <https://github.com/scip-code/scip/blob/main/scip.proto>
+- SCIP CLI reference: <https://github.com/scip-code/scip/blob/main/docs/CLI.md>
+- scip-typescript indexer: <https://github.com/sourcegraph/scip-typescript>
 - Aider repo map: <https://aider.chat/docs/repomap.html>
 - Repomix: <https://github.com/yamadashy/repomix>
 - CodeGraphContext: <https://github.com/CodeGraphContext/CodeGraphContext>
@@ -169,7 +172,7 @@ The web/GitHub review changes the short-term adoption order without invalidating
 
 1. **GitHub-native output is the strongest next adoption slice.** GitHub supports repository instructions for Copilot and SARIF upload for third-party tools, so Parallax should emit both an agent setup package and a code-scanning artifact. This is D7 → D1 → M8.
 2. **Repo-map output is now table stakes for agent UX.** Aider, Sourcegraph, Repomix, CodeGraphContext, code-review-graph, and agentmap all frame success as ranked, compact, tool-call-efficient code context. Parallax now has the named repo-map/context-card command and MCP surface from M9; the next work is dogfooding and tuning it against real PR workflows.
-3. **SCIP is the standards bridge for precision.** It is a practical path to cross-language definitions/references before Parallax owns parser-grade precision for every language. This is M10, and it complements A1/A2/A3 instead of replacing them.
+3. **SCIP is the standards bridge for precision.** It is a practical path to cross-language definitions/references before Parallax owns parser-grade precision for every language. M10 now has a JSON import first slice; binary ingest and export remain.
 4. **Security and codemod systems should be integrations first.** Semgrep and OpenRewrite are mature in their own lanes. Parallax should recommend and scope scans/refactors based on affected files and evidence, not rebuild those engines.
 5. **Current repo state gives an immediate dogfood target.** As of 2026-06-27, open Dependabot PRs #23-#31 are still available: GitHub Actions major bumps (#23-#28), `@types/node` (#29), TypeScript 6 (#30), and Zod (#31). This makes dependency-impact triage a useful real workflow: analyze the bump, emit SARIF/Markdown, provide repo-map context, and show verification actions.
 6. **Agentic workflow safety reinforces Parallax's I-8 boundary.** GitHub Agentic Workflows emphasizes read-only defaults, guarded writes, sandboxing, and approval gates. Parallax should keep PR/action automation read-only by default, with explicit opt-in for any write surface.
@@ -183,7 +186,7 @@ The web/GitHub review changes the short-term adoption order without invalidating
 4. ✅ **D1 official PR wrapper** — run init → index → PR diff discovery → triage, write SARIF, append Markdown summary, and support `fail-on` while keeping upload explicit.
 5. ✅ **D6 local Git hook installer** — shift the same impact gate left into opt-in `pre-commit` / `pre-push` without adding a hook framework dependency.
 6. ✅ **D4 deep-linkable UI/export** — humans can share the selected impact path/filter/preset and export the same workbench view as JSON/CSV/map image.
-7. **M10 SCIP bridge** — ingest/export SCIP as a standards-based precision layer after the adoption lane is dogfooded.
+7. **M10 SCIP bridge** — ✅ JSON import first slice shipped; continue binary ingest and Parallax-to-SCIP export as the remaining standards-bridge work.
 
 ## Larger-bet reassessment (2026-06-21)
 

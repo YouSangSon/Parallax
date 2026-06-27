@@ -158,3 +158,26 @@ Why:
 - A PNG map export can use the existing SVG, `Blob`, object URLs, and canvas,
   with SVG fallback when rasterization is unavailable.
 - No new dependency or server-side export path is needed.
+
+## 2026-06-28: SCIP JSON Import First
+
+Decision: start M10 with a dependency-free `parallax scip import --file
+<index.scip.json>` command that consumes JSON from the official SCIP CLI and
+augments the latest completed Parallax index run, instead of adding a protobuf
+runtime or replacing Parallax indexing with a SCIP-only run.
+
+Sources:
+- SCIP project and indexer list: <https://github.com/scip-code/scip>
+- SCIP protobuf schema: <https://github.com/scip-code/scip/blob/main/scip.proto>
+- SCIP CLI JSON printer: <https://github.com/scip-code/scip/blob/main/docs/CLI.md>
+
+Why:
+- The official `scip print --json` path gives Parallax a stable first ingest
+  lane without adding protobuf codegen or a new runtime dependency.
+- Augmenting the latest completed index preserves existing Parallax adapter
+  output; creating a separate SCIP-only index run would hide non-SCIP graph
+  rows from `analyze`.
+- File-level `REFERENCES` edges let existing reverse impact traversal surface
+  files that reference a changed definition file immediately.
+- Direct binary `index.scip` ingest and Parallax-to-SCIP export remain scoped as
+  follow-up M10 work.

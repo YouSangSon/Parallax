@@ -136,6 +136,18 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === 'scip') {
+    const [subcommand, ...scipArgs] = args;
+    if (subcommand === 'import') {
+      const { importScipJson } = await import('./index.js');
+      const file = parseRequiredArg(scipArgs, '--file');
+      const result = importScipJson({ repoRoot, file });
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    throw new Error('scip requires import');
+  }
+
   if (command === 'workspace') {
     const [subcommand, ...workspaceArgs] = args;
     if (subcommand === 'init') {
@@ -929,6 +941,7 @@ Commands:
                          [--sarif-output .parallax/pr-triage.sarif] [--query <text>] [--budget <tokens>]
   ${PACKAGE_NAME} ui [--report <id>] [--port <n>]
   ${PACKAGE_NAME} import-session --file <path> --format codex|claude [--branch <name>]
+  ${PACKAGE_NAME} scip import --file <index.scip.json>
   ${PACKAGE_NAME} workspace init [--name <name>] [--service <service>] [--force]
   ${PACKAGE_NAME} workspace add-repo <path> [--name <name>] [--service <service>] [--remote <url>]
   ${PACKAGE_NAME} workspace list [--name <name>] [--json]

@@ -6,7 +6,12 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Active Loop
 
-- Next loop: continue M10 SCIP bridge work.
+- Next loop: continue M10 SCIP bridge follow-up for direct binary ingest and
+  Parallax-to-SCIP export.
+- Completed slice: M10 SCIP JSON import now adds
+  `parallax scip import --file <index.scip.json>` to augment the latest
+  completed index with SCIP-derived definition/reference edges from external
+  indexers.
 - Completed slice: D4 UI export/deep-linking now preserves selected impact path,
   filter text, and report-delta policy preset in the URL, and exports JSON,
   affected-path CSV, and PNG/SVG impact maps from the workbench toolbar.
@@ -33,5 +38,5 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Next
 
-1. Build M10 SCIP bridge.
+1. Continue M10 SCIP bridge with binary ingest and Parallax-to-SCIP export.
 2. Keep S1/S4 scale and perf follow-through queued after the standards bridge.

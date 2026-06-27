@@ -67,6 +67,7 @@ MCP 已稳定为 read-only。接下来是深入审视 agent 可用性的阶段�
 - [x] Dependency/PR triage dogfood lane：`parallax pr triage` 在不写 GitHub 的前提下串起本地 diff 分析、SARIF 输出、`--fail-on` 与 repo-map context
 - [x] 本地 Git hook installer：`parallax install-hook` 写入托管的 `pre-commit` / `pre-push` impact gate，尊重 `core.hooksPath`，且没有 `--force` 时跳过已有的非 Parallax hook
 - [x] Deep-linkable UI/export：workbench URL 保留选中的影响路径、筛选文本与 report-delta 策略预设，toolbar 可导出 JSON、affected-path CSV 与 PNG/SVG 影响图
+- [x] SCIP JSON import 首个切片：`parallax scip import --file <index.scip.json>` 将外部 indexer 的 SCIP definition/reference edge 增强到最新完成的 index
 - [ ] 用使用 telemetry 验证 `context_for_change` 的 budget tuning (brief/standard/deep)
 - [ ] 用于测量 context pack 结果 hit/miss 的 harness
 - [ ] 研究将 write surface 拆分为独立权限模型后引入（遵循 [invariants.zh.md](invariants.zh.md) I-8）

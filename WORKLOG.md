@@ -138,3 +138,19 @@
   - `npm run build`
   - `git diff --check`
   - `npm test`
+- Shipped M10 SCIP JSON import first slice.
+  - `src/scip.ts` imports JSON produced by the official SCIP CLI and augments
+    the latest completed Parallax index run instead of creating a SCIP-only run.
+  - `src/cli.ts` adds `parallax scip import --file <index.scip.json>`.
+  - Imported SCIP definition/reference occurrences become proven file-level
+    `REFERENCES` relations with evidence spans, so existing `analyzeDiff`
+    reverse traversal can surface impacted referrers.
+  - `tests/scip.test.ts` covers API import, CLI import, persisted evidence
+    spans, and impact analysis using the imported edge.
+- M10 SCIP JSON import verification so far:
+  - `npm run check`
+  - `node --import tsx --test tests/scip.test.ts`
+  - `npm run docs:lint`
+  - `npm run build`
+  - `git diff --check`
+  - `npm test`

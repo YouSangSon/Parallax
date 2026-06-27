@@ -67,6 +67,7 @@ MCP has stabilized as read-only. Next is the stage of looking deeply at agent us
 - [x] Dependency/PR triage dogfood lane: `parallax pr triage` wraps local diff analysis, SARIF output, `--fail-on`, and repo-map context without GitHub writes
 - [x] Local Git hook installer: `parallax install-hook` writes managed `pre-commit` / `pre-push` impact gates, respects `core.hooksPath`, and skips existing non-Parallax hooks unless forced
 - [x] Deep-linkable UI/export: workbench URLs preserve selected impact path, filter text, and report-delta policy preset; toolbar exports JSON, affected-path CSV, and PNG/SVG impact maps
+- [x] SCIP JSON import first slice: `parallax scip import --file <index.scip.json>` augments the latest completed index with SCIP definition/reference edges from external indexers
 - [ ] Validate the budget tuning (brief/standard/deep) of `context_for_change` with usage telemetry
 - [ ] A harness to measure the hit/miss of context pack results
 - [ ] Consider introducing a write surface separated into its own permission model (compliant with [invariants.md](invariants.md) I-8)

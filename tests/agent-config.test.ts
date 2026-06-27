@@ -111,6 +111,24 @@ test('does not overwrite existing Copilot package files without force', () => {
   }
 });
 
+test('skipped Copilot package MCP config does not parse invalid existing JSON', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'parallax-copilot-invalid-mcp-'));
+  try {
+    const configPath = path.join(dir, '.mcp.json');
+    writeFileSync(configPath, '{not valid json\n');
+    const plan = planCopilotAgentPackage({ targetRepo: dir, config: '.mcp.json', force: false });
+
+    assert.deepEqual(
+      plan.files
+        .filter((file) => file.path === '.mcp.json')
+        .map((file) => ({ path: file.path, action: file.action })),
+      [{ path: '.mcp.json', action: 'skip' }]
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('force marks existing Copilot package files for overwrite', () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'parallax-copilot-force-'));
   try {

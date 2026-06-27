@@ -100,14 +100,7 @@ export function planCopilotAgentPackage(options: CopilotAgentPackageOptions): Co
 
   if (options.config !== undefined) {
     const configPath = normalizeTargetRelativePath(options.config);
-    files.push(
-      plannedCopilotFile(
-        targetRepo,
-        configPath,
-        `${JSON.stringify(addParallaxMcpServer(readExistingMcpConfig(resolveTargetPath(targetRepo, configPath)), options), null, 2)}\n`,
-        options.force ?? false
-      )
-    );
+    files.push(plannedCopilotMcpConfigFile(targetRepo, configPath, options, options.force ?? false));
   }
 
   return { targetRepo, files };
@@ -129,6 +122,21 @@ function plannedCopilotFile(targetRepo: string, path: string, content: string, f
   const destination = resolveTargetPath(targetRepo, relativePath);
   const exists = existsSync(destination);
   const action: CopilotPackageFileAction = exists ? (force ? 'overwrite' : 'skip') : 'create';
+  return { path: relativePath, content, action };
+}
+
+function plannedCopilotMcpConfigFile(
+  targetRepo: string,
+  path: string,
+  options: ParallaxMcpOptions,
+  force: boolean
+): PlannedCopilotPackageFile {
+  const relativePath = normalizeTargetRelativePath(path);
+  const destination = resolveTargetPath(targetRepo, relativePath);
+  const exists = existsSync(destination);
+  const action: CopilotPackageFileAction = exists ? (force ? 'overwrite' : 'skip') : 'create';
+  const existing = action === 'skip' ? undefined : readExistingMcpConfig(destination);
+  const content = action === 'skip' ? '' : `${JSON.stringify(addParallaxMcpServer(existing, options), null, 2)}\n`;
   return { path: relativePath, content, action };
 }
 

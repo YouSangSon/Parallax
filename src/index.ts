@@ -112,6 +112,8 @@ export type {
   RepairResult,
   OrphanReflection
 } from './reflection.js';
+export { impactReportToSarif } from './sarif.js';
+export type { SarifLog, SarifOptions } from './sarif.js';
 export { abandonBranch, gcBranches, restoreBranch } from './branch_gc.js';
 export { profileEntity } from './profile.js';
 export type { ProfileOptions, ProfileResult } from './profile.js';

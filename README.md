@@ -72,6 +72,22 @@ Markdown reports are saved to a repo-local path:
 
 Use `--json` when you want machine-readable stdout only; JSON output is not persisted.
 
+For GitHub Code Scanning, write SARIF and upload it in a workflow:
+
+```yaml
+permissions:
+  contents: read
+  security-events: write
+steps:
+  - uses: actions/checkout@v4
+  - run: npm install -g parallax
+  - run: parallax analyze --changed "src/api.ts" --sarif-output parallax.sarif --sarif-category parallax-pr --fail-on proven
+  - uses: github/codeql-action/upload-sarif@v3
+    with:
+      sarif_file: parallax.sarif
+      category: parallax-pr
+```
+
 Open the latest report in the local UI:
 
 ```bash

@@ -17,6 +17,10 @@
 
 同一份产物也会随 npm package 一起发布，因此 packaged consumer 无需克隆 source checkout 也能校验 `report.json`。
 
+## SARIF projection
+
+`parallax analyze --sarif-output <path>` 会写出用于 GitHub Code Scanning 的 SARIF 2.1.0，但 SARIF 只是从 `ImpactReport` 派生出的纯 projection。它不会 bump 此报告 schema，不会给 `analyze --json` 增加字段，也不会改变已持久化的报告形态。需要 Parallax 完整数据契约的 consumer 应继续校验 `analyze --json`；需要 GitHub annotation 的 consumer 则上传 SARIF 文件。
+
 ### `crossRepoImpacts`
 
 可选字段。当变更的 provider contract 匹配已持久化的 workspace `BREAKS_COMPATIBILITY_WITH` link 时出现。每个条目包含 `workspace`、`provider.serviceName`、`provider.contractPath`、`consumer.serviceName`、`consumer.path`、`change`、`confidence`、`evidence` 和 `resources`。public report JSON 会省略本地 repo 的绝对路径。
@@ -59,5 +63,5 @@ npm run schemas:build   # 重新生成 schemas/impact-report.schema.json
 
 ## 另见
 
-- [cli-reference.zh.md](cli-reference.zh.md) — `analyze --json` 标志
+- [cli-reference.zh.md](cli-reference.zh.md) — `analyze --json` 与 `--sarif-output` 标志
 - [mcp.zh.md](mcp.zh.md) — 同一存储之上的 MCP 服务器 surface

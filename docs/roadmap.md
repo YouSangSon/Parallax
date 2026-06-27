@@ -57,7 +57,8 @@ The package resolver now covers manifest graphs across common ecosystems and npm
 MCP has stabilized as read-only. Next is the stage of looking deeply at agent usability.
 
 - [ ] GitHub-native agent package: generate Copilot repository instructions, MCP setup snippets, and a least-privilege "run Parallax first" workflow for PR work
-- [ ] SARIF / code-scanning export so Parallax impact findings, confidence, provenance, and known-gap notes can appear in GitHub Code Scanning and PR annotations
+- [x] SARIF / code-scanning export for affected-file impact findings, plus a composite GitHub Action that generates the SARIF file for explicit upload
+- [ ] Broaden SARIF coverage to contract breaks, adapter known-gap notes, coverage gaps, and recommended verification actions
 - [ ] Token-budgeted repo map / context card that ranks the files, symbols, contracts, tests, evidence, provenance, and known-gap notes an agent should inspect next
 - [ ] Validate the budget tuning (brief/standard/deep) of `context_for_change` with usage telemetry
 - [ ] A harness to measure the hit/miss of context pack results
@@ -115,4 +116,4 @@ Without regression signals, there is no guarantee that every change works.
 
 On top of the fixtures already present in `tests/` and `bench/`, the core-engine slice with the highest ROI is still the first item of **Accuracy (1)** — *parser-backed TS/JS span*. Every other axis depends on the precision of the evidence span.
 
-If the goal is adoption in GitHub and agent workflows, pick the **Agent surface (4)** lane first: official GitHub Action + SARIF/code-scanning export, Copilot install guidance, and a token-budgeted repo map/context card that preserves confidence, provenance, and known-gap disclosure. That makes the existing impact engine visible where reviewers and coding agents already work.
+If the goal is adoption in GitHub and agent workflows, continue the **Agent surface (4)** lane: Copilot install guidance, broader SARIF coverage, and a token-budgeted repo map/context card that preserves confidence, provenance, and known-gap disclosure. That makes the existing impact engine visible where reviewers and coding agents already work.

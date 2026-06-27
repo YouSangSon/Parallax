@@ -4499,6 +4499,82 @@ test('CLI analyze --json prints report without persisting, while default analyze
   assert.equal(reportRowCount(repoRoot), 1);
 });
 
+test('CLI analyze writes SARIF output with automation category', async () => {
+  const repoRoot = await makeFixtureRepo();
+  await initProject({ repoRoot });
+  await indexProject({ repoRoot });
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      '--import',
+      tsxLoaderPath,
+      path.resolve('src/cli.ts'),
+      'analyze',
+      '--changed',
+      'src/auth/session.ts',
+      '--sarif-output',
+      'parallax.sarif',
+      '--sarif-category',
+      'unit'
+    ],
+    {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      env: { ...process.env, PARALLAX_EMBEDDING_MODEL: 'stub-sha256' }
+    }
+  );
+
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(result.stdout, /Impact report/);
+  assert.match(result.stdout, /SARIF: parallax\.sarif/);
+
+  const sarif = JSON.parse(await readFile(path.join(repoRoot, 'parallax.sarif'), 'utf8')) as {
+    version: string;
+    runs: Array<{
+      automationDetails?: { id?: string };
+      results: Array<{
+        locations?: Array<{
+          physicalLocation?: {
+            artifactLocation?: { uri?: string };
+          };
+        }>;
+      }>;
+    }>;
+  };
+  assert.equal(sarif.version, '2.1.0');
+  assert.equal(sarif.runs[0]?.automationDetails?.id, 'unit');
+  assert.ok(
+    sarif.runs[0]?.results.some((resultItem) =>
+      resultItem.locations?.[0]?.physicalLocation?.artifactLocation?.uri === 'src/routes/private.ts'
+    )
+  );
+});
+
+test('CLI analyze rejects combining JSON stdout with SARIF file output', () => {
+  const result = spawnSync(
+    process.execPath,
+    [
+      '--import',
+      tsxLoaderPath,
+      path.resolve('src/cli.ts'),
+      'analyze',
+      '--changed',
+      'src/auth/session.ts',
+      '--json',
+      '--sarif-output',
+      'parallax.sarif'
+    ],
+    {
+      encoding: 'utf8',
+      env: { ...process.env, PARALLAX_EMBEDDING_MODEL: 'stub-sha256' }
+    }
+  );
+
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /--json cannot be used with --sarif-output/);
+});
+
 test('remember populates fact_embeddings (model, vector, dim) for non-redacted facts', async () => {
   const repoRoot = await makeFixtureRepo();
   await initProject({ repoRoot });

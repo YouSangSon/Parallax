@@ -72,6 +72,22 @@ Markdown 报告保存在仓库本地路径：
 
 需要仅输出机器可读 stdout 时使用 `--json`；JSON 输出不会持久化。
 
+用于 GitHub Code Scanning 时，写出 SARIF 并在 workflow 中上传：
+
+```yaml
+permissions:
+  contents: read
+  security-events: write
+steps:
+  - uses: actions/checkout@v4
+  - run: npm install -g parallax
+  - run: parallax analyze --changed "src/api.ts" --sarif-output parallax.sarif --sarif-category parallax-pr --fail-on proven
+  - uses: github/codeql-action/upload-sarif@v3
+    with:
+      sarif_file: parallax.sarif
+      category: parallax-pr
+```
+
 用本地 UI 直接打开最新报告：
 
 ```bash

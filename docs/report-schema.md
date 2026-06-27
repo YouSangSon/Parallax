@@ -17,6 +17,10 @@ The schema describes the object emitted by `parallax analyze --json` (the `Impac
 
 The same artifact is published in the npm package, so packaged consumers can validate `report.json` without cloning the source checkout.
 
+## SARIF projection
+
+`parallax analyze --sarif-output <path>` writes SARIF 2.1.0 for GitHub Code Scanning, but SARIF is a pure projection from `ImpactReport`. It does not bump this report schema, add fields to `analyze --json`, or change the persisted report shape. Consumers that need Parallax's full data contract should keep validating `analyze --json`; consumers that need GitHub annotations should upload the SARIF file.
+
 ### `crossRepoImpacts`
 
 Optional. Present when a changed provider contract matches persisted workspace `BREAKS_COMPATIBILITY_WITH` links. Each item includes `workspace`, `provider.serviceName`, `provider.contractPath`, `consumer.serviceName`, `consumer.path`, `change`, `confidence`, `evidence`, and `resources`. Absolute local repo paths are omitted from public report JSON.
@@ -59,5 +63,5 @@ This schema covers the impact report. The benchmark report (`parallax` quality m
 
 ## See also
 
-- [cli-reference.md](cli-reference.md) — the `analyze --json` flag
+- [cli-reference.md](cli-reference.md) — the `analyze --json` and `--sarif-output` flags
 - [mcp.md](mcp.md) — the MCP server surface over the same store

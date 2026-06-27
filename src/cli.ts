@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import { execFileSync } from 'node:child_process';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
 import process from 'node:process';
 
 import { PACKAGE_NAME, PRODUCT_NAME, envValue } from './branding.js';
@@ -253,8 +255,14 @@ async function main(): Promise<void> {
   }
 
   if (command === 'analyze') {
-    const { analyzeDiff } = await import('./index.js');
+    const { analyzeDiff, impactReportToSarif } = await import('./index.js');
     const { failsImpactGate } = await import('./confidence.js');
+    const json = args.includes('--json');
+    const sarifOutput = parseOptionalArg(args, '--sarif-output');
+    if (json && sarifOutput !== undefined) {
+      throw new Error('analyze --json cannot be used with --sarif-output');
+    }
+    const sarifCategory = parseOptionalArg(args, '--sarif-category');
     const changedFiles = parseChangedFiles(args, repoRoot);
     const maxDepth = parseIntegerArg(args, '--depth');
     const maxFanout = parseIntegerArg(args, '--max-fanout');
@@ -262,16 +270,26 @@ async function main(): Promise<void> {
     const report = await analyzeDiff({
       repoRoot,
       changedFiles,
-      writeReport: !args.includes('--json'),
-      persistReport: !args.includes('--json'),
+      writeReport: !json,
+      persistReport: !json,
       ...(maxDepth === undefined ? {} : { maxDepth }),
       ...(maxFanout === undefined ? {} : { maxFanout })
     });
-    if (args.includes('--json')) {
+    if (sarifOutput !== undefined) {
+      const outputPath = resolve(repoRoot, sarifOutput);
+      await mkdir(dirname(outputPath), { recursive: true });
+      const sarif = impactReportToSarif(report, {
+        checkoutRoot: repoRoot,
+        ...(sarifCategory !== undefined ? { category: sarifCategory } : {})
+      });
+      await writeFile(outputPath, `${JSON.stringify(sarif, null, 2)}\n`);
+    }
+    if (json) {
       console.log(JSON.stringify(report, null, 2));
     } else {
       console.log(`Impact report ${report.id}`);
       console.log(`Affected files: ${report.affectedFiles.length}`);
+      if (sarifOutput !== undefined) console.log(`SARIF: ${sarifOutput}`);
       if (report.reportPath) console.log(`Report: ${report.reportPath}`);
     }
     process.exitCode = failsImpactGate(report.affectedFiles.map((file) => file.confidence), failOn) ? 1 : 0;
@@ -672,6 +690,7 @@ function parseIntegerArg(args: string[], name: string): number | undefined {
 function parsePositionals(args: string[]): string[] {
   const valueFlags = new Set([
     '--changed', '--base', '--head', '--depth', '--max-fanout', '--max-file-bytes',
+    '--sarif-output', '--sarif-category',
     '--report', '--format', '--file', '--port', '--service', '--remote',
     '--provider', '--provider-path', '--contract', '--method', '--path', '--consumer',
     '--entity', '--attribute', '--value', '--branch', '--agent', '--evidence-fact-ids',
@@ -719,6 +738,7 @@ Commands:
   ${PACKAGE_NAME} workspace consumers --provider <service> [--contract <path>] [--method <method>] [--path <route>] [--name <name>] [--json]
   ${PACKAGE_NAME} workspace providers --consumer <service> [--file <path>] [--name <name>] [--json]
   ${PACKAGE_NAME} analyze --changed src/file.ts [--depth 2] [--fail-on <level>] [--json]
+  ${PACKAGE_NAME} analyze --changed src/file.ts [--sarif-output parallax.sarif] [--sarif-category <id>]
   ${PACKAGE_NAME} analyze --base main [--head HEAD] [--depth 2] [--fail-on <level>] [--json]
   ${PACKAGE_NAME} graph export --report <id> [--format mermaid|json|dot]
                               [--limit 100] [--cursor nodeOffset:edgeOffset]

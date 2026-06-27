@@ -19,8 +19,8 @@
 
 | 命令 | 用途 |
 | :--- | :--- |
-| `parallax analyze --changed <file[,file]> [--depth <n>] [--max-fanout <n>] [--json]` | 将显式给出的变更文件列表对最新 index 分析 |
-| `parallax analyze --base <ref> [--head <ref>] [--depth <n>] [--max-fanout <n>] [--json]` | 从 `git diff <base>...<head>`（默认 head `HEAD`）推导变更文件列表 |
+| `parallax analyze --changed <file[,file]> [--depth <n>] [--max-fanout <n>] [--json] [--sarif-output <path>]` | 将显式给出的变更文件列表对最新 index 分析 |
+| `parallax analyze --base <ref> [--head <ref>] [--depth <n>] [--max-fanout <n>] [--json] [--sarif-output <path>]` | 从 `git diff <base>...<head>`（默认 head `HEAD`）推导变更文件列表 |
 | `parallax query "<cypher>"` | 在已索引的图上运行只读 Cypher 子集并打印 JSON 行 |
 | `parallax ingest-traces --file <traces.json>` | 将与观测到的运行时 `source -> target` 边匹配的关系提升为 `proven` 置信度 |
 
@@ -33,6 +33,8 @@
 - `--depth` — ripple 计算的最大 traversal 深度。
 - `--max-fanout` — traversal 期间每节点的最大 fan-out。
 - `--json` — 输出完整 report JSON 而非摘要，并跳过将 report 写入存储。输出会针对已发布的 [report JSON Schema](report-schema.zh.md) 进行校验。
+- `--sarif-output <path>` — 将 SARIF 2.1.0 projection 以格式化 JSON 写入文件，用于 GitHub Code Scanning upload。父目录会自动创建。stdout 仍保留普通 human summary，且不能与 `--json` 同用。
+- `--sarif-category <category>` — 设置 SARIF run automation id / GitHub Code Scanning category。除非由 GitHub Action 等 wrapper 传入，否则 category 为空。
 - `--fail-on <level>` — 按 confidence 控制退出码：`proven` / `inferred` / `heuristic` 仅当受影响文件达到或超过该 confidence 时失败；`any`（默认）只要有受影响文件就失败；`none` 永不失败。用于 CI 仅对高置信影响进行 gate。
 
 默认（无 `--json`）会持久化 report 并打印简短摘要；写入时显示 report 路径。

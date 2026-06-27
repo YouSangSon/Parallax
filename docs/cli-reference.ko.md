@@ -19,8 +19,8 @@
 
 | 명령 | 목적 |
 | :--- | :--- |
-| `parallax analyze --changed <file[,file]> [--depth <n>] [--max-fanout <n>] [--json]` | 명시한 변경 파일 목록을 최신 index에 대해 분석 |
-| `parallax analyze --base <ref> [--head <ref>] [--depth <n>] [--max-fanout <n>] [--json]` | `git diff <base>...<head>`(기본 head `HEAD`)에서 변경 파일 목록을 도출 |
+| `parallax analyze --changed <file[,file]> [--depth <n>] [--max-fanout <n>] [--json] [--sarif-output <path>]` | 명시한 변경 파일 목록을 최신 index에 대해 분석 |
+| `parallax analyze --base <ref> [--head <ref>] [--depth <n>] [--max-fanout <n>] [--json] [--sarif-output <path>]` | `git diff <base>...<head>`(기본 head `HEAD`)에서 변경 파일 목록을 도출 |
 | `parallax query "<cypher>"` | 인덱싱된 그래프에 읽기전용 Cypher 서브셋을 실행하고 JSON 행을 출력 |
 | `parallax ingest-traces --file <traces.json>` | 관측된 런타임 `source -> target` 엣지와 매칭되는 관계를 `proven` 신뢰도로 승격 |
 
@@ -33,6 +33,8 @@
 - `--depth` — ripple 계산의 최대 traversal 깊이.
 - `--max-fanout` — traversal 중 노드당 최대 fan-out.
 - `--json` — 요약 대신 전체 report JSON을 출력하고, report를 저장소에 쓰지 않는다. 출력은 발행된 [report JSON Schema](report-schema.ko.md)에 대해 검증된다.
+- `--sarif-output <path>` — GitHub Code Scanning upload용 SARIF 2.1.0 projection을 예쁘게 포맷한 JSON 파일로 쓴다. 부모 디렉터리는 생성된다. stdout에는 일반 human summary를 유지하며 `--json`과 함께 쓸 수 없다.
+- `--sarif-category <category>` — SARIF run automation id / GitHub Code Scanning category를 설정한다. GitHub Action 같은 wrapper가 넘기지 않으면 category는 비워 둔다.
 - `--fail-on <level>` — 종료 코드를 confidence로 제어: `proven` / `inferred` / `heuristic`는 영향 파일이 해당 confidence 이상일 때만 실패; `any`(기본)는 영향 파일이 있으면 실패; `none`은 절대 실패하지 않음. CI에서 고신뢰 영향만 게이트할 때 사용.
 
 기본(`--json` 없음)에서는 report가 저장되고 짧은 요약이 출력되며, 기록 시 report 경로가 표시된다.

@@ -19,8 +19,8 @@ Most machine-oriented commands can print JSON through command-specific flags. `a
 
 | Command | Purpose |
 | :--- | :--- |
-| `parallax analyze --changed <file[,file]> [--depth <n>] [--max-fanout <n>] [--json]` | Analyze an explicit list of changed files against the latest index |
-| `parallax analyze --base <ref> [--head <ref>] [--depth <n>] [--max-fanout <n>] [--json]` | Derive the changed file list from `git diff <base>...<head>` (default head `HEAD`) |
+| `parallax analyze --changed <file[,file]> [--depth <n>] [--max-fanout <n>] [--json] [--sarif-output <path>]` | Analyze an explicit list of changed files against the latest index |
+| `parallax analyze --base <ref> [--head <ref>] [--depth <n>] [--max-fanout <n>] [--json] [--sarif-output <path>]` | Derive the changed file list from `git diff <base>...<head>` (default head `HEAD`) |
 | `parallax query "<cypher>"` | Run a read-only Cypher subset over the indexed graph and print JSON rows |
 | `parallax ingest-traces --file <traces.json>` | Promote relations matching observed runtime `source -> target` edges to `proven` confidence |
 
@@ -33,6 +33,8 @@ Flags:
 - `--depth` — maximum traversal depth for ripple computation.
 - `--max-fanout` — maximum fan-out per node during traversal.
 - `--json` — print the full report JSON instead of the summary, and skip writing the report to the store. The output validates against the published [report JSON Schema](report-schema.md).
+- `--sarif-output <path>` — write a pretty-printed SARIF 2.1.0 projection to a file for GitHub Code Scanning upload. Parent directories are created. This keeps the normal human summary on stdout and is mutually exclusive with `--json`.
+- `--sarif-category <category>` — set the SARIF run automation id / GitHub Code Scanning category. Defaults to no category unless supplied by a wrapper such as the GitHub Action.
 - `--fail-on <level>` — control the exit code by confidence: `proven` / `inferred` / `heuristic` fail only when an affected file meets or exceeds that confidence; `any` (default) fails on any affected file; `none` never fails. Use in CI to gate on high-confidence impact only.
 
 By default (no `--json`) the report is persisted and a short summary is printed; the report path is shown when written.

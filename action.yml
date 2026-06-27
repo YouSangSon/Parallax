@@ -1,0 +1,23 @@
+name: Parallax Impact SARIF
+description: Generate a Parallax impact SARIF file for GitHub Code Scanning upload.
+inputs:
+  changed:
+    description: Comma-separated changed file list passed to parallax analyze.
+    required: true
+  sarif-output:
+    description: Path to write the SARIF file.
+    required: false
+    default: parallax.sarif
+  sarif-category:
+    description: GitHub Code Scanning category/run automation id.
+    required: false
+    default: parallax
+  fail-on:
+    description: Confidence threshold for non-zero exit.
+    required: false
+    default: proven
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: npx parallax analyze --changed "${{ inputs.changed }}" --sarif-output "${{ inputs.sarif-output }}" --sarif-category "${{ inputs.sarif-category }}" --fail-on "${{ inputs.fail-on }}"

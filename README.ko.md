@@ -72,6 +72,22 @@ Markdown report는 repo-local 경로에 저장된다.
 
 기계 판독용 stdout만 필요하면 `--json`을 사용한다. JSON 출력은 저장되지 않는다.
 
+GitHub Code Scanning에는 SARIF를 쓰고 workflow에서 upload한다.
+
+```yaml
+permissions:
+  contents: read
+  security-events: write
+steps:
+  - uses: actions/checkout@v4
+  - run: npm install -g parallax
+  - run: parallax analyze --changed "src/api.ts" --sarif-output parallax.sarif --sarif-category parallax-pr --fail-on proven
+  - uses: github/codeql-action/upload-sarif@v3
+    with:
+      sarif_file: parallax.sarif
+      category: parallax-pr
+```
+
 로컬 UI로 최신 report를 바로 열 수 있다.
 
 ```bash

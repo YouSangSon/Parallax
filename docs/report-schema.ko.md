@@ -17,6 +17,10 @@
 
 같은 산출물은 npm package에도 포함되므로, packaged consumer는 source checkout 없이도 `report.json`을 검증할 수 있다.
 
+## SARIF projection
+
+`parallax analyze --sarif-output <path>`는 GitHub Code Scanning용 SARIF 2.1.0을 쓰지만, SARIF는 `ImpactReport`에서 만든 순수 projection이다. 이 report schema를 bump하지 않고, `analyze --json`에 필드를 추가하지 않으며, 저장된 report 형태도 바꾸지 않는다. Parallax의 전체 데이터 계약이 필요한 consumer는 계속 `analyze --json`을 검증하고, GitHub annotation이 필요한 consumer는 SARIF 파일을 upload하면 된다.
+
 ### `crossRepoImpacts`
 
 선택 필드. 변경된 provider contract가 저장된 workspace `BREAKS_COMPATIBILITY_WITH` link와 일치할 때 존재한다. 각 항목은 `workspace`, `provider.serviceName`, `provider.contractPath`, `consumer.serviceName`, `consumer.path`, `change`, `confidence`, `evidence`, `resources`를 포함한다. 절대 local repo path는 public report JSON에서 생략된다.
@@ -59,5 +63,5 @@ npm run schemas:build   # schemas/impact-report.schema.json 재생성
 
 ## 함께 보기
 
-- [cli-reference.ko.md](cli-reference.ko.md) — `analyze --json` 플래그
+- [cli-reference.ko.md](cli-reference.ko.md) — `analyze --json` 및 `--sarif-output` 플래그
 - [mcp.ko.md](mcp.ko.md) — 같은 저장소 위의 MCP 서버 surface

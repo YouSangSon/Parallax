@@ -1175,6 +1175,16 @@ function dbArtifacts(repoRoot: string): string[] {
     .filter((file) => existsSync(path.join(repoRoot, '.parallax', file)));
 }
 
+function assertStructuredContentMirrorsText(response: JsonRpcMessage, label: string): void {
+  assert.equal(response.error, undefined, `${label} must not have a JSON-RPC error`);
+  assert.notEqual(response.result?.structuredContent, undefined, `${label} must return structuredContent`);
+  assert.deepEqual(
+    response.result.structuredContent,
+    JSON.parse(response.result.content[0].text),
+    `${label} structuredContent must mirror content[0].text JSON`
+  );
+}
+
 test('MCP stdio server initializes and exposes the full agent memory tool surface', async () => {
   const repoRoot = await makeRepo();
   const client = new McpProcessClient(repoRoot);
@@ -1189,6 +1199,11 @@ test('MCP stdio server initializes and exposes the full agent memory tool surfac
     const tools = response.result.tools as Array<{
       name: string;
       inputSchema?: {
+        properties?: Record<string, any>;
+        required?: string[];
+      };
+      outputSchema?: {
+        type?: string;
         properties?: Record<string, any>;
         required?: string[];
       };
@@ -1252,6 +1267,22 @@ test('MCP stdio server initializes and exposes the full agent memory tool surfac
     for (const expected of expectedTools) {
       assert.ok(toolByName.has(expected), `expected MCP tool ${expected} to be advertised`);
     }
+    for (const tool of tools) {
+      assert.equal(tool.outputSchema?.type, 'object', `${tool.name} must advertise an object outputSchema`);
+      assert.ok(
+        (tool.outputSchema?.required?.length ?? 0) > 0,
+        `${tool.name} outputSchema must document required top-level fields`
+      );
+    }
+    assert.deepEqual(toolByName.get('parallax_remember')!.outputSchema?.required?.sort(), ['factId', 'txId']);
+    assert.ok(
+      toolByName.get('parallax_analyze_diff')!.outputSchema?.required?.includes('affectedFiles'),
+      'parallax_analyze_diff outputSchema must include affectedFiles'
+    );
+    assert.ok(
+      toolByName.get('parallax_context_for_change')!.outputSchema?.required?.includes('omittedCounts'),
+      'parallax_context_for_change outputSchema must include omittedCounts'
+    );
     assert.equal(toolByName.get('parallax_analyze_diff')!.annotations?.readOnlyHint, false);
     assert.equal(toolByName.get('parallax_context_for_change')!.annotations?.readOnlyHint, false);
     assert.equal(toolByName.get('parallax_search_context')!.annotations?.readOnlyHint, false);
@@ -1373,6 +1404,7 @@ test('MCP doctor returns the local health report without telemetry writes', asyn
     });
 
     assert.equal(response.error, undefined);
+    assertStructuredContentMirrorsText(response, 'parallax_doctor');
     const report = JSON.parse(response.result.content[0].text) as {
       version: number;
       repoRoot: string;
@@ -1403,6 +1435,7 @@ test('MCP analyze_diff validates paths and returns affected files', async () => 
     });
 
     assert.equal(response.error, undefined);
+    assertStructuredContentMirrorsText(response, 'parallax_analyze_diff');
     assert.equal(response.result.content[0].type, 'text');
     const report = JSON.parse(response.result.content[0].text) as { affectedFiles: Array<{ path: string }> };
     assert.ok(report.affectedFiles.some((file) => file.path === 'src/b.ts'));
@@ -4085,6 +4118,7 @@ test('MCP remember persists a fact and recall returns it on the main branch', as
 
     assert.equal(remembered.error, undefined);
     assert.equal(remembered.result.isError, undefined);
+    assertStructuredContentMirrorsText(remembered, 'parallax_remember');
     const rememberPayload = JSON.parse(remembered.result.content[0].text) as { factId: string; txId: string };
     assert.match(rememberPayload.factId, /^[0-9a-f]{64}$/);
     assert.match(rememberPayload.txId, /^[0-9a-f]{64}$/);
@@ -4095,6 +4129,7 @@ test('MCP remember persists a fact and recall returns it on the main branch', as
     });
 
     assert.equal(recalled.error, undefined);
+    assertStructuredContentMirrorsText(recalled, 'parallax_recall');
     const recallPayload = JSON.parse(recalled.result.content[0].text) as {
       facts: Array<{ id: string; entityId: string; attribute: string; value: unknown; op: string }>;
     };

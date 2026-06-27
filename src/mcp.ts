@@ -67,6 +67,8 @@ import {
   readWorkspaceResource,
   workspaceResources
 } from './mcp_resources.js';
+import { MCP_OUTPUT_SCHEMAS } from './mcp_output_schemas.js';
+import type { McpOutputToolName } from './mcp_output_schemas.js';
 import { searchContext, searchContextSemanticEmbedding } from './mcp_search.js';
 export { searchContextForRepo } from './mcp_search.js';
 export type { SearchContextForRepoOptions } from './mcp_search.js';
@@ -105,6 +107,7 @@ export function createMcpServer(context: McpContext): McpServer {
         maxDepth: z.number().int().min(1).max(8).optional(),
         maxFanout: z.number().int().min(1).max(2_000).optional()
       },
+      outputSchema: MCP_OUTPUT_SCHEMAS.parallax_analyze_diff,
       annotations: {
         title: 'Analyze Parallax diff',
         readOnlyHint: false,
@@ -147,6 +150,7 @@ export function createMcpServer(context: McpContext): McpServer {
         maxDepth: z.number().int().min(1).max(8).optional(),
         maxFanout: z.number().int().min(1).max(2_000).optional()
       },
+      outputSchema: MCP_OUTPUT_SCHEMAS.parallax_context_for_change,
       annotations: {
         title: 'Build compact context for a change',
         readOnlyHint: false,
@@ -209,6 +213,7 @@ export function createMcpServer(context: McpContext): McpServer {
         includeEvidence: z.boolean().optional(),
         budget: z.enum(['brief', 'standard', 'deep']).optional()
       },
+      outputSchema: MCP_OUTPUT_SCHEMAS.parallax_search_context,
       annotations: {
         title: 'Search indexed context',
         readOnlyHint: false,
@@ -255,6 +260,7 @@ export function createMcpServer(context: McpContext): McpServer {
         providerRepoPath: z.string().trim().min(1).optional(),
         persist: z.boolean().optional()
       },
+      outputSchema: MCP_OUTPUT_SCHEMAS.parallax_contract_diff,
       annotations: {
         title: 'Analyze workspace contract diff',
         readOnlyHint: false,
@@ -302,6 +308,7 @@ export function createMcpServer(context: McpContext): McpServer {
         method: z.string().trim().min(1).optional(),
         routePath: z.string().trim().min(1).optional()
       },
+      outputSchema: MCP_OUTPUT_SCHEMAS.parallax_cross_repo_consumers,
       annotations: {
         title: 'Find cross-repo consumers',
         readOnlyHint: true,
@@ -344,6 +351,7 @@ export function createMcpServer(context: McpContext): McpServer {
         consumerServiceName: z.string().trim().min(1),
         consumerPath: z.string().trim().min(1).optional()
       },
+      outputSchema: MCP_OUTPUT_SCHEMAS.parallax_cross_repo_providers,
       annotations: {
         title: 'Find cross-repo providers',
         readOnlyHint: true,
@@ -382,6 +390,7 @@ export function createMcpServer(context: McpContext): McpServer {
       inputSchema: {
         workspaceName: z.string().trim().min(1).optional()
       },
+      outputSchema: MCP_OUTPUT_SCHEMAS.parallax_resolve_cross_repo_contracts,
       annotations: {
         title: 'Preview cross-repo contract links',
         readOnlyHint: true,
@@ -426,6 +435,7 @@ export function createMcpServer(context: McpContext): McpServer {
         agent: z.string().optional(),
         op: z.enum(['assert', 'retract']).optional()
       },
+      outputSchema: MCP_OUTPUT_SCHEMAS.parallax_remember,
       annotations: {
         title: 'Remember a fact',
         readOnlyHint: false,
@@ -445,7 +455,7 @@ export function createMcpServer(context: McpContext): McpServer {
         ...(agent !== undefined ? { agent } : {}),
         ...(op !== undefined ? { op } : {})
       });
-      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+      return toolStructuredResponse(result);
     }
   );
 
@@ -465,6 +475,7 @@ export function createMcpServer(context: McpContext): McpServer {
         currentOnly: z.boolean().optional(),
         semantic: z.boolean().optional()
       },
+      outputSchema: MCP_OUTPUT_SCHEMAS.parallax_recall,
       annotations: {
         title: 'Recall facts',
         readOnlyHint: true,
@@ -484,7 +495,7 @@ export function createMcpServer(context: McpContext): McpServer {
         ...(currentOnly !== undefined ? { currentOnly } : {}),
         ...(semantic !== undefined ? { semantic } : {})
       });
-      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+      return toolStructuredResponse(result);
     }
   );
 
@@ -497,6 +508,7 @@ export function createMcpServer(context: McpContext): McpServer {
       inputSchema: {
         query: z.string().min(1)
       },
+      outputSchema: MCP_OUTPUT_SCHEMAS.parallax_query,
       annotations: {
         title: 'Query the graph',
         readOnlyHint: true,
@@ -521,6 +533,7 @@ export function createMcpServer(context: McpContext): McpServer {
         file: z.string().min(1),
         limit: z.number().int().positive().max(200).optional()
       },
+      outputSchema: MCP_OUTPUT_SCHEMAS.parallax_co_change,
       annotations: {
         title: 'Rank co-changing files',
         readOnlyHint: true,
@@ -544,6 +557,7 @@ export function createMcpServer(context: McpContext): McpServer {
         name: z.string().min(1),
         from: z.string().optional()
       },
+      outputSchema: MCP_OUTPUT_SCHEMAS.parallax_branch,
       annotations: {
         title: 'Create a branch',
         readOnlyHint: false,
@@ -559,7 +573,7 @@ export function createMcpServer(context: McpContext): McpServer {
           ...(from !== undefined ? { from } : {})
         })
       );
-      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+      return toolStructuredResponse(result);
     }
   );
 
@@ -574,6 +588,7 @@ export function createMcpServer(context: McpContext): McpServer {
         source: z.string().min(1),
         agent: z.string().optional()
       },
+      outputSchema: MCP_OUTPUT_SCHEMAS.parallax_merge,
       annotations: {
         title: 'Merge a branch into another',
         readOnlyHint: false,
@@ -590,7 +605,7 @@ export function createMcpServer(context: McpContext): McpServer {
           ...(agent !== undefined ? { agent } : {})
         })
       );
-      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+      return toolStructuredResponse(result);
     }
   );
 
@@ -607,6 +622,7 @@ export function createMcpServer(context: McpContext): McpServer {
         agent: z.string().optional(),
         dryRun: z.boolean().optional()
       },
+      outputSchema: MCP_OUTPUT_SCHEMAS.parallax_reflect,
       annotations: {
         title: 'Reflect facts into a summary',
         readOnlyHint: false,
@@ -623,7 +639,7 @@ export function createMcpServer(context: McpContext): McpServer {
         ...(agent !== undefined ? { agent } : {}),
         ...(dryRun !== undefined ? { dryRun } : {})
       });
-      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+      return toolStructuredResponse(result);
     }
   );
 
@@ -636,6 +652,7 @@ export function createMcpServer(context: McpContext): McpServer {
       inputSchema: {
         name: z.string().min(1)
       },
+      outputSchema: MCP_OUTPUT_SCHEMAS.parallax_abandon_branch,
       annotations: {
         title: 'Abandon a branch',
         readOnlyHint: false,
@@ -646,7 +663,7 @@ export function createMcpServer(context: McpContext): McpServer {
     },
     async ({ name }) => {
       const result = withWritableDb(context, (db) => abandonBranch(db, { name }));
-      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+      return toolStructuredResponse(result);
     }
   );
 
@@ -660,6 +677,7 @@ export function createMcpServer(context: McpContext): McpServer {
         dryRun: z.boolean().optional(),
         maxAgeDays: z.number().int().min(0).optional()
       },
+      outputSchema: MCP_OUTPUT_SCHEMAS.parallax_gc_branches,
       annotations: {
         title: 'GC abandoned branches',
         readOnlyHint: false,
@@ -675,7 +693,7 @@ export function createMcpServer(context: McpContext): McpServer {
           ...(maxAgeDays !== undefined ? { maxAgeDays } : {})
         })
       );
-      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+      return toolStructuredResponse(result);
     }
   );
 
@@ -691,6 +709,7 @@ export function createMcpServer(context: McpContext): McpServer {
         k: z.number().int().min(1).max(200).optional(),
         asOfTx: z.string().optional()
       },
+      outputSchema: MCP_OUTPUT_SCHEMAS.parallax_profile,
       annotations: {
         title: 'Profile an entity',
         readOnlyHint: true,
@@ -706,7 +725,7 @@ export function createMcpServer(context: McpContext): McpServer {
         ...(k !== undefined ? { k } : {}),
         ...(asOfTx !== undefined ? { asOfTx } : {})
       });
-      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+      return toolStructuredResponse(result);
     }
   );
 
@@ -721,6 +740,7 @@ export function createMcpServer(context: McpContext): McpServer {
         relationLimit: z.number().int().min(1).max(100).optional(),
         evidenceLimit: z.number().int().min(0).max(50).optional()
       },
+      outputSchema: MCP_OUTPUT_SCHEMAS.parallax_explain_entity,
       annotations: {
         title: 'Explain an entity',
         readOnlyHint: false,
@@ -757,6 +777,7 @@ export function createMcpServer(context: McpContext): McpServer {
       inputSchema: {
         limit: z.number().int().min(1).max(100).optional()
       },
+      outputSchema: MCP_OUTPUT_SCHEMAS.parallax_context_telemetry,
       annotations: {
         title: 'Inspect context telemetry',
         readOnlyHint: true,
@@ -767,7 +788,7 @@ export function createMcpServer(context: McpContext): McpServer {
     },
     async ({ limit }) => {
       const telemetry = contextTelemetry(context, limit ?? 20);
-      return { content: [{ type: 'text', text: JSON.stringify(telemetry) }] };
+      return toolStructuredResponse(telemetry);
     }
   );
 
@@ -778,6 +799,7 @@ export function createMcpServer(context: McpContext): McpServer {
       description:
         'Return a read-only local health report covering database schema, latest index, coverage, adapter runs, vector state, and context telemetry availability.',
       inputSchema: {},
+      outputSchema: MCP_OUTPUT_SCHEMAS.parallax_doctor,
       annotations: {
         title: 'Inspect Parallax health',
         readOnlyHint: true,
@@ -788,7 +810,7 @@ export function createMcpServer(context: McpContext): McpServer {
     },
     async () => {
       const report = doctorProject({ repoRoot: context.repoRoot });
-      return { content: [{ type: 'text', text: JSON.stringify(redactDoctorReportForMcp(report)) }] };
+      return toolStructuredResponse(redactDoctorReportForMcp(report));
     }
   );
 
@@ -802,6 +824,7 @@ export function createMcpServer(context: McpContext): McpServer {
         branch: z.string().optional(),
         dryRun: z.boolean().optional()
       },
+      outputSchema: MCP_OUTPUT_SCHEMAS.parallax_repair_reflections,
       annotations: {
         title: 'Repair orphan reflection facts',
         readOnlyHint: false,
@@ -815,7 +838,7 @@ export function createMcpServer(context: McpContext): McpServer {
         ...(branch !== undefined ? { branch } : {}),
         ...(dryRun !== undefined ? { dryRun } : {})
       });
-      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+      return toolStructuredResponse(result);
     }
   );
 
@@ -828,6 +851,7 @@ export function createMcpServer(context: McpContext): McpServer {
       inputSchema: {
         name: z.string().min(1)
       },
+      outputSchema: MCP_OUTPUT_SCHEMAS.parallax_restore_branch,
       annotations: {
         title: 'Restore an abandoned branch',
         readOnlyHint: false,
@@ -838,7 +862,7 @@ export function createMcpServer(context: McpContext): McpServer {
     },
     async ({ name }) => {
       const result = withWritableDb(context, (db) => restoreBranch(db, { name }));
-      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+      return toolStructuredResponse(result);
     }
   );
 
@@ -851,6 +875,7 @@ export function createMcpServer(context: McpContext): McpServer {
         factId: z.string().min(1),
         depth: z.number().int().min(1).max(20).optional()
       },
+      outputSchema: MCP_OUTPUT_SCHEMAS.parallax_trace,
       annotations: {
         title: 'Trace causal chain',
         readOnlyHint: true,
@@ -866,7 +891,7 @@ export function createMcpServer(context: McpContext): McpServer {
           ...(depth !== undefined ? { depth } : {})
         })
       );
-      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+      return toolStructuredResponse(result);
     }
   );
 
@@ -1259,6 +1284,7 @@ function contextPackRequestHash(
 
 type ToolResponse = {
   content: Array<{ type: 'text'; text: string }>;
+  structuredContent?: Record<string, unknown>;
   isError?: boolean;
 };
 
@@ -1435,7 +1461,7 @@ function patchToolErrorFactory(server: McpServer): void {
 
 function toolJsonResponse(
   context: McpContext,
-  toolName: string,
+  toolName: McpOutputToolName,
   value: unknown,
   telemetry: ToolTelemetryInput = {}
 ): ToolResponse {
@@ -1451,10 +1477,23 @@ function toolJsonResponse(
     omitted: telemetry.omitted ?? omittedCountsOf(value)
   });
   return {
+    structuredContent: value as Record<string, unknown>,
     content: [
       {
         type: 'text',
         text
+      }
+    ]
+  };
+}
+
+function toolStructuredResponse(value: unknown): ToolResponse {
+  return {
+    structuredContent: value as Record<string, unknown>,
+    content: [
+      {
+        type: 'text',
+        text: JSON.stringify(value)
       }
     ]
   };

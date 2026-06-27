@@ -22,6 +22,12 @@ GitHub Copilot repo 설정에는 `parallax install-agent --copilot-package --tar
 
 Parallax는 불변 원칙 **I-8**([invariants.ko.md](invariants.ko.md) 참고)을 따른다 — agent surface는 안전한 read-only 분석 계층을 먼저 안정화하고, 쓰기 권한은 별도 모델과 리뷰 뒤에만 추가한다. 각 tool은 MCP `readOnlyHint` 어노테이션을 선언한다. 표에서 `readOnlyHint: true`는 source tree를 수정하지 않는다는 뜻이지, local database write가 전혀 없다는 뜻은 아니다. analysis/search/context tool은 응답 과정에서 `.parallax/impact.db`에 `context_tool_runs` telemetry 행과 context-pack 행을 추가할 수 있고, MCP resource read는 `context_resource_accesses` telemetry 행을 추가할 수 있다. `readOnlyHint: false` tool에는 명시적 memory write와 branch 관리 tool이 포함된다. 이들 중 어느 것도 source tree를 수정하지 않는다 — action은 추천일 뿐이다(불변 원칙 **I-9**).
 
+## 구조화된 JSON 출력
+
+JSON을 반환하는 모든 Parallax tool은 `tools/list`에서 MCP `outputSchema`를 노출하고, 성공한 호출에서는 같은 payload를 두 위치에 반환한다. schema-aware MCP client를 위한 `structuredContent`와 기존 client를 위한 JSON text `content[0].text`다. text 필드는 계속 backward-compatible mirror이므로, 이미 `JSON.parse(response.result.content[0].text)`를 사용하는 caller는 그대로 동작한다.
+
+오류 응답은 기존 MCP error envelope를 `content[0].text`에 유지하고 `isError: true`를 설정한다.
+
 ## Tool
 
 등록된 tool은 모두 `parallax_` 접두사를 사용한다. 이 표는 MCP `tools/list` 응답과 대조해 검증되며, *read-only* 열은 각 tool의 `readOnlyHint` 어노테이션을 반영한다.

@@ -22,6 +22,12 @@ parallax mcp serve
 
 Parallax 遵循不变量 **I-8**（见 [invariants.zh.md](invariants.zh.md)）：agent surface 先稳定一个安全的 read-only 分析层，写权限只在单独的模型与评审之后才加入。每个 tool 都声明一个 MCP `readOnlyHint` 注解。表中标注为 `readOnlyHint: true` 表示 source tree read-only，并不表示完全没有 local database write。analysis/search/context tool 在应答时可能向 `.parallax/impact.db` 追加 `context_tool_runs` telemetry row 与 context-pack row，MCP resource read 也可能追加 `context_resource_accesses` telemetry row。标注为 `readOnlyHint: false` 的 tool 包括显式 memory write 与 branch 管理 tool。它们之中没有任何一个会修改你的 source tree——action 只是建议（不变量 **I-9**）。
 
+## 结构化 JSON 输出
+
+所有返回 JSON 的 Parallax tool 都会在 `tools/list` 中暴露 MCP `outputSchema`，并在成功调用时把同一份 payload 放在两个位置：给支持 schema 的 MCP client 使用的 `structuredContent`，以及给现有 client 使用的 JSON 文本 `content[0].text`。text 字段仍是向后兼容的镜像，因此已经使用 `JSON.parse(response.result.content[0].text)` 的 caller 可以保持不变。
+
+错误响应继续把现有 MCP error envelope 放在 `content[0].text` 中，并设置 `isError: true`。
+
 ## Tool
 
 所有已注册的 tool 都使用 `parallax_` 前缀。此表会与 MCP `tools/list` 响应对照检查；*read-only* 列反映每个 tool 的 `readOnlyHint` 注解。

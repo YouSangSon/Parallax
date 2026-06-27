@@ -22,6 +22,12 @@ For GitHub Copilot repository setup, run `parallax install-agent --copilot-packa
 
 Parallax follows invariant **I-8** (see [invariants.md](invariants.md)): the agent surface stabilizes a safe read-only analysis layer first, and write permissions are added only behind a separate model and review. Each tool declares an MCP `readOnlyHint` annotation. Tools marked `readOnlyHint: true` in the table are source-tree read-only, not necessarily zero local database writes. Analysis/search/context tools may append `context_tool_runs` telemetry and context-pack rows in `.parallax/impact.db` as a side effect of answering, and MCP resource reads may append `context_resource_accesses` telemetry rows. Tools marked `readOnlyHint: false` include explicit memory-write and branch-management tools. None of them modify your source tree — actions are recommendations only (invariant **I-9**).
 
+## Structured JSON output
+
+Every JSON-returning Parallax tool advertises an MCP `outputSchema` in `tools/list` and returns the same payload in two places on successful calls: `structuredContent` for schema-aware MCP clients, and `content[0].text` as JSON text for existing clients. The text field remains the backward-compatible mirror, so callers that already parse `JSON.parse(response.result.content[0].text)` can continue unchanged.
+
+Error responses keep the existing MCP error envelope in `content[0].text` and set `isError: true`.
+
 ## Tools
 
 All registered tools use the `parallax_` prefix. This table is checked against the MCP `tools/list` response; the *read-only* column reflects each tool's `readOnlyHint` annotation.

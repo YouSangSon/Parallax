@@ -320,7 +320,8 @@ Why:
   run-row growth for the most common repeated `parallax index` command.
 - The fast path is intentionally conservative: explicit `maxFileBytes`, prior
   resource-limit skips, oversized currently indexed files, dirty/non-git repos,
-  and git-ignored scan targets all fall back to the existing scan path.
+  existing git-ignored scan targets, and newly added git-ignored paths that
+  Parallax's scanner would index all fall back to the existing scan path.
 - Reusing the prior `indexRunId` is deliberate. If code state, extractor
   version, and resource semantics are identical, a new cohort would add storage
   churn without adding evidence.

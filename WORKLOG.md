@@ -305,3 +305,26 @@
   - `npm audit --audit-level=high`
   - `npm run bench`
   - `npm run test:dogfood`
+- Hardened the S1 clean same-HEAD fast path for newly created git-ignored
+  scanner targets.
+  - Root cause: `git status` can stay clean when a new ignored source file is
+    added, while Parallax's scanner intentionally does not follow `.gitignore`.
+  - `src/git-snapshot.ts` now exposes ignored files via
+    `git ls-files --others --ignored --exclude-standard -z`.
+  - `src/indexer.ts` disables clean same-HEAD reuse when any ignored path would
+    be scanned by Parallax, preserving correctness without adding a file
+    manifest schema.
+  - `tests/parallax.test.ts` covers the clean-status/new-ignored-source
+    regression.
+- S1 ignored-target guard verification:
+  - `npm run check`
+  - `node --import tsx --test tests/parallax.test.ts --test-name-pattern "same-HEAD|git-ignored|resource skips|new git-ignored"`
+  - `node --import tsx --test tests/index-delta.test.ts tests/incremental-index-oracle.test.ts`
+  - `npm run docs:lint`
+  - `git diff --check`
+  - `npm run build`
+  - `npm run bench:perf -- --scales 10`
+  - `npm audit --audit-level=high`
+  - `npm test`
+  - `npm run bench`
+  - `npm run test:dogfood`

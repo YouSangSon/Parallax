@@ -4324,6 +4324,45 @@ test('indexProject scans again when git-ignored files were indexed under the sam
   assert.equal(startCalls, 2);
 });
 
+test('indexProject scans again when a new git-ignored scan target appears under the same HEAD', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-git-noop-new-ignored-file-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, '.gitignore'), 'src/generated.ts\n');
+  await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const value = 1;\n');
+  initGitRepo(repoRoot);
+  await initProject({ repoRoot });
+
+  let startCalls = 0;
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'new-ignored-file-fast-path-test-adapter',
+    version: '1',
+    capabilities: ['references'],
+    supports: (file) => file.language === 'typescript',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => {
+      startCalls++;
+      return {
+        async *process(_file: ScannedFile): AsyncIterable<IndexEvent> {}
+      };
+    }
+  });
+
+  const first = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+  await writeFile(path.join(repoRoot, 'src/generated.ts'), 'export const generated = 1;\n');
+  const gitStatus = execFileSync(
+    'git',
+    ['status', '--porcelain=v1', '--untracked-files=all', '--', 'src/generated.ts'],
+    { cwd: repoRoot, encoding: 'utf8' }
+  ).trim();
+  const second = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+
+  assert.equal(gitStatus, '');
+  assert.equal(first.filesIndexed, 1);
+  assert.equal(second.filesIndexed, 2);
+  assert.notEqual(second.indexRunId, first.indexRunId);
+  assert.equal(startCalls, 2);
+});
+
 test('indexProject does not reuse a same-HEAD index created with resource skips', async () => {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-git-noop-resource-skip-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });

@@ -40,6 +40,18 @@ export function readTrackedGitPaths(repoRoot: string): Set<string> | null {
   }
 }
 
+export function readIgnoredGitPaths(repoRoot: string): Set<string> | null {
+  try {
+    const paths = gitRaw(repoRoot, ['ls-files', '--others', '--ignored', '--exclude-standard', '-z'])
+      .split('\0')
+      .filter((filePath) => filePath.length > 0)
+      .map((filePath) => filePath.replaceAll('\\', '/'));
+    return new Set(paths);
+  } catch {
+    return null;
+  }
+}
+
 function readCommitSha(repoRoot: string): string | null {
   try {
     return git(repoRoot, ['rev-parse', 'HEAD']) || null;

@@ -13,7 +13,7 @@ Source of truth for the active improvement loop. Detailed backlog lives in
   clean same-HEAD git index for default resource limits, skipping directory
   scan, content reads, adapter startup, and a redundant `index_runs` row. The
   fast path is disabled for explicit `maxFileBytes`, prior resource skips, and
-  git-ignored scan targets.
+  any git-ignored path that Parallax's scanner would index.
 - Completed slice: S1 incremental indexing now writes indexed coverage only for
   changed files and carries unchanged indexed coverage rows forward on
   successful incremental persistence.

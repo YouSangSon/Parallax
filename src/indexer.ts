@@ -16,7 +16,7 @@ import {
 import { DATA_DIR } from './branding.js';
 import { computeCoChanges, readCommitHistory } from './co-change.js';
 import { entityKindForPath, languageIdForPath } from './entity_classification.js';
-import { readGitSnapshot, readTrackedGitPaths } from './git-snapshot.js';
+import { readGitSnapshot, readIgnoredGitPaths, readTrackedGitPaths } from './git-snapshot.js';
 import { computeIndexDelta, type IndexDelta, type IndexRunFiles } from './index_delta.js';
 import type {
   EntityDescriptor,
@@ -1410,6 +1410,8 @@ function indexRunFitsDefaultScanLimit(
 ): boolean {
   const trackedPaths = readTrackedGitPaths(repoRoot);
   if (!trackedPaths) return false;
+  const ignoredPaths = readIgnoredGitPaths(repoRoot);
+  if (!ignoredPaths || [...ignoredPaths].some(isScannablePath)) return false;
   const resourceSkip = db
     .prepare(
       `SELECT 1 AS one
@@ -1438,6 +1440,11 @@ function indexRunFitsDefaultScanLimit(
 
 function pathBeforeDiagnosticMarker(filePath: string): string {
   return filePath.split('#diagnostic:')[0] ?? filePath;
+}
+
+function isScannablePath(relativePath: string): boolean {
+  if (relativePath.split('/').some((part) => ignoredDirs.has(part))) return false;
+  return languageIdForPath(relativePath) !== undefined;
 }
 
 function loadIndexResultForRun(db: Db, repoId: number, indexRunId: number): IndexResult {

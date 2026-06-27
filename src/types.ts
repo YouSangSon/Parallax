@@ -15,8 +15,9 @@ export type IndexOptions = {
 
 export type IndexResult = {
   indexRunId: number;
-  // 'incremental' when the prior completed run's graph rows for unchanged files
-  // were carried forward (only changed files re-extracted); 'full' otherwise.
+  // 'incremental' when Parallax can reuse prior index state: either by carrying
+  // unchanged graph rows forward or by returning a clean same-HEAD completed run.
+  // 'full' otherwise.
   mode: 'full' | 'incremental';
   filesIndexed: number;
   symbolsIndexed: number;

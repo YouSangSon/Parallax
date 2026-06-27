@@ -270,3 +270,38 @@
   - `npm run bench:perf -- --scales 10`
   - `npm run bench`
   - `npm run test:dogfood`
+- Refreshed web/GitHub signals for the current S1 follow-through.
+  - Nx and Turborepo both emphasize running only the tasks/packages affected by
+    a change, which supports D9 as the next user-facing planner and S1 as the
+    current cost-reduction path.
+  - The live GitHub queue still has one open issue (#3) and Dependabot PRs
+    #23-#31, so there is no newer remote issue that displaces the current S1
+    loop.
+  - SCIP and GitHub SARIF remain standards/output lanes already covered by M10
+    and D7/D1, so the smallest unshipped improvement was not another
+    integration but cheaper repeated local indexing.
+- Shipped third S1 scan-cost slice.
+  - `src/indexer.ts` now reuses the latest completed clean same-HEAD git index
+    for default resource limits instead of rescanning, restarting adapters, or
+    creating a redundant `index_runs` row.
+  - The fast path is disabled when `maxFileBytes` is explicit, the prior run had
+    resource-limit coverage skips, current indexed files exceed the default
+    resource limit, the repo is dirty/non-git, or prior indexed/coverage paths
+    are not git tracked.
+  - `src/git-snapshot.ts` adds a small `git ls-files -z` helper so
+    git-ignored files that Parallax still scans cannot be hidden by a clean git
+    status.
+  - `tests/parallax.test.ts` covers the clean same-HEAD reuse, the
+    git-ignored-file fallback, and the resource-skip fallback.
+- S1 clean same-HEAD fast-path verification:
+  - `npm run check`
+  - `node --import tsx --test tests/parallax.test.ts --test-name-pattern "same-HEAD|resource skips|git snapshot|dirty state|git-ignored"`
+  - `node --import tsx --test tests/index-delta.test.ts tests/incremental-index-oracle.test.ts`
+  - `npm run docs:lint`
+  - `npm run build`
+  - `git diff --check`
+  - `npm test`
+  - `npm run bench:perf -- --scales 10`
+  - `npm audit --audit-level=high`
+  - `npm run bench`
+  - `npm run test:dogfood`

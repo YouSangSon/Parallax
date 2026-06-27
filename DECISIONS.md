@@ -297,3 +297,32 @@ Why:
   full-run files. Carry-forward is reserved for successful completed cohorts.
 - This removes one more unchanged-file write loop without adding schema,
   temp-table, or diagnostic-coverage complexity.
+
+## 2026-06-28: Reuse Clean Same-HEAD Index Before Metadata Caching
+
+Decision: for default resource limits, when the current git snapshot is clean
+and has the same commit SHA as the latest clean completed run with the same
+extractor version, return that completed index result directly instead of
+creating another `index_runs` row.
+
+Sources:
+- Nx affected commands: <https://nx.dev/ci/features/affected>
+- Turborepo affected tasks: <https://turborepo.com/docs/crafting-your-repository/constructing-ci#using---affected>
+- SCIP code intelligence bridge: <https://github.com/scip-code/scip>
+- GitHub SARIF upload for third-party analysis:
+  <https://docs.github.com/en/code-security/how-tos/find-and-fix-code-vulnerabilities/integrate-with-existing-tools/upload-sarif-file>
+
+Why:
+- External affected-target systems reinforce that repeated analysis should do
+  the minimum work needed to prove what changed; a clean same-HEAD git state is
+  the narrowest deterministic no-op proof Parallax already has.
+- This avoids directory walking, content reads, adapter startup, and redundant
+  run-row growth for the most common repeated `parallax index` command.
+- The fast path is intentionally conservative: explicit `maxFileBytes`, prior
+  resource-limit skips, oversized currently indexed files, dirty/non-git repos,
+  and git-ignored scan targets all fall back to the existing scan path.
+- Reusing the prior `indexRunId` is deliberate. If code state, extractor
+  version, and resource semantics are identical, a new cohort would add storage
+  churn without adding evidence.
+- A broader mtime/size cache, watcher, or file-manifest schema can still be
+  considered later, but only after this zero-schema path is measured.

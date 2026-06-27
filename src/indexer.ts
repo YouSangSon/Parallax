@@ -16,7 +16,7 @@ import {
 import { DATA_DIR } from './branding.js';
 import { computeCoChanges, readCommitHistory } from './co-change.js';
 import { entityKindForPath, languageIdForPath } from './entity_classification.js';
-import { readGitSnapshot } from './git-snapshot.js';
+import { readGitSnapshot, readTrackedGitPaths } from './git-snapshot.js';
 import { computeIndexDelta, type IndexDelta, type IndexRunFiles } from './index_delta.js';
 import type {
   EntityDescriptor,
@@ -30,6 +30,7 @@ import { contentHash, ensureRepo, openDatabase, type Db } from './store.js';
 import { normalizeRepoRoot, redactSecrets, toRelativePath } from './security.js';
 import type {
   Confidence,
+  AdapterUsage,
   EntityKind,
   IndexOptions,
   IndexResult,
@@ -578,6 +579,20 @@ async function indexProjectInternal(
     db.close();
     throw new Error('no adapter registered');
   }
+  const extractorVersion = extractorVersionFor(registeredAdapters);
+  const reusableCleanIndex = reuseCleanGitIndexIfUnchanged(
+    db,
+    repoId,
+    repoRoot,
+    gitSnapshot.commitSha,
+    gitSnapshot.isDirty,
+    extractorVersion,
+    options.maxFileBytes
+  );
+  if (reusableCleanIndex) {
+    db.close();
+    return reusableCleanIndex;
+  }
 
   const indexRunResult = db
     .prepare(
@@ -589,7 +604,7 @@ async function indexProjectInternal(
     .run(
       repoId,
       'running',
-      extractorVersionFor(registeredAdapters),
+      extractorVersion,
       gitSnapshot.commitSha,
       gitSnapshot.branchName,
       gitSnapshot.isDirty ? 1 : 0
@@ -640,7 +655,7 @@ async function indexProjectInternal(
     const delta: IndexDelta = computeIndexDelta({
       prior: priorRun?.files ?? null,
       current: {
-        extractorVersion: extractorVersionFor(registeredAdapters),
+        extractorVersion,
         files: new Map(indexedFiles.map((file) => [file.relativePath, file.hash]))
       }
     });
@@ -1358,6 +1373,172 @@ function loadPriorCompletedRun(db: Db, repoId: number): PriorIndexRun | null {
   const files = new Map<string, string>();
   for (const row of rows) files.set(row.path, row.content_hash);
   return { runId: priorRun.id, files: { extractorVersion: priorRun.extractor_version, files } };
+}
+
+function reuseCleanGitIndexIfUnchanged(
+  db: Db,
+  repoId: number,
+  repoRoot: string,
+  commitSha: string | null,
+  isDirty: boolean,
+  extractorVersion: string,
+  maxFileBytes: number | undefined
+): IndexResult | null {
+  if (!commitSha || isDirty || maxFileBytes !== undefined) return null;
+  const prior = db
+    .prepare(
+      `SELECT id
+       FROM index_runs
+       WHERE repo_id = ? AND status = 'completed'
+         AND extractor_version = ?
+         AND git_commit_sha = ?
+         AND git_is_dirty = 0
+       ORDER BY id DESC
+       LIMIT 1`
+    )
+    .get(repoId, extractorVersion, commitSha) as { id: number } | undefined;
+  if (!prior) return null;
+  if (!indexRunFitsDefaultScanLimit(db, repoId, repoRoot, prior.id)) return null;
+  return loadIndexResultForRun(db, repoId, prior.id);
+}
+
+function indexRunFitsDefaultScanLimit(
+  db: Db,
+  repoId: number,
+  repoRoot: string,
+  indexRunId: number
+): boolean {
+  const trackedPaths = readTrackedGitPaths(repoRoot);
+  if (!trackedPaths) return false;
+  const resourceSkip = db
+    .prepare(
+      `SELECT 1 AS one
+       FROM index_coverage
+       WHERE index_run_id = ? AND reason LIKE 'file exceeds maxFileBytes%'
+       LIMIT 1`
+    )
+    .get(indexRunId) as { one: number } | undefined;
+  if (resourceSkip) return false;
+  const files = db
+    .prepare('SELECT path FROM files WHERE repo_id = ? AND index_run_id = ?')
+    .all(repoId, indexRunId) as Array<{ path: string }>;
+  const coveragePaths = db
+    .prepare('SELECT path FROM index_coverage WHERE index_run_id = ?')
+    .all(indexRunId) as Array<{ path: string }>;
+  for (const file of files) {
+    if (!trackedPaths.has(file.path)) return false;
+    try {
+      if (statSync(path.join(repoRoot, file.path)).size > defaultMaxFileBytes) return false;
+    } catch {
+      return false;
+    }
+  }
+  return coveragePaths.every((coverage) => trackedPaths.has(pathBeforeDiagnosticMarker(coverage.path)));
+}
+
+function pathBeforeDiagnosticMarker(filePath: string): string {
+  return filePath.split('#diagnostic:')[0] ?? filePath;
+}
+
+function loadIndexResultForRun(db: Db, repoId: number, indexRunId: number): IndexResult {
+  const counts = db
+    .prepare(
+      `SELECT
+         (SELECT count(*) FROM files WHERE repo_id = ? AND index_run_id = ?) AS filesIndexed,
+         (SELECT count(*) FROM symbols WHERE index_run_id = ?) AS symbolsIndexed,
+         (SELECT count(*) FROM edges WHERE repo_id = ? AND index_run_id = ?) AS edgesIndexed,
+         (SELECT count(*) FROM entities WHERE repo_id = ? AND updated_index_run_id = ?) AS entitiesIndexed,
+         (SELECT count(*) FROM relations WHERE repo_id = ? AND index_run_id = ?) AS relationsIndexed`
+    )
+    .get(
+      repoId,
+      indexRunId,
+      indexRunId,
+      repoId,
+      indexRunId,
+      repoId,
+      indexRunId,
+      repoId,
+      indexRunId
+    ) as {
+    filesIndexed: number;
+    symbolsIndexed: number;
+    edgesIndexed: number;
+    entitiesIndexed: number;
+    relationsIndexed: number;
+  };
+  const adaptersUsed = db
+    .prepare(
+      `SELECT adapter_id, adapter_version, language_ids, confidence, known_gaps_json
+       FROM adapter_runs
+       WHERE index_run_id = ? AND adapter_id != 'co-change'
+       ORDER BY id`
+    )
+    .all(indexRunId)
+    .map((row) => {
+      const adapter = row as {
+        adapter_id: string;
+        adapter_version: string;
+        language_ids: string;
+        confidence: Confidence;
+        known_gaps_json: string;
+      };
+      return {
+        id: adapter.adapter_id,
+        version: adapter.adapter_version,
+        languageIds: parseStringArray(adapter.language_ids),
+        confidence: adapter.confidence,
+        knownGaps: parseStringArray(adapter.known_gaps_json)
+      };
+    }) as AdapterUsage[];
+  const coverageRows = db
+    .prepare(
+      `SELECT path, language_id, status, reason
+       FROM index_coverage
+       WHERE index_run_id = ?
+       ORDER BY path`
+    )
+    .all(indexRunId) as Array<{
+    path: string;
+    language_id: string | null;
+    status: 'indexed' | 'skipped';
+    reason: string;
+  }>;
+  const skipped = coverageRows
+    .filter((row) => row.status === 'skipped')
+    .map((row) => ({
+      path: row.path,
+      ...(row.language_id !== null ? { languageId: row.language_id } : {}),
+      status: row.status,
+      reason: row.reason
+    }));
+  return {
+    indexRunId,
+    mode: 'incremental',
+    filesIndexed: counts.filesIndexed,
+    symbolsIndexed: counts.symbolsIndexed,
+    edgesIndexed: counts.edgesIndexed,
+    entitiesIndexed: counts.entitiesIndexed,
+    relationsIndexed: counts.relationsIndexed,
+    adaptersUsed,
+    coverage: {
+      indexedPaths: coverageRows.filter((row) => row.status === 'indexed').length,
+      skippedPaths: skipped.length,
+      unsupportedLanguageIds: [
+        ...new Set(skipped.flatMap((row) => row.languageId === undefined ? [] : [row.languageId]))
+      ].sort(),
+      skipped
+    }
+  };
+}
+
+function parseStringArray(value: string): string[] {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
+  } catch {
+    return [];
+  }
 }
 
 // Carry an unchanged file's extraction-produced rows from the prior completed

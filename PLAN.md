@@ -7,7 +7,13 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 ## Active Loop
 
 - Next loop: continue S1 incremental indexing follow-through by reducing
-  remaining all-files scan cost.
+  remaining dirty/non-git or changed-file scan cost after the clean same-HEAD
+  fast path.
+- Completed slice: S1 incremental indexing now reuses the latest completed
+  clean same-HEAD git index for default resource limits, skipping directory
+  scan, content reads, adapter startup, and a redundant `index_runs` row. The
+  fast path is disabled for explicit `maxFileBytes`, prior resource skips, and
+  git-ignored scan targets.
 - Completed slice: S1 incremental indexing now writes indexed coverage only for
   changed files and carries unchanged indexed coverage rows forward on
   successful incremental persistence.
@@ -55,6 +61,7 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Next
 
-1. Continue S1 incremental indexing follow-through by reducing all-files scan cost.
+1. Continue S1 incremental indexing follow-through by reducing dirty/non-git or
+   changed-file scan cost.
 2. Prototype D9 affected verification planner from impact report actions and package metadata.
 3. Publish measured S4 10k/50k perf baseline limits only from a stable baseline host.

@@ -4251,6 +4251,110 @@ test('indexProject records git snapshot metadata for clean, dirty, and non-git r
   }
 });
 
+test('indexProject reuses a clean same-HEAD git index without scanning again', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-git-noop-index-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const value = 1;\n');
+  initGitRepo(repoRoot);
+  await initProject({ repoRoot });
+
+  let startCalls = 0;
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'noop-fast-path-test-adapter',
+    version: '1',
+    capabilities: ['references'],
+    supports: (file) => file.language === 'typescript',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => {
+      startCalls++;
+      return {
+        async *process(_file: ScannedFile): AsyncIterable<IndexEvent> {}
+      };
+    }
+  });
+
+  const first = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+  const second = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+
+  assert.equal(first.mode, 'full');
+  assert.equal(second.mode, 'incremental');
+  assert.equal(second.indexRunId, first.indexRunId);
+  assert.equal(startCalls, 1);
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const runCount = db.prepare('SELECT count(*) AS count FROM index_runs').get() as { count: number };
+    assert.equal(runCount.count, 1);
+  } finally {
+    db.close();
+  }
+});
+
+test('indexProject scans again when git-ignored files were indexed under the same HEAD', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-git-noop-ignored-file-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, '.gitignore'), 'src/generated.ts\n');
+  await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const value = 1;\n');
+  await writeFile(path.join(repoRoot, 'src/generated.ts'), 'export const generated = 1;\n');
+  initGitRepo(repoRoot);
+  await initProject({ repoRoot });
+
+  let startCalls = 0;
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'ignored-file-fast-path-test-adapter',
+    version: '1',
+    capabilities: ['references'],
+    supports: (file) => file.language === 'typescript',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => {
+      startCalls++;
+      return {
+        async *process(_file: ScannedFile): AsyncIterable<IndexEvent> {}
+      };
+    }
+  });
+
+  const first = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+  await writeFile(path.join(repoRoot, 'src/generated.ts'), 'export const generated = 2;\n');
+  const second = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+
+  assert.equal(first.filesIndexed, 2);
+  assert.equal(second.mode, 'incremental');
+  assert.notEqual(second.indexRunId, first.indexRunId);
+  assert.equal(startCalls, 2);
+});
+
+test('indexProject does not reuse a same-HEAD index created with resource skips', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-git-noop-resource-skip-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const value = 1;\n');
+  initGitRepo(repoRoot);
+  await initProject({ repoRoot });
+
+  let startCalls = 0;
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'resource-skip-fast-path-test-adapter',
+    version: '1',
+    capabilities: ['references'],
+    supports: (file) => file.language === 'typescript',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => {
+      startCalls++;
+      return {
+        async *process(_file: ScannedFile): AsyncIterable<IndexEvent> {}
+      };
+    }
+  });
+
+  const skipped = await indexProjectWithRegistryForTest({ repoRoot, maxFileBytes: 1 }, registry);
+  const indexed = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+
+  assert.equal(skipped.filesIndexed, 0);
+  assert.notEqual(indexed.indexRunId, skipped.indexRunId);
+  assert.equal(indexed.filesIndexed, 1);
+  assert.equal(startCalls, 1);
+});
+
 test('indexProject records branch and dirty state for git repos before the first commit', async () => {
   const repoRoot = await makeFixtureRepo();
   execFileSync('git', ['init', '-b', 'main'], { cwd: repoRoot, stdio: 'ignore' });

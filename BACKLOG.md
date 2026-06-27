@@ -4,8 +4,8 @@ Canonical detailed backlog: `IMPROVEMENT_OPPORTUNITIES.md`.
 
 ## Now
 
-1. S1 incremental indexing follow-through: reduce remaining all-files scan cost
-   after the file replay and indexed-coverage carry-forward slices.
+1. S1 incremental indexing follow-through: reduce remaining dirty/non-git or
+   changed-file scan cost after the clean same-HEAD fast path.
 
 ## Later
 

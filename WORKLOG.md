@@ -250,3 +250,23 @@
   - `npm run bench`
   - `npm run bench:perf -- --scales 10`
   - `npm audit --audit-level=high`
+- Shipped second S1 unchanged-file bookkeeping slice.
+  - Incremental runs now insert indexed coverage only for changed files.
+  - Unchanged indexed coverage rows are carried from the prior completed run to
+    the new run inside successful persistence.
+  - Skipped and unsupported files intentionally stay on the existing scan loop
+    because they are outside the indexed-file delta model.
+  - The incremental oracle now snapshots `index_coverage`, so coverage
+    carry-forward must remain byte-identical to a full reindex of the same end
+    state.
+- S1 indexed-coverage carry-forward verification:
+  - `node --import tsx --test tests/index-delta.test.ts tests/incremental-index-oracle.test.ts`
+  - `npm run check`
+  - `npm run docs:lint`
+  - `node --import tsx --test tests/parallax.test.ts --test-name-pattern "coverage|failed reruns preserve|incremental"`
+  - `npm run build`
+  - `git diff --check`
+  - `npm test`
+  - `npm run bench:perf -- --scales 10`
+  - `npm run bench`
+  - `npm run test:dogfood`

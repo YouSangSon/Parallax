@@ -703,7 +703,10 @@ async function indexProjectInternal(
       );
     }
 
-    for (const file of indexedFiles) {
+    const indexedCoverageFiles = isIncremental
+      ? indexedFiles.filter((file) => changedSet.has(file.relativePath))
+      : indexedFiles;
+    for (const file of indexedCoverageFiles) {
       const adapter = fileAdapterByPath.get(file.relativePath);
       if (!adapter) continue;
       stmts.insertCoverage.run(
@@ -811,8 +814,8 @@ async function collectAdapterEvents(input: {
       const run = await adapter.start(ctx, adapterFiles);
       try {
         for (const file of adapterFiles) {
-          // Incremental: unchanged files are carried forward during persistence,
-          // so extraction is skipped but failure coverage still treats them as done.
+          // Incremental: unchanged graph rows and indexed coverage are carried
+          // forward during successful persistence, so extraction is skipped.
           if (input.isIncremental && !input.changedSet.has(file.relativePath)) {
             completedFilePaths.add(file.relativePath);
             continue;
@@ -1390,6 +1393,12 @@ function carryForwardUnchanged(
        WHERE repo_id = ? AND index_run_id = ?
          ${notInChanged ? `AND path NOT ${notInChanged}` : ''}`
     ).run(newRunId, repoId, priorRunId, ...changedPaths);
+
+    db.prepare(
+      `UPDATE index_coverage SET index_run_id = ?
+       WHERE index_run_id = ? AND status = 'indexed'
+         ${notInChanged ? `AND path NOT ${notInChanged}` : ''}`
+    ).run(newRunId, priorRunId, ...changedPaths);
 
     db.prepare(
       `UPDATE entities SET updated_index_run_id = ?

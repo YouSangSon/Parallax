@@ -7,7 +7,10 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 ## Active Loop
 
 - Next loop: continue S1 incremental indexing follow-through by reducing
-  remaining all-files scan / coverage bookkeeping cost.
+  remaining all-files scan cost.
+- Completed slice: S1 incremental indexing now writes indexed coverage only for
+  changed files and carries unchanged indexed coverage rows forward on
+  successful incremental persistence.
 - Completed slice: S1 incremental indexing now skips unchanged non-contract
   file replay, bulk-loads file ids once, carries unchanged `files` rows forward,
   and canonicalizes unchanged file `entity_versions` so chained incremental
@@ -52,6 +55,6 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Next
 
-1. Continue S1 incremental indexing follow-through by reducing all-files scan / coverage bookkeeping cost.
+1. Continue S1 incremental indexing follow-through by reducing all-files scan cost.
 2. Prototype D9 affected verification planner from impact report actions and package metadata.
 3. Publish measured S4 10k/50k perf baseline limits only from a stable baseline host.

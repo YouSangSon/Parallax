@@ -4,8 +4,8 @@ Canonical detailed backlog: `IMPROVEMENT_OPPORTUNITIES.md`.
 
 ## Now
 
-1. S1 incremental indexing follow-through: reduce remaining all-files scan /
-   coverage bookkeeping cost after the file-replay narrowing slice.
+1. S1 incremental indexing follow-through: reduce remaining all-files scan cost
+   after the file replay and indexed-coverage carry-forward slices.
 
 ## Later
 

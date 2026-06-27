@@ -280,3 +280,20 @@ Why:
 - Keeping the planner deterministic and local-first preserves the existing
   safety boundary while making impact results more immediately actionable for
   agents and reviewers.
+
+## 2026-06-28: Carry Forward Indexed Coverage On Successful Incremental Runs
+
+Decision: in incremental runs, insert `index_coverage` rows for changed indexed
+files only, then move unchanged prior-run indexed coverage rows to the new run
+inside the successful persistence transaction.
+
+Why:
+- Coverage resources still need a full latest-run view, so rows cannot simply be
+  omitted.
+- The delta model only tracks indexed files; skipped and unsupported files stay
+  on the existing scan loop so added/deleted non-indexed files do not get stale
+  carry-forward rows.
+- Failed runs keep the existing simple failure coverage behavior for changed or
+  full-run files. Carry-forward is reserved for successful completed cohorts.
+- This removes one more unchanged-file write loop without adding schema,
+  temp-table, or diagnostic-coverage complexity.

@@ -101,6 +101,10 @@ async function makeRepoMapFixture(options: { extraPrivateRoutes?: number } = {})
       ''
     ].join('\n')
   );
+  await writeFile(
+    path.join(repoRoot, 'package.json'),
+    JSON.stringify({ scripts: { test: 'node --test' } }, null, 2)
+  );
   await initProject({ repoRoot });
   await indexProject({ repoRoot });
   return repoRoot;
@@ -133,11 +137,20 @@ test('buildRepoMap ranks changed roots and context sections into a token-estimat
     assert.ok(map.evidenceRefs.length > 0);
     assert.ok(map.evidenceRefs.every((item) => item.snippet.length > 0));
     assert.ok(map.verificationActions.some((action) => action.command === 'npm'));
+    const planGroup = map.verificationPlan.groups.find((group) => group.targetPaths.includes('tests/session.test.ts'));
+    assert.ok(planGroup);
+    assert.equal(planGroup.packageRoot, '.');
+    assert.equal(planGroup.display, 'npm test -- tests/session.test.ts');
+    assert.deepEqual(planGroup.coveredChangedFiles, ['src/auth/session.ts']);
+    assert.ok(planGroup.coveredAffectedFiles.includes('src/routes/private.ts'));
+    assert.equal(planGroup.confidence, 'proven');
     assert.equal(map.resources.coverage, 'parallax://coverage/latest');
     assert.ok(map.resources.entities.every((uri) => uri.startsWith('parallax://entities/')));
     assert.ok(map.confidence.provenance.some((item) => item.includes('buildContextPack')));
+    assert.ok(map.confidence.provenance.some((item) => item.includes('verification plan')));
     assert.ok(map.confidence.provenance.some((item) => item.includes('searchContext')));
     assert.ok(map.knownGaps.some((item) => item.includes('compact planning card')));
+    assert.ok(map.knownGaps.some((item) => item.includes('Nx/Bazel')));
     assert.equal(typeof map.omittedCounts.affectedFiles, 'number');
     assert.equal(typeof map.omittedCounts.workArtifacts, 'number');
     assert.equal(typeof map.omittedCounts.evidenceRefs, 'number');
@@ -179,6 +192,9 @@ test('repo-map human output exposes query matches, resources, and provenance', a
     ]);
 
     assert.match(stdout, /Query matches for "privateRoute":/);
+    assert.match(stdout, /Verification plan:/);
+    assert.match(stdout, /npm test -- tests\/session\.test\.ts \[proven\] package \./);
+    assert.match(stdout, /targets: tests\/session\.test\.ts/);
     assert.match(stdout, /parallax:\/\/entities\//);
     assert.match(stdout, /coverage parallax:\/\/coverage\/latest/);
     assert.match(stdout, /buildContextPack/);

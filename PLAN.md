@@ -6,9 +6,17 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Active Loop
 
-- Next loop: continue S1 incremental indexing follow-through by reducing
-  remaining dirty/non-git or changed-file scan cost after the clean same-HEAD
-  fast path.
+- Next loop: publish S4 measured 10k/50k perf baseline limits from a stable
+  baseline host.
+- Completed slice: D9 affected verification planner now adds `verificationPlan`
+  to `parallax repo-map` and MCP `parallax_repo_map`, grouping existing
+  recommended actions by nearest `package.json` root / runner into ranked,
+  copy-pasteable commands with covered changed / affected / target paths,
+  confidence, source actions, and omitted counts.
+- Decision: defer residual S1 dirty/non-git changed-file scan-cost work until a
+  measured adapter-contract design exists; the remaining scan cost cannot be
+  safely removed by only skipping file reads because adapters currently consume
+  whole indexed-file context at startup.
 - Completed slice: S1 incremental indexing now reuses the latest completed
   clean same-HEAD git index for default resource limits, skipping directory
   scan, content reads, adapter startup, and a redundant `index_runs` row. The
@@ -61,7 +69,6 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Next
 
-1. Continue S1 incremental indexing follow-through by reducing dirty/non-git or
-   changed-file scan cost.
-2. Prototype D9 affected verification planner from impact report actions and package metadata.
-3. Publish measured S4 10k/50k perf baseline limits only from a stable baseline host.
+1. Publish measured S4 10k/50k perf baseline limits only from a stable baseline host.
+2. Add D2 trend metrics for co-change, trace-ingest promotion, and contract-diff quality.
+3. Return to S1 residual scan-cost work only with a measured adapter-contract design.

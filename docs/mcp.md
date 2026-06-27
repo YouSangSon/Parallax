@@ -37,7 +37,7 @@ All registered tools use the `parallax_` prefix. This table is checked against t
 | `parallax_analyze_diff` | Analyze changed files against the latest completed index and return the full impact report | No |
 | `parallax_context_for_change` | Return a budgeted context pack (`brief`/`standard`/`deep`) of ranked impact paths, evidence refs, git co-change advisories, and resource links for changed files | No |
 | `parallax_search_context` | Search the latest index by keyword, path, symbol, relation provenance, or evidence snippet and return ranked entity context | No |
-| `parallax_repo_map` | Return a read-only token-budgeted repo map/context card with changed roots, affected files, tests/docs/config/work artifacts, evidence refs, verification actions, resource links, confidence, provenance, known gaps, and omitted counts | Yes |
+| `parallax_repo_map` | Return a read-only token-budgeted repo map/context card with changed roots, affected files, tests/docs/config/work artifacts, evidence refs, verification actions, a ranked verification plan, resource links, confidence, provenance, known gaps, and omitted counts | Yes |
 | `parallax_contract_diff` | Compare a current OpenAPI contract file against the indexed workspace baseline and return compact breaking-change impact | No |
 | `parallax_cross_repo_consumers` | Query the already synchronized workspace DB view for consumers of a provider service/contract/route | Yes |
 | `parallax_cross_repo_providers` | Query the already synchronized workspace DB view for providers used by a consumer service/file | Yes |

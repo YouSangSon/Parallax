@@ -1,3 +1,6 @@
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+
 import { analyzeDiff } from './analyzer.js';
 import { buildContextPack, selectCoChangePartners } from './context_pack.js';
 import { searchContext } from './mcp_search.js';
@@ -11,11 +14,15 @@ import type {
   RepoMapEvidenceRef,
   RepoMapOptions,
   RepoMapPathItem,
-  RepoMapQueryMatch
+  RepoMapQueryMatch,
+  RepoMapVerificationPlan,
+  RepoMapVerificationPlanGroup
 } from './types.js';
 
 const defaultRepoMapBudgetTokens = 2_000;
 const minRepoMapBudgetTokens = 200;
+const maxVerificationPlanGroups = 8;
+const maxVerificationPlanTargets = 12;
 
 export async function buildRepoMap(options: RepoMapOptions): Promise<RepoMap> {
   const repoRoot = normalizeRepoRoot(options.repoRoot);
@@ -36,6 +43,7 @@ export async function buildRepoMap(options: RepoMapOptions): Promise<RepoMap> {
   );
   const queryResult = options.query ? repoMapQueryMatches(repoRoot, options.query) : { matches: [], omitted: 0 };
   const map = repoMapFromContextPack(pack, {
+    repoRoot,
     changedFiles: report.changedFiles,
     query: options.query,
     queryMatches: queryResult.matches,
@@ -52,6 +60,7 @@ export function estimateRepoMapTokens(value: unknown): number {
 function repoMapFromContextPack(
   pack: ContextPack,
   input: {
+    repoRoot: string;
     changedFiles: string[];
     query: string | undefined;
     queryMatches: RepoMapQueryMatch[];
@@ -66,12 +75,22 @@ function repoMapFromContextPack(
   const affectedFiles = pack.context
     .filter((item) => !specialPaths.has(item.path))
     .map(repoMapPathItem);
+  const verificationPlan = buildVerificationPlan(input.repoRoot, {
+    changedFiles: input.changedFiles,
+    affectedFiles,
+    tests,
+    docs,
+    config,
+    workArtifacts: pack.workArtifacts,
+    actions: pack.actions
+  });
   const adapterGaps = (pack.adapterInsights ?? []).flatMap((insight) =>
     insight.knownGaps.map((gap) => `${insight.id}: ${gap}`)
   );
   const provenance = [
     `impact index run ${pack.indexRunId}`,
     'affected files, evidence, actions, work artifacts, and resources come from buildContextPack',
+    'verification plan groups ImpactReport.actions by nearest package.json root without invoking external build tools',
     ...(input.query ? ['query matches come from searchContext over the existing index'] : []),
     ...(pack.coChanges && pack.coChanges.length > 0 ? ['co-change entries are heuristic git-history signals'] : [])
   ];
@@ -105,6 +124,7 @@ function repoMapFromContextPack(
     summary: [
       `${input.changedFiles.length} changed file(s) mapped against index run ${pack.indexRunId}.`,
       `${pack.context.length} affected file(s), ${pack.workArtifacts.length} work artifact(s), ${evidenceRefs.length} evidence ref(s), and ${pack.actions.length} verification action(s) were eligible before token trimming.`,
+      `${verificationPlan.groups.length} verification plan group(s) were ranked from existing action recommendations.`,
       `Token use is estimated with Math.ceil(text.length / 4), so counts are approximate.`
     ],
     affectedFiles,
@@ -114,6 +134,7 @@ function repoMapFromContextPack(
     workArtifacts: pack.workArtifacts,
     evidenceRefs,
     verificationActions: pack.actions,
+    verificationPlan,
     resources,
     ...(input.query === undefined ? {} : { query: input.query, queryMatches: input.queryMatches }),
     confidence: {
@@ -140,6 +161,7 @@ function repoMapFromContextPack(
     knownGaps: [
       ...adapterGaps,
       'Repo map is a compact planning card; fetch parallax:// resources for full entity or evidence bodies.',
+      'Verification plan package roots are inferred from nearest package.json only; Nx/Bazel target discovery is not executed.',
       ...(pack.coChanges && pack.coChanges.length > 0 ? ['Git co-change partners are historical correlation, not proof of runtime dependency.'] : [])
     ],
     ...(pack.warnings === undefined ? {} : { warnings: pack.warnings })
@@ -193,6 +215,15 @@ function fitRepoMapToBudget(map: RepoMap, requestedTokens: number): RepoMap {
       current = withTokenEstimate(current);
     }
   }
+  while (current.budget.estimatedTokens > requestedTokens && current.verificationPlan.groups.length > 0) {
+    const removed = current.verificationPlan.groups.pop();
+    if (removed) {
+      current.verificationPlan.omittedCounts.groups += 1;
+      current.verificationPlan.omittedCounts.targetPaths += removed.targetPaths.length + removed.coveredAffectedFiles.length;
+      current.omittedCounts.budgetItems += 1;
+      current = withTokenEstimate(current);
+    }
+  }
   return current.budget.estimatedTokens > requestedTokens ? withTokenEstimate({
     ...current,
     budget: { ...current.budget, truncated: true }
@@ -233,6 +264,240 @@ function repoMapPathItem(item: ContextPackItem): RepoMapPathItem {
     ...(item.depth === undefined ? {} : { depth: item.depth }),
     relations: item.relations
   };
+}
+
+type VerificationPathCandidate = {
+  path: string;
+  confidence: Confidence;
+  reason: string;
+  packageRoot: string;
+};
+
+type VerificationActionBucket = {
+  packageRoot: string;
+  runnerId?: string;
+  command?: string;
+  argsPrefix: string[];
+  actions: ImpactAction[];
+  targetPaths: Set<string>;
+};
+
+function buildVerificationPlan(
+  repoRoot: string,
+  input: {
+    changedFiles: string[];
+    affectedFiles: RepoMapPathItem[];
+    tests: RepoMapPathItem[];
+    docs: RepoMapPathItem[];
+    config: RepoMapPathItem[];
+    workArtifacts: RepoMap['workArtifacts'];
+    actions: ImpactAction[];
+  }
+): RepoMapVerificationPlan {
+  const rootForPath = packageRootResolver(repoRoot);
+  const candidates: VerificationPathCandidate[] = [
+    ...input.changedFiles.map((filePath) => ({
+      path: filePath,
+      confidence: 'proven' as Confidence,
+      reason: 'changed root',
+      packageRoot: rootForPath(filePath)
+    })),
+    ...[
+      ...input.affectedFiles,
+      ...input.tests,
+      ...input.docs,
+      ...input.config,
+      ...input.workArtifacts
+    ].map((item) => ({
+      path: item.path,
+      confidence: item.confidence,
+      reason: item.reason,
+      packageRoot: rootForPath(item.path)
+    }))
+  ];
+  const buckets = new Map<string, VerificationActionBucket>();
+  for (const action of input.actions) {
+    const targetPath = action.target.path;
+    if (!targetPath) continue;
+    const normalized = normalizeVerificationAction(action, targetPath);
+    const packageRoot = rootForPath(targetPath);
+    const key = [
+      packageRoot,
+      action.runnerId ?? '',
+      action.command ?? '',
+      normalized.argsPrefix.join('\0'),
+      normalized.groupSuffix
+    ].join('\0');
+    const bucket = buckets.get(key) ?? {
+      packageRoot,
+      ...(action.runnerId === undefined ? {} : { runnerId: action.runnerId }),
+      ...(action.command === undefined ? {} : { command: action.command }),
+      argsPrefix: normalized.argsPrefix,
+      actions: [],
+      targetPaths: new Set<string>()
+    };
+    bucket.actions.push(action);
+    bucket.targetPaths.add(targetPath);
+    buckets.set(key, bucket);
+  }
+
+  const allGroups = [...buckets.values()]
+    .map((bucket): Omit<RepoMapVerificationPlanGroup, 'rank'> => {
+      const fullTargetPaths = [...bucket.targetPaths].sort();
+      const targetPaths = fullTargetPaths.slice(0, maxVerificationPlanTargets);
+      const targetSet = new Set(targetPaths);
+      const actions = bucket.actions
+        .filter((action) => action.target.path ? targetSet.has(action.target.path) : false)
+        .sort((a, b) => (a.target.path ?? '').localeCompare(b.target.path ?? '') || a.display.localeCompare(b.display));
+      const firstAction = actions[0] ?? bucket.actions[0]!;
+      const args = combinedNpmTestArgs(bucket, targetPaths) ?? firstAction.args;
+      const display = bucket.command && args ? displayCommand(bucket.command, args) : firstAction.display;
+      const packageCandidates = candidates
+        .filter((item) => item.packageRoot === bucket.packageRoot)
+        .sort(compareVerificationCandidate);
+      const coveredChangedFiles = input.changedFiles
+        .filter((filePath) => rootForPath(filePath) === bucket.packageRoot)
+        .sort();
+      const coveredAffectedFiles = packageCandidates
+        .map((item) => item.path)
+        .filter((filePath) => !coveredChangedFiles.includes(filePath))
+        .filter((filePath, index, values) => values.indexOf(filePath) === index);
+      const reasons = uniqueStrings([
+        ...actions.map((action) => action.target.path ? `verify ${action.target.path}` : 'verify affected target'),
+        ...packageCandidates.map((item) => item.reason)
+      ]).slice(0, 6);
+      return {
+        id: `verification:${bucket.packageRoot}:${bucket.command ?? firstAction.runnerId ?? 'action'}:${targetPaths.join(',')}`,
+        strategy: 'direct-test-command',
+        packageRoot: bucket.packageRoot,
+        ...(bucket.runnerId === undefined ? {} : { runnerId: bucket.runnerId }),
+        ...(bucket.command === undefined ? {} : { command: bucket.command }),
+        ...(args === undefined ? {} : { args }),
+        display,
+        confidence: overallConfidence(actions.map((action) => action.confidence)),
+        targetPaths,
+        coveredChangedFiles,
+        coveredAffectedFiles: coveredAffectedFiles.slice(0, maxVerificationPlanTargets),
+        reasons,
+        sourceActions: uniqueStrings(actions.map((action) => action.display)).slice(0, maxVerificationPlanTargets),
+        omittedTargetCount: Math.max(fullTargetPaths.length - targetPaths.length, 0)
+          + Math.max(coveredAffectedFiles.length - maxVerificationPlanTargets, 0)
+      };
+    })
+    .sort(compareVerificationPlanGroup);
+
+  const selectedGroups = allGroups.slice(0, maxVerificationPlanGroups).map((group, index) => ({
+    ...group,
+    rank: index + 1
+  }));
+  const omittedGroupTargets = allGroups.slice(maxVerificationPlanGroups)
+    .reduce((sum, group) => sum + group.targetPaths.length + group.coveredAffectedFiles.length, 0);
+  return {
+    generatedFrom: [
+      'ImpactReport.actions',
+      'RepoMap affected/test/doc/config/work artifact sections',
+      'nearest package.json package roots'
+    ],
+    groups: selectedGroups,
+    omittedCounts: {
+      groups: Math.max(allGroups.length - selectedGroups.length, 0),
+      targetPaths: selectedGroups.reduce((sum, group) => sum + group.omittedTargetCount, 0) + omittedGroupTargets
+    }
+  };
+}
+
+function packageRootResolver(repoRoot: string): (relativePath: string) => string {
+  const cache = new Map<string, string>();
+  return (relativePath: string): string => {
+    const normalized = relativePath.split('\\').join('/');
+    const cached = cache.get(normalized);
+    if (cached !== undefined) return cached;
+    const resolved = nearestPackageRoot(repoRoot, normalized);
+    cache.set(normalized, resolved);
+    return resolved;
+  };
+}
+
+function nearestPackageRoot(repoRoot: string, relativePath: string): string {
+  const normalized = path.posix.normalize(relativePath.split('\\').join('/'));
+  if (normalized === '.' || normalized.startsWith('../') || normalized.includes('/../')) return '.';
+  const dirname = normalized.endsWith('/package.json')
+    ? path.posix.dirname(normalized)
+    : path.posix.dirname(normalized);
+  const parts = dirname === '.' ? [] : dirname.split('/').filter(Boolean);
+  for (let length = parts.length; length >= 0; length -= 1) {
+    const packageRoot = parts.slice(0, length).join('/') || '.';
+    const manifestPath = safeRepoRelativePath(repoRoot, packageRoot === '.' ? 'package.json' : `${packageRoot}/package.json`);
+    if (manifestPath && existsSync(manifestPath)) return packageRoot;
+  }
+  return '.';
+}
+
+function safeRepoRelativePath(repoRoot: string, relativePath: string): string | undefined {
+  const absolute = path.resolve(repoRoot, ...relativePath.split('/'));
+  const relative = path.relative(repoRoot, absolute);
+  if (relative !== '' && (relative.startsWith('..') || path.isAbsolute(relative))) return undefined;
+  return absolute;
+}
+
+function normalizeVerificationAction(action: ImpactAction, targetPath: string): { argsPrefix: string[]; groupSuffix: string } {
+  if (action.command === 'npm' && action.args?.[0] === 'test' && action.args[1] === '--' && action.args[2] === targetPath) {
+    return { argsPrefix: ['test', '--'], groupSuffix: 'targeted-test-paths' };
+  }
+  return {
+    argsPrefix: action.args ?? [],
+    groupSuffix: action.display
+  };
+}
+
+function combinedNpmTestArgs(bucket: VerificationActionBucket, targetPaths: string[]): string[] | undefined {
+  if (bucket.command !== 'npm') return undefined;
+  if (bucket.argsPrefix.length !== 2 || bucket.argsPrefix[0] !== 'test' || bucket.argsPrefix[1] !== '--') return undefined;
+  return ['test', '--', ...targetPaths];
+}
+
+function displayCommand(command: string, args: string[]): string {
+  return [command, ...args].map(shellQuote).join(' ');
+}
+
+function shellQuote(value: string): string {
+  if (value === '--') return value;
+  const displayValue = value
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\t/g, '\\t');
+  if (/^[A-Za-z0-9_./:-]+$/.test(displayValue) && !displayValue.startsWith('-')) return displayValue;
+  return `'${displayValue.replace(/'/g, `'\\''`)}'`;
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values.filter(Boolean))].sort();
+}
+
+function compareVerificationCandidate(a: VerificationPathCandidate, b: VerificationPathCandidate): number {
+  const byConfidence = confidenceRank(b.confidence) - confidenceRank(a.confidence);
+  if (byConfidence !== 0) return byConfidence;
+  return a.path.localeCompare(b.path);
+}
+
+function compareVerificationPlanGroup(
+  a: Omit<RepoMapVerificationPlanGroup, 'rank'>,
+  b: Omit<RepoMapVerificationPlanGroup, 'rank'>
+): number {
+  const byConfidence = confidenceRank(b.confidence) - confidenceRank(a.confidence);
+  if (byConfidence !== 0) return byConfidence;
+  const byCoverage = b.coveredAffectedFiles.length - a.coveredAffectedFiles.length;
+  if (byCoverage !== 0) return byCoverage;
+  const byTargets = b.targetPaths.length - a.targetPaths.length;
+  if (byTargets !== 0) return byTargets;
+  return a.display.localeCompare(b.display);
+}
+
+function confidenceRank(value: Confidence): number {
+  if (value === 'proven') return 3;
+  if (value === 'inferred') return 2;
+  if (value === 'heuristic') return 1;
+  return 0;
 }
 
 function changedRoots(paths: string[]): string[] {

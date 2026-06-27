@@ -2001,7 +2001,7 @@ test('MCP repo_map returns structured read-only context card', async () => {
       arguments: {
         changedFiles: ['src/a.ts'],
         query: 'src/b.ts',
-        budget: 1_400
+        budget: 10_000
       }
     });
 
@@ -2014,19 +2014,25 @@ test('MCP repo_map returns structured read-only context card', async () => {
       affectedFiles: Array<{ path: string; resourceUri: string }>;
       evidenceRefs: Array<{ file: string; resourceUri?: string }>;
       verificationActions: unknown[];
+      verificationPlan: {
+        groups: Array<{ display: string; targetPaths: string[]; coveredChangedFiles: string[] }>;
+        omittedCounts: { groups: number; targetPaths: number };
+      };
       resources: { coverage: string; entities: string[]; evidence: string[] };
       confidence: { provenance: string[]; knownGaps: string[] };
       queryMatches: unknown[];
       omittedCounts: { budgetItems: number; evidenceRefs: number };
     };
     assert.equal(map.kind, 'repo_map');
-    assert.equal(map.budget.requestedTokens, 1_400);
+    assert.equal(map.budget.requestedTokens, 10_000);
     assert.equal(map.budget.estimator, 'Math.ceil(text.length / 4)');
     assert.ok(map.budget.estimatedTokens > 0);
     assert.deepEqual(map.changedRoots, ['src/a.ts']);
     assert.ok(map.affectedFiles.some((item) => item.path === 'src/b.ts'));
     assert.ok(map.affectedFiles.every((item) => item.resourceUri.startsWith('parallax://entities/')));
     assert.ok(map.evidenceRefs.length > 0);
+    assert.ok(Array.isArray(map.verificationPlan.groups));
+    assert.equal(typeof map.verificationPlan.omittedCounts.groups, 'number');
     assert.equal(map.resources.coverage, 'parallax://coverage/latest');
     assert.ok(map.resources.entities.length > 0);
     assert.ok(map.confidence.provenance.some((item) => item.includes('buildContextPack')));

@@ -784,6 +784,19 @@ function printRepoMap(map: {
   workArtifacts: Array<{ path: string; confidence: string; reason: string }>;
   evidenceRefs: Array<{ file: string; kind: string; confidence: string; resourceUri?: string }>;
   verificationActions: Array<{ display: string; confidence: string }>;
+  verificationPlan: {
+    groups: Array<{
+      rank: number;
+      display: string;
+      confidence: string;
+      packageRoot: string;
+      targetPaths: string[];
+      coveredChangedFiles: string[];
+      coveredAffectedFiles: string[];
+      omittedTargetCount: number;
+    }>;
+    omittedCounts: { groups: number; targetPaths: number };
+  };
   resources: { coverage: string; entities: string[]; evidence: string[] };
   query?: string;
   queryMatches?: Array<{ resourceUri: string; score?: number; entity?: { displayName?: string; path?: string; id?: string } }>;
@@ -809,6 +822,24 @@ function printRepoMap(map: {
     console.log('Verification actions:');
     for (const action of map.verificationActions) {
       console.log(`  - ${action.display} [${action.confidence}]`);
+    }
+  }
+  if (map.verificationPlan.groups.length > 0) {
+    console.log('Verification plan:');
+    for (const group of map.verificationPlan.groups) {
+      console.log(`  ${group.rank}. ${group.display} [${group.confidence}] package ${group.packageRoot}`);
+      if (group.coveredChangedFiles.length > 0) {
+        console.log(`     changed: ${group.coveredChangedFiles.join(', ')}`);
+      }
+      if (group.targetPaths.length > 0) {
+        console.log(`     targets: ${group.targetPaths.join(', ')}`);
+      }
+      if (group.coveredAffectedFiles.length > 0) {
+        console.log(`     covers: ${group.coveredAffectedFiles.slice(0, 5).join(', ')}${group.coveredAffectedFiles.length > 5 ? ', ...' : ''}`);
+      }
+      if (group.omittedTargetCount > 0) {
+        console.log(`     omitted: ${group.omittedTargetCount} path(s)`);
+      }
     }
   }
   if (map.query && map.queryMatches && map.queryMatches.length > 0) {

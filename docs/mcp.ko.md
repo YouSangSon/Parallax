@@ -37,7 +37,7 @@ JSON을 반환하는 모든 Parallax tool은 `tools/list`에서 MCP `outputSchem
 | `parallax_analyze_diff` | 변경된 파일을 최신 완료 index에 대해 분석하고 전체 impact report를 반환 | 아니오 |
 | `parallax_context_for_change` | 변경된 파일에 대해 budget(`brief`/`standard`/`deep`)에 맞춘 context pack — 랭크된 impact path, evidence 참조, git co-change advisory, resource link를 반환 | 아니오 |
 | `parallax_search_context` | 최신 index를 keyword, path, symbol, relation provenance, evidence snippet으로 검색해 랭크된 entity context를 반환 | 아니오 |
-| `parallax_repo_map` | changed root, affected file, test/docs/config/work artifact, evidence ref, verification action, resource link, confidence, provenance, known gap, omitted count가 담긴 read-only token-budgeted repo map/context card를 반환 | 예 |
+| `parallax_repo_map` | changed root, affected file, test/docs/config/work artifact, evidence ref, verification action, ranked verification plan, resource link, confidence, provenance, known gap, omitted count가 담긴 read-only token-budgeted repo map/context card를 반환 | 예 |
 | `parallax_contract_diff` | 현재 OpenAPI contract 파일을 인덱싱된 workspace baseline과 비교해 compact한 breaking-change impact를 반환 | 아니오 |
 | `parallax_cross_repo_consumers` | 이미 동기화된 workspace DB view에서 provider service/contract/route의 consumer를 질의 | 예 |
 | `parallax_cross_repo_providers` | 이미 동기화된 workspace DB view에서 consumer service/file이 사용하는 provider를 질의 | 예 |

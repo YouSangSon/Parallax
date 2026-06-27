@@ -327,3 +327,47 @@ Why:
   churn without adding evidence.
 - A broader mtime/size cache, watcher, or file-manifest schema can still be
   considered later, but only after this zero-schema path is measured.
+
+## 2026-06-28: Ship D9 As Repo-Map Verification Plan
+
+Decision: expose the affected verification planner inside `RepoMap` as
+`verificationPlan` instead of adding a separate CLI command.
+
+Sources:
+- Nx affected commands: <https://nx.dev/ci/features/affected>
+- Bazel query guide: <https://bazel.build/query/guide>
+- Aider repo map: <https://aider.chat/docs/repomap.html>
+- GitHub Copilot repository instructions:
+  <https://docs.github.com/en/copilot/how-tos/copilot-on-github/customize-copilot/add-custom-instructions/add-repository-instructions>
+- Parallax open PR queue refreshed via `gh pr list` on 2026-06-28: #23-#31
+  are still Dependabot PRs.
+- Parallax open issues refreshed via `gh issue list` on 2026-06-28: #3 is
+  still the only open issue.
+
+Why:
+- External affected-target tools emphasize executable test/task selection; AI
+  repo-map tools emphasize compact ranked context. Parallax already has both
+  impact evidence and recommended `ImpactReport.actions`, so `repo-map` is the
+  narrowest place to join them.
+- The planner groups existing actions by nearest `package.json` root and
+  runner, emits copy-pasteable commands, and reports covered changed /
+  affected / target paths, confidence, source actions, and omitted counts.
+- It intentionally does not execute or require Nx, Bazel, or other build tools.
+  That preserves the local-first / deterministic surface and keeps external
+  target discovery as a future explicit integration, not hidden behavior.
+
+## 2026-06-28: Defer Residual S1 Scan-Cost Work Pending Adapter Contract Design
+
+Decision: move the remaining dirty/non-git S1 scan-cost reduction out of the
+immediate loop until there is a measured adapter-contract design.
+
+Why:
+- The clean same-HEAD path already removes the safe no-op case without a schema
+  change.
+- The remaining dirty/non-git or changed-file scan cost is not just directory
+  walking: current adapters consume full `indexedFiles` context at startup for
+  manifests, path aliases, and cross-file TS/JS matching.
+- Skipping reads for unchanged files without changing that contract risks stale
+  package/config/call evidence. A future design should specify which adapter
+  inputs are cacheable, which files are manifest-like global inputs, and what
+  measurement justifies the added complexity.

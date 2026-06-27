@@ -149,6 +149,7 @@ For a worked tutorial that continues from the UI into MCP and CI guardrails, see
 | **Change analysis** | Analyzes `--changed` or `--base/--head` input via bounded multi-hop graph traversal |
 | **Evidence-first report** | Emits `changed`, `affected`, `actions`, `evidence`, `adapterInsights`, `warnings` as JSON/Markdown |
 | **Related-test inference** | Suggests likely-affected tests using imports, filename conventions, and adapter evidence |
+| **Verification planning** | Groups recommended actions into ranked repo-map commands with covered changed, affected, and target paths |
 | **Graph export** | Exports a saved report as Mermaid, JSON, or DOT |
 | **Coverage warnings** | Surfaces oversized-file skips, stale index, and adapter known-gaps in the report |
 

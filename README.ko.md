@@ -149,6 +149,7 @@ UI 다음에 MCP와 CI guardrail까지 이어지는 튜토리얼은 [`docs/getti
 | **변경 분석** | `--changed` 또는 `--base/--head` 입력을 bounded multi-hop graph traversal로 분석 |
 | **증거 중심 report** | `changed`, `affected`, `actions`, `evidence`, `adapterInsights`, `warnings`를 JSON/Markdown으로 출력 |
 | **관련 테스트 추론** | import, filename convention, adapter evidence를 이용해 영향 가능성이 높은 테스트를 추천 |
+| **Verification planning** | 추천 action을 covered changed / affected / target path가 포함된 ranked repo-map command로 그룹화 |
 | **Graph export** | 저장된 report를 Mermaid, JSON, DOT으로 export |
 | **Coverage 경고** | oversized file skip, stale index, adapter known-gap을 report에 노출 |
 

@@ -25,7 +25,7 @@
 | :--- | :--- |
 | `parallax analyze --changed <file[,file]> [--depth <n>] [--max-fanout <n>] [--json] [--sarif-output <path>]` | 명시한 변경 파일 목록을 최신 index에 대해 분석 |
 | `parallax analyze --base <ref> [--head <ref>] [--depth <n>] [--max-fanout <n>] [--json] [--sarif-output <path>]` | `git diff <base>...<head>`(기본 head `HEAD`)에서 변경 파일 목록을 도출 |
-| `parallax repo-map --changed <file[,file]> [--query <text>] [--budget <tokens>] [--json]` | changed root, affected file, test, 문서, work artifact, evidence ref, verification action, resource, confidence, provenance, known gap, omitted count가 담긴 token-budgeted repo map/context card를 생성 |
+| `parallax repo-map --changed <file[,file]> [--query <text>] [--budget <tokens>] [--json]` | changed root, affected file, test, 문서, work artifact, evidence ref, verification action, ranked verification plan, resource, confidence, provenance, known gap, omitted count가 담긴 token-budgeted repo map/context card를 생성 |
 | `parallax pr triage --base <ref> [--head <ref>] [--fail-on <level>] [--sarif-output <path>] [--query <text>] [--budget <tokens>]` | 로컬 dependency/PR triage 경로 실행: diff 분석, SARIF 작성, repo map 출력 |
 | `parallax install-hook [--hook pre-commit\|pre-push\|all] [--fail-on <level>] [--command <bin>] [--dry-run] [--force]` | commit 또는 push 전에 Parallax impact gate를 실행하는 로컬 Git hook 설치 |
 | `parallax query "<cypher>"` | 인덱싱된 그래프에 읽기전용 Cypher 서브셋을 실행하고 JSON 행을 출력 |
@@ -46,7 +46,7 @@
 
 기본(`--json` 없음)에서는 report가 저장되고 짧은 요약이 출력되며, 기록 시 report 경로가 표시된다.
 
-`repo-map`은 agent를 위한 read-only planning surface다. MCP와 같은 impact analysis, context-pack ranking, indexed search, `parallax://` resource를 재사용하며 새 index를 만들지 않는다. `--budget`은 `Math.ceil(text.length / 4)`로 추정하는 token 목표이므로, 출력은 requested budget, estimated tokens, truncation 상태, omitted count를 공개한다. `--query`는 기존 index의 ranked search-context match를 추가하고, `--json`은 전체 structured card를 출력한다.
+`repo-map`은 agent를 위한 read-only planning surface다. MCP와 같은 impact analysis, context-pack ranking, indexed search, `parallax://` resource를 재사용하며 새 index를 만들지 않는다. `verificationPlan`은 기존 recommended action을 nearest `package.json` root와 runner별로 묶고, 복사 가능한 명령과 각 group이 커버하는 changed / affected / target path를 보여준다. planner는 Nx, Bazel 또는 다른 외부 build tool을 실행하지 않는다. `--budget`은 `Math.ceil(text.length / 4)`로 추정하는 token 목표이므로, 출력은 requested budget, estimated tokens, truncation 상태, omitted count를 공개한다. `--query`는 기존 index의 ranked search-context match를 추가하고, `--json`은 전체 structured card를 출력한다.
 
 `pr triage`는 dependency update와 pull request review를 위한 로컬 wrapper다. `analyze`와 같은 changed-file 입력을 받고, impact report를 저장하며, 기본적으로 `.parallax/pr-triage.sarif`에 SARIF를 쓰고, `--fail-on`을 적용한 뒤 dependency 중심 기본 query로 repo map을 출력한다. GitHub 호출, SARIF upload, branch checkout, remote 상태 변경은 하지 않는다. PR branch가 이미 로컬에 준비된 뒤의 일반적인 Dependabot 흐름:
 

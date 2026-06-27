@@ -194,6 +194,8 @@ export type {
   RepoMapEvidenceRef,
   RepoMapOptions,
   RepoMapPathItem,
-  RepoMapQueryMatch
+  RepoMapQueryMatch,
+  RepoMapVerificationPlan,
+  RepoMapVerificationPlanGroup
 } from './types.js';
 export type { McpContext } from './mcp.js';

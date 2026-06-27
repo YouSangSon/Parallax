@@ -53,6 +53,11 @@ export const MCP_OUTPUT_SCHEMAS = {
     affectedFiles: z.array(z.unknown()),
     evidenceRefs: z.array(z.unknown()),
     verificationActions: z.array(z.unknown()),
+    verificationPlan: z.object({
+      generatedFrom: z.array(z.string()),
+      groups: z.array(z.unknown()),
+      omittedCounts: z.record(z.string(), z.number())
+    }).passthrough(),
     resources: resourcesSchema,
     budget: z.object({
       requestedTokens: z.number(),

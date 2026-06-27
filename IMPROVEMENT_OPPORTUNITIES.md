@@ -118,9 +118,9 @@ also remain thinly bench-covered.
 | D6 | ✅ **shipped** — `parallax install-hook` plans or installs managed `pre-commit` / `pre-push` impact gates. It writes executable hooks into the active Git hooks directory, respects `core.hooksPath`, skips existing non-Parallax hooks unless `--force` is supplied, supports `--dry-run`, uses `--fail-on`, and allows intentional bypass with `PARALLAX_SKIP_HOOK=1` or Git's `--no-verify`. | S | MED |
 | D7 | ✅ **shipped** — SARIF / GitHub Code Scanning export now projects `ImpactReport` via `parallax analyze --sarif-output <path> [--sarif-category <category>]`, with affected-file findings, index coverage-gap warnings, cross-repo contract-break warnings, recommended verification-action notes, adapter `knownGaps`, evidence locations, relation paths, confidence rules, stable fingerprints, and docs for Code Scanning upload. | M | HIGH |
 | D8 | ✅ **shipped** — local dependency/PR dogfood lane exists as `parallax pr triage`. It accepts `--changed` or `--base/--head`, persists the impact report, writes SARIF (default `.parallax/pr-triage.sarif`), applies `--fail-on`, and prints a dependency-focused repo map without calling GitHub or changing remote state. The open Dependabot queue was refreshed on 2026-06-27 (#23-#31) as the first real dogfood target. | S | MED-HIGH |
-| D9 | **Affected verification planner** — external affected-target systems (Nx affected and Bazel query/test selection patterns) make a clear product gap: Parallax should turn impact graph output into ranked verification commands by package/workspace/test target, not only affected files. Reuse `ImpactReport.actions`, build-system package metadata, and repo-map context to emit deterministic target groups, confidence, omitted counts, and copy-pasteable commands without shelling out to Nx/Bazel or requiring those tools. | M | HIGH |
+| D9 | ✅ **shipped** — affected verification planner: `parallax repo-map` / MCP `parallax_repo_map` now include `verificationPlan`, grouping existing `ImpactReport.actions` by nearest `package.json` package root and runner into ranked, copy-pasteable commands with covered changed / affected / target paths, confidence, source actions, and omitted counts. It stays deterministic and does not execute Nx, Bazel, or other external build tools. | M | HIGH |
 
-**Sequencing:** continue S1/S4, then D9. The `--fail-on` primitive, broad SARIF projection, repo-map, local PR triage wrapper, official PR action wrapper, local Git hook installer, shareable UI/export surface, and M10 SCIP bridge are landed. D2 remains valuable for trend metrics, but D9 is now the clearer user-facing addition from the latest affected-target research.
+**Sequencing:** continue S4/D2 and only return to the residual S1 dirty/non-git scan-cost work with a measured adapter-contract design. The `--fail-on` primitive, broad SARIF projection, repo-map, affected verification planner, local PR triage wrapper, official PR action wrapper, local Git hook installer, shareable UI/export surface, and M10 SCIP bridge are landed.
 
 ---
 
@@ -181,7 +181,7 @@ The web/GitHub review changes the short-term adoption order without invalidating
 5. **Current repo state gives an immediate dogfood target.** As of 2026-06-28, open Dependabot PRs #23-#31 are still available: GitHub Actions major bumps (#23-#28), `@types/node` (#29), TypeScript 6 (#30), and Zod (#31); issue #3 remains the only open non-Dependabot follow-up. This makes dependency-impact triage a useful real workflow: analyze the bump, emit SARIF/Markdown, provide repo-map context, and show verification actions.
 6. **Agentic workflow safety reinforces Parallax's I-8 boundary.** GitHub Agentic Workflows emphasizes read-only defaults, guarded writes, sandboxing, and approval gates. Parallax should keep PR/action automation read-only by default, with explicit opt-in for any write surface.
 7. **Hook adoption should stay dependency-free.** Git, pre-commit, Lefthook, and Husky all converge on explicit local installation and skippable hooks, but Parallax can satisfy D6 with Git's native hook directory and `core.hooksPath` instead of adding a framework dependency.
-8. **Affected target planning is the next UX gap.** Nx and Bazel both frame scale around selecting the tasks/targets impacted by a change. Parallax already knows affected files, package manifests, and recommended verification actions; the missing feature is a deterministic planner that groups those into ranked verification commands a reviewer or agent can run immediately.
+8. ✅ **Affected target planning is now covered at repo-map level.** Nx and Bazel both frame scale around selecting the tasks/targets impacted by a change. Parallax now groups its existing recommended actions into deterministic verification-plan commands with affected-path coverage, while intentionally avoiding external target discovery.
 
 ### Reprioritized adoption lane
 
@@ -192,6 +192,7 @@ The web/GitHub review changes the short-term adoption order without invalidating
 5. ✅ **D6 local Git hook installer** — shift the same impact gate left into opt-in `pre-commit` / `pre-push` without adding a hook framework dependency.
 6. ✅ **D4 deep-linkable UI/export** — humans can share the selected impact path/filter/preset and export the same workbench view as JSON/CSV/map image.
 7. ✅ **M10 SCIP bridge** — JSON import, CLI-backed binary ingest, and JSON export shipped; binary protobuf writing stays deferred until JSON is insufficient.
+8. ✅ **D9 affected verification planner** — repo-map and MCP output now rank verification command groups by package root/runner and show what impact paths each command covers.
 
 ## Larger-bet reassessment (2026-06-21)
 

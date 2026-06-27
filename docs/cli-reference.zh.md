@@ -25,7 +25,7 @@
 | :--- | :--- |
 | `parallax analyze --changed <file[,file]> [--depth <n>] [--max-fanout <n>] [--json] [--sarif-output <path>]` | 将显式给出的变更文件列表对最新 index 分析 |
 | `parallax analyze --base <ref> [--head <ref>] [--depth <n>] [--max-fanout <n>] [--json] [--sarif-output <path>]` | 从 `git diff <base>...<head>`（默认 head `HEAD`）推导变更文件列表 |
-| `parallax repo-map --changed <file[,file]> [--query <text>] [--budget <tokens>] [--json]` | 构建 token-budgeted repo map/context card，包含 changed root、affected file、test、文档、work artifact、evidence ref、verification action、resource、confidence、provenance、known gap 与 omitted count |
+| `parallax repo-map --changed <file[,file]> [--query <text>] [--budget <tokens>] [--json]` | 构建 token-budgeted repo map/context card，包含 changed root、affected file、test、文档、work artifact、evidence ref、verification action、ranked verification plan、resource、confidence、provenance、known gap 与 omitted count |
 | `parallax pr triage --base <ref> [--head <ref>] [--fail-on <level>] [--sarif-output <path>] [--query <text>] [--budget <tokens>]` | 运行本地 dependency/PR triage 路径：分析 diff、写入 SARIF、打印 repo map |
 | `parallax install-hook [--hook pre-commit\|pre-push\|all] [--fail-on <level>] [--command <bin>] [--dry-run] [--force]` | 安装本地 Git hook，在 commit 或 push 前运行 Parallax impact gate |
 | `parallax query "<cypher>"` | 在已索引的图上运行只读 Cypher 子集并打印 JSON 行 |
@@ -46,7 +46,7 @@
 
 默认（无 `--json`）会持久化 report 并打印简短摘要；写入时显示 report 路径。
 
-`repo-map` 是面向 agent 的 read-only planning surface。它复用与 MCP 相同的 impact analysis、context-pack ranking、indexed search 和 `parallax://` resource；不会创建新的 index。`--budget` 是用 `Math.ceil(text.length / 4)` 估算的 token 目标，因此输出会披露 requested budget、estimated tokens、truncation 状态和 omitted count。`--query` 会加入来自现有 index 的 ranked search-context match，`--json` 输出完整 structured card。
+`repo-map` 是面向 agent 的 read-only planning surface。它复用与 MCP 相同的 impact analysis、context-pack ranking、indexed search 和 `parallax://` resource；不会创建新的 index。`verificationPlan` 会按最近的 `package.json` root 和 runner 对现有 recommended action 分组，输出可复制的命令，并列出每组覆盖的 changed / affected / target path。planner 不会执行 Nx、Bazel 或其他外部 build tool。`--budget` 是用 `Math.ceil(text.length / 4)` 估算的 token 目标，因此输出会披露 requested budget、estimated tokens、truncation 状态和 omitted count。`--query` 会加入来自现有 index 的 ranked search-context match，`--json` 输出完整 structured card。
 
 `pr triage` 是面向 dependency update 与 pull request review 的本地 wrapper。它接受与 `analyze` 相同的 changed-file 输入，持久化 impact report，默认将 SARIF 写到 `.parallax/pr-triage.sarif`，应用 `--fail-on`，并用 dependency-focused 默认 query 打印 repo map。它不会调用 GitHub、上传 SARIF、checkout branch 或修改 remote 状态。PR branch 已经在本地可用后的典型 Dependabot 流程：
 

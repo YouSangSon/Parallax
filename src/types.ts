@@ -387,6 +387,33 @@ export type RepoMapQueryMatch = {
   evidence?: unknown[];
 };
 
+export type RepoMapVerificationPlanGroup = {
+  id: string;
+  rank: number;
+  strategy: 'direct-test-command';
+  packageRoot: string;
+  runnerId?: string;
+  command?: string;
+  args?: string[];
+  display: string;
+  confidence: Confidence;
+  targetPaths: string[];
+  coveredChangedFiles: string[];
+  coveredAffectedFiles: string[];
+  reasons: string[];
+  sourceActions: string[];
+  omittedTargetCount: number;
+};
+
+export type RepoMapVerificationPlan = {
+  generatedFrom: string[];
+  groups: RepoMapVerificationPlanGroup[];
+  omittedCounts: {
+    groups: number;
+    targetPaths: number;
+  };
+};
+
 export type RepoMap = {
   version: 0;
   kind: 'repo_map';
@@ -407,6 +434,7 @@ export type RepoMap = {
   workArtifacts: ContextPackWorkArtifact[];
   evidenceRefs: RepoMapEvidenceRef[];
   verificationActions: ImpactAction[];
+  verificationPlan: RepoMapVerificationPlan;
   resources: {
     coverage: 'parallax://coverage/latest';
     entities: string[];

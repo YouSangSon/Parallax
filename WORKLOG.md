@@ -328,3 +328,34 @@
   - `npm test`
   - `npm run bench`
   - `npm run test:dogfood`
+- Refreshed web/GitHub signals for the next improvement candidate.
+  - GitHub still has only issue #3 open and Dependabot PRs #23-#31 open.
+  - Official Nx/Bazel affected-target docs still point to executable
+    verification planning as the clearest unshipped user-facing gap.
+  - Repo-map/agent context tools still reinforce that the next output should
+    be compact and ranked rather than a separate heavy integration.
+- Shipped D9 affected verification planner slice.
+  - `src/repo_map.ts` now builds `verificationPlan` from existing
+    `ImpactReport.actions`, nearest `package.json` package roots, repo-map
+    affected/test/doc/config/work artifact sections, and context-pack limits.
+  - Planner groups recommended actions by package root / runner into ranked,
+    copy-pasteable commands and reports covered changed / affected / target
+    paths, source actions, confidence, and omitted counts.
+  - `parallax repo-map` human output prints the verification plan; JSON and MCP
+    structured output include it.
+  - Docs/backlog now mark D9 shipped and move residual S1 scan-cost work behind
+    an adapter-contract design.
+- D9 focused verification:
+  - `npm run check`
+  - `node --import tsx --test tests/repo-map.test.ts`
+  - `node --import tsx --test tests/mcp.test.ts --test-name-pattern "repo_map"`
+- D9 final verification:
+  - `npm run check`
+  - `npm run docs:lint`
+  - `node --import tsx --test tests/repo-map.test.ts tests/mcp.test.ts --test-name-pattern "repo_map|RepoMap|buildRepoMap|repo-map"`
+  - `npm run build`
+  - `git diff --check`
+  - `npm test`
+  - `npm run bench`
+  - `npm audit --audit-level=high`
+  - `npm run test:dogfood`

@@ -149,6 +149,7 @@ importer 会用 SCIP 的 definition/reference edge 增强最新完成的 Paralla
 | **变更分析** | 通过有界的多跳图遍历分析 `--changed` 或 `--base/--head` 输入 |
 | **以证据为先的报告** | 以 JSON/Markdown 输出 `changed`、`affected`、`actions`、`evidence`、`adapterInsights`、`warnings` |
 | **相关测试推断** | 利用 import、文件名约定与 adapter 证据，推荐最可能受影响的测试 |
+| **Verification planning** | 将推荐 action 分组为 ranked repo-map command，并显示覆盖的 changed / affected / target path |
 | **图导出** | 将已保存的报告导出为 Mermaid、JSON 或 DOT |
 | **覆盖率告警** | 在报告中暴露 oversized 文件跳过、陈旧索引与 adapter 已知缺口 |
 

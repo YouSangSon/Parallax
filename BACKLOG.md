@@ -4,7 +4,7 @@ Canonical detailed backlog: `IMPROVEMENT_OPPORTUNITIES.md`.
 
 ## Now
 
-1. S1/S4 scale and perf follow-through.
+1. S1/S4 scale and perf follow-through: 10k/50k baseline guidance.
 
 ## Later
 

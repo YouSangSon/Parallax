@@ -32,7 +32,7 @@ test('generateSyntheticRepo is deterministic for a given size', async () => {
   }
 });
 
-test('formatPerfTable renders full, incremental, analyze, RSS, affected, and per-kfile columns', () => {
+test('formatPerfTable renders full, incremental, analyze, peak RSS, affected, and per-kfile columns', () => {
   const output = formatPerfTable([
     {
       files: 200,
@@ -42,14 +42,14 @@ test('formatPerfTable renders full, incremental, analyze, RSS, affected, and per
       analyzeNoPersistMs: 12.5,
       analyzePersistMs: 15.5,
       affected: 199,
-      rssMb: 128.4
+      observedPeakRssMb: 128.4
     }
   ]);
 
   assert.equal(
     output,
     [
-      'files\tfull_index_ms\tnoop_incremental_ms\tedit_incremental_ms\tanalyze_no_persist_ms\tanalyze_persist_ms\taffected\trss_mb\tfull_index_ms/kfile\tnoop_incremental_ms/kfile\tedit_incremental_ms/kfile\tanalyze_no_persist_ms/kfile\tanalyze_persist_ms/kfile',
+      'files\tfull_index_ms\tnoop_incremental_ms\tedit_incremental_ms\tanalyze_no_persist_ms\tanalyze_persist_ms\taffected\tobserved_peak_rss_mb\tfull_index_ms/kfile\tnoop_incremental_ms/kfile\tedit_incremental_ms/kfile\tanalyze_no_persist_ms/kfile\tanalyze_persist_ms/kfile',
       '200\t1000\t20.0\t35.0\t12.5\t15.5\t199\t128\t5000\t100\t175\t63\t78'
     ].join('\n')
   );

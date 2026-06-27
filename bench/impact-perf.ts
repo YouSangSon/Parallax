@@ -1,8 +1,8 @@
 #!/usr/bin/env tsx
 /**
  * S4 performance bench — measures full index, incremental index, and analyze
- * costs on a deterministic synthetic repo at increasing scales. This is
- * intentionally NOT part of `npm run verify`: timing and peak RSS are
+ * costs plus observed peak RSS on a deterministic synthetic repo at increasing
+ * scales. This is intentionally NOT part of `npm run verify`: timing and peak RSS are
  * non-deterministic, so they must not reach the byte-identical
  * `ImpactBenchReport`. Run it on demand to capture a baseline or, in CI, with a
  * generous `--max-ms-per-kfile` ceiling.
@@ -29,7 +29,7 @@ export type PerfRow = {
   analyzeNoPersistMs: number;
   analyzePersistMs: number;
   affected: number;
-  rssMb: number;
+  observedPeakRssMb: number;
 };
 
 type Timed<T> = {
@@ -71,25 +71,31 @@ async function measure(files: number): Promise<PerfRow> {
   try {
     const info = await generateSyntheticRepo(root, { files });
     await initProject({ repoRoot: root });
+    let observedPeakRssMb = rssMb();
 
     const fullIndex = await timed(() => indexProject({ repoRoot: root }));
+    observedPeakRssMb = Math.max(observedPeakRssMb, rssMb());
     if (fullIndex.value.mode !== 'full') {
       throw new Error(`initial index expected mode === 'full', got ${fullIndex.value.mode}`);
     }
 
     const noopIncremental = await timed(() => indexProject({ repoRoot: root }));
+    observedPeakRssMb = Math.max(observedPeakRssMb, rssMb());
     assertIncremental(noopIncremental.value, 'no-op');
 
     await editSyntheticChangedFile(root, info);
     const editIncremental = await timed(() => indexProject({ repoRoot: root }));
+    observedPeakRssMb = Math.max(observedPeakRssMb, rssMb());
     assertIncremental(editIncremental.value, 'single-file edit');
 
     const analyzeNoPersist = await timed(() =>
       analyzeDiff({ repoRoot: root, changedFiles: [info.changedFile], persistReport: false })
     );
+    observedPeakRssMb = Math.max(observedPeakRssMb, rssMb());
     const analyzePersist = await timed(() =>
       analyzeDiff({ repoRoot: root, changedFiles: [info.changedFile] })
     );
+    observedPeakRssMb = Math.max(observedPeakRssMb, rssMb());
 
     return {
       files,
@@ -99,11 +105,15 @@ async function measure(files: number): Promise<PerfRow> {
       analyzeNoPersistMs: analyzeNoPersist.ms,
       analyzePersistMs: analyzePersist.ms,
       affected: analyzePersist.value.affectedFiles.length,
-      rssMb: process.memoryUsage().rss / (1024 * 1024)
+      observedPeakRssMb
     };
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+}
+
+function rssMb(): number {
+  return process.memoryUsage.rss() / (1024 * 1024);
 }
 
 function msPerKfile(ms: number, files: number): number {
@@ -120,7 +130,7 @@ export function formatPerfTable(rows: readonly PerfRow[]): string {
       'analyze_no_persist_ms',
       'analyze_persist_ms',
       'affected',
-      'rss_mb',
+      'observed_peak_rss_mb',
       'full_index_ms/kfile',
       'noop_incremental_ms/kfile',
       'edit_incremental_ms/kfile',
@@ -139,7 +149,7 @@ export function formatPerfTable(rows: readonly PerfRow[]): string {
         row.analyzeNoPersistMs.toFixed(1),
         row.analyzePersistMs.toFixed(1),
         row.affected,
-        row.rssMb.toFixed(0),
+        row.observedPeakRssMb.toFixed(0),
         msPerKfile(row.fullIndexMs, row.files).toFixed(0),
         msPerKfile(row.noopIncrementalMs, row.files).toFixed(0),
         msPerKfile(row.editIncrementalMs, row.files).toFixed(0),

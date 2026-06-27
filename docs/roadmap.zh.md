@@ -110,7 +110,7 @@ MCP 已稳定为 read-only。接下来是深入审视 agent 可用性的阶段�
   - 当前 gate：`bench/impact-bench.ts` 会构建固定的 TypeScript/JavaScript、JVM/Spring Boot、Python、Go、Rust、OpenAPI、build manifest fixture，并评分 relation recall/precision、affected-file recall、evidence/span coverage、adapter attribution、context-pack readiness 与 retrieval 质量。它由 `npm run bench`、`npm test` 以及 CI 的 `npm run verify` gate 执行。
   - 当前 cross-repo gate：bench 包含 two-repo contract-impact fixture，用来验证 W1 primary cross-repo consumer impact 与 report graph edge 仍然可见。
 - [x] 独立的 scale/perf bench，可分别报告 full index、no-op incremental index、edited-file incremental index 与 analyze phases，而不把精确耗时伪装成确定性契约
-  - 当前工具：`npm run bench:perf` 在 synthetic-repo generator 上测量这些阶段，并保持在 `npm run verify` 之外，因此这些时间数据是建议性的，而不是逐字节 CI 合同。
+  - 当前工具：`npm run bench:perf` 在 synthetic-repo generator 上测量这些阶段和 `observed_peak_rss_mb`，并保持在 `npm run verify` 之外，因此 timing/RSS 是建议性的，而不是逐字节 CI 合同。
 - [x] 在 embedding 模型 / LLM provider 交叉时对 recall 质量的回归 detection
   - 当前 gate：deterministic bench 现在包含 semantic model matrix，检查每个模型的 recall@1 与 cross-model isolation。它是一个不依赖 live provider 调用的 offline gate，用来捕捉 embedding 模型 namespace 回归；LLM provider 的网络质量评估仍放在 CI 之外，而 provider contract 继续由 offline test 覆盖。
 - [x] 在 CI 中每个 PR 自动报告 bench delta

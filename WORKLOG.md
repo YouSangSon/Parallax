@@ -147,6 +147,16 @@
   - The live GitHub queue is still Dependabot PRs #23-#31 plus issue #3, so
     continued dogfooding can use existing read-only PR triage without adding a
     write-capable GitHub surface.
+- Shipped S4 observed peak RSS slice.
+  - `bench/impact-perf.ts` now reports `observed_peak_rss_mb`, sampled at phase
+    boundaries with Node's built-in RSS reading.
+  - `docs/verification*.md`, `PLAN.md`, `BACKLOG.md`, `DECISIONS.md`, and
+    `IMPROVEMENT_OPPORTUNITIES.md` document the intentionally non-deterministic
+    perf signal and leave 10k/50k baseline guidance as the next S4 step.
+- S4 observed peak RSS verification:
+  - `node --import tsx --test tests/synthetic-repo.test.ts`
+  - `npm run check`
+  - `npm run bench:perf -- --scales 10`
 - Shipped M10 SCIP JSON import first slice.
   - `src/scip.ts` imports JSON produced by the official SCIP CLI and augments
     the latest completed Parallax index run instead of creating a SCIP-only run.

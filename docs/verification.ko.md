@@ -18,7 +18,7 @@ Parallax는 정확성을 여러 계층으로 검증한다 — 빠른 unit suite,
 | `npm run build` | `tsc -p tsconfig.json`, `dist/`로 compile | 배포하거나 CLI를 smoke test하기 전 |
 | `npm run bench` | `bench/impact-bench.ts` 실행. accuracy 회귀 시 non-zero로 종료 | engine/adapter 변경 후 |
 | `npm run bench:report` | 최신 bench JSON을 Markdown으로 렌더링하고, 선택적으로 baseline report와 비교 | `npm run bench` 후 또는 CI summary에서 |
-| `npm run bench:perf` | `bench/impact-perf.ts` 실행; 합성 repo에서 full index, no-op incremental index, edited-file incremental index, analyze phase 시간을 측정(비결정적, `verify`에 미포함) | 인덱싱/traversal 성능 작업 시 |
+| `npm run bench:perf` | `bench/impact-perf.ts` 실행; 합성 repo에서 full index, no-op incremental index, edited-file incremental index, analyze phase 시간과 observed peak RSS를 측정(비결정적, `verify`에 미포함) | 인덱싱/traversal 성능 작업 시 |
 | `npm run test:dogfood` | Parallax를 자기 source에 대해 인덱싱하고 내부 graph가 살아남는지 검증 | engine 변경 후(indexer/adapters/analyzer/store/graph) |
 | `npm run test:mcp` | `tests/mcp.test.ts` 실행(impact / context / memory / telemetry / path validation) | MCP surface 변경 후 |
 | `npm run test:ui` | `tests/ui.test.ts` 실행(UI snapshot, server, JSON resource endpoint) | UI 변경 후 |
@@ -75,7 +75,7 @@ npm run bench:perf -- --scales 1000,10000        # 사용자 지정 규모
 npm run bench:perf -- --max-ms-per-kfile 2000    # ceiling 초과 시 실패
 ```
 
-출력 표는 `full_index_ms`, `noop_incremental_ms`, `edit_incremental_ms`, `analyze_no_persist_ms`, `analyze_persist_ms`와 대응하는 `/kfile` 열을 분리한다. 시간 측정 실행은 verify에 없지만 합성 generator와 표 formatter는 `tests/synthetic-repo.test.ts`로 정규 verify 게이트에서 가드된다.
+출력 표는 `full_index_ms`, `noop_incremental_ms`, `edit_incremental_ms`, `analyze_no_persist_ms`, `analyze_persist_ms`, `observed_peak_rss_mb`, 대응하는 `/kfile` 시간 열을 분리한다. Peak RSS는 Node 내장 RSS reading을 phase 경계에서 샘플링하므로 실용적인 추세 신호이지 정확한 allocator trace는 아니다. 시간 측정 실행은 verify에 없지만 합성 generator와 표 formatter는 `tests/synthetic-repo.test.ts`로 정규 verify 게이트에서 가드된다.
 
 ## docs linter
 

@@ -206,3 +206,22 @@ Why:
   directly to SCIP `Document`, `SymbolInformation`, and `Occurrence` JSON.
 - Binary `.scip` writing requires owning protobuf serialization and should wait
   until JSON export is measurably insufficient.
+
+## 2026-06-28: Observed Peak RSS For Perf Bench
+
+Decision: keep S4 memory reporting inside `bench:perf` as
+`observed_peak_rss_mb`, sampled at phase boundaries with Node's built-in RSS
+reading. Do not add a sampler, child-process harness, or dependency for exact
+allocator tracing yet.
+
+Sources:
+- Node.js `process.memoryUsage.rss()`:
+  <https://nodejs.org/api/process.html#processmemoryusagerss>
+
+Why:
+- S4 needs a trend signal for large-repo memory growth, not a deterministic CI
+  contract.
+- Phase-boundary RSS is cheap, portable, and enough to catch obvious scale
+  regressions alongside the existing timing columns.
+- A true peak sampler would add process orchestration and nondeterministic noise
+  before there is a concrete memory regression to chase.

@@ -67,7 +67,7 @@ MCP는 read-only로 안정화됐다. 다음은 agent 사용성을 깊게 보는 
 - [x] Dependency/PR triage dogfood lane: `parallax pr triage`가 GitHub write 없이 로컬 diff 분석, SARIF 출력, `--fail-on`, repo-map context를 묶는다
 - [x] 로컬 Git hook installer: `parallax install-hook`이 관리형 `pre-commit` / `pre-push` impact gate를 쓰고, `core.hooksPath`를 존중하며, `--force`가 없으면 기존 non-Parallax hook을 건너뛴다
 - [x] Deep-linkable UI/export: workbench URL이 선택한 영향 경로, 필터 텍스트, report-delta 정책 프리셋을 유지하고 toolbar가 JSON, affected-path CSV, PNG/SVG 영향 맵을 내보낸다
-- [x] SCIP JSON import 첫 조각: `parallax scip import --file <index.scip.json>`이 외부 indexer의 SCIP definition/reference edge를 최신 완료 index에 보강한다
+- [x] SCIP import: `parallax scip import --file <index.scip or index.scip.json>`가 외부 indexer의 SCIP definition/reference edge를 최신 완료 index에 보강한다
 - [ ] `context_for_change`의 budget tuning (brief/standard/deep)을 사용 텔레메트리로 검증
 - [ ] context pack 결과의 hit/miss 측정 harness
 - [ ] write surface를 별도 권한 모델로 분리해 도입 검토 ([invariants.ko.md](invariants.ko.md) I-8 준수)

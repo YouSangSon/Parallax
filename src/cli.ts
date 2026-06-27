@@ -941,7 +941,7 @@ Commands:
                          [--sarif-output .parallax/pr-triage.sarif] [--query <text>] [--budget <tokens>]
   ${PACKAGE_NAME} ui [--report <id>] [--port <n>]
   ${PACKAGE_NAME} import-session --file <path> --format codex|claude [--branch <name>]
-  ${PACKAGE_NAME} scip import --file <index.scip.json>
+  ${PACKAGE_NAME} scip import --file <index.scip|index.scip.json>
   ${PACKAGE_NAME} workspace init [--name <name>] [--service <service>] [--force]
   ${PACKAGE_NAME} workspace add-repo <path> [--name <name>] [--service <service>] [--remote <url>]
   ${PACKAGE_NAME} workspace list [--name <name>] [--json]

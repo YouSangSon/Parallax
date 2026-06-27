@@ -12,11 +12,11 @@ Most machine-oriented commands can print JSON through command-specific flags. `a
 | :--- | :--- |
 | `parallax init` | Create the local `.parallax/` store and a fresh database for the repo |
 | `parallax index [--max-file-bytes <n>]` | Scan the repo and extract the entity/relation graph; `--max-file-bytes` caps per-file scan size |
-| `parallax scip import --file <index.scip.json>` | Import JSON emitted by the official SCIP CLI and augment the latest completed index with SCIP reference edges |
+| `parallax scip import --file <index.scip or index.scip.json>` | Import a SCIP binary index or JSON emitted by the official SCIP CLI, then augment the latest completed index with SCIP reference edges |
 | `parallax reindex-vec [--model <hf-model>]` | Rebuild the sqlite-vec ANN index; `--model` selects the embedding model |
 | `parallax reembed [--model <hf-model>] [--all]` | Recompute fact embeddings; `--all` re-embeds every fact, otherwise only missing ones |
 
-`scip import` requires an existing completed Parallax index. Generate JSON with the official SCIP CLI, for example `scip print --json > index.scip.json`, then run `parallax scip import --file index.scip.json`. The importer augments the latest completed index run with SCIP-derived definition/reference edges; direct binary `index.scip` ingestion and Parallax-to-SCIP export are still follow-up work.
+`scip import` requires an existing completed Parallax index. Run `parallax scip import --file index.scip` to import a binary SCIP index through the official `scip` CLI on `PATH`, or import pre-rendered JSON with `parallax scip import --file index.scip.json` after `scip print --json index.scip > index.scip.json`. The importer augments the latest completed index run with SCIP-derived definition/reference edges; Parallax-to-SCIP export is still follow-up work.
 
 ## Analysis
 

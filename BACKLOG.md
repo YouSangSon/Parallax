@@ -4,7 +4,7 @@ Canonical detailed backlog: `IMPROVEMENT_OPPORTUNITIES.md`.
 
 ## Now
 
-1. M10 SCIP bridge follow-up: binary ingest and Parallax-to-SCIP export.
+1. M10 SCIP bridge follow-up: Parallax-to-SCIP export.
 2. S1/S4 scale and perf follow-through.
 
 ## Later
@@ -20,4 +20,4 @@ Canonical detailed backlog: `IMPROVEMENT_OPPORTUNITIES.md`.
 4. D1 official PR action wrapper.
 5. D6 pre-commit / pre-push impact-gate installer.
 6. D4 deep-linkable UI/export.
-7. M10 SCIP JSON import first slice.
+7. M10 SCIP import first slices: JSON import and CLI-backed binary ingest.

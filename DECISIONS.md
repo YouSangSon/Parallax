@@ -159,25 +159,30 @@ Why:
   with SVG fallback when rasterization is unavailable.
 - No new dependency or server-side export path is needed.
 
-## 2026-06-28: SCIP JSON Import First
+## 2026-06-28: SCIP Import First
 
-Decision: start M10 with a dependency-free `parallax scip import --file
-<index.scip.json>` command that consumes JSON from the official SCIP CLI and
-augments the latest completed Parallax index run, instead of adding a protobuf
-runtime or replacing Parallax indexing with a SCIP-only run.
+Decision: start M10 with dependency-free SCIP import. `parallax scip import
+--file <index.scip.json>` consumes JSON from the official SCIP CLI, while
+`parallax scip import --file <index.scip>` shells out to `scip print --json`
+and then reuses the same importer. Both paths augment the latest completed
+Parallax index run instead of adding a protobuf runtime or replacing Parallax
+indexing with a SCIP-only run.
 
 Sources:
 - SCIP project and indexer list: <https://github.com/scip-code/scip>
 - SCIP protobuf schema: <https://github.com/scip-code/scip/blob/main/scip.proto>
 - SCIP CLI JSON printer: <https://github.com/scip-code/scip/blob/main/docs/CLI.md>
+- SCIP development docs show path-based `scip print` inspection:
+  <https://github.com/scip-code/scip/blob/main/docs/Development.md>
 
 Why:
 - The official `scip print --json` path gives Parallax a stable first ingest
   lane without adding protobuf codegen or a new runtime dependency.
+- Binary ingest should rely on the official CLI rather than local protobuf
+  bindings until export or streaming needs justify a stronger dependency.
 - Augmenting the latest completed index preserves existing Parallax adapter
   output; creating a separate SCIP-only index run would hide non-SCIP graph
   rows from `analyze`.
 - File-level `REFERENCES` edges let existing reverse impact traversal surface
   files that reference a changed definition file immediately.
-- Direct binary `index.scip` ingest and Parallax-to-SCIP export remain scoped as
-  follow-up M10 work.
+- Parallax-to-SCIP export remains scoped as follow-up M10 work.

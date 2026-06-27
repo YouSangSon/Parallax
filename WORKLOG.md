@@ -154,3 +154,21 @@
   - `npm run build`
   - `git diff --check`
   - `npm test`
+- Shipped M10 SCIP binary ingest follow-up.
+  - Web/GitHub review reconfirmed SCIP as the right standards bridge:
+    `scip-code/scip` documents the language-agnostic index format, official
+    `scip print --json`, and path-based `scip print /path/to/index.scip`
+    inspection.
+  - `src/scip.ts` now accepts binary `index.scip` inputs by shelling out to
+    `scip print --json <file>` and reusing the JSON importer. No protobuf
+    runtime dependency was added.
+  - JSON import remains supported without requiring `scip` at import time.
+  - `tests/scip.test.ts` adds a fake official CLI printer to cover binary
+    ingest deterministically.
+- M10 SCIP binary ingest verification:
+  - `npm run check`
+  - `node --import tsx --test tests/scip.test.ts`
+  - `npm run docs:lint`
+  - `npm run build`
+  - `git diff --check`
+  - `npm test`

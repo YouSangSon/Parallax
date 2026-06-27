@@ -118,14 +118,17 @@ parallax ui --report <report-id> --port 3717
 
 UI 会把选中的影响路径、筛选词与策略预设保存在 URL 中。也可以在 toolbar 中将当前 workbench 导出为 JSON、affected-path CSV，或 PNG/SVG 影响图。
 
-运行 `parallax index` 后，可先用官方 SCIP CLI 将 `index.scip` 转为 JSON，再导入 SCIP 精度层：
+运行 `parallax index` 后，可导入 SCIP indexer 生成的 `index.scip` 来补充 SCIP 精度层：
 
 ```bash
-scip print --json > index.scip.json
+parallax scip import --file index.scip
+
+# 也可以导入官方 SCIP CLI 预先转换出的 JSON。
+scip print --json index.scip > index.scip.json
 parallax scip import --file index.scip.json
 ```
 
-importer 会用 SCIP 的 definition/reference edge 增强最新完成的 Parallax index run。直接读取二进制 `index.scip` 以及 Parallax-to-SCIP export 仍是后续工作。
+importer 会用 SCIP 的 definition/reference edge 增强最新完成的 Parallax index run。二进制 `index.scip` 导入会调用 `PATH` 中的官方 `scip` CLI；JSON 导入在导入时不需要 CLI。Parallax-to-SCIP export 仍是后续工作。
 
 如果你想从 UI 继续走到 MCP 与 CI guardrail，可直接看 [`docs/getting-started.zh.md`](docs/getting-started.zh.md)。
 
@@ -156,7 +159,7 @@ importer 会用 SCIP 的 definition/reference edge 增强最新完成的 Paralla
 | **Markdown / 工作产物** | 将 policy、proposal、PRD、decision 文档归类为一等 artifact 并与代码关联 |
 | **Config / 基础设施** | 索引 system/config 候选：shell、YAML、JSON、TOML、Dockerfile、Makefile、Terraform、CODEOWNERS 等 |
 | **包清单（manifest）** | 为 `package.json`、`pom.xml`、`build.gradle(.kts)`、`go.mod`、`Cargo.toml`、`pyproject.toml` 构建 manifest 图 |
-| **SCIP JSON import** | `parallax scip import --file <index.scip.json>` 将外部 indexer 的 SCIP definition/reference edge 增强到最新索引 |
+| **SCIP import** | `parallax scip import --file <index.scip or index.scip.json>` 将外部 indexer 的 SCIP definition/reference edge 增强到最新索引 |
 
 ### 🌐 工作区与契约（Workspace & contracts）
 

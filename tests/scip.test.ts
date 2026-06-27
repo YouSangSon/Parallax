@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -109,6 +109,55 @@ test('SCIP JSON import promotes reference edges into impact analysis', async () 
       file.confidence === 'proven'
     ));
   } finally {
+    await rm(repoRoot, { recursive: true, force: true });
+  }
+});
+
+test('SCIP binary import converts through the official scip CLI printer', async () => {
+  const { repoRoot, scipJsonPath } = await makeScipRepo();
+  const previousPath = process.env.PATH;
+  const previousFixture = process.env.PARALLAX_TEST_SCIP_JSON;
+  try {
+    const binDir = path.join(repoRoot, 'bin');
+    await mkdir(binDir, { recursive: true });
+    await writeFile(path.join(repoRoot, 'index.scip'), 'not-json\n', 'utf8');
+    const fakeScip = path.join(binDir, 'scip');
+    await writeFile(
+      fakeScip,
+      [
+        '#!/usr/bin/env node',
+        "import { readFileSync } from 'node:fs';",
+        "if (process.argv[2] !== 'print' || process.argv[3] !== '--json' || !process.argv[4]?.endsWith('index.scip')) {",
+        "  console.error(`unexpected args: ${process.argv.slice(2).join(' ')}`);",
+        '  process.exit(2);',
+        '}',
+        "process.stdout.write(readFileSync(process.env.PARALLAX_TEST_SCIP_JSON, 'utf8'));"
+      ].join('\n'),
+      'utf8'
+    );
+    await chmod(fakeScip, 0o755);
+
+    process.env.PARALLAX_TEST_SCIP_JSON = scipJsonPath;
+    process.env.PATH = `${binDir}${path.delimiter}${previousPath ?? ''}`;
+
+    const result = importScipJson({ repoRoot, file: 'index.scip' });
+    assert.equal(result.file, 'index.scip');
+    assert.equal(result.documentsImported, 2);
+    assert.equal(result.definitionsImported, 1);
+    assert.equal(result.referencesSeen, 1);
+    assert.equal(result.relationsImported, 1);
+    assert.deepEqual(result.warnings, []);
+  } finally {
+    if (previousPath === undefined) {
+      delete process.env.PATH;
+    } else {
+      process.env.PATH = previousPath;
+    }
+    if (previousFixture === undefined) {
+      delete process.env.PARALLAX_TEST_SCIP_JSON;
+    } else {
+      process.env.PARALLAX_TEST_SCIP_JSON = previousFixture;
+    }
     await rm(repoRoot, { recursive: true, force: true });
   }
 });

@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
@@ -79,7 +80,7 @@ type PreparedScipStatements = {
 export function importScipJson(options: ScipImportOptions): ScipImportResult {
   const repoRoot = normalizeRepoRoot(options.repoRoot);
   const inputPath = resolveScipInputPath(repoRoot, options.file);
-  const parsed = parseScipJsonFile(inputPath);
+  const parsed = parseScipInputFile(inputPath);
   const documentsInput = arrayField(parsed, 'documents');
   const warnings: string[] = [];
   const documents = loadScipDocuments(repoRoot, documentsInput, warnings);
@@ -147,14 +148,51 @@ export function importScipJson(options: ScipImportOptions): ScipImportResult {
   }
 }
 
-function parseScipJsonFile(inputPath: string): Record<string, unknown> {
+function parseScipInputFile(inputPath: string): Record<string, unknown> {
+  const rawInput = readFileSync(inputPath, 'utf8');
+  const parsedInput = parseScipJsonText(rawInput);
+  if (parsedInput.ok) return parsedInput.value;
+
+  if (inputPath.endsWith('.json')) {
+    throw new Error(
+      `SCIP import expects JSON from 'scip print --json'; failed to parse ${inputPath}: ${parsedInput.error}`
+    );
+  }
+
+  const printed = printScipBinaryAsJson(inputPath, parsedInput.error);
+  const parsedPrinted = parseScipJsonText(printed);
+  if (parsedPrinted.ok) return parsedPrinted.value;
+
+  throw new Error(
+    `SCIP import could not parse JSON emitted by 'scip print --json ${inputPath}': ${parsedPrinted.error}`
+  );
+}
+
+function parseScipJsonText(input: string): { ok: true; value: Record<string, unknown> } | { ok: false; error: string } {
   try {
-    const parsed = JSON.parse(readFileSync(inputPath, 'utf8')) as unknown;
+    const parsed = JSON.parse(input) as unknown;
     if (!isRecord(parsed)) throw new Error('root is not an object');
-    return parsed;
+    return { ok: true, value: parsed };
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    throw new Error(`SCIP import expects JSON from 'scip print --json'; failed to parse ${inputPath}: ${detail}`);
+    return { ok: false, error: errorMessage(error) };
+  }
+}
+
+function printScipBinaryAsJson(inputPath: string, parseError: string): string {
+  try {
+    return execFileSync('scip', ['print', '--json', inputPath], {
+      encoding: 'utf8',
+      env: { ...process.env, NO_COLOR: '1' },
+      maxBuffer: 128 * 1024 * 1024
+    });
+  } catch (error) {
+    const stderr = isRecord(error) && typeof error.stderr === 'string' ? error.stderr.trim() : '';
+    const detail = stderr || errorMessage(error);
+    throw new Error(
+      `SCIP import could not parse ${inputPath} as JSON (${parseError}) and could not run ` +
+        `'scip print --json ${inputPath}' for binary import: ${detail}. ` +
+        `Install the official scip CLI, or run 'scip print --json ${inputPath} > index.scip.json' and import that JSON file.`
+    );
   }
 }
 

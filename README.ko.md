@@ -118,14 +118,17 @@ parallax ui --report <report-id> --port 3717
 
 UI는 선택한 영향 경로, 필터, 정책 프리셋을 URL에 유지한다. toolbar에서 현재 workbench를 JSON, affected-path CSV, PNG/SVG 영향 맵으로 내보낼 수 있다.
 
-`parallax index` 이후 공식 SCIP CLI로 `index.scip`를 JSON으로 변환한 뒤 가져오면 SCIP 정밀도 레이어를 보강할 수 있다.
+`parallax index` 이후 SCIP indexer가 만든 `index.scip`를 가져오면 SCIP 정밀도 레이어를 보강할 수 있다.
 
 ```bash
-scip print --json > index.scip.json
+parallax scip import --file index.scip
+
+# 공식 SCIP CLI로 미리 변환한 JSON도 그대로 가져올 수 있다.
+scip print --json index.scip > index.scip.json
 parallax scip import --file index.scip.json
 ```
 
-importer는 최신 완료 Parallax index run에 SCIP 기반 definition/reference edge를 추가한다. 바이너리 `index.scip` 직접 ingest와 Parallax-to-SCIP export는 후속 작업으로 남겨둔다.
+importer는 최신 완료 Parallax index run에 SCIP 기반 definition/reference edge를 추가한다. 바이너리 `index.scip` import는 `PATH`의 공식 `scip` CLI를 사용하고, JSON import는 import 시점에 CLI가 필요 없다. Parallax-to-SCIP export는 후속 작업으로 남겨둔다.
 
 UI 다음에 MCP와 CI guardrail까지 이어지는 튜토리얼은 [`docs/getting-started.ko.md`](docs/getting-started.ko.md)를 참고하자.
 
@@ -156,7 +159,7 @@ UI 다음에 MCP와 CI guardrail까지 이어지는 튜토리얼은 [`docs/getti
 | **Markdown / work artifacts** | policy, proposal, PRD, decision 문서를 first-class artifact로 분류하고 코드와 연결 |
 | **Config / Infra** | shell, YAML, JSON, TOML, Dockerfile, Makefile, Terraform, CODEOWNERS 등 system/config 후보 인덱싱 |
 | **Package manifests** | `package.json`, `pom.xml`, `build.gradle(.kts)`, `go.mod`, `Cargo.toml`, `pyproject.toml` manifest graph |
-| **SCIP JSON import** | `parallax scip import --file <index.scip.json>`로 외부 indexer의 SCIP definition/reference edge를 최신 index에 보강 |
+| **SCIP import** | `parallax scip import --file <index.scip or index.scip.json>`로 외부 indexer의 SCIP definition/reference edge를 최신 index에 보강 |
 
 ### 🌐 Workspace & contracts
 

@@ -4575,6 +4575,54 @@ test('CLI analyze rejects combining JSON stdout with SARIF file output', () => {
   assert.match(result.stderr, /--json cannot be used with --sarif-output/);
 });
 
+test('CLI analyze rejects missing SARIF output value', () => {
+  const result = spawnSync(
+    process.execPath,
+    [
+      '--import',
+      tsxLoaderPath,
+      path.resolve('src/cli.ts'),
+      'analyze',
+      '--changed',
+      'src/auth/session.ts',
+      '--sarif-output',
+      '--fail-on',
+      'none'
+    ],
+    {
+      encoding: 'utf8',
+      env: { ...process.env, PARALLAX_EMBEDDING_MODEL: 'stub-sha256' }
+    }
+  );
+
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /missing value for --sarif-output/);
+});
+
+test('CLI analyze rejects missing SARIF category value', () => {
+  const result = spawnSync(
+    process.execPath,
+    [
+      '--import',
+      tsxLoaderPath,
+      path.resolve('src/cli.ts'),
+      'analyze',
+      '--changed',
+      'src/auth/session.ts',
+      '--sarif-category',
+      '--fail-on',
+      'none'
+    ],
+    {
+      encoding: 'utf8',
+      env: { ...process.env, PARALLAX_EMBEDDING_MODEL: 'stub-sha256' }
+    }
+  );
+
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /missing value for --sarif-category/);
+});
+
 test('remember populates fact_embeddings (model, vector, dim) for non-redacted facts', async () => {
   const repoRoot = await makeFixtureRepo();
   await initProject({ repoRoot });

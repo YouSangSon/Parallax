@@ -258,11 +258,11 @@ async function main(): Promise<void> {
     const { analyzeDiff, impactReportToSarif } = await import('./index.js');
     const { failsImpactGate } = await import('./confidence.js');
     const json = args.includes('--json');
-    const sarifOutput = parseOptionalArg(args, '--sarif-output');
+    const sarifOutput = parseOptionalValueArg(args, '--sarif-output');
     if (json && sarifOutput !== undefined) {
       throw new Error('analyze --json cannot be used with --sarif-output');
     }
-    const sarifCategory = parseOptionalArg(args, '--sarif-category');
+    const sarifCategory = parseOptionalValueArg(args, '--sarif-category');
     const changedFiles = parseChangedFiles(args, repoRoot);
     const maxDepth = parseIntegerArg(args, '--depth');
     const maxFanout = parseIntegerArg(args, '--max-fanout');

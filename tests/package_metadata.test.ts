@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import { parse as parseYaml } from 'yaml';
@@ -21,6 +22,23 @@ type GitHubActionsWorkflow = {
       }>;
     }
   >;
+};
+
+type SarifModule = {
+  impactReportToSarif(report: {
+    id: string;
+    indexRunId: number;
+    changedFiles: string[];
+    affectedFiles: [];
+    changed: [];
+    affected: [];
+    actions: [];
+    testCommands: [];
+    evidence: [];
+  }): {
+    version: string;
+    runs: Array<{ tool: { driver: { version?: string } } }>;
+  };
 };
 
 test('package exports only the public module entrypoint and metadata', async () => {
@@ -72,4 +90,28 @@ test('CI verify job delegates to the canonical release gate', async () => {
     ) ?? false,
     true
   );
+});
+
+test('built SARIF module imports and uses root package metadata', async () => {
+  const build = spawnSync('npm', ['run', 'build'], {
+    cwd: new URL('..', import.meta.url),
+    encoding: 'utf8'
+  });
+  assert.equal(build.status, 0, build.stderr);
+
+  const { impactReportToSarif } = await import(new URL('../dist/src/sarif.js', import.meta.url).href) as SarifModule;
+  const sarif = impactReportToSarif({
+    id: 'r',
+    indexRunId: 1,
+    changedFiles: [],
+    affectedFiles: [],
+    changed: [],
+    affected: [],
+    actions: [],
+    testCommands: [],
+    evidence: []
+  });
+
+  assert.equal(sarif.version, '2.1.0');
+  assert.equal(sarif.runs[0]?.tool.driver.version, '0.1.0');
 });

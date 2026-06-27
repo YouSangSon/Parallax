@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
-import { createRequire } from 'node:module';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { PRODUCT_NAME } from './branding.js';
 import type { AffectedFile, Confidence, Evidence, ImpactReport } from './types.js';
@@ -105,11 +106,7 @@ export interface SarifInvocation {
   properties?: Record<string, unknown>;
 }
 
-const require = createRequire(import.meta.url);
-const packageMetadata = require('../package.json') as {
-  version?: string;
-  homepage?: string;
-};
+const packageMetadata = loadPackageMetadata();
 
 const confidences: Confidence[] = ['proven', 'inferred', 'heuristic', 'unknown'];
 const maxSnippetLength = 400;
@@ -278,15 +275,19 @@ function codeFlowsFor(
   checkoutRoot: string | undefined
 ): NonNullable<SarifResult['codeFlows']> {
   if (!affectedFile.relationPath || affectedFile.relationPath.length === 0) return [];
+  const filePathLocations = affectedFile.relationPath
+    .map((part, index) => ({ part, index }))
+    .filter(({ part }) => isRepoRelativeFilePath(part));
+  if (filePathLocations.length === 0) return [];
   return [{
     threadFlows: [{
-      locations: affectedFile.relationPath.map((file, index) => ({
+      locations: filePathLocations.map(({ part, index }) => ({
         location: {
           physicalLocation: {
-            artifactLocation: artifactLocation(file, checkoutRoot)
+            artifactLocation: artifactLocation(part, checkoutRoot)
           },
           message: {
-            text: index === 0 ? 'Changed file' : 'Impact path'
+            text: index === 0 ? 'Changed file' : `Impact path: ${part}`
           }
         }
       }))
@@ -328,6 +329,17 @@ function normalizeReportPath(filePath: string): string {
   return filePath.replaceAll('\\', '/').replace(/^\.\/+/, '');
 }
 
+function isRepoRelativeFilePath(value: string): boolean {
+  const normalized = normalizeReportPath(value).trim();
+  if (!normalized || normalized !== normalizeReportPath(value)) return false;
+  if (path.posix.isAbsolute(normalized) || path.win32.isAbsolute(value)) return false;
+  if (normalized.startsWith('../') || normalized === '..' || normalized.includes('/../')) return false;
+  if (normalized.endsWith('/')) return false;
+  if (/[\s<>:"|?*\0]/u.test(normalized)) return false;
+  if (/^[a-z][a-z0-9+.-]*:/iu.test(normalized)) return false;
+  return normalized.includes('/') || path.posix.basename(normalized).includes('.');
+}
+
 function fingerprintFor(affectedFile: AffectedFile, evidenceIds: readonly string[]): string {
   const payload = {
     path: normalizeReportPath(affectedFile.path),
@@ -349,4 +361,27 @@ function pathToFileUri(root: string): string {
   const resolved = path.resolve(root);
   const normalized = resolved.replaceAll(path.sep, '/');
   return `file://${normalized.endsWith('/') ? normalized : `${normalized}/`}`;
+}
+
+function loadPackageMetadata(): { version?: string; homepage?: string } {
+  let current = path.dirname(fileURLToPath(import.meta.url));
+  while (true) {
+    const candidate = path.join(current, 'package.json');
+    if (existsSync(candidate)) {
+      const parsed = JSON.parse(readFileSync(candidate, 'utf8')) as {
+        name?: string;
+        version?: string;
+        homepage?: string;
+      };
+      if (parsed.name === 'parallax') {
+        return {
+          ...(parsed.version !== undefined ? { version: parsed.version } : {}),
+          ...(parsed.homepage !== undefined ? { homepage: parsed.homepage } : {})
+        };
+      }
+    }
+    const parent = path.dirname(current);
+    if (parent === current) return {};
+    current = parent;
+  }
 }

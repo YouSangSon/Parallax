@@ -15,7 +15,7 @@ inputs:
   fail-on:
     description: Confidence threshold for non-zero exit.
     required: false
-    default: proven
+    default: none
 runs:
   using: composite
   steps:

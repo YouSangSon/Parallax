@@ -91,3 +91,29 @@ test('impactReportToSarif emits empty runs for no-impact reports', () => {
   assert.equal(sarif.runs[0]?.results.length, 0);
   assert.equal(sarif.runs[0]?.invocations?.[0]?.executionSuccessful, true);
 });
+
+test('impactReportToSarif does not emit human-readable relation steps as artifact URIs', () => {
+  const report = reportFixture();
+  report.affectedFiles[0]!.relationPath = [
+    'src/api.ts',
+    'web:src/client.ts BREAKS_COMPATIBILITY_WITH users-api:contracts/openapi.yaml',
+    'src/client.ts'
+  ];
+
+  const sarif = impactReportToSarif(report);
+  const result = sarif.runs[0]!.results[0]!;
+  const codeFlowUris = result.codeFlows?.flatMap((flow) =>
+    flow.threadFlows.flatMap((threadFlow) =>
+      threadFlow.locations.map((location) =>
+        location.location.physicalLocation.artifactLocation.uri
+      )
+    )
+  ) ?? [];
+
+  assert.deepEqual(result.properties?.relationPath, report.affectedFiles[0]!.relationPath);
+  assert.deepEqual(codeFlowUris, ['src/api.ts', 'src/client.ts']);
+  assert.equal(
+    codeFlowUris.includes('web:src/client.ts BREAKS_COMPATIBILITY_WITH users-api:contracts/openapi.yaml'),
+    false
+  );
+});

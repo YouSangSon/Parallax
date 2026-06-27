@@ -81,12 +81,14 @@ permissions:
 steps:
   - uses: actions/checkout@v4
   - run: npm install -g parallax
-  - run: parallax analyze --changed "src/api.ts" --sarif-output parallax.sarif --sarif-category parallax-pr --fail-on proven
+  - run: parallax analyze --changed "src/api.ts" --sarif-output parallax.sarif --sarif-category parallax-pr --fail-on none
   - uses: github/codeql-action/upload-sarif@v3
     with:
       sarif_file: parallax.sarif
       category: parallax-pr
 ```
+
+SARIF 生成步骤应保持不失败，这样存在 findings 时 upload step 仍会运行。如需在高置信 impact 时让 CI 失败，请增加单独的 `parallax analyze ... --fail-on proven` gate step。
 
 用本地 UI 直接打开最新报告：
 

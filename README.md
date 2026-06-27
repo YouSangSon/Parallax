@@ -81,12 +81,14 @@ permissions:
 steps:
   - uses: actions/checkout@v4
   - run: npm install -g parallax
-  - run: parallax analyze --changed "src/api.ts" --sarif-output parallax.sarif --sarif-category parallax-pr --fail-on proven
+  - run: parallax analyze --changed "src/api.ts" --sarif-output parallax.sarif --sarif-category parallax-pr --fail-on none
   - uses: github/codeql-action/upload-sarif@v3
     with:
       sarif_file: parallax.sarif
       category: parallax-pr
 ```
+
+Keep SARIF generation non-failing so the upload step still runs when findings exist. Add a separate `parallax analyze ... --fail-on proven` gate step if you want CI to fail on high-confidence impact.
 
 Open the latest report in the local UI:
 

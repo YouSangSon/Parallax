@@ -58,9 +58,10 @@ MCP는 read-only로 안정화됐다. 다음은 agent 사용성을 깊게 보는 
 
 - [x] GitHub-native agent package: Copilot repository instruction, MCP 설정 snippet, PR 작업용 least-privilege "먼저 Parallax 실행" workflow 생성
 - [x] affected-file impact finding용 SARIF / code-scanning export와 SARIF 파일 생성을 담당하는 composite GitHub Action
+- [x] cross-repo contract-break warning을 provider contract에 anchor한 SARIF result로 출력
 - [x] recommended verification action을 SARIF note result로 출력
 - [x] adapter known-gap note를 changed file에 anchor한 SARIF note result로 출력
-- [ ] contract break와 coverage gap까지 SARIF coverage 확장
+- [ ] coverage gap까지 SARIF coverage 확장
 - [x] `parallax repo-map`과 MCP `parallax_repo_map`으로 노출되는 token-budgeted repo map / context card. changed root, affected file, test/docs/config/work artifact, evidence ref, verification action, resource, confidence, provenance, known gap, omitted count를 rank한다
 - [x] Dependency/PR triage dogfood lane: `parallax pr triage`가 GitHub write 없이 로컬 diff 분석, SARIF 출력, `--fail-on`, repo-map context를 묶는다
 - [ ] `context_for_change`의 budget tuning (brief/standard/deep)을 사용 텔레메트리로 검증

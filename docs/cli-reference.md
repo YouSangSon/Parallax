@@ -35,7 +35,7 @@ Flags:
 - `--depth` — maximum traversal depth for ripple computation.
 - `--max-fanout` — maximum fan-out per node during traversal.
 - `--json` — print the full report JSON instead of the summary, and skip writing the report to the store. The output validates against the published [report JSON Schema](report-schema.md).
-- `--sarif-output <path>` — write a pretty-printed SARIF 2.1.0 projection to a file for GitHub Code Scanning upload. The projection includes affected-file findings, recommended verification-action notes, and adapter known-gap notes. Parent directories are created. This keeps the normal human summary on stdout and is mutually exclusive with `--json`.
+- `--sarif-output <path>` — write a pretty-printed SARIF 2.1.0 projection to a file for GitHub Code Scanning upload. The projection includes affected-file findings, cross-repo contract-break warnings, recommended verification-action notes, and adapter known-gap notes. Parent directories are created. This keeps the normal human summary on stdout and is mutually exclusive with `--json`.
 - `--sarif-category <category>` — set the SARIF run automation id / GitHub Code Scanning category. Defaults to no category unless supplied by a wrapper such as the GitHub Action.
 - `--fail-on <level>` — control the exit code by confidence: `proven` / `inferred` / `heuristic` fail only when an affected file meets or exceeds that confidence; `any` (default) fails on any affected file; `none` never fails. Use in CI to gate on high-confidence impact only.
 

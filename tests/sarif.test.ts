@@ -95,6 +95,89 @@ test('impactReportToSarif emits recommended verification actions as note results
   assert.equal(sarif.runs[0]?.properties?.omittedVerificationActionCount, 0);
 });
 
+test('impactReportToSarif emits cross-repo contract breaks on provider contracts', () => {
+  const report = reportFixture();
+  report.changedFiles = ['contracts/openapi.yaml'];
+  report.crossRepoImpacts = [{
+    workspace: 'platform',
+    provider: {
+      serviceName: 'users-api',
+      contractPath: 'contracts/openapi.yaml'
+    },
+    consumer: {
+      serviceName: 'web',
+      path: 'src/client.ts'
+    },
+    change: {
+      kind: 'removed_endpoint',
+      method: 'GET',
+      path: '/api/users',
+      previousEndpointId: 'endpoint:yaml:GET /api/users'
+    },
+    confidence: 'heuristic',
+    evidence: {
+      filePath: 'web:src/client.ts',
+      snippet: 'return fetch("https://users.example.test/api/users");'
+    },
+    resources: {
+      workspace: 'parallax://workspaces/platform',
+      crossRepoLinks: 'parallax://workspaces/platform/cross-repo-links'
+    }
+  }];
+
+  const sarif = impactReportToSarif(report);
+
+  const result = sarif.runs[0]?.results.find((item) => item.ruleId === 'parallax.contract-break');
+  assert.equal(result?.level, 'warning');
+  assert.equal(
+    result?.message.text,
+    'Breaking contract change may affect web:src/client.ts: removed_endpoint GET /api/users'
+  );
+  assert.equal(result?.locations[0]?.physicalLocation.artifactLocation.uri, 'contracts/openapi.yaml');
+  assert.equal(result?.properties?.providerContractPath, 'contracts/openapi.yaml');
+  assert.equal(result?.properties?.consumerServiceName, 'web');
+  assert.equal(result?.properties?.consumerPath, 'src/client.ts');
+  assert.equal(result?.properties?.evidenceFilePath, 'web:src/client.ts');
+  assert.ok(result?.partialFingerprints?.parallaxImpact);
+  assert.equal(sarif.runs[0]?.properties?.contractBreakCount, 1);
+  assert.equal(sarif.runs[0]?.properties?.omittedContractBreakCount, 0);
+});
+
+test('impactReportToSarif omits contract-break results without an uploadable provider contract anchor', () => {
+  const report = reportFixture();
+  report.affectedFiles = [];
+  report.affected = [];
+  report.actions = [];
+  report.testCommands = [];
+  report.crossRepoImpacts = [{
+    workspace: 'platform',
+    provider: {
+      serviceName: 'users-api',
+      contractPath: 'users-api:contracts/openapi.yaml'
+    },
+    consumer: {
+      serviceName: 'web',
+      path: 'src/client.ts'
+    },
+    change: {
+      kind: 'removed_endpoint',
+      method: 'GET',
+      path: '/api/users'
+    },
+    confidence: 'heuristic',
+    evidence: {
+      filePath: 'web:src/client.ts',
+      snippet: 'return fetch("https://users.example.test/api/users");'
+    }
+  }];
+
+  const sarif = impactReportToSarif(report);
+
+  assert.equal(sarif.runs[0]?.results.length, 0);
+  assert.equal(sarif.runs[0]?.properties?.contractBreakCount, 0);
+  assert.equal(sarif.runs[0]?.properties?.omittedContractBreakCount, 1);
+});
+
 test('impactReportToSarif emits adapter known gaps as note results on changed files', () => {
   const report = reportFixture();
   report.changedFiles = ['src/api.ts', 'docs/api-contract.md'];

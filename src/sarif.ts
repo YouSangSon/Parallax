@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { PRODUCT_NAME } from './branding.js';
-import type { AffectedFile, Confidence, Evidence, ImpactAction, ImpactReport } from './types.js';
+import type { AffectedFile, Confidence, CrossRepoImpact, Evidence, ImpactAction, ImpactReport } from './types.js';
 
 export interface SarifOptions {
   category?: string;
@@ -109,6 +109,7 @@ export interface SarifInvocation {
 const packageMetadata = loadPackageMetadata();
 
 const confidences: Confidence[] = ['proven', 'inferred', 'heuristic', 'unknown'];
+const contractBreakRuleId = 'parallax.contract-break';
 const verificationRuleId = 'parallax.verification';
 const adapterKnownGapRuleId = 'parallax.adapter-known-gap';
 const maxSnippetLength = 400;
@@ -128,6 +129,7 @@ export function impactReportToSarif(report: ImpactReport, options: SarifOptions 
   const informationUri = options.informationUri ?? packageMetadata.homepage;
   const rules = [
     ...confidences.map((confidence) => ruleForConfidence(confidence)),
+    contractBreakRule(),
     verificationActionRule(),
     adapterKnownGapRule()
   ];
@@ -184,13 +186,20 @@ export function impactReportToSarif(report: ImpactReport, options: SarifOptions 
   const verificationResults = uploadableActions.map((action) =>
     verificationResultFor(report, action, ruleIndex, options.checkoutRoot)
   );
+  const contractBreakImpacts = report.crossRepoImpacts ?? [];
+  const uploadableContractBreakImpacts = contractBreakImpacts.filter((impact) =>
+    isRepoRelativeFilePath(impact.provider.contractPath)
+  );
+  const contractBreakResults = uploadableContractBreakImpacts.map((impact) =>
+    contractBreakResultFor(report, impact, ruleIndex, options.checkoutRoot)
+  );
   const adapterKnownGaps = adapterKnownGapEntries(report);
   const adapterKnownGapResults = uploadableChangedFiles.length > 0
     ? adapterKnownGaps.map((knownGap) =>
       adapterKnownGapResultFor(report, knownGap, uploadableChangedFiles, ruleIndex, options.checkoutRoot)
     )
     : [];
-  const results = [...impactResults, ...verificationResults, ...adapterKnownGapResults];
+  const results = [...impactResults, ...contractBreakResults, ...verificationResults, ...adapterKnownGapResults];
 
   const run: SarifRun = {
     tool: {
@@ -212,6 +221,8 @@ export function impactReportToSarif(report: ImpactReport, options: SarifOptions 
         omittedAffectedFiles,
         verificationActionCount: uploadableActions.length,
         omittedVerificationActionCount: report.actions.length - uploadableActions.length,
+        contractBreakCount: contractBreakResults.length,
+        omittedContractBreakCount: contractBreakImpacts.length - contractBreakResults.length,
         adapterKnownGapCount: adapterKnownGapResults.length,
         omittedAdapterKnownGapCount: adapterKnownGaps.length - adapterKnownGapResults.length
       }
@@ -225,6 +236,8 @@ export function impactReportToSarif(report: ImpactReport, options: SarifOptions 
       omittedAffectedFiles,
       verificationActionCount: uploadableActions.length,
       omittedVerificationActionCount: report.actions.length - uploadableActions.length,
+      contractBreakCount: contractBreakResults.length,
+      omittedContractBreakCount: contractBreakImpacts.length - contractBreakResults.length,
       adapterKnownGapCount: adapterKnownGapResults.length,
       omittedAdapterKnownGapCount: adapterKnownGaps.length - adapterKnownGapResults.length
     }
@@ -249,6 +262,22 @@ function verificationActionRule(): SarifReportingDescriptor {
     },
     defaultConfiguration: {
       level: 'note'
+    }
+  };
+}
+
+function contractBreakRule(): SarifReportingDescriptor {
+  return {
+    id: contractBreakRuleId,
+    name: 'Parallax contract break',
+    shortDescription: {
+      text: 'Parallax cross-repo contract break'
+    },
+    fullDescription: {
+      text: 'Parallax identified a breaking provider contract change with a persisted cross-repo consumer impact.'
+    },
+    defaultConfiguration: {
+      level: 'warning'
     }
   };
 }
@@ -287,6 +316,54 @@ function ruleForConfidence(confidence: Confidence): SarifReportingDescriptor {
 
 function levelForConfidence(confidence: Confidence): SarifResultLevel {
   return confidence === 'unknown' ? 'note' : 'warning';
+}
+
+function contractBreakResultFor(
+  report: ImpactReport,
+  impact: CrossRepoImpact,
+  ruleIndex: Map<string, number>,
+  checkoutRoot: string | undefined
+): SarifResult {
+  const anchorPath = impact.provider.contractPath;
+  const consumer = consumerLabel(impact);
+  const change = contractChangeLabel(impact);
+  return {
+    ruleId: contractBreakRuleId,
+    ruleIndex: ruleIndex.get(contractBreakRuleId) ?? 0,
+    level: levelForConfidence(impact.confidence),
+    message: {
+      text: `Breaking contract change may affect ${consumer}: ${change}`
+    },
+    locations: [{
+      physicalLocation: {
+        artifactLocation: artifactLocation(anchorPath, checkoutRoot)
+      },
+      message: {
+        text: `Provider contract ${impact.provider.serviceName}:${impact.provider.contractPath}`
+      }
+    }],
+    partialFingerprints: {
+      parallaxImpact: fingerprintForContractBreak(impact)
+    },
+    properties: {
+      reportId: report.id,
+      indexRunId: report.indexRunId,
+      workspace: impact.workspace,
+      providerServiceName: impact.provider.serviceName,
+      providerContractPath: impact.provider.contractPath,
+      consumerServiceName: impact.consumer.serviceName,
+      consumerPath: impact.consumer.path,
+      confidence: impact.confidence,
+      changeKind: impact.change.kind,
+      ...(impact.change.method === undefined ? {} : { changeMethod: impact.change.method }),
+      ...(impact.change.path === undefined ? {} : { changePath: impact.change.path }),
+      ...(impact.change.previousEndpointId === undefined ? {} : {
+        previousEndpointId: impact.change.previousEndpointId
+      }),
+      evidenceFilePath: impact.evidence.filePath,
+      ...(impact.resources === undefined ? {} : { resources: impact.resources })
+    }
+  };
 }
 
 function adapterKnownGapResultFor(
@@ -338,6 +415,20 @@ function adapterKnownGapResultFor(
       anchorPath
     }
   };
+}
+
+function consumerLabel(impact: CrossRepoImpact): string {
+  return impact.consumer.serviceName
+    ? `${impact.consumer.serviceName}:${impact.consumer.path}`
+    : impact.consumer.path;
+}
+
+function contractChangeLabel(impact: CrossRepoImpact): string {
+  return [
+    impact.change.kind,
+    impact.change.method,
+    impact.change.path
+  ].filter((part): part is string => part !== undefined && part !== '').join(' ');
 }
 
 function verificationResultFor(
@@ -541,6 +632,23 @@ function fingerprintFor(affectedFile: AffectedFile, evidenceIds: readonly string
     confidence: affectedFile.confidence,
     relationPath: affectedFile.relationPath?.map(normalizeReportPath) ?? [],
     evidenceIds: [...evidenceIds].sort()
+  };
+  return createHash('sha256').update(JSON.stringify(payload)).digest('hex').slice(0, 32);
+}
+
+function fingerprintForContractBreak(impact: CrossRepoImpact): string {
+  const payload = {
+    workspace: impact.workspace,
+    provider: {
+      serviceName: impact.provider.serviceName,
+      contractPath: normalizeReportPath(impact.provider.contractPath)
+    },
+    consumer: {
+      serviceName: impact.consumer.serviceName,
+      path: impact.consumer.path
+    },
+    change: impact.change,
+    confidence: impact.confidence
   };
   return createHash('sha256').update(JSON.stringify(payload)).digest('hex').slice(0, 32);
 }

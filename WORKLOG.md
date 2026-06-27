@@ -57,8 +57,16 @@
     notes when no uploadable changed-file anchor exists.
   - `docs/cli-reference*.md`, `docs/report-schema*.md`,
     `docs/roadmap*.md`, and `IMPROVEMENT_OPPORTUNITIES.md` document that
-    adapter known gaps are covered while contract breaks and coverage gaps
-    remain open.
+    adapter known gaps are covered; remaining SARIF breadth continues below.
+- Shipped third D7 SARIF breadth slice.
+  - `src/sarif.ts` now projects `ImpactReport.crossRepoImpacts` as
+    `parallax.contract-break` warning/note results anchored to provider
+    contracts, with consumer/change metadata in SARIF properties.
+  - `tests/sarif.test.ts` covers emitted contract-break results and omitted
+    results when no uploadable provider contract anchor exists.
+  - `docs/cli-reference*.md`, `docs/report-schema*.md`,
+    `docs/roadmap*.md`, and `IMPROVEMENT_OPPORTUNITIES.md` document that
+    contract breaks are covered while coverage gaps remain open.
 - D7 verification:
   - `node --import tsx --test tests/sarif.test.ts`
   - `npm run check`

@@ -35,7 +35,7 @@
 - `--depth` — ripple 계산의 최대 traversal 깊이.
 - `--max-fanout` — traversal 중 노드당 최대 fan-out.
 - `--json` — 요약 대신 전체 report JSON을 출력하고, report를 저장소에 쓰지 않는다. 출력은 발행된 [report JSON Schema](report-schema.ko.md)에 대해 검증된다.
-- `--sarif-output <path>` — GitHub Code Scanning upload용 SARIF 2.1.0 projection을 예쁘게 포맷한 JSON 파일로 쓴다. projection에는 affected-file finding, recommended verification-action note, adapter known-gap note가 포함된다. 부모 디렉터리는 생성된다. stdout에는 일반 human summary를 유지하며 `--json`과 함께 쓸 수 없다.
+- `--sarif-output <path>` — GitHub Code Scanning upload용 SARIF 2.1.0 projection을 예쁘게 포맷한 JSON 파일로 쓴다. projection에는 affected-file finding, cross-repo contract-break warning, recommended verification-action note, adapter known-gap note가 포함된다. 부모 디렉터리는 생성된다. stdout에는 일반 human summary를 유지하며 `--json`과 함께 쓸 수 없다.
 - `--sarif-category <category>` — SARIF run automation id / GitHub Code Scanning category를 설정한다. GitHub Action 같은 wrapper가 넘기지 않으면 category는 비워 둔다.
 - `--fail-on <level>` — 종료 코드를 confidence로 제어: `proven` / `inferred` / `heuristic`는 영향 파일이 해당 confidence 이상일 때만 실패; `any`(기본)는 영향 파일이 있으면 실패; `none`은 절대 실패하지 않음. CI에서 고신뢰 영향만 게이트할 때 사용.
 

@@ -65,3 +65,20 @@ Why:
   records the omitted count in SARIF run properties.
 - Contract breaks and coverage gaps remain separate D7 slices because they need
   more precise path mapping.
+
+## 2026-06-27: SARIF Contract Breaks
+
+Decision: emit `crossRepoImpacts` as SARIF results under a separate
+`parallax.contract-break` rule, anchored to the provider contract path.
+
+Why:
+- `crossRepoImpacts` already carries the provider contract, consumer service,
+  consumer path, breaking change, confidence, and workspace resources.
+- The consumer path is relative to the consumer repository, not necessarily the
+  repository receiving the SARIF upload. Keeping it in result properties avoids
+  misleading GitHub artifact locations.
+- The provider contract is the changed file in the current repo, so it is the
+  safest Code Scanning anchor for making the break visible in PR review.
+- If the provider contract path is not uploadable as a repo-relative path,
+  Parallax omits the result and records the omitted count in SARIF run
+  properties.

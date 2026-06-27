@@ -225,3 +225,17 @@ Why:
   regressions alongside the existing timing columns.
 - A true peak sampler would add process orchestration and nondeterministic noise
   before there is a concrete memory regression to chase.
+
+## 2026-06-28: Document Perf Baseline Command, Not A New Flag
+
+Decision: use the existing `npm run bench:perf -- --scales 10000,50000`
+command as the standard large-repo baseline path instead of adding a `--standard`
+or `--large` flag.
+
+Why:
+- `bench:perf` already accepts arbitrary scales, so a new flag would duplicate
+  an existing path.
+- The value is comparable run guidance: command, commit, Node version, OS /
+  hardware class, and full output table.
+- Exact timing and RSS stay outside `npm run verify`; `--max-ms-per-kfile`
+  should be applied only after a project has a real baseline.

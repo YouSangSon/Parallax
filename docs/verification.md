@@ -75,6 +75,14 @@ npm run bench:perf -- --scales 1000,10000        # custom scales
 npm run bench:perf -- --max-ms-per-kfile 2000    # fail above the ceiling
 ```
 
+For comparable large-repo baselines, use 10k and 50k files on a clean checkout:
+
+```bash
+npm run bench:perf -- --scales 10000,50000
+```
+
+Record the command, commit, Node version, OS / hardware class, and the full output table. Treat `--max-ms-per-kfile` as a local or CI smoke ceiling only after you have a project baseline; do not wire exact timing or RSS into `npm run verify`.
+
 The output table separates `full_index_ms`, `noop_incremental_ms`, `edit_incremental_ms`, `analyze_no_persist_ms`, `analyze_persist_ms`, `observed_peak_rss_mb`, and matching `/kfile` timing columns. Peak RSS is sampled at phase boundaries with Node's built-in RSS reading, so it is a practical trend signal, not an exact allocator trace. The synthetic generator and table formatter are guarded by `tests/synthetic-repo.test.ts` in the normal verify gate, even though the timing run is not.
 
 ## The docs linter

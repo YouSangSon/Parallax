@@ -75,6 +75,14 @@ npm run bench:perf -- --scales 1000,10000        # 自定义规模
 npm run bench:perf -- --max-ms-per-kfile 2000    # 超过 ceiling 即失败
 ```
 
+若要获得可比较的 large-repo baseline，请在 clean checkout 上使用 10k 与 50k 文件规模：
+
+```bash
+npm run bench:perf -- --scales 10000,50000
+```
+
+同时记录 command、commit、Node version、OS / hardware class，以及完整 output table。只有在已有项目 baseline 之后，才把 `--max-ms-per-kfile` 当作本地或 CI smoke ceiling；不要把 exact timing 或 RSS 接入 `npm run verify`。
+
 输出表会分开显示 `full_index_ms`、`noop_incremental_ms`、`edit_incremental_ms`、`analyze_no_persist_ms`、`analyze_persist_ms`、`observed_peak_rss_mb` 以及对应的 `/kfile` 耗时列。Peak RSS 使用 Node 内置 RSS reading 在 phase 边界采样，因此是实用的趋势信号，而不是精确 allocator trace。计时运行不在 verify 中，但合成 generator 和表格 formatter 由 `tests/synthetic-repo.test.ts` 在常规 verify 闸中守护。
 
 ## docs linter

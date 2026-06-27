@@ -6,7 +6,11 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Active Loop
 
-- Next loop: continue S1/S4 scale and perf follow-through.
+- Next loop: continue S1 incremental indexing follow-through by reducing
+  unchanged-file bookkeeping cost.
+- Completed slice: S4 docs now define the standard large-repo baseline command:
+  `npm run bench:perf -- --scales 10000,50000`, with commit/Node/OS/hardware
+  metadata capture and no exact timing/RSS in `verify`.
 - Completed slice: S4 perf bench now reports `observed_peak_rss_mb`, sampled at
   phase boundaries, while keeping timing/RSS outside deterministic `verify`.
 - Completed slice: M10 SCIP export now adds `parallax scip export
@@ -42,5 +46,5 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Next
 
-1. Continue S1/S4 scale and perf follow-through with 10k/50k baseline guidance.
-2. Keep binary `.scip` protobuf writing out of scope until JSON export is not enough.
+1. Continue S1 incremental indexing follow-through by reducing unchanged-file bookkeeping cost.
+2. Publish measured S4 10k/50k perf baseline limits only from a stable baseline host.

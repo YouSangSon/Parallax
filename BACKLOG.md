@@ -4,12 +4,13 @@ Canonical detailed backlog: `IMPROVEMENT_OPPORTUNITIES.md`.
 
 ## Now
 
-1. S1/S4 scale and perf follow-through: 10k/50k baseline guidance.
+1. S1 incremental indexing follow-through: reduce unchanged-file bookkeeping cost.
 
 ## Later
 
-1. D2 remaining trend metrics.
-2. W4/W5 richer contract signatures.
+1. S4 publish measured 10k/50k perf baseline limits.
+2. D2 remaining trend metrics.
+3. W4/W5 richer contract signatures.
 
 ## Done
 

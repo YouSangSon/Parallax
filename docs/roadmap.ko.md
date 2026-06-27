@@ -110,7 +110,7 @@ MCP는 read-only로 안정화됐다. 다음은 agent 사용성을 깊게 보는 
   - 현재 gate: `bench/impact-bench.ts`가 TypeScript/JavaScript, JVM/Spring Boot, Python, Go, Rust, OpenAPI, build manifest 고정 fixture를 만들고 relation recall/precision, affected-file recall, evidence/span coverage, adapter attribution, context-pack readiness, retrieval 품질을 채점한다. `npm run bench`, `npm test`, CI의 `npm run verify` gate에서 실행된다.
   - 현재 cross-repo gate: bench에는 W1 primary cross-repo consumer impact와 report graph edge가 계속 보이는지 확인하는 two-repo contract-impact fixture가 포함된다.
 - [x] full index, no-op incremental index, edited-file incremental index, analyze phase를 분리해 보여주는 별도 scale/perf bench
-  - 현재 도구: `npm run bench:perf`가 synthetic-repo generator 위에서 이 단계들과 `observed_peak_rss_mb`를 측정하며, timing/RSS를 byte-for-byte CI 계약으로 만들지 않기 위해 `npm run verify` 밖에서 유지된다.
+  - 현재 도구: `npm run bench:perf`가 synthetic-repo generator 위에서 이 단계들과 `observed_peak_rss_mb`를 측정하며, timing/RSS를 byte-for-byte CI 계약으로 만들지 않기 위해 `npm run verify` 밖에서 유지된다. 표준 large-repo baseline command는 `npm run bench:perf -- --scales 10000,50000`이다.
 - [x] embedding 모델 / LLM provider 교차 시 recall 품질 회귀 detection
   - 현재 gate: deterministic bench가 모델별 recall@1과 cross-model isolation을 확인하는 semantic model matrix를 포함한다. live provider 호출에 의존하지 않고 embedding 모델 namespace 회귀를 잡는 offline gate이며, LLM provider의 네트워크 품질 평가는 CI 밖에 두고 provider contract는 offline test가 계속 검증한다.
 - [x] CI에서 매 PR마다 bench delta를 자동 리포트

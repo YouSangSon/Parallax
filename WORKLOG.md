@@ -157,6 +157,19 @@
   - `node --import tsx --test tests/synthetic-repo.test.ts`
   - `npm run check`
   - `npm run bench:perf -- --scales 10`
+- Shipped S4 large-repo baseline guidance.
+  - `docs/verification*.md` now names
+    `npm run bench:perf -- --scales 10000,50000` as the standard comparable
+    baseline command and says to record command, commit, Node version, OS /
+    hardware class, and the full output table.
+  - No new `bench:perf` flag was added because existing `--scales` already
+    covers the use case.
+  - `BACKLOG.md` and `PLAN.md` move the next active work to S1 unchanged-file
+    bookkeeping cost; measured S4 10k/50k limits stay pending until run on a
+    stable baseline host.
+- S4 large-repo baseline guidance verification:
+  - `npm run docs:lint`
+  - `git diff --check`
 - Shipped M10 SCIP JSON import first slice.
   - `src/scip.ts` imports JSON produced by the official SCIP CLI and augments
     the latest completed Parallax index run instead of creating a SCIP-only run.

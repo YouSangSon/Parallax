@@ -75,6 +75,14 @@ npm run bench:perf -- --scales 1000,10000        # 사용자 지정 규모
 npm run bench:perf -- --max-ms-per-kfile 2000    # ceiling 초과 시 실패
 ```
 
+비교 가능한 large-repo baseline은 clean checkout에서 10k와 50k 파일 규모로 잡는다:
+
+```bash
+npm run bench:perf -- --scales 10000,50000
+```
+
+command, commit, Node version, OS / hardware class, 전체 output table을 함께 기록한다. `--max-ms-per-kfile`은 프로젝트 baseline을 잡은 뒤 local 또는 CI smoke ceiling으로만 사용하고, exact timing이나 RSS를 `npm run verify`에 넣지 않는다.
+
 출력 표는 `full_index_ms`, `noop_incremental_ms`, `edit_incremental_ms`, `analyze_no_persist_ms`, `analyze_persist_ms`, `observed_peak_rss_mb`, 대응하는 `/kfile` 시간 열을 분리한다. Peak RSS는 Node 내장 RSS reading을 phase 경계에서 샘플링하므로 실용적인 추세 신호이지 정확한 allocator trace는 아니다. 시간 측정 실행은 verify에 없지만 합성 generator와 표 formatter는 `tests/synthetic-repo.test.ts`로 정규 verify 게이트에서 가드된다.
 
 ## docs linter

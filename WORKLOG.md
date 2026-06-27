@@ -359,3 +359,22 @@
   - `npm run bench`
   - `npm audit --audit-level=high`
   - `npm run test:dogfood`
+- Shipped S4 measured perf baseline limits.
+  - Rechecked external direction against Nx affected commands, Bazel query,
+    Turborepo affected tasks, and Bazel GitHub issues about
+    reverse-dependency/rule-key based changed-target selection.
+  - Captured local baseline metadata: commit `f8f6060`, Node `v24.14.0`, npm
+    `11.9.0`, macOS Darwin 24.6.0, Apple M1 Max, 10 CPU cores, 32 GiB RAM.
+  - `npm run bench:perf -- --scales 1000,2000` completed and is now recorded
+    in `docs/verification*.md`.
+  - `npm run bench:perf -- --scales 10000` emitted no table within about 20
+    minutes and was interrupted. 50k was not started because the 10k full-phase
+    run already exceeded this local limit.
+  - Backlog now moves to D2 trend metrics.
+- S4 measured limit verification:
+  - `npm run bench:perf -- --scales 1000,2000`
+  - `npm run bench:perf -- --scales 10000` (interrupted after about 20 minutes
+    without an output table)
+  - `npm run docs:lint`
+  - `git diff --check`
+  - `ps -axo pid,ppid,stat,etime,pcpu,pmem,command | rg 'impact-perf|bench:perf|tsx bench/impact-perf' | rg -v 'rg ' || true`

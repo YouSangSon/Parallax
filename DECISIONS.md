@@ -371,3 +371,35 @@ Why:
   package/config/call evidence. A future design should specify which adapter
   inputs are cacheable, which files are manifest-like global inputs, and what
   measurement justifies the added complexity.
+
+## 2026-06-28: Publish S4 Baseline As A Limit, Not A Green 10k/50k Claim
+
+Decision: document the local S4 perf baseline in `docs/verification*.md` with
+the completed 1k/2k table and the failed-to-complete 10k limit instead of
+claiming a successful 10k/50k baseline.
+
+Sources:
+- Nx affected commands: <https://nx.dev/ci/features/affected>
+- Bazel query guide: <https://bazel.build/query/guide>
+- Turborepo affected tasks:
+  <https://turborepo.com/docs/crafting-your-repository/constructing-ci#using---affected>
+- GitHub cross-checks:
+  <https://github.com/bazelbuild/bazel/issues/13190>,
+  <https://github.com/bazelbuild/bazel/issues/7962>
+
+Why:
+- External affected-target systems reinforce that large monorepos should avoid
+  whole-graph work where possible; the S4 synthetic hub is intentionally a
+  worst-case full-phase stress test.
+- The GitHub issue cross-checks show real teams using reverse-dependency and
+  rule-key style queries to decide which targets to build/test after a change,
+  with query cost and graph scope showing up as scale problems.
+- On the local baseline host (Apple M1 Max, 32 GiB RAM, Node `v24.14.0`, commit
+  `f8f6060`), `npm run bench:perf -- --scales 1000,2000` completed and
+  published concrete rows.
+- `npm run bench:perf -- --scales 10000` stayed CPU-bound and emitted no table
+  within about 20 minutes, so it was interrupted. Because 10k did not complete
+  within that limit, 50k was not started.
+- This is a real limit and should stay visible. Exact timing remains outside
+  `npm run verify`; a future improvement should reduce analyzer/indexing cost
+  or add phase-split/progress output before attempting 10k/50k again.

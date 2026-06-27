@@ -85,6 +85,23 @@ Record the command, commit, Node version, OS / hardware class, and the full outp
 
 The output table separates `full_index_ms`, `noop_incremental_ms`, `edit_incremental_ms`, `analyze_no_persist_ms`, `analyze_persist_ms`, `observed_peak_rss_mb`, and matching `/kfile` timing columns. Peak RSS is sampled at phase boundaries with Node's built-in RSS reading, so it is a practical trend signal, not an exact allocator trace. The synthetic generator and table formatter are guarded by `tests/synthetic-repo.test.ts` in the normal verify gate, even though the timing run is not.
 
+### Current local baseline
+
+Captured on 2026-06-28 from commit `f8f6060` on macOS Darwin 24.6.0, Apple M1 Max, 10 CPU cores, 32 GiB RAM, Node `v24.14.0`, npm `11.9.0`.
+
+Command:
+
+```bash
+npm run bench:perf -- --scales 1000,2000
+```
+
+| files | full_index_ms | noop_incremental_ms | edit_incremental_ms | analyze_no_persist_ms | analyze_persist_ms | affected | observed_peak_rss_mb | full_index_ms/kfile | noop_incremental_ms/kfile | edit_incremental_ms/kfile | analyze_no_persist_ms/kfile | analyze_persist_ms/kfile |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1000 | 5251 | 3655.8 | 3594.0 | 1947.0 | 1935.7 | 200 | 328 | 5251 | 3656 | 3594 | 1947 | 1936 |
+| 2000 | 17526 | 14266.0 | 14179.2 | 7688.0 | 7707.7 | 200 | 261 | 8763 | 7133 | 7090 | 3844 | 3854 |
+
+The standard large-repo command was also attempted as `npm run bench:perf -- --scales 10000`. It did not emit a table within about 20 minutes on this host and was interrupted. The 50k run was not started because the 10k full-phase run did not complete within that local limit. Treat 10k/50k full-phase `bench:perf` as **not yet supported on this baseline host** until the analyzer/indexing cost is reduced or the perf runner grows a phase-split/progress mode.
+
 ## The docs linter
 
 `scripts/docs-lint.js` (run via `npm run docs:lint`) is a static gate over tracked Markdown plus local untracked Markdown that is not ignored. It enforces:

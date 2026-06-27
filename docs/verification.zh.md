@@ -85,6 +85,23 @@ npm run bench:perf -- --scales 10000,50000
 
 输出表会分开显示 `full_index_ms`、`noop_incremental_ms`、`edit_incremental_ms`、`analyze_no_persist_ms`、`analyze_persist_ms`、`observed_peak_rss_mb` 以及对应的 `/kfile` 耗时列。Peak RSS 使用 Node 内置 RSS reading 在 phase 边界采样，因此是实用的趋势信号，而不是精确 allocator trace。计时运行不在 verify 中，但合成 generator 和表格 formatter 由 `tests/synthetic-repo.test.ts` 在常规 verify 闸中守护。
 
+### 当前本地 baseline
+
+于 2026-06-28 在 commit `f8f6060` 上采集，环境为 macOS Darwin 24.6.0、Apple M1 Max、10 CPU cores、32 GiB RAM、Node `v24.14.0`、npm `11.9.0`。
+
+命令：
+
+```bash
+npm run bench:perf -- --scales 1000,2000
+```
+
+| files | full_index_ms | noop_incremental_ms | edit_incremental_ms | analyze_no_persist_ms | analyze_persist_ms | affected | observed_peak_rss_mb | full_index_ms/kfile | noop_incremental_ms/kfile | edit_incremental_ms/kfile | analyze_no_persist_ms/kfile | analyze_persist_ms/kfile |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1000 | 5251 | 3655.8 | 3594.0 | 1947.0 | 1935.7 | 200 | 328 | 5251 | 3656 | 3594 | 1947 | 1936 |
+| 2000 | 17526 | 14266.0 | 14179.2 | 7688.0 | 7707.7 | 200 | 261 | 8763 | 7133 | 7090 | 3844 | 3854 |
+
+也尝试了标准 large-repo 命令 `npm run bench:perf -- --scales 10000`。在这台主机上约 20 分钟内没有输出表格，因此中断。由于 10k full-phase run 没能在本地限制内完成，未启动 50k run。在降低 analyzer/indexing 成本，或为 perf runner 增加 phase-split/progress mode 之前，请把此 baseline host 上的 10k/50k full-phase `bench:perf` 视为**尚不支持**。
+
 ## docs linter
 
 `scripts/docs-lint.js`（通过 `npm run docs:lint` 运行）是针对 tracked Markdown 和未被 ignore 的本地 untracked Markdown 的 static gate。它强制：

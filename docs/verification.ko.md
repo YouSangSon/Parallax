@@ -85,6 +85,23 @@ command, commit, Node version, OS / hardware class, 전체 output table을 함�
 
 출력 표는 `full_index_ms`, `noop_incremental_ms`, `edit_incremental_ms`, `analyze_no_persist_ms`, `analyze_persist_ms`, `observed_peak_rss_mb`, 대응하는 `/kfile` 시간 열을 분리한다. Peak RSS는 Node 내장 RSS reading을 phase 경계에서 샘플링하므로 실용적인 추세 신호이지 정확한 allocator trace는 아니다. 시간 측정 실행은 verify에 없지만 합성 generator와 표 formatter는 `tests/synthetic-repo.test.ts`로 정규 verify 게이트에서 가드된다.
 
+### 현재 로컬 baseline
+
+2026-06-28에 commit `f8f6060`, macOS Darwin 24.6.0, Apple M1 Max, CPU core 10개, RAM 32 GiB, Node `v24.14.0`, npm `11.9.0` 환경에서 측정했다.
+
+명령:
+
+```bash
+npm run bench:perf -- --scales 1000,2000
+```
+
+| files | full_index_ms | noop_incremental_ms | edit_incremental_ms | analyze_no_persist_ms | analyze_persist_ms | affected | observed_peak_rss_mb | full_index_ms/kfile | noop_incremental_ms/kfile | edit_incremental_ms/kfile | analyze_no_persist_ms/kfile | analyze_persist_ms/kfile |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1000 | 5251 | 3655.8 | 3594.0 | 1947.0 | 1935.7 | 200 | 328 | 5251 | 3656 | 3594 | 1947 | 1936 |
+| 2000 | 17526 | 14266.0 | 14179.2 | 7688.0 | 7707.7 | 200 | 261 | 8763 | 7133 | 7090 | 3844 | 3854 |
+
+표준 large-repo 명령 `npm run bench:perf -- --scales 10000`도 시도했다. 이 호스트에서는 약 20분 안에 표를 출력하지 못해 중단했다. 10k full-phase run이 로컬 제한 안에 끝나지 않았으므로 50k run은 시작하지 않았다. analyzer/indexing 비용을 줄이거나 perf runner에 phase-split/progress mode를 추가하기 전까지, 이 baseline host에서 10k/50k full-phase `bench:perf`는 **아직 지원 가능한 기준으로 보지 않는다**.
+
 ## docs linter
 
 `scripts/docs-lint.js`(`npm run docs:lint`로 실행)는 tracked Markdown과 ignore되지 않은 local untracked Markdown에 대한 static gate다. 다음을 강제한다:

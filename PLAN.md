@@ -6,8 +6,13 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Active Loop
 
-- Next loop: publish S4 measured 10k/50k perf baseline limits from a stable
-  baseline host.
+- Next loop: add D2 trend metrics for co-change, trace-ingest promotion, and
+  contract-diff quality.
+- Completed slice: S4 measured perf baseline limits are published in
+  `docs/verification*.md`. On the local baseline host, `bench:perf` completed
+  1k/2k rows, but a 10k full-phase run did not emit a table within about 20
+  minutes and was interrupted; 50k was not started because the 10k limit already
+  showed the current full-phase harness is too expensive at that scale.
 - Completed slice: D9 affected verification planner now adds `verificationPlan`
   to `parallax repo-map` and MCP `parallax_repo_map`, grouping existing
   recommended actions by nearest `package.json` root / runner into ranked,
@@ -69,6 +74,6 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Next
 
-1. Publish measured S4 10k/50k perf baseline limits only from a stable baseline host.
-2. Add D2 trend metrics for co-change, trace-ingest promotion, and contract-diff quality.
+1. Add D2 trend metrics for co-change, trace-ingest promotion, and contract-diff quality.
+2. Improve W4/W5 contract property signatures.
 3. Return to S1 residual scan-cost work only with a measured adapter-contract design.

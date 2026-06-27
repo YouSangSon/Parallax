@@ -74,12 +74,12 @@ and analyzer traversal is N+1 per frontier node.
 | S1 | **Incremental indexing follow-through (content-hash-gated)** — the core arc is partially shipped: content-hash/extractor-version delta classification, unchanged-file carry-forward into the new `index_run_id`, saved/exported artifact immutability, crash-atomic graph/current-state commits, and `bench:perf` slices for full/no-op incremental/edited-file incremental/analyze phases are all in place. Follow-through slices ✅: incremental runs now replay file-level persistence only for changed files plus contract files, bulk-load file ids once, carry `files.index_run_id` forward in SQL, canonicalize unchanged file `entity_versions`, carry unchanged indexed coverage rows forward, and reuse a clean same-HEAD default git index without rescanning or creating a redundant run when all indexed/coverage paths are tracked, no git-ignored scanner targets exist, and files fit default resource limits. Still open: reduce the remaining dirty/non-git or changed-file scan cost without introducing stale ignored-file/resource-limit semantics. | L | HIGH |
 | S2 | ✅ **shipped** — write-mode SQLite pragmas are in place, and indexing now commits the graph/current-state cohort in one explicit transaction after adapter extraction finishes. A child-process crash regression proves partial files/relations/evidence/transactions from a crashed run do not become current. | S | HIGH |
 | S3 | ⛔ **deprioritized — premise refuted by measurement.** The idea was to batch the per-node traversal query (`loadCanonicalImpactRows`) to cut round-trips. Built and verified byte-identical, then `bench:perf` showed it **flat** (2k files: 7545→7475 ms) even on a 200-node frontier: **in-process SQLite has no per-query latency, so N+1 query *count* is ~free** — and local-first is an invariant, so it can never matter. Reverted as premature optimization (KISS/YAGNI). The traversal-semantics characterization test (`tests/analyzer-traversal-batch.test.ts`) was kept as a guard for any future change. | M | ~~HIGH~~ LOW |
-| S4 | **Large-repo perf benchmark + documented limits** — foundation ✅: deterministic synthetic-repo generator (`bench/synthetic-repo.ts`, guarded by `tests/synthetic-repo.test.ts`) + `npm run bench:perf` (`bench/impact-perf.ts`) now reporting full initial index, no-op incremental index, edited-file incremental index, analyze-without-persist, analyze-with-persist, and observed peak RSS at scale, isolated from the determinism-locked accuracy bench, with an optional `--max-ms-per-kfile` CI gate. The perf run already exposes super-linear analyze cost (the S3 hotspot), and `docs/verification*.md` now names the standard 10k/50k baseline command. Still open: publish actual baseline tables/limits; deterministic `verify` should continue to avoid exact timing assertions. | M | MED-HIGH |
+| S4 | ✅ **shipped** — large-repo perf benchmark + documented limits: deterministic synthetic-repo generator (`bench/synthetic-repo.ts`, guarded by `tests/synthetic-repo.test.ts`) + `npm run bench:perf` (`bench/impact-perf.ts`) now report full initial index, no-op incremental index, edited-file incremental index, analyze-without-persist, analyze-with-persist, and observed peak RSS at scale, isolated from the determinism-locked accuracy bench, with an optional `--max-ms-per-kfile` CI gate. `docs/verification*.md` publishes the current local baseline table for 1k/2k and the measured 10k/50k limit: a 10k full-phase run did not emit a table within about 20 minutes on the baseline host, so 50k was not started. Deterministic `verify` continues to avoid exact timing assertions. | M | MED-HIGH |
 | S7 | ✅ **shipped** — saved report graph exports now treat persisted report JSON as the immutable graph snapshot source. Canonical graph rows remain only a legacy fallback when a persisted report lacks relation-bearing evidence, so later index cohorts, carry-forward, retention, repair, or canonical row mutation do not rewrite modern saved artifacts. | M | HIGH |
 | S5 | **Retention / prune superseded index runs (+ VACUUM)** — every run inserts a new cohort; nothing prunes old ones, so the DB grows by a full snapshot per run. Add deterministic retention (keep last N completed) inside a transaction + optional VACUUM. | M | MED |
 | S6 | **Committable / shareable index artifact** — define export/import of a compacted single-cohort DB + a `{extractor_version, git_commit_sha, content_hash set}` manifest; on import warn when hashes diverge from the working tree. "Index once in CI, everyone consumes." Depends on S5. | M | MED |
 
-**Sequencing:** S1 (biggest structural win) with S4 alongside to guard → S5 → S6. Watch-mode is a thin follow-on to S1.
+**Sequencing:** D2 trend metrics → W4/W5 contract fidelity → S5/S6 storage/shareability. Residual S1 dirty/non-git scan-cost work waits for a measured adapter-contract design.
 
 ---
 
@@ -199,7 +199,7 @@ The web/GitHub review changes the short-term adoption order without invalidating
 The quick-win layer has largely shipped (A5, M1, M2, M3 + co-change context fold,
 M6, D3, S2), and the first S4 perf measurement guardrail now exists via
 `bench:perf`. The remaining gap is narrower: D2 feature bench coverage is still
-open, and S4 still needs standard large-scale baselines plus peak-RSS capture.
+open, and S4 now has published local limits rather than green 10k/50k timing.
 Every larger bet is a structural change to the determinism/honesty core, so
 guarding must keep moving first.
 
@@ -208,7 +208,7 @@ Reassessed order across the four L bets:
 1. **Lay the guardrail — S4 first, then D2 (prerequisite, not optional).** S1/A1
    both move the indexer's cost and output; without a guard their regressions
    land invisibly. Two evidence-based refinements after re-checking the code:
-   - **S4 (perf bench) is partially shipped and remains the higher-value half.**
+   - **S4 (perf bench) is shipped as a measurement guardrail.**
      `bench:perf` now measures full initial index, no-op incremental index,
      edited-file incremental index, analyze-without-persist, and
      analyze-with-persist phases over a deterministic synthetic repo. Caveat:
@@ -216,9 +216,9 @@ Reassessed order across the four L bets:
      from `ImpactBenchReport` (its `tests/impact-bench.test.ts` asserts a
      byte-identical, path-free report across runs). Current perf output includes
      `observed_peak_rss_mb`, sampled at phase boundaries, and
-     `docs/verification*.md` documents the standard 10k/50k baseline command.
-     Still open: publish actual baseline tables and threshold guidance rather
-     than exact millisecond assertions.
+     `docs/verification*.md` publishes the local 1k/2k baseline plus the
+     measured 10k/50k limit: 10k did not emit a table within about 20 minutes on
+     the baseline host, so 50k was not started.
    - **D2's marginal value is lower than the catalog implies.** All four
      "thinly benched" features already have unit/integration coverage in the
      verify gate (`trace-promotion-index`, `cross-repo-resolver`,

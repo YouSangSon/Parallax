@@ -4,13 +4,12 @@ Canonical detailed backlog: `IMPROVEMENT_OPPORTUNITIES.md`.
 
 ## Now
 
-1. S4 publish measured 10k/50k perf baseline limits.
+1. D2 remaining trend metrics.
 
 ## Later
 
-1. D2 remaining trend metrics.
-2. W4/W5 richer contract signatures.
-3. S1 residual dirty/non-git scan-cost reduction after a measured adapter-contract design.
+1. W4/W5 richer contract signatures.
+2. S1 residual dirty/non-git scan-cost reduction after a measured adapter-contract design.
 
 ## Done
 
@@ -22,3 +21,4 @@ Canonical detailed backlog: `IMPROVEMENT_OPPORTUNITIES.md`.
 6. D4 deep-linkable UI/export.
 7. M10 SCIP bridge: JSON import, CLI-backed binary ingest, and JSON export.
 8. D9 affected verification planner from external affected-target research.
+9. S4 measured perf baseline limits.

@@ -4,7 +4,7 @@ Canonical detailed backlog: `IMPROVEMENT_OPPORTUNITIES.md`.
 
 ## Now
 
-1. D2 remaining trend metrics.
+1. D2 co-change and trace-ingest trend metrics.
 
 ## Later
 
@@ -22,3 +22,4 @@ Canonical detailed backlog: `IMPROVEMENT_OPPORTUNITIES.md`.
 7. M10 SCIP bridge: JSON import, CLI-backed binary ingest, and JSON export.
 8. D9 affected verification planner from external affected-target research.
 9. S4 measured perf baseline limits.
+10. D2 contract-diff quality trend metric.

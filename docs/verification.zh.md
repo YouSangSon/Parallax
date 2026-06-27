@@ -60,7 +60,7 @@ runner 写出一份确定性 JSON 报告，当 suite 未通过时设置 non-zero
 - `tests/impact-bench.test.ts` 作为 `npm test` 的一部分运行 bench，并断言报告形态、pin 住的期望 relation 集合，以及 score/recall 阈值。
 - `npm run bench` 直接运行 `bench/impact-bench.ts`，并在任何 recall/score 回归时以 non-zero 退出——这是 CI 使用的形式。
 
-Deterministic bench 也包含 cross-repo contract-impact lane。该 lane 构建 two-repo workspace fixture，通过 `analyzeContractDiff` persist breaking contract link，然后检查 `analyzeDiff` 与 report-scoped graph export 是否仍暴露 expected `web:src/client.ts` consumer impact。该 lane 不会 reweight 历史 `summary.score`，而是通过 `crossRepoContracts.summary.passed` gate `summary.passed`。
+Deterministic bench 也包含 cross-repo 与 contract-diff lane。cross-repo contract-impact lane 会构建 two-repo workspace fixture，通过 `analyzeContractDiff` persist breaking contract link，然后检查 `analyzeDiff` 与 report-scoped graph export 是否仍暴露 expected `web:src/client.ts` consumer impact。contract-diff quality lane 会运行 removed response required property、added request required property、response property type change 的 paired OpenAPI v1/v2 fixture，并通过 `contractDiffQuality` 报告 matched cases/changes。这些 lane 会 gate `summary.passed`，但不会 reweight 历史 `summary.score`。
 
 凡是触及 relation 抽取、排序或 retrieval 的变更之后，都运行 `npm run bench`。
 

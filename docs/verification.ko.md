@@ -60,7 +60,7 @@ runner는 deterministic JSON 리포트를 쓰고, suite가 통과하지 못하�
 - `tests/impact-bench.test.ts`는 `npm test`의 일부로 bench를 실행하고, 리포트 형태와 pin된 기대 relation 집합, 그리고 score/recall 임계값을 검증한다.
 - `npm run bench`는 `bench/impact-bench.ts`를 직접 실행하고 recall/score 회귀 시 non-zero로 종료한다 — CI가 쓰는 형태다.
 
-Deterministic bench에는 cross-repo contract-impact lane도 포함된다. 이 lane은 two-repo workspace fixture를 만들고 `analyzeContractDiff`로 breaking contract link를 persist한 뒤, `analyzeDiff`와 report-scoped graph export가 expected `web:src/client.ts` consumer impact를 계속 노출하는지 확인한다. 이 lane은 기존 `summary.score`를 reweight하지 않고 `crossRepoContracts.summary.passed`로 `summary.passed`를 gate한다.
+Deterministic bench에는 cross-repo와 contract-diff lane도 포함된다. cross-repo contract-impact lane은 two-repo workspace fixture를 만들고 `analyzeContractDiff`로 breaking contract link를 persist한 뒤, `analyzeDiff`와 report-scoped graph export가 expected `web:src/client.ts` consumer impact를 계속 노출하는지 확인한다. contract-diff quality lane은 removed response required property, added request required property, response property type change에 대한 paired OpenAPI v1/v2 fixture를 실행하고, matched cases/changes를 `contractDiffQuality`로 보고한다. 이 lane들은 기존 `summary.score`를 reweight하지 않고 `summary.passed`를 gate한다.
 
 relation 추출, 랭킹, retrieval을 건드리는 변경 후에는 `npm run bench`를 실행하자.
 

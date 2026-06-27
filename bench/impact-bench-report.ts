@@ -6,8 +6,9 @@ import type { ImpactBenchReport } from './impact-bench.js';
 
 const defaultReportPath = '.parallax/bench/impact-bench-report.json';
 
-type LoadedBenchReport = Omit<ImpactBenchReport, 'crossRepoContracts'> & {
+type LoadedBenchReport = Omit<ImpactBenchReport, 'crossRepoContracts' | 'contractDiffQuality'> & {
   crossRepoContracts?: ImpactBenchReport['crossRepoContracts'];
+  contractDiffQuality?: ImpactBenchReport['contractDiffQuality'];
 };
 
 type FormatOptions = {
@@ -77,6 +78,7 @@ export function formatBenchSummaryMarkdown(
 ): string {
   const baseline = options.baseline;
   const currentCrossRepoContracts = report.crossRepoContracts;
+  const currentContractDiffQuality = report.contractDiffQuality;
   const metricRows = [
     metricRow('Overall score', report.summary.score, baseline?.summary.score),
     metricRow('Relation recall', report.scores.relationRecall, baseline?.scores.relationRecall),
@@ -94,6 +96,11 @@ export function formatBenchSummaryMarkdown(
       'Cross-repo contract impact',
       currentCrossRepoContracts.summary.score,
       baseline?.crossRepoContracts?.summary.score
+    )] : []),
+    ...(currentContractDiffQuality ? [metricRow(
+      'Contract-diff quality',
+      currentContractDiffQuality.summary.score,
+      baseline?.contractDiffQuality?.summary.score
     )] : []),
     metricRow('Retrieval recall@5', report.retrieval.summary.recallAt5, baseline?.retrieval.summary.recallAt5),
     metricRow('Retrieval MRR', report.retrieval.summary.mrr, baseline?.retrieval.summary.mrr),
@@ -133,10 +140,25 @@ export function formatBenchSummaryMarkdown(
         currentCrossRepoContracts.summary.matchedGraphEdges,
         baseline?.crossRepoContracts?.summary.matchedGraphEdges
       )
+    ] : []),
+    ...(currentContractDiffQuality ? [
+      countRow(
+        'Contract-diff cases',
+        `${currentContractDiffQuality.summary.matchedCases}/${currentContractDiffQuality.summary.expectedCases}`,
+        currentContractDiffQuality.summary.matchedCases,
+        baseline?.contractDiffQuality?.summary.matchedCases
+      ),
+      countRow(
+        'Contract-diff changes',
+        `${currentContractDiffQuality.summary.matchedChanges}/${currentContractDiffQuality.summary.expectedChanges}`,
+        currentContractDiffQuality.summary.matchedChanges,
+        baseline?.contractDiffQuality?.summary.matchedChanges
+      )
     ] : [])
   ];
   const listSections = [
     ...(currentCrossRepoContracts ? [listSection('Missing cross-repo consumers', currentCrossRepoContracts.missingConsumerPaths)] : []),
+    ...(currentContractDiffQuality ? [listSection('Missing contract-diff changes', currentContractDiffQuality.missingChanges)] : []),
     listSection('Missing relations', report.missingRelations),
     listSection('Unexpected relations', report.unexpectedRelations)
   ];
@@ -359,6 +381,51 @@ function assertBenchReport(value: unknown, label: string): asserts value is Impa
       label,
       'crossRepoContracts.graphEdges.matched'
     );
+  }
+  if (value.schemaVersion >= 5 || value.contractDiffQuality !== undefined) {
+    assertRecord(value.contractDiffQuality, label, 'contractDiffQuality');
+    assertString(value.contractDiffQuality.fixtureId, label, 'contractDiffQuality.fixtureId');
+    assertRecord(value.contractDiffQuality.summary, label, 'contractDiffQuality.summary');
+    assertBoolean(
+      value.contractDiffQuality.summary.passed,
+      label,
+      'contractDiffQuality.summary.passed'
+    );
+    for (const key of [
+      'score',
+      'expectedCases',
+      'matchedCases',
+      'expectedChanges',
+      'matchedChanges'
+    ]) {
+      assertNumber(value.contractDiffQuality.summary[key], label, `contractDiffQuality.summary.${key}`);
+    }
+    if (!Array.isArray(value.contractDiffQuality.cases)) {
+      throw new Error(`invalid bench report ${label}: expected contractDiffQuality.cases array`);
+    }
+    for (const [index, item] of value.contractDiffQuality.cases.entries()) {
+      assertRecord(item, label, `contractDiffQuality.cases[${index}]`);
+      assertString(item.id, label, `contractDiffQuality.cases[${index}].id`);
+      for (const key of ['score', 'expectedChanges', 'matchedChanges']) {
+        assertNumber(item[key], label, `contractDiffQuality.cases[${index}].${key}`);
+      }
+      assertStringArray(
+        item.expectedChangeKeys,
+        label,
+        `contractDiffQuality.cases[${index}].expectedChangeKeys`
+      );
+      assertStringArray(
+        item.matchedChangeKeys,
+        label,
+        `contractDiffQuality.cases[${index}].matchedChangeKeys`
+      );
+      assertStringArray(
+        item.missingChangeKeys,
+        label,
+        `contractDiffQuality.cases[${index}].missingChangeKeys`
+      );
+    }
+    assertStringArray(value.contractDiffQuality.missingChanges, label, 'contractDiffQuality.missingChanges');
   }
   assertRecord(value.retrieval, label, 'retrieval');
   assertRecord(value.retrieval.summary, label, 'retrieval.summary');

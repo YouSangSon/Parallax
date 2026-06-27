@@ -6,8 +6,12 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Active Loop
 
-- Next loop: add D2 trend metrics for co-change, trace-ingest promotion, and
-  contract-diff quality.
+- Next loop: add D2 trend metrics for co-change and trace-ingest promotion.
+- Completed slice: D2 contract-diff quality now adds a deterministic
+  `contractDiffQuality` bench lane with paired OpenAPI v1/v2 cases for removed
+  response required properties, added request required properties, and response
+  property type changes. `bench:report` now includes the metric and count deltas
+  in Markdown / GitHub Step Summary output.
 - Completed slice: S4 measured perf baseline limits are published in
   `docs/verification*.md`. On the local baseline host, `bench:perf` completed
   1k/2k rows, but a 10k full-phase run did not emit a table within about 20
@@ -74,6 +78,6 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Next
 
-1. Add D2 trend metrics for co-change, trace-ingest promotion, and contract-diff quality.
+1. Add D2 trend metrics for co-change and trace-ingest promotion.
 2. Improve W4/W5 contract property signatures.
 3. Return to S1 residual scan-cost work only with a measured adapter-contract design.

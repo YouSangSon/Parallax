@@ -29,8 +29,9 @@ import { BUILD_SYSTEM_PACKAGE_ADAPTER_ID } from '../src/adapters/build-system-pa
 import { CONFIG_INFRA_SEMANTIC_ADAPTER_ID } from '../src/adapters/config-infra.js';
 
 const fixtureId = 'phase6b-multilanguage-v0';
-const schemaVersion = 4;
+const schemaVersion = 5;
 const crossRepoContractFixtureId = 'cross-repo-contract-impact-v0';
+const contractDiffQualityFixtureId = 'contract-diff-quality-v0';
 const defaultOutputPath = '.parallax/bench/impact-bench-report.json';
 const regexAdapterId = MULTI_LANG_REGEX_ADAPTER_ID;
 const retrievalFixtureId = 'search-context-retrieval-v0';
@@ -39,7 +40,7 @@ const semanticModelA = 'bench-semantic-model-a';
 const semanticModelB = 'bench-semantic-model-b';
 
 export type ImpactBenchReport = {
-  schemaVersion: 2 | 3 | 4;
+  schemaVersion: 2 | 3 | 4 | 5;
   fixtureId: typeof fixtureId;
   summary: {
     passed: boolean;
@@ -66,6 +67,7 @@ export type ImpactBenchReport = {
     matchedAffectedFiles: string[];
   };
   crossRepoContracts: CrossRepoContractBench;
+  contractDiffQuality: ContractDiffQualityBench;
   retrieval: RetrievalBenchReport;
   outputPath: string;
 };
@@ -201,6 +203,48 @@ type CrossRepoContractBench = {
   };
 };
 
+type ContractDiffQualityBench = {
+  fixtureId: typeof contractDiffQualityFixtureId;
+  summary: {
+    passed: boolean;
+    score: number;
+    expectedCases: number;
+    matchedCases: number;
+    expectedChanges: number;
+    matchedChanges: number;
+  };
+  cases: ContractDiffQualityCaseReport[];
+  missingChanges: string[];
+};
+
+type ContractDiffQualityCaseReport = {
+  id: string;
+  score: number;
+  expectedChanges: number;
+  matchedChanges: number;
+  expectedChangeKeys: string[];
+  matchedChangeKeys: string[];
+  missingChangeKeys: string[];
+};
+
+type ContractDiffQualityExpectedChange = {
+  kind: string;
+  classification: string;
+  schemaPath?: string;
+};
+
+type ContractDiffQualityCaseSpec = {
+  id: string;
+  current: ContractDiffBenchOpenApiOptions;
+  expectedChanges: ContractDiffQualityExpectedChange[];
+};
+
+type ContractDiffBenchOpenApiOptions = {
+  requestRequired?: string[];
+  responseRequired?: string[];
+  responseNameType?: string;
+};
+
 const retrievalQueries: readonly RetrievalQuerySpec[] = [
   {
     id: 'evidence-fts-policy',
@@ -226,6 +270,42 @@ const semanticRecallSpecs: readonly SemanticRecallSpec[] = [
     queryVector: int8Vector([0, 127, 0, 0]),
     expectedFactId: 'bench:model-b-policy',
     disallowedFactId: 'bench:model-foreign-b-policy'
+  }
+];
+
+const contractDiffQualityCases: readonly ContractDiffQualityCaseSpec[] = [
+  {
+    id: 'removed-response-required-property',
+    current: { responseRequired: ['id'] },
+    expectedChanges: [
+      {
+        kind: 'removed_response_required_property',
+        classification: 'breaking',
+        schemaPath: 'responses.200.body.required.name'
+      }
+    ]
+  },
+  {
+    id: 'added-request-required-property',
+    current: { requestRequired: ['name', 'email'] },
+    expectedChanges: [
+      {
+        kind: 'added_request_required_property',
+        classification: 'breaking',
+        schemaPath: 'requestBody.required.email'
+      }
+    ]
+  },
+  {
+    id: 'changed-response-property-type',
+    current: { responseNameType: 'integer' },
+    expectedChanges: [
+      {
+        kind: 'changed_response_property_type',
+        classification: 'breaking',
+        schemaPath: 'responses.200.body.properties.name'
+      }
+    ]
   }
 ];
 
@@ -402,6 +482,7 @@ export async function runImpactBench(options: RunImpactBenchOptions = {}): Promi
       contextPackReadiness
     };
     const score = weightedScore(scores);
+    const contractDiffQuality = await runContractDiffQualityBench();
     const passed =
       relationRecall >= 0.95 &&
       relationPrecision >= 0.95 &&
@@ -414,6 +495,7 @@ export async function runImpactBench(options: RunImpactBenchOptions = {}): Promi
       retrieval.summary.mrr === 1 &&
       retrieval.semanticModels?.summary.passed === true &&
       crossRepoContracts.summary.passed === true &&
+      contractDiffQuality.summary.passed === true &&
       score >= 0.9;
 
     const report: ImpactBenchReport = {
@@ -436,6 +518,7 @@ export async function runImpactBench(options: RunImpactBenchOptions = {}): Promi
         matchedAffectedFiles
       },
       crossRepoContracts,
+      contractDiffQuality,
       retrieval,
       outputPath: outputPathForReport
     };
@@ -721,6 +804,149 @@ async function runCrossRepoContractBench(): Promise<CrossRepoContractBench> {
   } finally {
     await rm(fixtureRoot, { recursive: true, force: true });
   }
+}
+
+async function runContractDiffQualityBench(): Promise<ContractDiffQualityBench> {
+  const fixtureRoot = await mkdtemp(path.join(tmpdir(), 'impact-bench-contract-diff-'));
+  try {
+    const providerRoot = path.join(fixtureRoot, 'provider');
+    await mkdir(providerRoot, { recursive: true });
+    await writeFile(path.join(providerRoot, 'README.md'), 'provider\n', 'utf8');
+    await writeContractDiffBenchOpenApiJsonContract(providerRoot);
+
+    await initProject({ repoRoot: providerRoot });
+    await indexProject({ repoRoot: providerRoot });
+    initWorkspace({ repoRoot: providerRoot, name: 'platform', serviceName: 'users-api' });
+
+    const cases: ContractDiffQualityCaseReport[] = [];
+    for (const spec of contractDiffQualityCases) {
+      await writeContractDiffBenchOpenApiJsonContract(providerRoot, spec.current);
+      const result = analyzeContractDiff({
+        repoRoot: providerRoot,
+        workspaceName: 'platform',
+        providerServiceName: 'users-api',
+        contractPath: 'contracts/openapi.json',
+        persist: false
+      });
+      const actualKeys = new Set(result.changes.map(contractDiffChangeKey));
+      const expectedChangeKeys = spec.expectedChanges.map(contractDiffExpectedChangeKey).sort();
+      const matchedChangeKeys = expectedChangeKeys.filter((key) => actualKeys.has(key)).sort();
+      const missingChangeKeys = expectedChangeKeys.filter((key) => !actualKeys.has(key)).sort();
+      cases.push({
+        id: spec.id,
+        score: ratio(matchedChangeKeys.length, expectedChangeKeys.length),
+        expectedChanges: expectedChangeKeys.length,
+        matchedChanges: matchedChangeKeys.length,
+        expectedChangeKeys,
+        matchedChangeKeys,
+        missingChangeKeys
+      });
+    }
+
+    const expectedChanges = cases.reduce((total, item) => total + item.expectedChanges, 0);
+    const matchedChanges = cases.reduce((total, item) => total + item.matchedChanges, 0);
+    const matchedCases = cases.filter((item) => item.missingChangeKeys.length === 0).length;
+    const score = ratio(matchedChanges, expectedChanges);
+    return {
+      fixtureId: contractDiffQualityFixtureId,
+      summary: {
+        passed: matchedCases === cases.length && matchedChanges === expectedChanges,
+        score,
+        expectedCases: cases.length,
+        matchedCases,
+        expectedChanges,
+        matchedChanges
+      },
+      cases,
+      missingChanges: cases.flatMap((item) =>
+        item.missingChangeKeys.map((key) => `${item.id}: ${key}`)
+      ).sort()
+    };
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+}
+
+async function writeContractDiffBenchOpenApiJsonContract(
+  repoRoot: string,
+  options: ContractDiffBenchOpenApiOptions = {}
+): Promise<void> {
+  await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
+  const contract = {
+    openapi: '3.0.0',
+    info: {
+      title: 'Users API',
+      version: '1.0.0'
+    },
+    paths: {
+      '/api/users': {
+        get: {
+          operationId: 'listUsers',
+          responses: {
+            '200': {
+              description: 'ok',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    required: options.responseRequired ?? ['id', 'name'],
+                    properties: {
+                      id: { type: 'string' },
+                      name: { type: options.responseNameType ?? 'string' }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        post: {
+          operationId: 'createUser',
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: options.requestRequired ?? ['name'],
+                  properties: {
+                    name: { type: 'string' },
+                    email: { type: 'string' }
+                  }
+                }
+              }
+            }
+          },
+          responses: {
+            '201': {
+              description: 'created'
+            }
+          }
+        }
+      }
+    }
+  };
+  await writeFile(
+    path.join(repoRoot, 'contracts/openapi.json'),
+    `${JSON.stringify(contract, null, 2)}\n`,
+    'utf8'
+  );
+}
+
+function contractDiffExpectedChangeKey(change: ContractDiffQualityExpectedChange): string {
+  return [
+    change.kind,
+    change.classification,
+    change.schemaPath ?? ''
+  ].join('|');
+}
+
+function contractDiffChangeKey(change: { kind: string; classification: string; schemaPath?: string }): string {
+  return [
+    change.kind,
+    change.classification,
+    change.schemaPath ?? ''
+  ].join('|');
 }
 
 async function runRetrievalBench(repoRoot: string): Promise<RetrievalBenchReport> {

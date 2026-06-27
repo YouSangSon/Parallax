@@ -111,7 +111,7 @@ also remain thinly bench-covered.
 | # | Opportunity | Effort | Value |
 | :-- | :-- | :-- | :-- |
 | D1 | ✅ **shipped** — Official GitHub Action + PR wrapper now runs `parallax init`, `parallax index`, and `parallax pr triage`; supports `changed` or `base`/`head` diff discovery; writes SARIF; appends a GitHub step summary; keeps SARIF upload explicit via `github/codeql-action/upload-sarif`; and honors confidence-aware `fail-on`. Remaining impact-gate surface work is now tracked by D6 / hook installation and the separate `--min-affected=N` decision. | M | HIGH |
-| D2 | **Bench coverage for co-change / traces / cross-repo / contract-diff** — W1-focused cross-repo coverage is ✅ **shipped**: `npm run bench` now includes a deterministic two-repo contract-impact lane that gates `summary.passed` when primary `analyzeDiff` or report graph export loses the expected consumer break. Still open: trend metrics for co-change, trace-ingest promotion, and broader paired v1/v2 contract-diff quality. | M | HIGH |
+| D2 | **Bench coverage for co-change / traces / cross-repo / contract-diff** — W1-focused cross-repo coverage is ✅ **shipped**: `npm run bench` now includes a deterministic two-repo contract-impact lane that gates `summary.passed` when primary `analyzeDiff` or report graph export loses the expected consumer break. Contract-diff quality trend metrics are also ✅ **shipped**: the bench now reports `contractDiffQuality` over paired OpenAPI v1/v2 cases for removed response required properties, added request required properties, and response property type changes, and `bench:report` shows metric/count deltas. Still open: trend metrics for co-change and trace-ingest promotion. | M | HIGH |
 | D3 | ✅ **shipped** (impact report) — `parallax analyze --json` output now has a published, versioned JSON Schema (`schemas/impact-report.schema.json`, draft 2020-12). The hand-written `ImpactReport` stays authoritative; a zod mirror (`src/report_schema.ts`) generates the artifact, with a compile-time conformance assertion + a `npm run lint` drift guard + a test that validates real `analyze --json` output against the schema. Still open: **bench-report schema** (deferred — `bench/` is outside `tsc` scope and `RetrievalBenchReport` isn't exported; it is an internal artifact, not an external contract). | S | MED-HIGH |
 | D4 | ✅ **shipped** — UI export + deep-linkable state now preserves selected impact path, filter text, and report-delta policy preset in the workbench URL. The toolbar exports the current workbench as JSON, affected-path CSV, and PNG impact maps with SVG fallback, using browser-native APIs only. | S-M | MED-HIGH |
 | D5 | ✅ **shipped** — trilingual getting-started tutorials now exist (`docs/getting-started*.md`) with a worked init→index→analyze walkthrough, expected affected output, and MCP / CI / UI next steps. | S | MED |
@@ -199,7 +199,9 @@ The web/GitHub review changes the short-term adoption order without invalidating
 The quick-win layer has largely shipped (A5, M1, M2, M3 + co-change context fold,
 M6, D3, S2), and the first S4 perf measurement guardrail now exists via
 `bench:perf`. The remaining gap is narrower: D2 feature bench coverage is still
-open, and S4 now has published local limits rather than green 10k/50k timing.
+partially open: contract-diff quality is now tracked, while co-change and
+trace-ingest promotion metrics remain. S4 now has published local limits rather
+than green 10k/50k timing.
 Every larger bet is a structural change to the determinism/honesty core, so
 guarding must keep moving first.
 
@@ -223,9 +225,10 @@ Reassessed order across the four L bets:
      "thinly benched" features already have unit/integration coverage in the
      verify gate (`trace-promotion-index`, `cross-repo-resolver`,
      `contract-diff`, and co-change across six test files). They are *not*
-     unguarded — D2 adds quality-metric *trend* tracking (recall/precision over
-     time) on top, which is real but incremental and determinism-delicate
-     (co-change needs a git fixture; only counts/recall may reach the report).
+     unguarded — D2 adds quality-metric *trend* tracking on top, which is real
+     but incremental and determinism-delicate. Contract-diff now has a
+     deterministic `contractDiffQuality` lane; co-change still needs a git
+     fixture and trace-ingest still needs promotion/unmatched trend counts.
 2. **S1 — incremental indexing.** Highest structural leverage; prereqs already
    exist (`files.content_hash` + `index_run.extractor_version` columns are
    present — only carry-forward logic is missing). Risk lives in reproducing an

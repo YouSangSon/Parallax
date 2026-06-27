@@ -378,3 +378,25 @@
   - `npm run docs:lint`
   - `git diff --check`
   - `ps -axo pid,ppid,stat,etime,pcpu,pmem,command | rg 'impact-perf|bench:perf|tsx bench/impact-perf' | rg -v 'rg ' || true`
+- Shipped D2 contract-diff quality trend metric.
+  - Rechecked OpenAPI diff direction against `oasdiff` and `openapi-diff`:
+    paired old/new contract comparison with breaking-change output is the right
+    model for this lane.
+  - `bench/impact-bench.ts` now emits `contractDiffQuality` over three paired
+    OpenAPI v1/v2 cases: removed response required property, added request
+    required property, and changed response property type.
+  - `bench/impact-bench-report.ts` now renders contract-diff quality and
+    matched case/change deltas in Markdown and GitHub Step Summary output.
+  - Backlog now narrows D2 to co-change and trace-ingest promotion metrics.
+- D2 contract-diff quality verification:
+  - `npm run check`
+  - `node --import tsx --test tests/impact-bench-report.test.ts`
+  - `node --import tsx --test tests/impact-bench.test.ts`
+  - `npm run bench`
+  - `npm run bench:report`
+  - `npm run docs:lint`
+  - `git diff --check`
+  - `npm run build`
+  - `npm test`
+  - `npm audit --audit-level=high`
+  - `npm run test:dogfood`

@@ -26,7 +26,7 @@ test('ImpactBench runner writes deterministic report shape', async () => {
     assert.equal(serializedReport.includes(tmpdir()), false);
     assert.equal(serializedReport.includes('impact-bench-fixture-'), false);
     assert.equal(serializedReport.includes('impact-bench-cross-repo-'), false);
-    assert.equal(report.schemaVersion, 4);
+    assert.equal(report.schemaVersion, 5);
     assert.equal(report.fixtureId, 'phase6b-multilanguage-v0');
     assert.equal(report.outputPath, '.parallax/bench/impact-bench-report.json');
     assert.equal(report.summary.passed, true);
@@ -79,6 +79,22 @@ test('ImpactBench runner writes deterministic report shape', async () => {
     assert.deepEqual(report.crossRepoContracts.expectedEvidenceKinds, ['BREAKS_COMPATIBILITY_WITH']);
     assert.deepEqual(report.crossRepoContracts.matchedEvidenceKinds, ['BREAKS_COMPATIBILITY_WITH']);
     assert.deepEqual(report.crossRepoContracts.graphEdges, { expected: 1, matched: 1 });
+    assert.equal(report.contractDiffQuality.fixtureId, 'contract-diff-quality-v0');
+    assert.equal(report.contractDiffQuality.summary.passed, true);
+    assert.equal(report.contractDiffQuality.summary.score, 1);
+    assert.equal(report.contractDiffQuality.summary.expectedCases, 3);
+    assert.equal(report.contractDiffQuality.summary.matchedCases, 3);
+    assert.equal(report.contractDiffQuality.summary.expectedChanges, 3);
+    assert.equal(report.contractDiffQuality.summary.matchedChanges, 3);
+    assert.deepEqual(report.contractDiffQuality.missingChanges, []);
+    assert.deepEqual(
+      report.contractDiffQuality.cases.map((item) => item.id),
+      [
+        'removed-response-required-property',
+        'added-request-required-property',
+        'changed-response-property-type'
+      ]
+    );
     assert.ok(report.retrieval.budgets.brief.maxReturnedBytes <= 5_000);
     assert.equal(report.retrieval.budgets.brief.budgetExceededCount, 0);
     assert.ok(

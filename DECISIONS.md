@@ -403,3 +403,28 @@ Why:
 - This is a real limit and should stay visible. Exact timing remains outside
   `npm run verify`; a future improvement should reduce analyzer/indexing cost
   or add phase-split/progress output before attempting 10k/50k again.
+
+## 2026-06-28: Add Contract-Diff Quality To The Deterministic Bench
+
+Decision: start the remaining D2 trend-metric work with a small
+`contractDiffQuality` lane in `bench/impact-bench.ts`, not a separate benchmark
+runner or a new dependency.
+
+Sources:
+- oasdiff: <https://github.com/oasdiff/oasdiff>
+- OpenAPI diff tooling search:
+  <https://github.com/OpenAPITools/openapi-diff>
+
+Why:
+- Existing OpenAPI diff tools frame contract evolution as a paired old/new
+  contract comparison with breaking-change output, which matches Parallax's
+  current `analyzeContractDiff` surface.
+- The repo already has deterministic OpenAPI contract-diff tests. The missing
+  D2 piece was trend reporting in the bench JSON and GitHub summary, not a new
+  analysis engine.
+- Reusing `analyzeContractDiff` over three paired OpenAPI v1/v2 cases gives a
+  visible quality signal for removed response required properties, added
+  request required properties, and response property type changes with no
+  runtime dependency or nondeterministic timing.
+- Co-change and trace-ingest metrics remain separate D2 follow-ups because they
+  need git-history and promotion-count fixtures respectively.

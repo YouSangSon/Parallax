@@ -80,15 +80,24 @@ permissions:
   security-events: write
 steps:
   - uses: actions/checkout@v4
-  - run: npm install -g parallax
-  - run: parallax analyze --changed "src/api.ts" --sarif-output parallax.sarif --sarif-category parallax-pr --fail-on none
+    with:
+      fetch-depth: 0
+  - uses: YouSangSon/Parallax@main
+    with:
+      base: ${{ github.event.pull_request.base.sha }}
+      head: ${{ github.event.pull_request.head.sha }}
+      sarif-output: parallax.sarif
+      sarif-category: parallax-pr
+      fail-on: none
   - uses: github/codeql-action/upload-sarif@v3
     with:
       sarif_file: parallax.sarif
       category: parallax-pr
 ```
 
-Keep SARIF generation non-failing so the upload step still runs when findings exist. Add a separate `parallax analyze ... --fail-on proven` gate step if you want CI to fail on high-confidence impact.
+The action runs `parallax init`, `parallax index`, and `parallax pr triage`, writes the SARIF file, and appends the triage summary to the GitHub step summary. SARIF upload stays in your workflow so `security-events: write` remains explicit.
+
+Keep SARIF generation non-failing so the upload step still runs when findings exist. Set the action's `fail-on` input to `proven` or add a separate `parallax analyze ... --fail-on proven` gate step if you want CI to fail on high-confidence impact.
 
 Open the latest report in the local UI:
 

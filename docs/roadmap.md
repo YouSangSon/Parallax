@@ -58,6 +58,7 @@ MCP has stabilized as read-only. Next is the stage of looking deeply at agent us
 
 - [x] GitHub-native agent package: generate Copilot repository instructions, MCP setup snippets, and a least-privilege "run Parallax first" workflow for PR work
 - [x] SARIF / code-scanning export for affected-file impact findings, plus a composite GitHub Action that generates the SARIF file for explicit upload
+- [x] PR action wrapper runs `init` → `index` → `pr triage`, supports changed-file or base/head diff discovery, writes SARIF, and appends a step summary while leaving SARIF upload explicit
 - [x] Emit cross-repo contract-break warnings as SARIF results anchored to provider contracts
 - [x] Emit index coverage-gap warnings as SARIF results anchored to changed files
 - [x] Emit recommended verification actions as SARIF note results

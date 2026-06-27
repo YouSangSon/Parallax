@@ -98,3 +98,19 @@ Why:
   `changed file not in index` state.
 - If the changed path is not uploadable as a repo-relative path, Parallax omits
   the result and records the omitted count in SARIF run properties.
+
+## 2026-06-27: PR Action Wrapper
+
+Decision: turn the composite action into a local PR triage wrapper that runs
+`parallax init`, `parallax index`, and `parallax pr triage`, while keeping SARIF
+upload as an explicit workflow step.
+
+Why:
+- The action should remove the repetitive PR shell glue around init, indexing,
+  diff discovery, SARIF generation, and the human triage summary.
+- Supporting both `changed` and `base`/`head` keeps local changed-file workflows
+  and normal pull-request workflows on the same wrapper.
+- Uploading SARIF requires `security-events: write`; keeping upload outside the
+  action preserves the project's read-only-by-default boundary.
+- Appending `$GITHUB_STEP_SUMMARY` gives reviewers the repo-map/triage summary
+  even before they open Code Scanning.

@@ -58,6 +58,7 @@ MCP 已稳定为 read-only。接下来是深入审视 agent 可用性的阶段�
 
 - [x] GitHub-native agent package：生成 Copilot repository instructions、MCP 配置片段，以及用于 PR 工作的 least-privilege "先运行 Parallax" workflow
 - [x] 面向 affected-file impact finding 的 SARIF / code-scanning export，以及生成 SARIF 文件的 composite GitHub Action
+- [x] PR action wrapper 运行 `init` → `index` → `pr triage`，支持 changed-file 或 base/head diff discovery，写出 SARIF 并追加 step summary，同时让 SARIF upload 保持显式
 - [x] 将 cross-repo contract-break warning 作为锚定到 provider contract 的 SARIF result 输出
 - [x] 将 index coverage-gap warning 作为锚定到 changed file 的 SARIF result 输出
 - [x] 将 recommended verification action 作为 SARIF note result 输出

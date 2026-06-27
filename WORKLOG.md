@@ -36,7 +36,6 @@
   - `npm run build`
   - `git diff --check`
   - `npm test`
-  - `npm test`
 - Review:
   - spec reviewer approved the D8 diff.
   - code quality reviewer found depth/fanout and docs-boundary issues; both
@@ -82,6 +81,20 @@
   - `npm run docs:lint`
   - `npm run build`
   - `git diff --check`
+  - `npm test`
 - Review:
   - spec reviewer approved the verification-action SARIF slice.
   - code quality reviewer found no blocking issues.
+- Shipped D1 PR action wrapper slice.
+  - `action.yml` now accepts either `changed` or `base`/`head`, runs
+    `parallax init`, `parallax index`, and `parallax pr triage`, writes SARIF,
+    captures `.parallax/pr-triage-summary.md`, and appends the summary to
+    `$GITHUB_STEP_SUMMARY`.
+  - SARIF upload remains outside the action so `security-events: write` stays
+    explicit in the user's workflow.
+  - `README*.md` now show the action wrapper with `fetch-depth: 0`, PR base/head
+    inputs, explicit `github/codeql-action/upload-sarif`, and `fail-on`
+    guidance.
+- D1 verification:
+  - `node --import tsx --test tests/package_metadata.test.ts`
+  - `npm run docs:lint`

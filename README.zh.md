@@ -80,15 +80,24 @@ permissions:
   security-events: write
 steps:
   - uses: actions/checkout@v4
-  - run: npm install -g parallax
-  - run: parallax analyze --changed "src/api.ts" --sarif-output parallax.sarif --sarif-category parallax-pr --fail-on none
+    with:
+      fetch-depth: 0
+  - uses: YouSangSon/Parallax@main
+    with:
+      base: ${{ github.event.pull_request.base.sha }}
+      head: ${{ github.event.pull_request.head.sha }}
+      sarif-output: parallax.sarif
+      sarif-category: parallax-pr
+      fail-on: none
   - uses: github/codeql-action/upload-sarif@v3
     with:
       sarif_file: parallax.sarif
       category: parallax-pr
 ```
 
-SARIF 生成步骤应保持不失败，这样存在 findings 时 upload step 仍会运行。如需在高置信 impact 时让 CI 失败，请增加单独的 `parallax analyze ... --fail-on proven` gate step。
+该 action 会运行 `parallax init`、`parallax index` 和 `parallax pr triage`，写出 SARIF 文件，并把 triage 摘要追加到 GitHub step summary。SARIF upload 仍留在你的 workflow 中，从而让 `security-events: write` 权限保持显式。
+
+SARIF 生成步骤应保持不失败，这样存在 findings 时 upload step 仍会运行。如需在高置信 impact 时让 CI 失败，可将 action 的 `fail-on` 输入改为 `proven`，或增加单独的 `parallax analyze ... --fail-on proven` gate step。
 
 用本地 UI 直接打开最新报告：
 

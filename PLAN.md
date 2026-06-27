@@ -6,8 +6,10 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Active Loop
 
-- Next loop: continue D1 official PR wrapper work now that SARIF breadth is
-  complete.
+- Next loop: continue D6 pre-commit / pre-push impact-gate installer work.
+- Completed slice: D1 official PR action wrapper now runs init/index/pr triage,
+  supports changed-file or base/head diff discovery, writes SARIF, and appends a
+  GitHub step summary while leaving SARIF upload explicit.
 - Completed slice: D7 coverage gaps now emit as SARIF warnings anchored to
   changed files.
 - Completed slice: D7 cross-repo contract breaks now emit as SARIF warnings
@@ -25,5 +27,5 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Next
 
-1. Revisit D1 official PR wrapper now that the SARIF result contract is broader.
+1. Build D6 pre-commit / pre-push impact-gate installer.
 2. Keep D4 deep-linkable UI/export queued for human sharing.

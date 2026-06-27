@@ -80,15 +80,24 @@ permissions:
   security-events: write
 steps:
   - uses: actions/checkout@v4
-  - run: npm install -g parallax
-  - run: parallax analyze --changed "src/api.ts" --sarif-output parallax.sarif --sarif-category parallax-pr --fail-on none
+    with:
+      fetch-depth: 0
+  - uses: YouSangSon/Parallax@main
+    with:
+      base: ${{ github.event.pull_request.base.sha }}
+      head: ${{ github.event.pull_request.head.sha }}
+      sarif-output: parallax.sarif
+      sarif-category: parallax-pr
+      fail-on: none
   - uses: github/codeql-action/upload-sarif@v3
     with:
       sarif_file: parallax.sarif
       category: parallax-pr
 ```
 
-SARIF 생성은 실패하지 않게 두어야 finding이 있을 때도 upload step이 실행된다. 고신뢰 impact에서 CI를 실패시키고 싶다면 별도의 `parallax analyze ... --fail-on proven` gate step을 추가한다.
+이 action은 `parallax init`, `parallax index`, `parallax pr triage`를 실행하고 SARIF 파일을 쓴 뒤 triage 요약을 GitHub step summary에 추가한다. SARIF upload는 workflow에 남겨 `security-events: write` 권한을 명시적으로 유지한다.
+
+SARIF 생성은 실패하지 않게 두어야 finding이 있을 때도 upload step이 실행된다. 고신뢰 impact에서 CI를 실패시키고 싶다면 action의 `fail-on` 입력을 `proven`으로 바꾸거나 별도의 `parallax analyze ... --fail-on proven` gate step을 추가한다.
 
 로컬 UI로 최신 report를 바로 열 수 있다.
 

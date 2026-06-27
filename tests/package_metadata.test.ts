@@ -25,6 +25,10 @@ type GitHubActionsWorkflow = {
 };
 
 type CompositeAction = {
+  inputs?: Record<string, {
+    required?: boolean;
+    default?: string;
+  }>;
   runs?: {
     steps?: Array<{
       run?: string;
@@ -101,23 +105,39 @@ test('CI verify job delegates to the canonical release gate', async () => {
   );
 });
 
-test('SARIF composite action passes inputs through shell environment variables', async () => {
+test('SARIF composite action runs local PR triage through shell environment variables', async () => {
   const action = parseYaml(
     await readFile(new URL('../action.yml', import.meta.url), 'utf8')
   ) as CompositeAction;
   const step = action.runs?.steps?.[0];
 
+  assert.equal(action.inputs?.changed?.required, false);
+  assert.equal(action.inputs?.base?.required, false);
+  assert.equal(action.inputs?.head?.default, 'HEAD');
   assert.ok(step?.run);
   assert.equal(step.run.includes('${{'), false);
-  assert.match(step.run, /--changed "\$PARALLAX_CHANGED"/);
+  assert.match(step.run, /npx parallax init/);
+  assert.match(step.run, /npx parallax index/);
+  assert.match(step.run, /pr triage/);
   assert.match(step.run, /--sarif-output "\$PARALLAX_SARIF_OUTPUT"/);
   assert.match(step.run, /--sarif-category "\$PARALLAX_SARIF_CATEGORY"/);
   assert.match(step.run, /--fail-on "\$PARALLAX_FAIL_ON"/);
+  assert.match(step.run, /--query "\$PARALLAX_QUERY"/);
+  assert.match(step.run, /--changed "\$PARALLAX_CHANGED"/);
+  assert.match(step.run, /--base "\$PARALLAX_BASE"/);
+  assert.match(step.run, /--head "\$PARALLAX_HEAD"/);
+  assert.match(step.run, /tee "\$summary_file"/);
+  assert.match(step.run, /GITHUB_STEP_SUMMARY/);
+  assert.match(step.run, /exit "\$status"/);
   assert.deepEqual(step.env, {
     PARALLAX_CHANGED: '${{ inputs.changed }}',
+    PARALLAX_BASE: '${{ inputs.base }}',
+    PARALLAX_HEAD: '${{ inputs.head }}',
     PARALLAX_SARIF_OUTPUT: '${{ inputs.sarif-output }}',
     PARALLAX_SARIF_CATEGORY: '${{ inputs.sarif-category }}',
-    PARALLAX_FAIL_ON: '${{ inputs.fail-on }}'
+    PARALLAX_FAIL_ON: '${{ inputs.fail-on }}',
+    PARALLAX_QUERY: '${{ inputs.query }}',
+    PARALLAX_BUDGET: '${{ inputs.budget }}'
   });
 });
 

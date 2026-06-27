@@ -110,7 +110,7 @@ also remain thinly bench-covered.
 
 | # | Opportunity | Effort | Value |
 | :-- | :-- | :-- | :-- |
-| D1 | **Official GitHub Action + remaining impact-gate surfaces** — ✅ **confidence-aware `--fail-on` shipped** and ✅ **composite SARIF generator action shipped** (`action.yml` runs `parallax analyze --sarif-output ... --fail-on ...`; users still upload with `github/codeql-action/upload-sarif`). Still open: a fuller PR-diff action wrapper that runs init/index/diff discovery, decide whether `--min-affected=N` belongs in the same gate family, and thread the shipped gate into the remaining hook/CI guardrail surfaces. | M | HIGH |
+| D1 | ✅ **shipped** — Official GitHub Action + PR wrapper now runs `parallax init`, `parallax index`, and `parallax pr triage`; supports `changed` or `base`/`head` diff discovery; writes SARIF; appends a GitHub step summary; keeps SARIF upload explicit via `github/codeql-action/upload-sarif`; and honors confidence-aware `fail-on`. Remaining impact-gate surface work is now tracked by D6 / hook installation and the separate `--min-affected=N` decision. | M | HIGH |
 | D2 | **Bench coverage for co-change / traces / cross-repo / contract-diff** — W1-focused cross-repo coverage is ✅ **shipped**: `npm run bench` now includes a deterministic two-repo contract-impact lane that gates `summary.passed` when primary `analyzeDiff` or report graph export loses the expected consumer break. Still open: trend metrics for co-change, trace-ingest promotion, and broader paired v1/v2 contract-diff quality. | M | HIGH |
 | D3 | ✅ **shipped** (impact report) — `parallax analyze --json` output now has a published, versioned JSON Schema (`schemas/impact-report.schema.json`, draft 2020-12). The hand-written `ImpactReport` stays authoritative; a zod mirror (`src/report_schema.ts`) generates the artifact, with a compile-time conformance assertion + a `npm run lint` drift guard + a test that validates real `analyze --json` output against the schema. Still open: **bench-report schema** (deferred — `bench/` is outside `tsc` scope and `RetrievalBenchReport` isn't exported; it is an internal artifact, not an external contract). | S | MED-HIGH |
 | D4 | **UI export + deep-linkable state** — the workbench is a sharing dead-end: no JSON/CSV/PNG export, URL encodes only `?report&lang`. Add client-side export buttons and encode selected path / filter / preset into the URL. Surgical `ui/client.ts` additions. | S-M | MED-HIGH |
@@ -119,7 +119,7 @@ also remain thinly bench-covered.
 | D7 | ✅ **shipped** — SARIF / GitHub Code Scanning export now projects `ImpactReport` via `parallax analyze --sarif-output <path> [--sarif-category <category>]`, with affected-file findings, index coverage-gap warnings, cross-repo contract-break warnings, recommended verification-action notes, adapter `knownGaps`, evidence locations, relation paths, confidence rules, stable fingerprints, and docs for Code Scanning upload. | M | HIGH |
 | D8 | ✅ **shipped** — local dependency/PR dogfood lane exists as `parallax pr triage`. It accepts `--changed` or `--base/--head`, persists the impact report, writes SARIF (default `.parallax/pr-triage.sarif`), applies `--fail-on`, and prints a dependency-focused repo map without calling GitHub or changing remote state. The open Dependabot queue was refreshed on 2026-06-27 (#23-#31) as the first real dogfood target. | S | MED-HIGH |
 
-**Sequencing:** continue D1 fuller PR wrapper → D6 → D4. The `--fail-on` primitive, broad SARIF projection, repo-map, and local PR triage wrapper are landed; the next adoption step is the fuller PR wrapper around the now-broader GitHub-native result contract. D2 is independently high-value; D4 remains the UI sharing slice.
+**Sequencing:** continue D6 → D4 → M10. The `--fail-on` primitive, broad SARIF projection, repo-map, local PR triage wrapper, and official PR action wrapper are landed; the next adoption step is shifting the same impact gate left into local hooks. D2 is independently high-value; D4 remains the UI sharing slice.
 
 ---
 
@@ -171,7 +171,7 @@ The web/GitHub review changes the short-term adoption order without invalidating
 1. ✅ **M9 hardening / dogfood** — repo-map human and MCP output expose query matches, resource URIs, provenance, omissions, and verification actions clearly.
 2. ✅ **D8 dependency PR dogfood lane** — `parallax pr triage` now supports PR diff → `analyze` / SARIF → repo-map → verification planning for the live Dependabot queue (#23-#31).
 3. ✅ **D7 SARIF breadth** — Code Scanning projection now covers affected files, coverage gaps, contract breaks, verification actions, and adapter known gaps.
-4. **D1 official PR wrapper** — run init → index → PR diff discovery → analyze, upload SARIF, append Markdown summary, and support `--fail-on`.
+4. ✅ **D1 official PR wrapper** — run init → index → PR diff discovery → triage, write SARIF, append Markdown summary, and support `fail-on` while keeping upload explicit.
 5. **D4 deep-linkable UI/export** — let humans share the same selected impact path the agent saw.
 6. **M10 SCIP bridge** — ingest/export SCIP as a standards-based precision layer after the adoption lane is dogfooded.
 

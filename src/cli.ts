@@ -145,7 +145,23 @@ async function main(): Promise<void> {
       console.log(JSON.stringify(result, null, 2));
       return;
     }
-    throw new Error('scip requires import');
+    if (subcommand === 'export') {
+      const { exportScipJson } = await import('./index.js');
+      const file = parseOptionalArg(scipArgs, '--file');
+      const result = exportScipJson({ repoRoot });
+      const json = `${JSON.stringify(result.index, null, 2)}\n`;
+      if (file === undefined) {
+        console.log(json.trimEnd());
+      } else {
+        const target = resolve(file);
+        await mkdir(dirname(target), { recursive: true });
+        await writeFile(target, json, 'utf8');
+        const { index, ...summary } = result;
+        console.log(JSON.stringify({ ...summary, file }, null, 2));
+      }
+      return;
+    }
+    throw new Error('scip requires import or export');
   }
 
   if (command === 'workspace') {
@@ -942,6 +958,7 @@ Commands:
   ${PACKAGE_NAME} ui [--report <id>] [--port <n>]
   ${PACKAGE_NAME} import-session --file <path> --format codex|claude [--branch <name>]
   ${PACKAGE_NAME} scip import --file <index.scip|index.scip.json>
+  ${PACKAGE_NAME} scip export [--file <index.scip.json>]
   ${PACKAGE_NAME} workspace init [--name <name>] [--service <service>] [--force]
   ${PACKAGE_NAME} workspace add-repo <path> [--name <name>] [--service <service>] [--remote <url>]
   ${PACKAGE_NAME} workspace list [--name <name>] [--json]

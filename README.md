@@ -126,9 +126,12 @@ parallax scip import --file index.scip
 # Pre-rendered JSON from the official SCIP CLI is also accepted:
 scip print --json index.scip > index.scip.json
 parallax scip import --file index.scip.json
+
+# Export Parallax's latest completed index as SCIP-compatible JSON:
+parallax scip export --file index.scip.json
 ```
 
-The importer augments the latest completed Parallax index run with SCIP-derived definition/reference edges. Binary `index.scip` import uses the official `scip` CLI on `PATH`; JSON import does not require the CLI at import time. Parallax-to-SCIP export remains follow-up work.
+The importer augments the latest completed Parallax index run with SCIP-derived definition/reference edges. Binary `index.scip` import uses the official `scip` CLI on `PATH`; JSON import and JSON export do not require the CLI at runtime.
 
 For a worked tutorial that continues from the UI into MCP and CI guardrails, see [`docs/getting-started.md`](docs/getting-started.md).
 
@@ -159,7 +162,7 @@ For a worked tutorial that continues from the UI into MCP and CI guardrails, see
 | **Markdown / work artifacts** | Classifies policy, proposal, PRD, and decision docs as first-class artifacts and links them to code |
 | **Config / Infra** | Indexes system/config candidates: shell, YAML, JSON, TOML, Dockerfile, Makefile, Terraform, CODEOWNERS, etc. |
 | **Package manifests & locks** | Manifest graph for `package.json`, `pom.xml`, `build.gradle(.kts)`, `go.mod`, `Cargo.toml`, `pyproject.toml`, plus npm `package-lock.json` transitive dependencies |
-| **SCIP import** | `parallax scip import --file <index.scip or index.scip.json>` augments the latest index with SCIP definition/reference edges from external indexers |
+| **SCIP import/export** | `parallax scip import --file <index.scip or index.scip.json>` augments the latest index with SCIP definition/reference edges; `parallax scip export --file <index.scip.json>` emits SCIP-compatible JSON |
 
 ### 🌐 Workspace & contracts
 

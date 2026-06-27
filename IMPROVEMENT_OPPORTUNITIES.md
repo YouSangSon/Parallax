@@ -56,7 +56,7 @@ off MCP by I-8). Context-pack telemetry is recorded but nothing acts on it.
 | M7 | **Permissioned write surface for trace ingestion (I-8)** — Phase A: read-only `parallax_trace_preview` (dry-run match, returns promoted/unmatched, no write). Phase B: gated `parallax_ingest_traces` behind explicit opt-in. Closes the observe→prove loop while honoring read-only-first. | L | LOW-MED |
 | M8 | ✅ **shipped** — `parallax install-agent --copilot-package --target <repo>` now plans or installs `.github/copilot-instructions.md`, `.github/agents/parallax-impact.agent.md`, and an optional target-repo MCP config snippet. Dry-run reports planned relative paths/actions, existing files are skipped unless `--force` is explicit, and the command never calls GitHub. | S-M | HIGH |
 | M9 | ✅ **shipped** — token-budgeted repo map / context card now exists as `parallax repo-map --changed <files> [--query <text>] [--budget <tokens>] [--json]` and read-only MCP `parallax_repo_map`, ranking changed roots, affected files, tests/docs/config/work artifacts, evidence refs, verification actions, resources, confidence, provenance, `knownGaps`, and omitted counts. It reuses `buildContextPack`, `searchContext`, and `parallax://` resources; token use is documented as `Math.ceil(text.length / 4)`. | M | HIGH |
-| M10 | **SCIP import/export bridge** — import slices ✅ **shipped**: `parallax scip import --file <index.scip.json>` ingests JSON from the official SCIP CLI, and `parallax scip import --file <index.scip>` shells out to `scip print --json` for binary ingest before augmenting the latest completed Parallax index with SCIP definition/reference edges. Still open: Parallax-to-SCIP export. | M-L | MED-HIGH |
+| M10 | ✅ **shipped** — SCIP import/export bridge: `parallax scip import --file <index.scip.json>` ingests JSON from the official SCIP CLI, `parallax scip import --file <index.scip>` shells out to `scip print --json` for binary ingest, and `parallax scip export [--file <index.scip.json>]` emits SCIP-compatible JSON from the latest completed Parallax index. Binary `.scip` protobuf writing is intentionally deferred until JSON export is not enough. | M-L | MED-HIGH |
 
 **Sequencing remaining work:** M4 / M5 → M10 → M7-Phase-A → M7-Phase-B, with M8/M9 now available for dogfooding in PR/dependency workflows. The quick-win prompt/query/repo-map layer (M1/M2/M3/M6/M9) is now in place.
 
@@ -166,15 +166,16 @@ The web/GitHub review changes the short-term adoption order without invalidating
 - MDN URLSearchParams: <https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams>
 - MDN History.replaceState: <https://developer.mozilla.org/en-US/docs/Web/API/History/replaceState>
 - MDN Blob / object URLs: <https://developer.mozilla.org/en-US/docs/Web/API/Blob>
-- Parallax dependency PR queue, refreshed 2026-06-27: <https://github.com/YouSangSon/Parallax/pulls?q=is%3Apr+is%3Aopen+dependabot>
+- Parallax dependency PR queue, refreshed 2026-06-28: <https://github.com/YouSangSon/Parallax/pulls?q=is%3Apr+is%3Aopen+dependabot>
+- Parallax open issues, refreshed 2026-06-28: <https://github.com/YouSangSon/Parallax/issues?q=is%3Aissue+is%3Aopen>
 
 ### What the search implies
 
 1. **GitHub-native output is the strongest next adoption slice.** GitHub supports repository instructions for Copilot and SARIF upload for third-party tools, so Parallax should emit both an agent setup package and a code-scanning artifact. This is D7 → D1 → M8.
 2. **Repo-map output is now table stakes for agent UX.** Aider, Sourcegraph, Repomix, CodeGraphContext, code-review-graph, and agentmap all frame success as ranked, compact, tool-call-efficient code context. Parallax now has the named repo-map/context-card command and MCP surface from M9; the next work is dogfooding and tuning it against real PR workflows.
-3. **SCIP is the standards bridge for precision.** It is a practical path to cross-language definitions/references before Parallax owns parser-grade precision for every language. M10 now has JSON import plus CLI-backed binary ingest; export remains.
+3. **SCIP is the standards bridge for precision.** It is a practical path to cross-language definitions/references before Parallax owns parser-grade precision for every language. M10 now has JSON import, CLI-backed binary ingest, and JSON export.
 4. **Security and codemod systems should be integrations first.** Semgrep and OpenRewrite are mature in their own lanes. Parallax should recommend and scope scans/refactors based on affected files and evidence, not rebuild those engines.
-5. **Current repo state gives an immediate dogfood target.** As of 2026-06-27, open Dependabot PRs #23-#31 are still available: GitHub Actions major bumps (#23-#28), `@types/node` (#29), TypeScript 6 (#30), and Zod (#31). This makes dependency-impact triage a useful real workflow: analyze the bump, emit SARIF/Markdown, provide repo-map context, and show verification actions.
+5. **Current repo state gives an immediate dogfood target.** As of 2026-06-28, open Dependabot PRs #23-#31 are still available: GitHub Actions major bumps (#23-#28), `@types/node` (#29), TypeScript 6 (#30), and Zod (#31); issue #3 remains the only open non-Dependabot follow-up. This makes dependency-impact triage a useful real workflow: analyze the bump, emit SARIF/Markdown, provide repo-map context, and show verification actions.
 6. **Agentic workflow safety reinforces Parallax's I-8 boundary.** GitHub Agentic Workflows emphasizes read-only defaults, guarded writes, sandboxing, and approval gates. Parallax should keep PR/action automation read-only by default, with explicit opt-in for any write surface.
 7. **Hook adoption should stay dependency-free.** Git, pre-commit, Lefthook, and Husky all converge on explicit local installation and skippable hooks, but Parallax can satisfy D6 with Git's native hook directory and `core.hooksPath` instead of adding a framework dependency.
 
@@ -186,7 +187,7 @@ The web/GitHub review changes the short-term adoption order without invalidating
 4. ✅ **D1 official PR wrapper** — run init → index → PR diff discovery → triage, write SARIF, append Markdown summary, and support `fail-on` while keeping upload explicit.
 5. ✅ **D6 local Git hook installer** — shift the same impact gate left into opt-in `pre-commit` / `pre-push` without adding a hook framework dependency.
 6. ✅ **D4 deep-linkable UI/export** — humans can share the selected impact path/filter/preset and export the same workbench view as JSON/CSV/map image.
-7. **M10 SCIP bridge** — ✅ JSON import and CLI-backed binary ingest shipped; continue Parallax-to-SCIP export as the remaining standards-bridge work.
+7. ✅ **M10 SCIP bridge** — JSON import, CLI-backed binary ingest, and JSON export shipped; binary protobuf writing stays deferred until JSON is insufficient.
 
 ## Larger-bet reassessment (2026-06-21)
 

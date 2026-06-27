@@ -2,15 +2,18 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { entityKindForPath, languageIdForPath } from './entity_classification.js';
-import { contentHash, ensureRepo, latestCompletedIndexRun, openDatabase, type Db } from './store.js';
+import { contentHash, ensureRepo, getRepoId, latestCompletedIndexRun, openDatabase, type Db } from './store.js';
 import { normalizeRepoRoot, redactSecrets, resolveInsideRoot } from './security.js';
 import type { EntityKind } from './types.js';
 
 const SCIP_IMPORT_ADAPTER_ID = 'scip-import';
 const SCIP_IMPORT_ADAPTER_VERSION = '0.1.0';
+const SCIP_EXPORT_TOOL_VERSION = '0.1.0';
 const SCIP_DEFINITION_ROLE = 0x1;
+const SCIP_READ_ACCESS_ROLE = 0x8;
 
 type Statement = ReturnType<Db['prepare']>;
 
@@ -29,6 +32,59 @@ export type ScipImportResult = {
   relationsImported: number;
   skippedReferences: number;
   warnings: string[];
+};
+
+export type ScipExportOptions = {
+  repoRoot: string;
+};
+
+export type ScipExportResult = {
+  indexRunId: number;
+  documentsExported: number;
+  symbolsExported: number;
+  occurrencesExported: number;
+  index: ScipIndexJson;
+};
+
+type ScipIndexJson = {
+  metadata: {
+    version: 'UnspecifiedProtocolVersion';
+    toolInfo: {
+      name: 'parallax';
+      version: string;
+      arguments: string[];
+    };
+    projectRoot: string;
+    textDocumentEncoding: 'UTF8';
+  };
+  documents: ScipExportDocument[];
+};
+
+type ScipExportDocument = {
+  relativePath: string;
+  language: string;
+  positionEncoding: 'UTF8CodeUnitOffsetFromLineStart';
+  symbols: ScipExportSymbol[];
+  occurrences: ScipExportOccurrence[];
+};
+
+type ScipExportSymbol = {
+  symbol: string;
+  displayName: string;
+  kind?: string;
+};
+
+type ScipExportOccurrence = {
+  symbol: string;
+  symbolRoles: number;
+  range?: [number, number, number] | [number, number, number, number];
+};
+
+type ExportDocumentBucket = {
+  path: string;
+  language: string;
+  symbols: Map<string, ScipExportSymbol>;
+  occurrences: ScipExportOccurrence[];
 };
 
 type ScipDocument = {
@@ -148,6 +204,52 @@ export function importScipJson(options: ScipImportOptions): ScipImportResult {
   }
 }
 
+export function exportScipJson(options: ScipExportOptions): ScipExportResult {
+  const repoRoot = normalizeRepoRoot(options.repoRoot);
+  const db = openDatabase(repoRoot, { readOnly: true });
+  try {
+    const repoId = getRepoId(db, repoRoot);
+    const indexRunId = latestCompletedIndexRun(db, repoId);
+    const documents = loadScipExportDocuments(db, repoId, indexRunId);
+    addExportedSymbols(db, repoId, indexRunId, documents);
+    addExportedRelationOccurrences(db, repoId, indexRunId, documents);
+
+    const exportedDocuments = [...documents.values()]
+      .sort((left, right) => left.path.localeCompare(right.path))
+      .map((document) => ({
+        relativePath: document.path,
+        language: document.language,
+        positionEncoding: 'UTF8CodeUnitOffsetFromLineStart' as const,
+        symbols: [...document.symbols.values()].sort((left, right) => left.symbol.localeCompare(right.symbol)),
+        occurrences: document.occurrences.sort((left, right) =>
+          left.symbol.localeCompare(right.symbol) || JSON.stringify(left.range ?? []).localeCompare(JSON.stringify(right.range ?? []))
+        )
+      }));
+
+    return {
+      indexRunId,
+      documentsExported: exportedDocuments.length,
+      symbolsExported: exportedDocuments.reduce((sum, document) => sum + document.symbols.length, 0),
+      occurrencesExported: exportedDocuments.reduce((sum, document) => sum + document.occurrences.length, 0),
+      index: {
+        metadata: {
+          version: 'UnspecifiedProtocolVersion',
+          toolInfo: {
+            name: 'parallax',
+            version: SCIP_EXPORT_TOOL_VERSION,
+            arguments: ['parallax', 'scip', 'export']
+          },
+          projectRoot: pathToFileURL(repoRoot.endsWith(path.sep) ? repoRoot : `${repoRoot}${path.sep}`).href,
+          textDocumentEncoding: 'UTF8'
+        },
+        documents: exportedDocuments
+      }
+    };
+  } finally {
+    db.close();
+  }
+}
+
 function parseScipInputFile(inputPath: string): Record<string, unknown> {
   const rawInput = readFileSync(inputPath, 'utf8');
   const parsedInput = parseScipJsonText(rawInput);
@@ -194,6 +296,215 @@ function printScipBinaryAsJson(inputPath: string, parseError: string): string {
         `Install the official scip CLI, or run 'scip print --json ${inputPath} > index.scip.json' and import that JSON file.`
     );
   }
+}
+
+function loadScipExportDocuments(db: Db, repoId: number, indexRunId: number): Map<string, ExportDocumentBucket> {
+  const rows = db.prepare(`
+    SELECT path, language
+    FROM files
+    WHERE repo_id = ? AND index_run_id = ?
+    ORDER BY path
+  `).all(repoId, indexRunId) as Array<{ path: string; language: string }>;
+  const documents = new Map<string, ExportDocumentBucket>();
+  for (const row of rows) {
+    const relativePath = normalizeScipRelativePath(row.path);
+    const language = firstNonEmpty(row.language, languageIdForPath(relativePath), 'unknown');
+    const symbols = new Map<string, ScipExportSymbol>();
+    const fileSymbol = scipFileSymbol(relativePath);
+    symbols.set(fileSymbol, {
+      symbol: fileSymbol,
+      displayName: relativePath,
+      kind: 'File'
+    });
+    documents.set(relativePath, {
+      path: relativePath,
+      language,
+      symbols,
+      occurrences: []
+    });
+  }
+  return documents;
+}
+
+function addExportedSymbols(
+  db: Db,
+  repoId: number,
+  indexRunId: number,
+  documents: Map<string, ExportDocumentBucket>
+): void {
+  const rows = db.prepare(`
+    SELECT files.path, symbols.name, symbols.kind
+    FROM symbols
+    INNER JOIN files ON files.id = symbols.file_id
+    WHERE files.repo_id = ?
+      AND symbols.index_run_id = ?
+    ORDER BY files.path, symbols.name, symbols.kind
+  `).all(repoId, indexRunId) as Array<{ path: string; name: string; kind: string }>;
+  for (const row of rows) {
+    const document = documents.get(row.path);
+    if (!document) continue;
+    addScipExportSymbol(document, scipCodeSymbol(row.path, row.name, row.kind), row.name, row.kind);
+  }
+}
+
+function addExportedRelationOccurrences(
+  db: Db,
+  repoId: number,
+  indexRunId: number,
+  documents: Map<string, ExportDocumentBucket>
+): void {
+  const rows = db.prepare(`
+    SELECT
+      target.path AS target_path,
+      target.id AS target_id,
+      target.kind AS target_kind,
+      target.symbol AS target_symbol,
+      target.display_name AS target_display_name,
+      evidence.file_path,
+      evidence.start_line,
+      evidence.end_line,
+      evidence.start_col,
+      evidence.end_col
+    FROM relations relation
+    INNER JOIN entities target ON target.id = relation.target_entity_id
+    LEFT JOIN relation_evidence evidence ON evidence.relation_id = relation.id
+    WHERE relation.repo_id = ?
+      AND relation.index_run_id = ?
+      AND relation.kind IN ('DEPENDS_ON', 'CALLS', 'REFERENCES', 'IMPLEMENTS')
+      AND target.path IS NOT NULL
+    ORDER BY evidence.file_path, relation.id, evidence.id
+  `).all(repoId, indexRunId) as Array<{
+    target_path: string;
+    target_id: string;
+    target_kind: string;
+    target_symbol: string | null;
+    target_display_name: string;
+    file_path: string | null;
+    start_line: number | null;
+    end_line: number | null;
+    start_col: number | null;
+    end_col: number | null;
+  }>;
+
+  for (const row of rows) {
+    if (!row.file_path) continue;
+    const sourceDocument = documents.get(row.file_path);
+    const targetDocument = documents.get(row.target_path);
+    if (!sourceDocument || !targetDocument) continue;
+    const targetSymbol = scipSymbolForRelationTarget(row);
+    addScipExportSymbol(
+      targetDocument,
+      targetSymbol,
+      firstNonEmpty(row.target_symbol ?? undefined, row.target_display_name, row.target_path),
+      row.target_kind
+    );
+    sourceDocument.occurrences.push({
+      symbol: targetSymbol,
+      symbolRoles: SCIP_READ_ACCESS_ROLE,
+      ...scipRangeFromEvidence(row)
+    });
+  }
+}
+
+function addScipExportSymbol(
+  document: ExportDocumentBucket,
+  symbol: string,
+  displayName: string,
+  kind: string
+): void {
+  if (document.symbols.has(symbol)) return;
+  const scipKind = scipKindFor(kind);
+  document.symbols.set(symbol, {
+    symbol,
+    displayName,
+    ...(scipKind ? { kind: scipKind } : {})
+  });
+}
+
+function scipSymbolForRelationTarget(row: {
+  target_path: string;
+  target_id: string;
+  target_kind: string;
+  target_symbol: string | null;
+  target_display_name: string;
+}): string {
+  if (row.target_kind === 'symbol') {
+    return scipCodeSymbol(
+      row.target_path,
+      firstNonEmpty(row.target_symbol ?? undefined, row.target_display_name),
+      firstNonEmpty(symbolKindFromEntityId(row.target_id), row.target_kind)
+    );
+  }
+  return scipFileSymbol(row.target_path);
+}
+
+function scipRangeFromEvidence(row: {
+  start_line: number | null;
+  end_line: number | null;
+  start_col: number | null;
+  end_col: number | null;
+}): { range?: [number, number, number] | [number, number, number, number] } {
+  if (
+    row.start_line === null ||
+    row.start_col === null ||
+    row.end_col === null
+  ) {
+    return {};
+  }
+  const startLine = Math.max(0, row.start_line - 1);
+  const startCol = Math.max(0, row.start_col - 1);
+  const endCol = Math.max(startCol, row.end_col - 1);
+  if (row.end_line === null || row.end_line === row.start_line) {
+    return { range: [startLine, startCol, endCol] };
+  }
+  return {
+    range: [
+      startLine,
+      startCol,
+      Math.max(startLine, row.end_line - 1),
+      endCol
+    ]
+  };
+}
+
+function scipFileSymbol(relativePath: string): string {
+  return `parallax npm . . ${scipIdentifier(relativePath)}/`;
+}
+
+function scipCodeSymbol(relativePath: string, name: string, kind: string): string {
+  const suffix = scipDescriptorSuffix(kind);
+  return `${scipFileSymbol(relativePath)}${scipIdentifier(name)}${suffix}`;
+}
+
+function scipDescriptorSuffix(kind: string): string {
+  const normalized = kind.toLowerCase();
+  if (normalized.includes('class') || normalized.includes('interface') || normalized.includes('type')) return '#';
+  if (normalized.includes('method') || normalized.includes('function') || normalized.includes('constructor')) return '().';
+  return '.';
+}
+
+function symbolKindFromEntityId(entityId: string): string | undefined {
+  return /^symbol:[^:]*:.*#([^:]+):/.exec(entityId)?.[1];
+}
+
+function scipIdentifier(value: string): string {
+  return /^[A-Za-z0-9_$+-]+$/.test(value) ? value : `\`${value.replace(/`/g, '``')}\``;
+}
+
+function scipKindFor(kind: string): string | undefined {
+  const normalized = kind.toLowerCase();
+  if (normalized.includes('file')) return 'File';
+  if (normalized.includes('class')) return 'Class';
+  if (normalized.includes('interface')) return 'Interface';
+  if (normalized.includes('method')) return 'Method';
+  if (normalized.includes('function')) return 'Function';
+  if (normalized.includes('constructor')) return 'Constructor';
+  if (normalized.includes('property')) return 'Property';
+  if (normalized.includes('constant')) return 'Constant';
+  if (normalized.includes('variable')) return 'Variable';
+  if (normalized.includes('module')) return 'Module';
+  if (normalized.includes('type')) return 'Type';
+  return undefined;
 }
 
 function loadScipDocuments(

@@ -1,12 +1,12 @@
 import { spawnSync } from 'node:child_process';
-import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { analyzeDiff, importScipJson, indexProject, initProject } from '../src/index.js';
+import { analyzeDiff, exportScipJson, importScipJson, indexProject, initProject } from '../src/index.js';
 import { openDatabase } from '../src/store.js';
 
 const require = createRequire(import.meta.url);
@@ -50,6 +50,24 @@ async function makeScipRepo(): Promise<{ repoRoot: string; scipJsonPath: string 
   await initProject({ repoRoot });
   await indexProject({ repoRoot });
   return { repoRoot, scipJsonPath };
+}
+
+async function makeScipExportRepo(): Promise<{ repoRoot: string }> {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-scip-export-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(
+    path.join(repoRoot, 'src/api.ts'),
+    'export interface Greeter { greet(): string }\nexport function greet() { return "hi"; }\n',
+    'utf8'
+  );
+  await writeFile(
+    path.join(repoRoot, 'src/app.ts'),
+    'import { Greeter, greet } from "./api";\nexport class App implements Greeter { greet() { return greet(); } }\n',
+    'utf8'
+  );
+  await initProject({ repoRoot });
+  await indexProject({ repoRoot });
+  return { repoRoot };
 }
 
 test('SCIP JSON import promotes reference edges into impact analysis', async () => {
@@ -174,6 +192,51 @@ test('CLI scip import prints the import summary as JSON', async () => {
     const json = JSON.parse(result.stdout) as { documentsImported: number; relationsImported: number };
     assert.equal(json.documentsImported, 2);
     assert.equal(json.relationsImported, 1);
+  } finally {
+    await rm(repoRoot, { recursive: true, force: true });
+  }
+});
+
+test('SCIP JSON export emits latest index documents, symbols, and reference occurrences', async () => {
+  const { repoRoot } = await makeScipExportRepo();
+  try {
+    const result = exportScipJson({ repoRoot });
+    assert.equal(result.documentsExported, 2);
+    assert.ok(result.symbolsExported >= 2);
+    assert.ok(result.occurrencesExported >= 1);
+    assert.equal(result.index.metadata.toolInfo.name, 'parallax');
+
+    const api = result.index.documents.find((document) => document.relativePath === 'src/api.ts');
+    const app = result.index.documents.find((document) => document.relativePath === 'src/app.ts');
+    assert.ok(api);
+    assert.ok(app);
+    const apiSymbols = new Set(api.symbols.map((symbol) => symbol.symbol));
+    const greeter = api.symbols.find((symbol) => symbol.displayName === 'Greeter');
+    assert.ok(greeter);
+    assert.ok(greeter.symbol.endsWith('#'), `expected interface symbol suffix, got ${greeter.symbol}`);
+    assert.ok(app.occurrences.some((occurrence) => occurrence.symbol === greeter.symbol));
+    assert.ok(app.occurrences.some((occurrence) => apiSymbols.has(occurrence.symbol)));
+  } finally {
+    await rm(repoRoot, { recursive: true, force: true });
+  }
+});
+
+test('CLI scip export writes SCIP JSON and prints a summary', async () => {
+  const { repoRoot } = await makeScipExportRepo();
+  try {
+    const output = path.join(repoRoot, 'index.scip.json');
+    const result = spawnSync(
+      process.execPath,
+      ['--import', tsxLoaderPath, path.resolve('src/cli.ts'), 'scip', 'export', '--file', output],
+      { cwd: repoRoot, encoding: 'utf8' }
+    );
+    assert.equal(result.status, 0, result.stderr);
+    const summary = JSON.parse(result.stdout) as { documentsExported: number; file: string };
+    assert.equal(summary.documentsExported, 2);
+    assert.equal(summary.file, output);
+    const exported = JSON.parse(await readFile(output, 'utf8')) as ReturnType<typeof exportScipJson>['index'];
+    assert.equal(exported.metadata.toolInfo.name, 'parallax');
+    assert.equal(exported.documents.length, 2);
   } finally {
     await rm(repoRoot, { recursive: true, force: true });
   }

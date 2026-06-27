@@ -13,10 +13,11 @@
 | `parallax init` | repo의 로컬 `.parallax/` 저장소와 새 데이터베이스를 생성 |
 | `parallax index [--max-file-bytes <n>]` | repo를 스캔해 entity/relation graph를 추출; `--max-file-bytes`는 파일당 스캔 크기를 제한 |
 | `parallax scip import --file <index.scip or index.scip.json>` | SCIP binary index 또는 공식 SCIP CLI가 출력한 JSON을 가져와 최신 완료 index에 SCIP reference edge를 보강 |
+| `parallax scip export [--file <index.scip.json>]` | 최신 완료 Parallax index를 SCIP 호환 JSON으로 stdout 또는 파일에 내보냄 |
 | `parallax reindex-vec [--model <hf-model>]` | sqlite-vec ANN 인덱스를 재구축; `--model`은 embedding 모델을 선택 |
 | `parallax reembed [--model <hf-model>] [--all]` | fact embedding을 재계산; `--all`은 모든 fact를 재임베딩, 아니면 누락분만 |
 
-`scip import`는 완료된 Parallax index가 이미 있어야 한다. `parallax scip import --file index.scip`은 `PATH`의 공식 `scip` CLI를 통해 binary SCIP index를 가져오고, `scip print --json index.scip > index.scip.json`으로 미리 만든 JSON은 `parallax scip import --file index.scip.json`으로 가져온다. importer는 최신 완료 index run에 SCIP 기반 definition/reference edge를 추가한다. Parallax-to-SCIP export는 아직 후속 작업이다.
+`scip import`는 완료된 Parallax index가 이미 있어야 한다. `parallax scip import --file index.scip`은 `PATH`의 공식 `scip` CLI를 통해 binary SCIP index를 가져오고, `scip print --json index.scip > index.scip.json`으로 미리 만든 JSON은 `parallax scip import --file index.scip.json`으로 가져온다. `scip export`는 최신 완료 index에서 SCIP 호환 JSON을 만든다. binary `.scip` protobuf 작성은 실제 수요가 생길 때까지 의도적으로 제외한다.
 
 ## Analysis
 

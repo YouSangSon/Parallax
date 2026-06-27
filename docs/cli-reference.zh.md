@@ -13,10 +13,11 @@
 | `parallax init` | 为 repo 创建本地 `.parallax/` 存储与全新数据库 |
 | `parallax index [--max-file-bytes <n>]` | 扫描 repo 并提取 entity/relation graph；`--max-file-bytes` 限制每文件扫描大小 |
 | `parallax scip import --file <index.scip or index.scip.json>` | 导入 SCIP binary index 或官方 SCIP CLI 输出的 JSON，并用 SCIP reference edge 增强最新完成的 index |
+| `parallax scip export [--file <index.scip.json>]` | 将最新完成的 Parallax index 导出为 SCIP 兼容 JSON，可输出到 stdout 或文件 |
 | `parallax reindex-vec [--model <hf-model>]` | 重建 sqlite-vec ANN 索引；`--model` 选择 embedding 模型 |
 | `parallax reembed [--model <hf-model>] [--all]` | 重新计算 fact embedding；`--all` 重嵌入所有 fact，否则仅缺失部分 |
 
-`scip import` 需要已有完成的 Parallax index。`parallax scip import --file index.scip` 会通过 `PATH` 中的官方 `scip` CLI 导入 binary SCIP index；也可以先运行 `scip print --json index.scip > index.scip.json`，再用 `parallax scip import --file index.scip.json` 导入预生成 JSON。importer 会用 SCIP 的 definition/reference edge 增强最新完成的 index run；Parallax-to-SCIP export 仍是后续工作。
+`scip import` 需要已有完成的 Parallax index。`parallax scip import --file index.scip` 会通过 `PATH` 中的官方 `scip` CLI 导入 binary SCIP index；也可以先运行 `scip print --json index.scip > index.scip.json`，再用 `parallax scip import --file index.scip.json` 导入预生成 JSON。`scip export` 会从最新完成的 index 生成 SCIP 兼容 JSON。binary `.scip` protobuf 写出会等到用户确实需要时再做。
 
 ## Analysis
 

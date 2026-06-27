@@ -6,7 +6,10 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Active Loop
 
-- Next loop: continue M10 SCIP bridge follow-up for Parallax-to-SCIP export.
+- Next loop: continue S1/S4 scale and perf follow-through.
+- Completed slice: M10 SCIP export now adds `parallax scip export
+  [--file <index.scip.json>]`, emitting SCIP-compatible JSON from the latest
+  completed Parallax index without adding a protobuf writer dependency.
 - Completed slice: M10 SCIP import now accepts JSON from the official SCIP CLI
   and binary `index.scip` files via `scip print --json`, augmenting the latest
   completed index with SCIP-derived definition/reference edges from external
@@ -37,5 +40,5 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Next
 
-1. Continue M10 SCIP bridge with Parallax-to-SCIP export.
-2. Keep S1/S4 scale and perf follow-through queued after the standards bridge.
+1. Continue S1/S4 scale and perf follow-through.
+2. Keep binary `.scip` protobuf writing out of scope until JSON export is not enough.

@@ -138,6 +138,15 @@
   - `npm run build`
   - `git diff --check`
   - `npm test`
+
+## 2026-06-28
+
+- Refreshed web/GitHub signals while closing M10.
+  - SCIP remains the right standards bridge for code-intelligence
+    import/export.
+  - The live GitHub queue is still Dependabot PRs #23-#31 plus issue #3, so
+    continued dogfooding can use existing read-only PR triage without adding a
+    write-capable GitHub surface.
 - Shipped M10 SCIP JSON import first slice.
   - `src/scip.ts` imports JSON produced by the official SCIP CLI and augments
     the latest completed Parallax index run instead of creating a SCIP-only run.
@@ -166,6 +175,23 @@
   - `tests/scip.test.ts` adds a fake official CLI printer to cover binary
     ingest deterministically.
 - M10 SCIP binary ingest verification:
+  - `npm run check`
+  - `node --import tsx --test tests/scip.test.ts`
+  - `npm run docs:lint`
+  - `npm run build`
+  - `git diff --check`
+  - `npm test`
+- Shipped M10 SCIP JSON export.
+  - `src/scip.ts` now exports the latest completed Parallax index as
+    SCIP-compatible JSON with metadata, documents, symbols, and relation-backed
+    reference occurrences.
+  - `src/cli.ts` adds `parallax scip export [--file <index.scip.json>]`; stdout
+    emits the JSON payload, while `--file` writes the payload and prints a small
+    summary.
+  - No protobuf writer dependency was added; binary `.scip` output stays
+    deferred until JSON export is not enough.
+  - `tests/scip.test.ts` covers API export and CLI file export.
+- M10 SCIP JSON export verification:
   - `npm run check`
   - `node --import tsx --test tests/scip.test.ts`
   - `npm run docs:lint`

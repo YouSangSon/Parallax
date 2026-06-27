@@ -185,4 +185,24 @@ Why:
   rows from `analyze`.
 - File-level `REFERENCES` edges let existing reverse impact traversal surface
   files that reference a changed definition file immediately.
-- Parallax-to-SCIP export remains scoped as follow-up M10 work.
+- Parallax-to-SCIP JSON export remains scoped as follow-up M10 work; binary
+  protobuf writing is a separate later decision.
+
+## 2026-06-28: SCIP JSON Export Before Binary Writer
+
+Decision: complete the M10 bridge with `parallax scip export
+[--file <index.scip.json>]`, emitting SCIP-compatible JSON from the latest
+completed Parallax index. Do not add protobuf codegen or a binary `.scip`
+writer yet.
+
+Sources:
+- SCIP protobuf schema: <https://github.com/scip-code/scip/blob/main/scip.proto>
+- SCIP CLI JSON printer: <https://github.com/scip-code/scip/blob/main/docs/CLI.md>
+
+Why:
+- The import path already treats official SCIP JSON as the stable interchange
+  surface, so exporting that shape closes the bridge without a new dependency.
+- Parallax stores file/symbol rows plus relation evidence spans; those map
+  directly to SCIP `Document`, `SymbolInformation`, and `Occurrence` JSON.
+- Binary `.scip` writing requires owning protobuf serialization and should wait
+  until JSON export is measurably insufficient.

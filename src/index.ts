@@ -139,8 +139,8 @@ export type {
 } from './reflection.js';
 export { impactReportToSarif } from './sarif.js';
 export type { SarifLog, SarifOptions } from './sarif.js';
-export { importScipJson } from './scip.js';
-export type { ScipImportOptions, ScipImportResult } from './scip.js';
+export { exportScipJson, importScipJson } from './scip.js';
+export type { ScipExportOptions, ScipExportResult, ScipImportOptions, ScipImportResult } from './scip.js';
 export { abandonBranch, gcBranches, restoreBranch } from './branch_gc.js';
 export { profileEntity } from './profile.js';
 export type { ProfileOptions, ProfileResult } from './profile.js';

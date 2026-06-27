@@ -117,3 +117,27 @@ test('impactReportToSarif does not emit human-readable relation steps as artifac
     false
   );
 });
+
+test('impactReportToSarif omits non-repo-relative affected files from uploadable results', () => {
+  const report = reportFixture();
+  report.affectedFiles.push({
+    path: 'web:src/client.ts',
+    reason: 'cross-repo client consumes changed API',
+    confidence: 'inferred',
+    relationPath: ['src/api.ts', 'web:src/client.ts']
+  });
+
+  const sarif = impactReportToSarif(report);
+  const resultUris = sarif.runs[0]!.results.map((result) =>
+    result.locations[0]!.physicalLocation.artifactLocation.uri
+  );
+
+  assert.deepEqual(resultUris, ['src/client.ts']);
+  assert.equal(resultUris.includes('web:src/client.ts'), false);
+  assert.equal(sarif.runs[0]!.properties?.omittedAffectedFileCount, 1);
+  assert.deepEqual(sarif.runs[0]!.properties?.omittedAffectedFiles, [{
+    path: 'web:src/client.ts',
+    confidence: 'inferred',
+    reason: 'cross-repo client consumes changed API'
+  }]);
+});

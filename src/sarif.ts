@@ -116,8 +116,18 @@ export function impactReportToSarif(report: ImpactReport, options: SarifOptions 
   const informationUri = options.informationUri ?? packageMetadata.homepage;
   const rules = confidences.map((confidence) => ruleForConfidence(confidence));
   const ruleIndex = new Map(rules.map((rule, index) => [rule.id, index]));
-  const evidenceByAffectedFile = groupEvidenceByAffectedFile(report.evidence, report.affectedFiles);
-  const results = report.affectedFiles.map((affectedFile) => {
+  const uploadableAffectedFiles = report.affectedFiles.filter((affectedFile) =>
+    isRepoRelativeFilePath(affectedFile.path)
+  );
+  const omittedAffectedFiles = report.affectedFiles
+    .filter((affectedFile) => !isRepoRelativeFilePath(affectedFile.path))
+    .map((affectedFile) => ({
+      path: affectedFile.path,
+      confidence: affectedFile.confidence,
+      reason: affectedFile.reason
+    }));
+  const evidenceByAffectedFile = groupEvidenceByAffectedFile(report.evidence, uploadableAffectedFiles);
+  const results = uploadableAffectedFiles.map((affectedFile) => {
     const evidence = evidenceByAffectedFile.get(affectedFile.path) ?? [];
     const ruleId = `parallax.impact.${affectedFile.confidence}`;
     const location = locationForAffectedFile(affectedFile, evidence, options.checkoutRoot);
@@ -167,14 +177,18 @@ export function impactReportToSarif(report: ImpactReport, options: SarifOptions 
       properties: {
         reportId: report.id,
         changedFiles: report.changedFiles,
-        warnings: report.warnings ?? []
+        warnings: report.warnings ?? [],
+        omittedAffectedFileCount: omittedAffectedFiles.length,
+        omittedAffectedFiles
       }
     }],
     ...(options.category ? { automationDetails: { id: options.category } } : {}),
     ...(options.checkoutRoot ? { originalUriBaseIds: { SRCROOT: { uri: pathToFileUri(options.checkoutRoot) } } } : {}),
     properties: {
       changedFiles: report.changedFiles,
-      warnings: report.warnings ?? []
+      warnings: report.warnings ?? [],
+      omittedAffectedFileCount: omittedAffectedFiles.length,
+      omittedAffectedFiles
     }
   };
 

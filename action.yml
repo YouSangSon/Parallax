@@ -20,4 +20,9 @@ runs:
   using: composite
   steps:
     - shell: bash
-      run: npx parallax analyze --changed "${{ inputs.changed }}" --sarif-output "${{ inputs.sarif-output }}" --sarif-category "${{ inputs.sarif-category }}" --fail-on "${{ inputs.fail-on }}"
+      env:
+        PARALLAX_CHANGED: ${{ inputs.changed }}
+        PARALLAX_SARIF_OUTPUT: ${{ inputs.sarif-output }}
+        PARALLAX_SARIF_CATEGORY: ${{ inputs.sarif-category }}
+        PARALLAX_FAIL_ON: ${{ inputs.fail-on }}
+      run: npx parallax analyze --changed "$PARALLAX_CHANGED" --sarif-output "$PARALLAX_SARIF_OUTPUT" --sarif-category "$PARALLAX_SARIF_CATEGORY" --fail-on "$PARALLAX_FAIL_ON"

@@ -95,6 +95,58 @@ test('impactReportToSarif emits recommended verification actions as note results
   assert.equal(sarif.runs[0]?.properties?.omittedVerificationActionCount, 0);
 });
 
+test('impactReportToSarif emits adapter known gaps as note results on changed files', () => {
+  const report = reportFixture();
+  report.changedFiles = ['src/api.ts', 'docs/api-contract.md'];
+  report.adapterInsights = [{
+    id: 'typescript-adapter',
+    version: '1.2.3',
+    languageIds: ['typescript'],
+    status: 'completed',
+    confidence: 'heuristic',
+    knownGaps: ['dynamic dispatch can miss indirect callers']
+  }];
+
+  const sarif = impactReportToSarif(report);
+
+  const result = sarif.runs[0]?.results.find((item) => item.ruleId === 'parallax.adapter-known-gap');
+  assert.equal(result?.level, 'note');
+  assert.equal(
+    result?.message.text,
+    'Adapter known gap: typescript-adapter: dynamic dispatch can miss indirect callers'
+  );
+  assert.equal(result?.locations[0]?.physicalLocation.artifactLocation.uri, 'src/api.ts');
+  assert.equal(result?.relatedLocations?.[0]?.physicalLocation.artifactLocation.uri, 'docs/api-contract.md');
+  assert.equal(result?.properties?.adapterId, 'typescript-adapter');
+  assert.equal(result?.properties?.knownGap, 'dynamic dispatch can miss indirect callers');
+  assert.ok(result?.partialFingerprints?.parallaxImpact);
+  assert.equal(sarif.runs[0]?.properties?.adapterKnownGapCount, 1);
+  assert.equal(sarif.runs[0]?.properties?.omittedAdapterKnownGapCount, 0);
+});
+
+test('impactReportToSarif omits adapter known-gap results without an uploadable changed file anchor', () => {
+  const report = reportFixture();
+  report.changedFiles = ['workspace:src/api.ts'];
+  report.affectedFiles = [];
+  report.affected = [];
+  report.actions = [];
+  report.testCommands = [];
+  report.adapterInsights = [{
+    id: 'typescript-adapter',
+    version: '1.2.3',
+    languageIds: ['typescript'],
+    status: 'completed',
+    confidence: 'heuristic',
+    knownGaps: ['dynamic dispatch can miss indirect callers']
+  }];
+
+  const sarif = impactReportToSarif(report);
+
+  assert.equal(sarif.runs[0]?.results.length, 0);
+  assert.equal(sarif.runs[0]?.properties?.adapterKnownGapCount, 0);
+  assert.equal(sarif.runs[0]?.properties?.omittedAdapterKnownGapCount, 1);
+});
+
 test('impactReportToSarif emits empty runs for no-impact reports', () => {
   const report = reportFixture();
   report.affectedFiles = [];

@@ -36,6 +36,7 @@
   - `npm run build`
   - `git diff --check`
   - `npm test`
+  - `npm test`
 - Review:
   - spec reviewer approved the D8 diff.
   - code quality reviewer found depth/fanout and docs-boundary issues; both
@@ -47,8 +48,17 @@
   - `tests/sarif.test.ts` covers the verification-action SARIF result.
   - `docs/cli-reference*.md`, `docs/report-schema*.md`,
     `docs/roadmap*.md`, and `IMPROVEMENT_OPPORTUNITIES.md` document that
-    verification actions are covered while contract breaks, adapter known gaps,
-    and coverage gaps remain open.
+    verification actions are covered; remaining SARIF breadth continues below.
+- Shipped second D7 SARIF breadth slice.
+  - `src/sarif.ts` now projects `ImpactReport.adapterInsights[].knownGaps` as
+    `parallax.adapter-known-gap` note results anchored to changed files, with
+    stable fingerprints and emitted/omitted counts.
+  - `tests/sarif.test.ts` covers emitted adapter known-gap notes and omitted
+    notes when no uploadable changed-file anchor exists.
+  - `docs/cli-reference*.md`, `docs/report-schema*.md`,
+    `docs/roadmap*.md`, and `IMPROVEMENT_OPPORTUNITIES.md` document that
+    adapter known gaps are covered while contract breaks and coverage gaps
+    remain open.
 - D7 verification:
   - `node --import tsx --test tests/sarif.test.ts`
   - `npm run check`

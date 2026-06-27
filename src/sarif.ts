@@ -110,13 +110,29 @@ const packageMetadata = loadPackageMetadata();
 
 const confidences: Confidence[] = ['proven', 'inferred', 'heuristic', 'unknown'];
 const verificationRuleId = 'parallax.verification';
+const adapterKnownGapRuleId = 'parallax.adapter-known-gap';
 const maxSnippetLength = 400;
+
+type AdapterKnownGapEntry = {
+  adapterId: string;
+  adapterVersion: string;
+  languageIds: string[];
+  status: string;
+  confidence: Confidence;
+  gap: string;
+  gapIndex: number;
+};
 
 export function impactReportToSarif(report: ImpactReport, options: SarifOptions = {}): SarifLog {
   const toolVersion = options.toolVersion ?? packageMetadata.version;
   const informationUri = options.informationUri ?? packageMetadata.homepage;
-  const rules = [...confidences.map((confidence) => ruleForConfidence(confidence)), verificationActionRule()];
+  const rules = [
+    ...confidences.map((confidence) => ruleForConfidence(confidence)),
+    verificationActionRule(),
+    adapterKnownGapRule()
+  ];
   const ruleIndex = new Map(rules.map((rule, index) => [rule.id, index]));
+  const uploadableChangedFiles = report.changedFiles.filter(isRepoRelativeFilePath);
   const uploadableAffectedFiles = report.affectedFiles.filter((affectedFile) =>
     isRepoRelativeFilePath(affectedFile.path)
   );
@@ -168,7 +184,13 @@ export function impactReportToSarif(report: ImpactReport, options: SarifOptions 
   const verificationResults = uploadableActions.map((action) =>
     verificationResultFor(report, action, ruleIndex, options.checkoutRoot)
   );
-  const results = [...impactResults, ...verificationResults];
+  const adapterKnownGaps = adapterKnownGapEntries(report);
+  const adapterKnownGapResults = uploadableChangedFiles.length > 0
+    ? adapterKnownGaps.map((knownGap) =>
+      adapterKnownGapResultFor(report, knownGap, uploadableChangedFiles, ruleIndex, options.checkoutRoot)
+    )
+    : [];
+  const results = [...impactResults, ...verificationResults, ...adapterKnownGapResults];
 
   const run: SarifRun = {
     tool: {
@@ -189,7 +211,9 @@ export function impactReportToSarif(report: ImpactReport, options: SarifOptions 
         omittedAffectedFileCount: omittedAffectedFiles.length,
         omittedAffectedFiles,
         verificationActionCount: uploadableActions.length,
-        omittedVerificationActionCount: report.actions.length - uploadableActions.length
+        omittedVerificationActionCount: report.actions.length - uploadableActions.length,
+        adapterKnownGapCount: adapterKnownGapResults.length,
+        omittedAdapterKnownGapCount: adapterKnownGaps.length - adapterKnownGapResults.length
       }
     }],
     ...(options.category ? { automationDetails: { id: options.category } } : {}),
@@ -200,7 +224,9 @@ export function impactReportToSarif(report: ImpactReport, options: SarifOptions 
       omittedAffectedFileCount: omittedAffectedFiles.length,
       omittedAffectedFiles,
       verificationActionCount: uploadableActions.length,
-      omittedVerificationActionCount: report.actions.length - uploadableActions.length
+      omittedVerificationActionCount: report.actions.length - uploadableActions.length,
+      adapterKnownGapCount: adapterKnownGapResults.length,
+      omittedAdapterKnownGapCount: adapterKnownGaps.length - adapterKnownGapResults.length
     }
   };
 
@@ -227,6 +253,22 @@ function verificationActionRule(): SarifReportingDescriptor {
   };
 }
 
+function adapterKnownGapRule(): SarifReportingDescriptor {
+  return {
+    id: adapterKnownGapRuleId,
+    name: 'Parallax adapter known gap',
+    shortDescription: {
+      text: 'Parallax adapter known gap'
+    },
+    fullDescription: {
+      text: 'Parallax identified an extraction limitation from an adapter used by this impact analysis.'
+    },
+    defaultConfiguration: {
+      level: 'note'
+    }
+  };
+}
+
 function ruleForConfidence(confidence: Confidence): SarifReportingDescriptor {
   return {
     id: `parallax.impact.${confidence}`,
@@ -245,6 +287,57 @@ function ruleForConfidence(confidence: Confidence): SarifReportingDescriptor {
 
 function levelForConfidence(confidence: Confidence): SarifResultLevel {
   return confidence === 'unknown' ? 'note' : 'warning';
+}
+
+function adapterKnownGapResultFor(
+  report: ImpactReport,
+  knownGap: AdapterKnownGapEntry,
+  changedFiles: readonly string[],
+  ruleIndex: Map<string, number>,
+  checkoutRoot: string | undefined
+): SarifResult {
+  const anchorPath = changedFiles[0]!;
+  const relatedLocations = changedFiles.slice(1).map((changedFile, index) => ({
+    id: index + 1,
+    physicalLocation: {
+      artifactLocation: artifactLocation(changedFile, checkoutRoot)
+    },
+    message: {
+      text: 'Changed file in this analysis'
+    }
+  }));
+  return {
+    ruleId: adapterKnownGapRuleId,
+    ruleIndex: ruleIndex.get(adapterKnownGapRuleId) ?? 0,
+    level: 'note',
+    message: {
+      text: `Adapter known gap: ${knownGap.adapterId}: ${knownGap.gap}`
+    },
+    locations: [{
+      physicalLocation: {
+        artifactLocation: artifactLocation(anchorPath, checkoutRoot)
+      },
+      message: {
+        text: `${knownGap.adapterId} known gap: ${knownGap.gap}`
+      }
+    }],
+    ...(relatedLocations.length > 0 ? { relatedLocations } : {}),
+    partialFingerprints: {
+      parallaxImpact: fingerprintForAdapterKnownGap(knownGap, changedFiles)
+    },
+    properties: {
+      reportId: report.id,
+      indexRunId: report.indexRunId,
+      adapterId: knownGap.adapterId,
+      adapterVersion: knownGap.adapterVersion,
+      adapterStatus: knownGap.status,
+      languageIds: knownGap.languageIds,
+      confidence: knownGap.confidence,
+      knownGap: knownGap.gap,
+      knownGapIndex: knownGap.gapIndex,
+      anchorPath
+    }
+  };
 }
 
 function verificationResultFor(
@@ -284,6 +377,26 @@ function verificationResultFor(
       ...(action.args === undefined ? {} : { args: action.args })
     }
   };
+}
+
+function adapterKnownGapEntries(report: ImpactReport): AdapterKnownGapEntry[] {
+  const entries: AdapterKnownGapEntry[] = [];
+  for (const adapter of report.adapterInsights ?? []) {
+    adapter.knownGaps.forEach((gap, gapIndex) => {
+      const normalizedGap = gap.trim();
+      if (!normalizedGap) return;
+      entries.push({
+        adapterId: adapter.id,
+        adapterVersion: adapter.version,
+        languageIds: adapter.languageIds,
+        status: adapter.status,
+        confidence: adapter.confidence,
+        gap: normalizedGap,
+        gapIndex
+      });
+    });
+  }
+  return entries;
 }
 
 function groupEvidenceByAffectedFile(
@@ -428,6 +541,19 @@ function fingerprintFor(affectedFile: AffectedFile, evidenceIds: readonly string
     confidence: affectedFile.confidence,
     relationPath: affectedFile.relationPath?.map(normalizeReportPath) ?? [],
     evidenceIds: [...evidenceIds].sort()
+  };
+  return createHash('sha256').update(JSON.stringify(payload)).digest('hex').slice(0, 32);
+}
+
+function fingerprintForAdapterKnownGap(
+  knownGap: AdapterKnownGapEntry,
+  changedFiles: readonly string[]
+): string {
+  const payload = {
+    adapterId: knownGap.adapterId,
+    adapterVersion: knownGap.adapterVersion,
+    gap: knownGap.gap,
+    changedFiles: [...changedFiles].map(normalizeReportPath).sort()
   };
   return createHash('sha256').update(JSON.stringify(payload)).digest('hex').slice(0, 32);
 }

@@ -35,7 +35,7 @@
 - `--depth` — ripple 计算的最大 traversal 深度。
 - `--max-fanout` — traversal 期间每节点的最大 fan-out。
 - `--json` — 输出完整 report JSON 而非摘要，并跳过将 report 写入存储。输出会针对已发布的 [report JSON Schema](report-schema.zh.md) 进行校验。
-- `--sarif-output <path>` — 将 SARIF 2.1.0 projection 以格式化 JSON 写入文件，用于 GitHub Code Scanning upload。projection 包含 affected-file finding 与 recommended verification-action note。父目录会自动创建。stdout 仍保留普通 human summary，且不能与 `--json` 同用。
+- `--sarif-output <path>` — 将 SARIF 2.1.0 projection 以格式化 JSON 写入文件，用于 GitHub Code Scanning upload。projection 包含 affected-file finding、recommended verification-action note 与 adapter known-gap note。父目录会自动创建。stdout 仍保留普通 human summary，且不能与 `--json` 同用。
 - `--sarif-category <category>` — 设置 SARIF run automation id / GitHub Code Scanning category。除非由 GitHub Action 等 wrapper 传入，否则 category 为空。
 - `--fail-on <level>` — 按 confidence 控制退出码：`proven` / `inferred` / `heuristic` 仅当受影响文件达到或超过该 confidence 时失败；`any`（默认）只要有受影响文件就失败；`none` 永不失败。用于 CI 仅对高置信影响进行 gate。
 

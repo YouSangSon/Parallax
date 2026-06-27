@@ -47,5 +47,21 @@ Why:
   broadens Code Scanning output without adding new analysis.
 - Notes keep test/review commands visible without treating them as impact
   warnings.
-- Contract breaks, adapter known gaps, and coverage gaps need more careful
-  location mapping, so they remain in the next D7 slices.
+- Contract breaks, adapter known gaps, and coverage gaps needed more careful
+  location mapping, so they were left for later D7 slices.
+
+## 2026-06-27: SARIF Adapter Known Gaps
+
+Decision: emit adapter `knownGaps` as SARIF `note` results under a separate
+`parallax.adapter-known-gap` rule, anchored to the changed files in the report.
+
+Why:
+- `ImpactReport.adapterInsights` already carries adapter confidence and known
+  gaps, so this broadens Code Scanning output without changing report JSON.
+- GitHub-facing SARIF results need file locations to be useful, while adapter
+  known gaps are run-scoped. Anchoring them to changed files makes the trust
+  warning visible without pretending it is a defect in a specific affected file.
+- If a report has no uploadable changed-file anchor, Parallax omits the note and
+  records the omitted count in SARIF run properties.
+- Contract breaks and coverage gaps remain separate D7 slices because they need
+  more precise path mapping.

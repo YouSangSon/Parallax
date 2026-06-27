@@ -19,7 +19,7 @@
 
 ## SARIF projection
 
-`parallax analyze --sarif-output <path>`는 affected-file finding과 recommended verification-action note를 포함한 GitHub Code Scanning용 SARIF 2.1.0을 쓰지만, SARIF는 `ImpactReport`에서 만든 순수 projection이다. 이 report schema를 bump하지 않고, `analyze --json`에 필드를 추가하지 않으며, 저장된 report 형태도 바꾸지 않는다. Parallax의 전체 데이터 계약이 필요한 consumer는 계속 `analyze --json`을 검증하고, GitHub annotation이 필요한 consumer는 SARIF 파일을 upload하면 된다.
+`parallax analyze --sarif-output <path>`는 affected-file finding, recommended verification-action note, adapter known-gap note를 포함한 GitHub Code Scanning용 SARIF 2.1.0을 쓰지만, SARIF는 `ImpactReport`에서 만든 순수 projection이다. 이 report schema를 bump하지 않고, `analyze --json`에 필드를 추가하지 않으며, 저장된 report 형태도 바꾸지 않는다. Parallax의 전체 데이터 계약이 필요한 consumer는 계속 `analyze --json`을 검증하고, GitHub annotation이 필요한 consumer는 SARIF 파일을 upload하면 된다.
 
 ### `crossRepoImpacts`
 

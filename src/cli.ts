@@ -680,8 +680,10 @@ function printRepoMap(map: {
   workArtifacts: Array<{ path: string; confidence: string; reason: string }>;
   evidenceRefs: Array<{ file: string; kind: string; confidence: string; resourceUri?: string }>;
   verificationActions: Array<{ display: string; confidence: string }>;
-  resources: { entities: string[]; evidence: string[] };
-  confidence: { overall: string; knownGaps: string[] };
+  resources: { coverage: string; entities: string[]; evidence: string[] };
+  query?: string;
+  queryMatches?: Array<{ resourceUri: string; score?: number; entity?: { displayName?: string; path?: string; id?: string } }>;
+  confidence: { overall: string; provenance: string[]; knownGaps: string[] };
   omittedCounts: Record<string, number>;
 }): void {
   console.log(`Repo map for index run ${map.indexRunId}`);
@@ -705,8 +707,21 @@ function printRepoMap(map: {
       console.log(`  - ${action.display} [${action.confidence}]`);
     }
   }
-  console.log(`Resources: ${map.resources.entities.length} entities, ${map.resources.evidence.length} evidence refs`);
+  if (map.query && map.queryMatches && map.queryMatches.length > 0) {
+    console.log(`Query matches for "${map.query}":`);
+    for (const match of map.queryMatches.slice(0, 5)) {
+      const label = match.entity?.displayName ?? match.entity?.path ?? match.entity?.id ?? match.resourceUri;
+      console.log(`  - ${label}${match.score === undefined ? '' : ` (${match.score.toFixed(3)})`} ${match.resourceUri}`);
+    }
+  }
+  console.log(`Resources: ${map.resources.entities.length} entities, ${map.resources.evidence.length} evidence refs, coverage ${map.resources.coverage}`);
+  for (const uri of [...map.resources.entities.slice(0, 3), ...map.resources.evidence.slice(0, 3)]) {
+    console.log(`  - ${uri}`);
+  }
   console.log(`Confidence: ${map.confidence.overall}`);
+  for (const item of map.confidence.provenance.slice(0, 4)) {
+    console.log(`  - ${item}`);
+  }
   if (map.confidence.knownGaps.length > 0) {
     console.log(`Known gaps: ${map.confidence.knownGaps.join('; ')}`);
   }

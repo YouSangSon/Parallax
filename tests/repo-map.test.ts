@@ -1,12 +1,26 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import { buildRepoMap, estimateRepoMapTokens, indexProject, initProject } from '../src/index.js';
 
-async function makeRepoMapFixture(): Promise<string> {
+const require = createRequire(import.meta.url);
+const tsxImport = require.resolve('tsx');
+const cliPath = fileURLToPath(new URL('../src/cli.ts', import.meta.url));
+
+function runCli(repoRoot: string, args: string[]): string {
+  return execFileSync(process.execPath, ['--import', tsxImport, cliPath, ...args], {
+    cwd: repoRoot,
+    encoding: 'utf8'
+  });
+}
+
+async function makeRepoMapFixture(options: { extraPrivateRoutes?: number } = {}): Promise<string> {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-repo-map-'));
   await mkdir(path.join(repoRoot, 'src/auth'), { recursive: true });
   await mkdir(path.join(repoRoot, 'src/routes'), { recursive: true });
@@ -33,6 +47,18 @@ async function makeRepoMapFixture(): Promise<string> {
       ''
     ].join('\n')
   );
+  for (let index = 0; index < (options.extraPrivateRoutes ?? 0); index += 1) {
+    await writeFile(
+      path.join(repoRoot, `src/routes/private-${index}.ts`),
+      [
+        'import { validateSession } from "../auth/session";',
+        `export function privateRoute${index}(token: string) {`,
+        '  return validateSession(token) ? "ok" : "no";',
+        '}',
+        ''
+      ].join('\n')
+    );
+  }
   await writeFile(
     path.join(repoRoot, 'tests/session.test.ts'),
     [
@@ -116,6 +142,46 @@ test('buildRepoMap ranks changed roots and context sections into a token-estimat
     assert.equal(typeof map.omittedCounts.workArtifacts, 'number');
     assert.equal(typeof map.omittedCounts.evidenceRefs, 'number');
     assert.ok(Array.isArray(map.queryMatches));
+  } finally {
+    await rm(repoRoot, { recursive: true, force: true });
+  }
+});
+
+test('buildRepoMap carries omitted query matches from searchContext', async () => {
+  const repoRoot = await makeRepoMapFixture({ extraPrivateRoutes: 12 });
+  try {
+    const map = await buildRepoMap({
+      repoRoot,
+      changedFiles: ['src/auth/session.ts'],
+      query: 'privateRoute',
+      budgetTokens: 20_000
+    });
+
+    assert.ok((map.queryMatches?.length ?? 0) > 0);
+    assert.ok((map.queryMatches?.length ?? 0) <= 8);
+    assert.ok(map.omittedCounts.queryMatches > 0);
+  } finally {
+    await rm(repoRoot, { recursive: true, force: true });
+  }
+});
+
+test('repo-map human output exposes query matches, resources, and provenance', async () => {
+  const repoRoot = await makeRepoMapFixture();
+  try {
+    const stdout = runCli(repoRoot, [
+      'repo-map',
+      '--changed',
+      'src/auth/session.ts',
+      '--query',
+      'privateRoute',
+      '--budget',
+      '5000'
+    ]);
+
+    assert.match(stdout, /Query matches for "privateRoute":/);
+    assert.match(stdout, /parallax:\/\/entities\//);
+    assert.match(stdout, /coverage parallax:\/\/coverage\/latest/);
+    assert.match(stdout, /buildContextPack/);
   } finally {
     await rm(repoRoot, { recursive: true, force: true });
   }

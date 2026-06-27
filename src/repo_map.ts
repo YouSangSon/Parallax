@@ -34,11 +34,12 @@ export async function buildRepoMap(options: RepoMapOptions): Promise<RepoMap> {
     new Date().toISOString(),
     selectCoChangePartners(repoRoot, report.changedFiles)
   );
-  const queryMatches = options.query ? repoMapQueryMatches(repoRoot, options.query) : [];
+  const queryResult = options.query ? repoMapQueryMatches(repoRoot, options.query) : { matches: [], omitted: 0 };
   const map = repoMapFromContextPack(pack, {
     changedFiles: report.changedFiles,
     query: options.query,
-    queryMatches,
+    queryMatches: queryResult.matches,
+    omittedQueryMatches: queryResult.omitted,
     budgetTokens
   });
   return fitRepoMapToBudget(map, budgetTokens);
@@ -54,6 +55,7 @@ function repoMapFromContextPack(
     changedFiles: string[];
     query: string | undefined;
     queryMatches: RepoMapQueryMatch[];
+    omittedQueryMatches: number;
     budgetTokens: number;
   }
 ): RepoMap {
@@ -131,7 +133,7 @@ function repoMapFromContextPack(
       workArtifacts: pack.omittedCounts.workArtifacts,
       evidenceRefs: pack.omittedCounts.evidence,
       verificationActions: pack.omittedCounts.actions,
-      queryMatches: 0,
+      queryMatches: input.omittedQueryMatches,
       coChanges: pack.omittedCounts.coChanges,
       budgetItems: 0
     },
@@ -197,7 +199,7 @@ function fitRepoMapToBudget(map: RepoMap, requestedTokens: number): RepoMap {
   }) : current;
 }
 
-function repoMapQueryMatches(repoRoot: string, query: string): RepoMapQueryMatch[] {
+function repoMapQueryMatches(repoRoot: string, query: string): { matches: RepoMapQueryMatch[]; omitted: number } {
   const result = searchContext({ repoRoot }, {
     query,
     k: 8,
@@ -205,14 +207,21 @@ function repoMapQueryMatches(repoRoot: string, query: string): RepoMapQueryMatch
     budget: 'brief',
     disabledStreams: new Set(),
     semanticEmbedding: null
-  }) as { results?: Array<RepoMapQueryMatch & { score?: number }> };
-  return (result.results ?? []).map((item) => ({
+  }) as {
+    results?: Array<RepoMapQueryMatch & { score?: number }>;
+    omittedCounts?: { entities?: number; evidence?: number };
+  };
+  const matches = (result.results ?? []).map((item) => ({
     entity: item.entity,
     ...(item.score === undefined ? {} : { score: item.score }),
     ...(item.reasons === undefined ? {} : { reasons: item.reasons }),
     resourceUri: item.resourceUri,
     ...(item.evidence === undefined ? {} : { evidence: item.evidence })
   }));
+  return {
+    matches,
+    omitted: result.omittedCounts?.entities ?? 0
+  };
 }
 
 function repoMapPathItem(item: ContextPackItem): RepoMapPathItem {

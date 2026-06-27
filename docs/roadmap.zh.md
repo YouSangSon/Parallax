@@ -59,7 +59,7 @@ MCP 已稳定为 read-only。接下来是深入审视 agent 可用性的阶段�
 - [x] GitHub-native agent package：生成 Copilot repository instructions、MCP 配置片段，以及用于 PR 工作的 least-privilege "先运行 Parallax" workflow
 - [x] 面向 affected-file impact finding 的 SARIF / code-scanning export，以及生成 SARIF 文件的 composite GitHub Action
 - [ ] 将 SARIF coverage 扩展到 contract break、adapter known-gap note、coverage gap 与 recommended verification action
-- [ ] Token-budgeted repo map / context card，对 agent 接下来应查看的 file、symbol、contract、test、evidence、provenance 与 known-gap note 排序
+- [x] 通过 `parallax repo-map` 和 MCP `parallax_repo_map` 暴露 token-budgeted repo map / context card，对 changed root、affected file、test/docs/config/work artifact、evidence ref、verification action、resource、confidence、provenance、known gap 与 omitted count 排序
 - [ ] 用使用 telemetry 验证 `context_for_change` 的 budget tuning (brief/standard/deep)
 - [ ] 用于测量 context pack 结果 hit/miss 的 harness
 - [ ] 研究将 write surface 拆分为独立权限模型后引入（遵循 [invariants.zh.md](invariants.zh.md) I-8）
@@ -116,4 +116,4 @@ MCP 已稳定为 read-only。接下来是深入审视 agent 可用性的阶段�
 
 在 `tests/` 与 `bench/` 中已有的 fixture 之上，按 core engine 来看 ROI 最高的仍然是把**准确度 (1)** 的第一项 —— *parser-backed TS/JS span* —— 收尾。因为其他所有轴都依赖 evidence span 的精度。
 
-如果目标是 GitHub 与 agent workflow 中的 adoption，则应优先选择 **Agent surface (4)** lane：official GitHub Action + SARIF/code-scanning export、Copilot 安装指引，以及保留 confidence/provenance/known-gap disclosure 的 token-budgeted repo map/context card。这样现有 impact engine 才会出现在 reviewer 与 coding agent 实际工作的地方。
+如果目标是 GitHub 与 agent workflow 中的 adoption，则继续推进 **Agent surface (4)** lane：official GitHub Action + SARIF/code-scanning export、Copilot 安装指引，并在 dependency/PR triage workflow 中 dogfood 已 shipped 的 token-budgeted repo map/context card。这样现有 impact engine 才会出现在 reviewer 与 coding agent 实际工作的地方。

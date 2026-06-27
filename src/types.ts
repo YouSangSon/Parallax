@@ -349,6 +349,91 @@ export type ContextPack = {
   warnings?: string[];
 };
 
+export type RepoMapOptions = {
+  repoRoot: string;
+  changedFiles: string[];
+  query?: string;
+  budgetTokens?: number;
+  maxDepth?: number;
+  maxFanout?: number;
+};
+
+export type RepoMapPathItem = {
+  path: string;
+  reason: string;
+  confidence: Confidence;
+  resourceUri: string;
+  depth?: number;
+  relations?: string[];
+};
+
+export type RepoMapEvidenceRef = {
+  id: string;
+  file: string;
+  kind: string;
+  confidence: Confidence;
+  snippet: string;
+  resourceUri?: string;
+  startLine?: number;
+  endLine?: number;
+};
+
+export type RepoMapQueryMatch = {
+  entity: EntityRef;
+  score?: number;
+  reasons?: string[];
+  resourceUri: string;
+  evidence?: unknown[];
+};
+
+export type RepoMap = {
+  version: 0;
+  kind: 'repo_map';
+  budget: {
+    requestedTokens: number;
+    estimatedTokens: number;
+    estimator: 'Math.ceil(text.length / 4)';
+    truncated: boolean;
+  };
+  indexRunId: number;
+  changedFiles: string[];
+  changedRoots: string[];
+  summary: string[];
+  affectedFiles: RepoMapPathItem[];
+  tests: RepoMapPathItem[];
+  docs: RepoMapPathItem[];
+  config: RepoMapPathItem[];
+  workArtifacts: ContextPackWorkArtifact[];
+  evidenceRefs: RepoMapEvidenceRef[];
+  verificationActions: ImpactAction[];
+  resources: {
+    coverage: 'parallax://coverage/latest';
+    entities: string[];
+    evidence: string[];
+  };
+  query?: string;
+  queryMatches?: RepoMapQueryMatch[];
+  confidence: {
+    overall: Confidence;
+    provenance: string[];
+    knownGaps: string[];
+  };
+  omittedCounts: {
+    affectedFiles: number;
+    tests: number;
+    docs: number;
+    config: number;
+    workArtifacts: number;
+    evidenceRefs: number;
+    verificationActions: number;
+    queryMatches: number;
+    coChanges: number;
+    budgetItems: number;
+  };
+  knownGaps: string[];
+  warnings?: string[];
+};
+
 export type GraphNode = {
   id: string;
   label: string;

@@ -39,6 +39,25 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === 'repo-map') {
+    const { buildRepoMap } = await import('./index.js');
+    const changedFiles = parseChangedFiles(args, repoRoot, 'repo-map');
+    const query = parseOptionalValueArg(args, '--query');
+    const budgetTokens = parseIntegerArg(args, '--budget');
+    const map = await buildRepoMap({
+      repoRoot,
+      changedFiles,
+      ...(query === undefined ? {} : { query }),
+      ...(budgetTokens === undefined ? {} : { budgetTokens })
+    });
+    if (args.includes('--json')) {
+      console.log(JSON.stringify(map, null, 2));
+    } else {
+      printRepoMap(map);
+    }
+    return;
+  }
+
   if (command === 'ui') {
     const { startUiServer } = await import('./ui.js');
     const reportId = parseOptionalArg(args, '--report');
@@ -627,7 +646,7 @@ async function main(): Promise<void> {
   throw new Error(`unknown command: ${command}`);
 }
 
-function parseChangedFiles(args: string[], repoRoot: string): string[] {
+function parseChangedFiles(args: string[], repoRoot: string, commandName = 'analyze'): string[] {
   const index = args.indexOf('--changed');
   if (index >= 0 && args[index + 1]) {
     return args[index + 1]!.split(',').map((item) => item.trim()).filter(Boolean);
@@ -642,11 +661,70 @@ function parseChangedFiles(args: string[], repoRoot: string): string[] {
       .filter(Boolean);
   }
   if (head) {
-    throw new Error('analyze --head requires --base');
+    throw new Error(`${commandName} --head requires --base`);
   }
   const positional = parsePositionals(args);
   if (positional.length > 0) return positional;
-  throw new Error('analyze requires --changed <file[,file]> or --base <ref> [--head <ref>]');
+  throw new Error(`${commandName} requires --changed <file[,file]> or --base <ref> [--head <ref>]`);
+}
+
+function printRepoMap(map: {
+  indexRunId: number;
+  budget: { estimatedTokens: number; requestedTokens: number; truncated: boolean };
+  changedFiles: string[];
+  changedRoots: string[];
+  affectedFiles: Array<{ path: string; confidence: string; reason: string }>;
+  tests: Array<{ path: string; confidence: string; reason: string }>;
+  docs: Array<{ path: string; confidence: string; reason: string }>;
+  config: Array<{ path: string; confidence: string; reason: string }>;
+  workArtifacts: Array<{ path: string; confidence: string; reason: string }>;
+  evidenceRefs: Array<{ file: string; kind: string; confidence: string; resourceUri?: string }>;
+  verificationActions: Array<{ display: string; confidence: string }>;
+  resources: { entities: string[]; evidence: string[] };
+  confidence: { overall: string; knownGaps: string[] };
+  omittedCounts: Record<string, number>;
+}): void {
+  console.log(`Repo map for index run ${map.indexRunId}`);
+  console.log(`Budget: ${map.budget.estimatedTokens}/${map.budget.requestedTokens} estimated tokens${map.budget.truncated ? ' (truncated)' : ''}`);
+  console.log(`Changed roots: ${map.changedRoots.join(', ') || '(none)'}`);
+  console.log(`Changed files: ${map.changedFiles.join(', ')}`);
+  printRepoMapSection('Affected files', map.affectedFiles);
+  printRepoMapSection('Tests', map.tests);
+  printRepoMapSection('Docs', map.docs);
+  printRepoMapSection('Config', map.config);
+  printRepoMapSection('Work artifacts', map.workArtifacts);
+  if (map.evidenceRefs.length > 0) {
+    console.log('Evidence refs:');
+    for (const item of map.evidenceRefs) {
+      console.log(`  - ${item.file} [${item.kind}, ${item.confidence}]${item.resourceUri ? ` ${item.resourceUri}` : ''}`);
+    }
+  }
+  if (map.verificationActions.length > 0) {
+    console.log('Verification actions:');
+    for (const action of map.verificationActions) {
+      console.log(`  - ${action.display} [${action.confidence}]`);
+    }
+  }
+  console.log(`Resources: ${map.resources.entities.length} entities, ${map.resources.evidence.length} evidence refs`);
+  console.log(`Confidence: ${map.confidence.overall}`);
+  if (map.confidence.knownGaps.length > 0) {
+    console.log(`Known gaps: ${map.confidence.knownGaps.join('; ')}`);
+  }
+  const omitted = Object.entries(map.omittedCounts).filter(([, count]) => count > 0);
+  if (omitted.length > 0) {
+    console.log(`Omitted: ${omitted.map(([key, count]) => `${key}=${count}`).join(', ')}`);
+  }
+}
+
+function printRepoMapSection(
+  label: string,
+  items: Array<{ path: string; confidence: string; reason: string }>
+): void {
+  if (items.length === 0) return;
+  console.log(`${label}:`);
+  for (const item of items) {
+    console.log(`  - ${item.path} [${item.confidence}] ${item.reason}`);
+  }
 }
 
 function formatEventTopology(topology: {
@@ -718,7 +796,7 @@ function parsePositionals(args: string[]): string[] {
     '--provider', '--provider-path', '--contract', '--method', '--path', '--consumer',
     '--entity', '--attribute', '--value', '--branch', '--agent', '--evidence-fact-ids',
     '--name', '--from', '--fact-id', '--k', '--op', '--as-of-tx',
-    '--target', '--source', '--query', '--model',
+    '--target', '--source', '--query', '--model', '--budget',
     '--older-than-days', '--abandon', '--restore', '--max-age', '--limit', '--cursor'
   ]);
   const positionals: string[] = [];
@@ -749,6 +827,7 @@ Commands:
   ${PACKAGE_NAME} init
   ${PACKAGE_NAME} index [--max-file-bytes 1000000]
   ${PACKAGE_NAME} doctor
+  ${PACKAGE_NAME} repo-map --changed <file[,file]> [--query <text>] [--budget <tokens>] [--json]
   ${PACKAGE_NAME} ui [--report <id>] [--port <n>]
   ${PACKAGE_NAME} import-session --file <path> --format codex|claude [--branch <name>]
   ${PACKAGE_NAME} workspace init [--name <name>] [--service <service>] [--force]

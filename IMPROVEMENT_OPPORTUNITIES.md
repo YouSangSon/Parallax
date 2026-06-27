@@ -55,10 +55,10 @@ off MCP by I-8). Context-pack telemetry is recorded but nothing acts on it.
 | M6 | ✅ **shipped** — MCP workflow prompts now exist: `impact_workflow` and `triage_change` lay out the analyze→context→query/co_change→remember flow so agents discover the intended read path without guessing. | S | MED |
 | M7 | **Permissioned write surface for trace ingestion (I-8)** — Phase A: read-only `parallax_trace_preview` (dry-run match, returns promoted/unmatched, no write). Phase B: gated `parallax_ingest_traces` behind explicit opt-in. Closes the observe→prove loop while honoring read-only-first. | L | LOW-MED |
 | M8 | ✅ **shipped** — `parallax install-agent --copilot-package --target <repo>` now plans or installs `.github/copilot-instructions.md`, `.github/agents/parallax-impact.agent.md`, and an optional target-repo MCP config snippet. Dry-run reports planned relative paths/actions, existing files are skipped unless `--force` is explicit, and the command never calls GitHub. | S-M | HIGH |
-| M9 | **Token-budgeted repo map / context card** — add `parallax repo-map --changed/--query --budget` and MCP `parallax_repo_map`, ranking changed roots, affected files, key symbols, contracts, tests, confidence, evidence, provenance, `knownGaps`, and next verification actions. Aider-style repo maps, Sourcegraph MCP, and newer code-graph MCP tools all compete on "the agent reads only what matters"; Parallax can differentiate by adding impact confidence, source provenance, contract evidence, and honest coverage gaps. | M | HIGH |
+| M9 | ✅ **shipped** — token-budgeted repo map / context card now exists as `parallax repo-map --changed <files> [--query <text>] [--budget <tokens>] [--json]` and read-only MCP `parallax_repo_map`, ranking changed roots, affected files, tests/docs/config/work artifacts, evidence refs, verification actions, resources, confidence, provenance, `knownGaps`, and omitted counts. It reuses `buildContextPack`, `searchContext`, and `parallax://` resources; token use is documented as `Math.ceil(text.length / 4)`. | M | HIGH |
 | M10 | **SCIP import/export bridge** — ingest SCIP indexes as an optional precision layer for go-to-definition / find-references / implementations, and optionally export Parallax graph slices into SCIP-compatible tooling. This gives JVM/Go/Rust/Python precision a standards-based bridge before Parallax owns every parser deeply. | M-L | MED-HIGH |
 
-**Sequencing remaining work:** M8 / M9 → M4 / M5 → M10 → M7-Phase-A → M7-Phase-B. The quick-win prompt/query layer (M1/M2/M3/M6) is now in place; ecosystem research now pushes installability and token-budgeted repo-map output ahead of lower-signal telemetry advice.
+**Sequencing remaining work:** M4 / M5 → M10 → M7-Phase-A → M7-Phase-B, with M8/M9 now available for dogfooding in PR/dependency workflows. The quick-win prompt/query/repo-map layer (M1/M2/M3/M6/M9) is now in place.
 
 ---
 
@@ -126,7 +126,7 @@ also remain thinly bench-covered.
 ## Top cross-dimension picks (highest value-to-effort)
 
 1. **D7 → D1** — SARIF export plus the official GitHub Action (M, HIGH): turns Parallax from a local report into native PR/code-scanning feedback.
-2. **M8 + M9** — GitHub-native agent package and token-budgeted repo map/context card (S-M→M, HIGH): makes Parallax discoverable and useful inside Copilot / Claude / Cursor workflows.
+2. **M8 + M9** ✅ — GitHub-native agent package and token-budgeted repo map/context card (S-M→M, HIGH): makes Parallax discoverable and useful inside Copilot / Claude / Cursor workflows.
 3. **D4** — UI export + deep-linkable state (S-M, MED-HIGH): lets a PR reviewer share the exact selected impact path, evidence, and policy preset.
 4. **S2** ✅ — single transaction + pragmas shipped: graph/current-state writes now commit after adapter extraction in one explicit transaction.
 5. **A5** ✅ — resolution-strength confidence (S, MED-HIGH): cheap honesty win in the TS/JS call lane.
@@ -158,7 +158,7 @@ The web/GitHub review changes the short-term adoption order without invalidating
 ### What the search implies
 
 1. **GitHub-native output is the strongest next adoption slice.** GitHub supports repository instructions for Copilot and SARIF upload for third-party tools, so Parallax should emit both an agent setup package and a code-scanning artifact. This is D7 → D1 → M8.
-2. **Repo-map output is now table stakes for agent UX.** Aider, Sourcegraph, CodeGraphContext, code-review-graph, and agentmap all frame success as ranked, compact, tool-call-efficient code context. Parallax already has the richer graph and evidence model; the missing surface is a named repo-map/context-card command with a token budget. This is M9.
+2. **Repo-map output is now table stakes for agent UX.** Aider, Sourcegraph, CodeGraphContext, code-review-graph, and agentmap all frame success as ranked, compact, tool-call-efficient code context. Parallax now has the named repo-map/context-card command and MCP surface from M9; the next work is dogfooding and tuning it against real PR workflows.
 3. **SCIP is the standards bridge for precision.** It is a practical path to cross-language definitions/references before Parallax owns parser-grade precision for every language. This is M10, and it complements A1/A2/A3 instead of replacing them.
 4. **Security and codemod systems should be integrations first.** Semgrep and OpenRewrite are mature in their own lanes. Parallax should recommend and scope scans/refactors based on affected files and evidence, not rebuild those engines.
 5. **Current repo state gives an immediate dogfood target, but only as a dated queue.** As of 2026-06-26, open Dependabot PRs (#23-#31) make dependency-impact triage a useful real workflow: analyze the bump, emit SARIF/Markdown, provide repo-map context, and show verification actions. Refresh the queue before starting D8.
@@ -168,7 +168,7 @@ The web/GitHub review changes the short-term adoption order without invalidating
 1. **D7 SARIF export** — define the GitHub-native result schema and mapping from impact findings, confidence, provenance, and known-gap disclosure to code-scanning alerts.
 2. **D1 official Action** — run init → index → analyze over PR diffs, upload SARIF, append Markdown summary, and support `--fail-on`.
 3. **M8 Copilot / agent install package** — generate instructions and MCP snippets that teach agents to call Parallax before editing.
-4. **M9 repo-map/context card** — expose ranked context with budgets so agents see changed roots, high-confidence affected nodes, contracts, tests, evidence, provenance, known gaps, and verification actions in one compact response.
+4. **M9 repo-map/context card** ✅ — expose ranked context with budgets so agents see changed roots, high-confidence affected nodes, contracts, tests, evidence, provenance, known gaps, and verification actions in one compact response.
 5. **D4 deep-linkable UI/export** — let humans share the same selected impact path the agent saw.
 
 ## Larger-bet reassessment (2026-06-21)

@@ -77,13 +77,14 @@ parallax gc-branches
 claude mcp add --transport stdio parallax -- parallax mcp serve
 ```
 
-## MCP tools surfaced (23)
+## MCP tools surfaced (24)
 
 | Tool | Read-only? | What it does |
 |---|---|---|
 | `parallax_analyze_diff` | ❌ | 对一组变更文件运行 impact analysis |
 | `parallax_context_for_change` | ❌ | 为变更文件返回一个受预算约束的紧凑 context pack |
 | `parallax_search_context` | ❌ | 按 keyword/path/symbol/relation/evidence 搜索最新已索引的 entity，并返回带 resource link 的排序后 context |
+| `parallax_repo_map` | ✅ | 返回 read-only token-budgeted repo map/context card，包含 affected file、test/docs/config/work artifact、evidence ref、verification action、resource、confidence、provenance、known gap 与 omitted count |
 | `parallax_contract_diff` | ❌ | 将当前 OpenAPI contract 文件与最新已索引的 workspace baseline 对比，返回紧凑的 breaking-change impact |
 | `parallax_cross_repo_consumers` | ✅ | 从已同步的 workspace DB view 查询某个 provider service/contract/route 的 consumer |
 | `parallax_cross_repo_providers` | ✅ | 从已同步的 workspace DB view 查询某个 consumer service/file 使用的 provider |

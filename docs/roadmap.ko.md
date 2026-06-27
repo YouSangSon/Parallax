@@ -59,7 +59,7 @@ MCP는 read-only로 안정화됐다. 다음은 agent 사용성을 깊게 보는 
 - [x] GitHub-native agent package: Copilot repository instruction, MCP 설정 snippet, PR 작업용 least-privilege "먼저 Parallax 실행" workflow 생성
 - [x] affected-file impact finding용 SARIF / code-scanning export와 SARIF 파일 생성을 담당하는 composite GitHub Action
 - [ ] contract break, adapter known-gap note, coverage gap, recommended verification action까지 SARIF coverage 확장
-- [ ] agent가 다음에 볼 file, symbol, contract, test, evidence, provenance, known-gap note를 rank하는 token-budgeted repo map / context card
+- [x] `parallax repo-map`과 MCP `parallax_repo_map`으로 노출되는 token-budgeted repo map / context card. changed root, affected file, test/docs/config/work artifact, evidence ref, verification action, resource, confidence, provenance, known gap, omitted count를 rank한다
 - [ ] `context_for_change`의 budget tuning (brief/standard/deep)을 사용 텔레메트리로 검증
 - [ ] context pack 결과의 hit/miss 측정 harness
 - [ ] write surface를 별도 권한 모델로 분리해 도입 검토 ([invariants.ko.md](invariants.ko.md) I-8 준수)
@@ -116,4 +116,4 @@ MCP는 read-only로 안정화됐다. 다음은 agent 사용성을 깊게 보는 
 
 `tests/`와 `bench/`에 이미 있는 fixture 위에서 core engine 기준 ROI가 가장 높은 것은 여전히 **정확도 (1)** 의 첫 항목 — *parser-backed TS/JS span* — 이다. 다른 모든 축이 evidence span 정밀도에 의존하기 때문이다.
 
-목표가 GitHub와 agent workflow에서의 adoption이라면 **Agent surface (4)** lane을 먼저 고른다: official GitHub Action + SARIF/code-scanning export, Copilot 설치 가이드, confidence/provenance/known-gap disclosure를 유지하는 token-budgeted repo map/context card. 이렇게 해야 기존 impact engine이 reviewer와 coding agent가 실제로 일하는 자리에서 보인다.
+목표가 GitHub와 agent workflow에서의 adoption이라면 **Agent surface (4)** lane을 계속 진행한다: official GitHub Action + SARIF/code-scanning export, Copilot 설치 가이드, 그리고 이미 shipped된 token-budgeted repo map/context card를 dependency/PR triage workflow에서 dogfood하기. 이렇게 해야 기존 impact engine이 reviewer와 coding agent가 실제로 일하는 자리에서 보인다.

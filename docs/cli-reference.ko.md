@@ -21,6 +21,7 @@
 | :--- | :--- |
 | `parallax analyze --changed <file[,file]> [--depth <n>] [--max-fanout <n>] [--json] [--sarif-output <path>]` | 명시한 변경 파일 목록을 최신 index에 대해 분석 |
 | `parallax analyze --base <ref> [--head <ref>] [--depth <n>] [--max-fanout <n>] [--json] [--sarif-output <path>]` | `git diff <base>...<head>`(기본 head `HEAD`)에서 변경 파일 목록을 도출 |
+| `parallax repo-map --changed <file[,file]> [--query <text>] [--budget <tokens>] [--json]` | changed root, affected file, test, 문서, work artifact, evidence ref, verification action, resource, confidence, provenance, known gap, omitted count가 담긴 token-budgeted repo map/context card를 생성 |
 | `parallax query "<cypher>"` | 인덱싱된 그래프에 읽기전용 Cypher 서브셋을 실행하고 JSON 행을 출력 |
 | `parallax ingest-traces --file <traces.json>` | 관측된 런타임 `source -> target` 엣지와 매칭되는 관계를 `proven` 신뢰도로 승격 |
 
@@ -38,6 +39,8 @@
 - `--fail-on <level>` — 종료 코드를 confidence로 제어: `proven` / `inferred` / `heuristic`는 영향 파일이 해당 confidence 이상일 때만 실패; `any`(기본)는 영향 파일이 있으면 실패; `none`은 절대 실패하지 않음. CI에서 고신뢰 영향만 게이트할 때 사용.
 
 기본(`--json` 없음)에서는 report가 저장되고 짧은 요약이 출력되며, 기록 시 report 경로가 표시된다.
+
+`repo-map`은 agent를 위한 read-only planning surface다. MCP와 같은 impact analysis, context-pack ranking, indexed search, `parallax://` resource를 재사용하며 새 index를 만들지 않는다. `--budget`은 `Math.ceil(text.length / 4)`로 추정하는 token 목표이므로, 출력은 requested budget, estimated tokens, truncation 상태, omitted count를 공개한다. `--query`는 기존 index의 ranked search-context match를 추가하고, `--json`은 전체 structured card를 출력한다.
 
 변경 파일이 인덱싱된 provider contract이고 workspace에 저장된 `BREAKS_COMPATIBILITY_WITH` link가 이미 있으면, `analyze`는 `crossRepoImpacts`도 포함한다. 각 항목은 consumer service, consumer file, provider contract, breaking change, confidence, evidence snippet, workspace resource URI를 식별한다. `analyze`는 contract diff를 자동 실행하지 않는다. workspace가 오래됐으면 먼저 `parallax workspace contract-diff`로 link를 갱신한다.
 

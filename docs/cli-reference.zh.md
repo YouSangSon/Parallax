@@ -21,6 +21,7 @@
 | :--- | :--- |
 | `parallax analyze --changed <file[,file]> [--depth <n>] [--max-fanout <n>] [--json] [--sarif-output <path>]` | 将显式给出的变更文件列表对最新 index 分析 |
 | `parallax analyze --base <ref> [--head <ref>] [--depth <n>] [--max-fanout <n>] [--json] [--sarif-output <path>]` | 从 `git diff <base>...<head>`（默认 head `HEAD`）推导变更文件列表 |
+| `parallax repo-map --changed <file[,file]> [--query <text>] [--budget <tokens>] [--json]` | 构建 token-budgeted repo map/context card，包含 changed root、affected file、test、文档、work artifact、evidence ref、verification action、resource、confidence、provenance、known gap 与 omitted count |
 | `parallax query "<cypher>"` | 在已索引的图上运行只读 Cypher 子集并打印 JSON 行 |
 | `parallax ingest-traces --file <traces.json>` | 将与观测到的运行时 `source -> target` 边匹配的关系提升为 `proven` 置信度 |
 
@@ -38,6 +39,8 @@
 - `--fail-on <level>` — 按 confidence 控制退出码：`proven` / `inferred` / `heuristic` 仅当受影响文件达到或超过该 confidence 时失败；`any`（默认）只要有受影响文件就失败；`none` 永不失败。用于 CI 仅对高置信影响进行 gate。
 
 默认（无 `--json`）会持久化 report 并打印简短摘要；写入时显示 report 路径。
+
+`repo-map` 是面向 agent 的 read-only planning surface。它复用与 MCP 相同的 impact analysis、context-pack ranking、indexed search 和 `parallax://` resource；不会创建新的 index。`--budget` 是用 `Math.ceil(text.length / 4)` 估算的 token 目标，因此输出会披露 requested budget、estimated tokens、truncation 状态和 omitted count。`--query` 会加入来自现有 index 的 ranked search-context match，`--json` 输出完整 structured card。
 
 当变更文件是已索引的 provider contract，且 workspace 中已经存在持久化的 `BREAKS_COMPATIBILITY_WITH` link 时，`analyze` 也会包含 `crossRepoImpacts`。这些条目会标识 consumer service、consumer file、provider contract、breaking change、confidence、evidence snippet 和 workspace resource URI。`analyze` 不会自动运行 contract diff；如果 workspace 已陈旧，请先用 `parallax workspace contract-diff` 刷新 link。
 

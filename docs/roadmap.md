@@ -59,7 +59,7 @@ MCP has stabilized as read-only. Next is the stage of looking deeply at agent us
 - [x] GitHub-native agent package: generate Copilot repository instructions, MCP setup snippets, and a least-privilege "run Parallax first" workflow for PR work
 - [x] SARIF / code-scanning export for affected-file impact findings, plus a composite GitHub Action that generates the SARIF file for explicit upload
 - [ ] Broaden SARIF coverage to contract breaks, adapter known-gap notes, coverage gaps, and recommended verification actions
-- [ ] Token-budgeted repo map / context card that ranks the files, symbols, contracts, tests, evidence, provenance, and known-gap notes an agent should inspect next
+- [x] Token-budgeted repo map / context card exposed as `parallax repo-map` and MCP `parallax_repo_map`, ranking changed roots, affected files, tests/docs/config/work artifacts, evidence refs, verification actions, resources, confidence, provenance, known gaps, and omitted counts
 - [ ] Validate the budget tuning (brief/standard/deep) of `context_for_change` with usage telemetry
 - [ ] A harness to measure the hit/miss of context pack results
 - [ ] Consider introducing a write surface separated into its own permission model (compliant with [invariants.md](invariants.md) I-8)
@@ -116,4 +116,4 @@ Without regression signals, there is no guarantee that every change works.
 
 On top of the fixtures already present in `tests/` and `bench/`, the core-engine slice with the highest ROI is still the first item of **Accuracy (1)** — *parser-backed TS/JS span*. Every other axis depends on the precision of the evidence span.
 
-If the goal is adoption in GitHub and agent workflows, continue the **Agent surface (4)** lane: Copilot install guidance, broader SARIF coverage, and a token-budgeted repo map/context card that preserves confidence, provenance, and known-gap disclosure. That makes the existing impact engine visible where reviewers and coding agents already work.
+If the goal is adoption in GitHub and agent workflows, continue the **Agent surface (4)** lane: Copilot install guidance, broader SARIF coverage, and dogfooding the shipped token-budgeted repo map/context card in dependency and PR triage workflows. That makes the existing impact engine visible where reviewers and coding agents already work.

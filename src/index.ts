@@ -65,6 +65,7 @@ export { executeGraphQuery, parseGraphQuery } from './graph_query.js';
 export type { GraphQueryResult, ParsedGraphQuery } from './graph_query.js';
 export { queryCoChanges } from './co_change_query.js';
 export type { CoChangePartner, CoChangeQueryOptions, CoChangeQueryResult } from './co_change_query.js';
+export { buildRepoMap, estimateRepoMapTokens } from './repo_map.js';
 export {
   addParallaxMcpServer,
   installCopilotAgentPackage,
@@ -175,6 +176,11 @@ export type {
   IndexResult,
   InitOptions,
   InitResult,
-  Lifecycle
+  Lifecycle,
+  RepoMap,
+  RepoMapEvidenceRef,
+  RepoMapOptions,
+  RepoMapPathItem,
+  RepoMapQueryMatch
 } from './types.js';
 export type { McpContext } from './mcp.js';

@@ -22,6 +22,7 @@
 | `parallax analyze --changed <file[,file]> [--depth <n>] [--max-fanout <n>] [--json] [--sarif-output <path>]` | 将显式给出的变更文件列表对最新 index 分析 |
 | `parallax analyze --base <ref> [--head <ref>] [--depth <n>] [--max-fanout <n>] [--json] [--sarif-output <path>]` | 从 `git diff <base>...<head>`（默认 head `HEAD`）推导变更文件列表 |
 | `parallax repo-map --changed <file[,file]> [--query <text>] [--budget <tokens>] [--json]` | 构建 token-budgeted repo map/context card，包含 changed root、affected file、test、文档、work artifact、evidence ref、verification action、resource、confidence、provenance、known gap 与 omitted count |
+| `parallax pr triage --base <ref> [--head <ref>] [--fail-on <level>] [--sarif-output <path>] [--query <text>] [--budget <tokens>]` | 运行本地 dependency/PR triage 路径：分析 diff、写入 SARIF、打印 repo map |
 | `parallax query "<cypher>"` | 在已索引的图上运行只读 Cypher 子集并打印 JSON 行 |
 | `parallax ingest-traces --file <traces.json>` | 将与观测到的运行时 `source -> target` 边匹配的关系提升为 `proven` 置信度 |
 
@@ -41,6 +42,13 @@
 默认（无 `--json`）会持久化 report 并打印简短摘要；写入时显示 report 路径。
 
 `repo-map` 是面向 agent 的 read-only planning surface。它复用与 MCP 相同的 impact analysis、context-pack ranking、indexed search 和 `parallax://` resource；不会创建新的 index。`--budget` 是用 `Math.ceil(text.length / 4)` 估算的 token 目标，因此输出会披露 requested budget、estimated tokens、truncation 状态和 omitted count。`--query` 会加入来自现有 index 的 ranked search-context match，`--json` 输出完整 structured card。
+
+`pr triage` 是面向 dependency update 与 pull request review 的本地 wrapper。它接受与 `analyze` 相同的 changed-file 输入，持久化 impact report，默认将 SARIF 写到 `.parallax/pr-triage.sarif`，应用 `--fail-on`，并用 dependency-focused 默认 query 打印 repo map。它不会调用 GitHub、上传 SARIF、checkout branch 或修改 remote 状态。PR branch 已经在本地可用后的典型 Dependabot 流程：
+
+```bash
+parallax index
+parallax pr triage --base origin/main --head HEAD --fail-on proven
+```
 
 当变更文件是已索引的 provider contract，且 workspace 中已经存在持久化的 `BREAKS_COMPATIBILITY_WITH` link 时，`analyze` 也会包含 `crossRepoImpacts`。这些条目会标识 consumer service、consumer file、provider contract、breaking change、confidence、evidence snippet 和 workspace resource URI。`analyze` 不会自动运行 contract diff；如果 workspace 已陈旧，请先用 `parallax workspace contract-diff` 刷新 link。
 

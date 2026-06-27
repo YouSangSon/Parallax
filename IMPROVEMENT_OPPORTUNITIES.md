@@ -117,9 +117,9 @@ also remain thinly bench-covered.
 | D5 | ✅ **shipped** — trilingual getting-started tutorials now exist (`docs/getting-started*.md`) with a worked init→index→analyze walkthrough, expected affected output, and MCP / CI / UI next steps. | S | MED |
 | D6 | **Pre-commit / pre-push impact-gate installer** — `install-agent` proves the scaffold pattern; add `parallax install-hook` dropping a hook that runs `analyze --changed <staged> --fail-on=<level>` (reuses D1's flag). Shift-left to the commit. | S | MED |
 | D7 | **SARIF / GitHub Code Scanning export** — ✅ **affected-file SARIF projection shipped** from `ImpactReport` via `parallax analyze --sarif-output <path> [--sarif-category <category>]`, plus evidence locations, relation paths, confidence rules, stable fingerprints, and docs for Code Scanning upload. Still open: contract breaks, adapter `knownGaps`, coverage gaps, and recommended verification actions. | M | HIGH |
-| D8 | **Dependency PR dogfood lane** — add a local `parallax pr triage` or documented workflow that analyzes dependency-update PRs with `--fail-on`, SARIF, and repo-map output. As of 2026-06-26, the Parallax repo had a short-lived Dependabot queue (#23-#31; refresh the list before execution), making dependency bumps a useful real maintenance workflow rather than a permanent roadmap assumption. | S | MED-HIGH |
+| D8 | ✅ **shipped** — local dependency/PR dogfood lane exists as `parallax pr triage`. It accepts `--changed` or `--base/--head`, persists the impact report, writes SARIF (default `.parallax/pr-triage.sarif`), applies `--fail-on`, and prints a dependency-focused repo map without calling GitHub or changing remote state. The open Dependabot queue was refreshed on 2026-06-27 (#23-#31) as the first real dogfood target. | S | MED-HIGH |
 
-**Sequencing:** continue D7 breadth → D1 fuller PR wrapper → D8 → D6. The `--fail-on` primitive and affected-file SARIF projection are landed; remaining SARIF breadth should define the rest of the GitHub-native result contract before adding heavier PR automation. D2 is independently high-value; D4 remains the UI sharing slice.
+**Sequencing:** continue D7 breadth → D1 fuller PR wrapper → D6. The `--fail-on` primitive, affected-file SARIF projection, repo-map, and local PR triage wrapper are landed; remaining SARIF breadth should define the rest of the GitHub-native result contract before adding heavier PR automation. D2 is independently high-value; D4 remains the UI sharing slice.
 
 ---
 
@@ -168,8 +168,8 @@ The web/GitHub review changes the short-term adoption order without invalidating
 
 ### Reprioritized adoption lane
 
-1. **M9 hardening / dogfood** — finish the repo-map usability polish and validate that the human CLI and MCP JSON both expose query matches, resource URIs, provenance, omissions, and verification actions clearly.
-2. **D8 dependency PR dogfood lane** — use the live Dependabot queue (#23-#31) as the first real workflow: PR diff → `analyze` / SARIF → repo-map → verification plan.
+1. ✅ **M9 hardening / dogfood** — repo-map human and MCP output expose query matches, resource URIs, provenance, omissions, and verification actions clearly.
+2. ✅ **D8 dependency PR dogfood lane** — `parallax pr triage` now supports PR diff → `analyze` / SARIF → repo-map → verification planning for the live Dependabot queue (#23-#31).
 3. **D7 SARIF breadth** — extend Code Scanning projection beyond affected files to contract breaks, adapter known gaps, coverage gaps, and recommended verification actions.
 4. **D1 official PR wrapper** — run init → index → PR diff discovery → analyze, upload SARIF, append Markdown summary, and support `--fail-on`.
 5. **D4 deep-linkable UI/export** — let humans share the same selected impact path the agent saw.

@@ -23,3 +23,16 @@ Why:
 - The live Dependabot PR queue gives an immediate real workflow.
 - SARIF breadth should follow a proven PR triage flow instead of guessing at
   output shape.
+
+## 2026-06-27: Dependency PR Triage Surface
+
+Decision: add `parallax pr triage` as a thin local CLI wrapper instead of a
+GitHub-integrated PR bot or action.
+
+Why:
+- D8 needs a real dogfood workflow, but `analyze`, SARIF, `--fail-on`, and
+  `repo-map` already exist.
+- A wrapper gives agents and maintainers one repeatable command without adding
+  a network dependency or a write-capable GitHub surface.
+- Uploading SARIF, checking out PR branches, commenting, merging, and pushing
+  stay explicit external actions.

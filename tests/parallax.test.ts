@@ -4623,6 +4623,54 @@ test('CLI analyze rejects missing SARIF category value', () => {
   assert.match(result.stderr, /missing value for --sarif-category/);
 });
 
+test('CLI pr triage emits SARIF and repo-map output for local dependency PR review', async () => {
+  const repoRoot = await makeFixtureRepo();
+  await initProject({ repoRoot });
+  await indexProject({ repoRoot });
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      '--import',
+      tsxLoaderPath,
+      path.resolve('src/cli.ts'),
+      'pr',
+      'triage',
+      '--changed',
+      'src/auth/session.ts',
+      '--query',
+      'privateRoute',
+      '--budget',
+      '5000',
+      '--depth',
+      '1',
+      '--max-fanout',
+      '1',
+      '--sarif-category',
+      'dependabot-triage',
+      '--fail-on',
+      'none'
+    ],
+    {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      env: { ...process.env, PARALLAX_EMBEDDING_MODEL: 'stub-sha256' }
+    }
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /PR triage/);
+  assert.match(result.stdout, /SARIF: \.parallax\/pr-triage\.sarif/);
+  assert.match(result.stdout, /Repo map for index run/);
+  assert.match(result.stdout, /Query matches for "privateRoute":/);
+  assert.equal(reportRowCount(repoRoot), 1);
+
+  const sarif = JSON.parse(await readFile(path.join(repoRoot, '.parallax/pr-triage.sarif'), 'utf8')) as {
+    runs: Array<{ automationDetails?: { id?: string } }>;
+  };
+  assert.equal(sarif.runs[0]?.automationDetails?.id, 'dependabot-triage');
+});
+
 test('remember populates fact_embeddings (model, vector, dim) for non-redacted facts', async () => {
   const repoRoot = await makeFixtureRepo();
   await initProject({ repoRoot });

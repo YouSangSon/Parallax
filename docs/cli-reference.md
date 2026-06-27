@@ -22,6 +22,7 @@ Most machine-oriented commands can print JSON through command-specific flags. `a
 | `parallax analyze --changed <file[,file]> [--depth <n>] [--max-fanout <n>] [--json] [--sarif-output <path>]` | Analyze an explicit list of changed files against the latest index |
 | `parallax analyze --base <ref> [--head <ref>] [--depth <n>] [--max-fanout <n>] [--json] [--sarif-output <path>]` | Derive the changed file list from `git diff <base>...<head>` (default head `HEAD`) |
 | `parallax repo-map --changed <file[,file]> [--query <text>] [--budget <tokens>] [--json]` | Build a token-budgeted repo map/context card with changed roots, affected files, tests, docs, work artifacts, evidence refs, verification actions, resources, confidence, provenance, known gaps, and omitted counts |
+| `parallax pr triage --base <ref> [--head <ref>] [--fail-on <level>] [--sarif-output <path>] [--query <text>] [--budget <tokens>]` | Run the local dependency/PR triage path: analyze the diff, write SARIF, and print a repo map |
 | `parallax query "<cypher>"` | Run a read-only Cypher subset over the indexed graph and print JSON rows |
 | `parallax ingest-traces --file <traces.json>` | Promote relations matching observed runtime `source -> target` edges to `proven` confidence |
 
@@ -41,6 +42,13 @@ Flags:
 By default (no `--json`) the report is persisted and a short summary is printed; the report path is shown when written.
 
 `repo-map` is a read-only planning surface for agents. It reuses the same impact analysis, context-pack ranking, indexed search, and `parallax://` resources as MCP; it does not create a new index. `--budget` is a token target estimated as `Math.ceil(text.length / 4)`, so the output discloses the requested budget, estimated tokens, truncation state, and omitted counts. `--query` adds ranked search-context matches from the existing index, and `--json` prints the full structured card.
+
+`pr triage` is a local wrapper for dependency-update and pull-request review. It accepts the same changed-file inputs as `analyze`, persists the impact report, writes SARIF to `.parallax/pr-triage.sarif` by default, applies `--fail-on`, and prints a repo map with a dependency-focused default query. It does not call GitHub, upload SARIF, checkout branches, or modify remote state. After you have a PR branch available locally, a typical Dependabot flow is:
+
+```bash
+parallax index
+parallax pr triage --base origin/main --head HEAD --fail-on proven
+```
 
 When the changed file is an indexed provider contract and the workspace already contains persisted `BREAKS_COMPATIBILITY_WITH` links, `analyze` also includes `crossRepoImpacts`. These entries identify the consumer service, consumer file, provider contract, breaking change, confidence, evidence snippet, and workspace resource URIs. `analyze` does not run contract diff automatically; refresh links first with `parallax workspace contract-diff` when the workspace is stale.
 

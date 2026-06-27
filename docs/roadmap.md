@@ -60,6 +60,7 @@ MCP has stabilized as read-only. Next is the stage of looking deeply at agent us
 - [x] SARIF / code-scanning export for affected-file impact findings, plus a composite GitHub Action that generates the SARIF file for explicit upload
 - [ ] Broaden SARIF coverage to contract breaks, adapter known-gap notes, coverage gaps, and recommended verification actions
 - [x] Token-budgeted repo map / context card exposed as `parallax repo-map` and MCP `parallax_repo_map`, ranking changed roots, affected files, tests/docs/config/work artifacts, evidence refs, verification actions, resources, confidence, provenance, known gaps, and omitted counts
+- [x] Dependency/PR triage dogfood lane: `parallax pr triage` wraps local diff analysis, SARIF output, `--fail-on`, and repo-map context without GitHub writes
 - [ ] Validate the budget tuning (brief/standard/deep) of `context_for_change` with usage telemetry
 - [ ] A harness to measure the hit/miss of context pack results
 - [ ] Consider introducing a write surface separated into its own permission model (compliant with [invariants.md](invariants.md) I-8)

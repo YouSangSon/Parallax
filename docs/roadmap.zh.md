@@ -60,6 +60,7 @@ MCP 已稳定为 read-only。接下来是深入审视 agent 可用性的阶段�
 - [x] 面向 affected-file impact finding 的 SARIF / code-scanning export，以及生成 SARIF 文件的 composite GitHub Action
 - [ ] 将 SARIF coverage 扩展到 contract break、adapter known-gap note、coverage gap 与 recommended verification action
 - [x] 通过 `parallax repo-map` 和 MCP `parallax_repo_map` 暴露 token-budgeted repo map / context card，对 changed root、affected file、test/docs/config/work artifact、evidence ref、verification action、resource、confidence、provenance、known gap 与 omitted count 排序
+- [x] Dependency/PR triage dogfood lane：`parallax pr triage` 在不写 GitHub 的前提下串起本地 diff 分析、SARIF 输出、`--fail-on` 与 repo-map context
 - [ ] 用使用 telemetry 验证 `context_for_change` 的 budget tuning (brief/standard/deep)
 - [ ] 用于测量 context pack 结果 hit/miss 的 harness
 - [ ] 研究将 write surface 拆分为独立权限模型后引入（遵循 [invariants.zh.md](invariants.zh.md) I-8）

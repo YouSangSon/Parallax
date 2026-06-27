@@ -72,6 +72,53 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === 'pr') {
+    const [subcommand, ...prArgs] = args;
+    if (subcommand === 'triage') {
+      const { analyzeDiff, buildRepoMap, impactReportToSarif } = await import('./index.js');
+      const { failsImpactGate } = await import('./confidence.js');
+      const changedFiles = parseChangedFiles(prArgs, repoRoot, 'pr triage');
+      const maxDepth = parseIntegerArg(prArgs, '--depth');
+      const maxFanout = parseIntegerArg(prArgs, '--max-fanout');
+      const failOn = parseOptionalValueArg(prArgs, '--fail-on');
+      const sarifOutput = parseOptionalValueArg(prArgs, '--sarif-output') ?? '.parallax/pr-triage.sarif';
+      const sarifCategory = parseOptionalValueArg(prArgs, '--sarif-category') ?? 'parallax-dependency-pr';
+      const query = parseOptionalValueArg(prArgs, '--query') ?? 'package dependency manifest lockfile';
+      const budgetTokens = parseIntegerArg(prArgs, '--budget');
+      const report = await analyzeDiff({
+        repoRoot,
+        changedFiles,
+        writeReport: true,
+        persistReport: true,
+        ...(maxDepth === undefined ? {} : { maxDepth }),
+        ...(maxFanout === undefined ? {} : { maxFanout })
+      });
+      const outputPath = resolve(repoRoot, sarifOutput);
+      await mkdir(dirname(outputPath), { recursive: true });
+      await writeFile(outputPath, `${JSON.stringify(impactReportToSarif(report, {
+        checkoutRoot: repoRoot,
+        category: sarifCategory
+      }), null, 2)}\n`);
+      const map = await buildRepoMap({
+        repoRoot,
+        changedFiles,
+        query,
+        ...(maxDepth === undefined ? {} : { maxDepth }),
+        ...(maxFanout === undefined ? {} : { maxFanout }),
+        ...(budgetTokens === undefined ? {} : { budgetTokens })
+      });
+      console.log('PR triage');
+      console.log(`Impact report ${report.id}`);
+      console.log(`Affected files: ${report.affectedFiles.length}`);
+      console.log(`SARIF: ${sarifOutput}`);
+      if (report.reportPath) console.log(`Report: ${report.reportPath}`);
+      printRepoMap(map);
+      process.exitCode = failsImpactGate(report.affectedFiles.map((file) => file.confidence), failOn) ? 1 : 0;
+      return;
+    }
+    throw new Error('pr requires triage');
+  }
+
   if (command === 'import-session') {
     const { importSession } = await import('./index.js');
     const file = parseRequiredArg(args, '--file');
@@ -285,7 +332,7 @@ async function main(): Promise<void> {
     const changedFiles = parseChangedFiles(args, repoRoot);
     const maxDepth = parseIntegerArg(args, '--depth');
     const maxFanout = parseIntegerArg(args, '--max-fanout');
-    const failOn = parseOptionalArg(args, '--fail-on');
+    const failOn = parseOptionalValueArg(args, '--fail-on');
     const report = await analyzeDiff({
       repoRoot,
       changedFiles,
@@ -806,7 +853,7 @@ function parseIntegerArg(args: string[], name: string): number | undefined {
 function parsePositionals(args: string[]): string[] {
   const valueFlags = new Set([
     '--changed', '--base', '--head', '--depth', '--max-fanout', '--max-file-bytes',
-    '--sarif-output', '--sarif-category',
+    '--sarif-output', '--sarif-category', '--fail-on',
     '--report', '--format', '--file', '--port', '--service', '--remote',
     '--provider', '--provider-path', '--contract', '--method', '--path', '--consumer',
     '--entity', '--attribute', '--value', '--branch', '--agent', '--evidence-fact-ids',
@@ -843,6 +890,8 @@ Commands:
   ${PACKAGE_NAME} index [--max-file-bytes 1000000]
   ${PACKAGE_NAME} doctor
   ${PACKAGE_NAME} repo-map --changed <file[,file]> [--query <text>] [--budget <tokens>] [--json]
+  ${PACKAGE_NAME} pr triage --base <ref> [--head <ref>] [--fail-on <level>]
+                         [--sarif-output .parallax/pr-triage.sarif] [--query <text>] [--budget <tokens>]
   ${PACKAGE_NAME} ui [--report <id>] [--port <n>]
   ${PACKAGE_NAME} import-session --file <path> --format codex|claude [--branch <name>]
   ${PACKAGE_NAME} workspace init [--name <name>] [--service <service>] [--force]

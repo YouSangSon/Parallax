@@ -6,8 +6,10 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Active Loop
 
-- Next loop: D7 SARIF breadth for contract breaks, known gaps, coverage gaps,
-  and recommended verification actions.
+- Next loop: continue D7 SARIF breadth for contract breaks, adapter known gaps,
+  and coverage gaps.
+- Completed slice: D7 recommended verification actions now emit as SARIF note
+  results.
 - Completed loop: D8 dependency PR dogfood now has `parallax pr triage` for
   local diff analysis, SARIF output, `--fail-on`, and repo-map context.
 - Completed loop: M9 repo-map hardening now carries omitted query-match counts
@@ -17,6 +19,7 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Next
 
-1. Continue SARIF breadth after dogfood proved the PR workflow.
+1. Continue SARIF breadth with contract breaks, adapter known gaps, or coverage
+   gaps.
 2. Revisit D1 official PR wrapper once the SARIF result contract is broader.
 3. Keep D4 deep-linkable UI/export queued for human sharing.

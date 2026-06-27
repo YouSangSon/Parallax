@@ -71,8 +71,8 @@ test('impactReportToSarif maps affected files into GitHub-compatible results', (
   assert.equal(sarif.runs.length, 1);
   assert.equal(sarif.runs[0]?.tool.driver.name, 'Parallax');
   assert.equal(sarif.runs[0]?.automationDetails?.id, 'parallax-pr');
-  assert.equal(sarif.runs[0]?.results.length, 1);
-  const result = sarif.runs[0]?.results[0];
+  assert.equal(sarif.runs[0]?.results.length, 2);
+  const result = sarif.runs[0]?.results.find((item) => item.ruleId === 'parallax.impact.proven');
   assert.equal(result?.ruleId, 'parallax.impact.proven');
   assert.equal(result?.level, 'warning');
   assert.equal(result?.locations?.[0]?.physicalLocation?.artifactLocation?.uri, 'src/client.ts');
@@ -81,10 +81,26 @@ test('impactReportToSarif maps affected files into GitHub-compatible results', (
   assert.deepEqual(result?.properties?.evidenceIds, ['ev-1']);
 });
 
+test('impactReportToSarif emits recommended verification actions as note results', () => {
+  const sarif = impactReportToSarif(reportFixture());
+
+  const result = sarif.runs[0]?.results.find((item) => item.ruleId === 'parallax.verification');
+
+  assert.equal(result?.level, 'note');
+  assert.equal(result?.message.text, 'Recommended verification: npm test -- tests/client.test.ts');
+  assert.equal(result?.locations[0]?.physicalLocation.artifactLocation.uri, 'src/client.ts');
+  assert.equal(result?.properties?.command, 'npm');
+  assert.deepEqual(result?.properties?.args, ['test', '--', 'tests/client.test.ts']);
+  assert.equal(sarif.runs[0]?.properties?.verificationActionCount, 1);
+  assert.equal(sarif.runs[0]?.properties?.omittedVerificationActionCount, 0);
+});
+
 test('impactReportToSarif emits empty runs for no-impact reports', () => {
   const report = reportFixture();
   report.affectedFiles = [];
   report.affected = [];
+  report.actions = [];
+  report.testCommands = [];
 
   const sarif = impactReportToSarif(report);
 
@@ -101,7 +117,7 @@ test('impactReportToSarif does not emit human-readable relation steps as artifac
   ];
 
   const sarif = impactReportToSarif(report);
-  const result = sarif.runs[0]!.results[0]!;
+  const result = sarif.runs[0]!.results.find((item) => item.ruleId === 'parallax.impact.proven')!;
   const codeFlowUris = result.codeFlows?.flatMap((flow) =>
     flow.threadFlows.flatMap((threadFlow) =>
       threadFlow.locations.map((location) =>
@@ -128,9 +144,9 @@ test('impactReportToSarif omits non-repo-relative affected files from uploadable
   });
 
   const sarif = impactReportToSarif(report);
-  const resultUris = sarif.runs[0]!.results.map((result) =>
-    result.locations[0]!.physicalLocation.artifactLocation.uri
-  );
+  const resultUris = sarif.runs[0]!.results
+    .filter((result) => result.ruleId.startsWith('parallax.impact.'))
+    .map((result) => result.locations[0]!.physicalLocation.artifactLocation.uri);
 
   assert.deepEqual(resultUris, ['src/client.ts']);
   assert.equal(resultUris.includes('web:src/client.ts'), false);

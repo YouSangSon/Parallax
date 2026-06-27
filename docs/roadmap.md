@@ -58,7 +58,8 @@ MCP has stabilized as read-only. Next is the stage of looking deeply at agent us
 
 - [x] GitHub-native agent package: generate Copilot repository instructions, MCP setup snippets, and a least-privilege "run Parallax first" workflow for PR work
 - [x] SARIF / code-scanning export for affected-file impact findings, plus a composite GitHub Action that generates the SARIF file for explicit upload
-- [ ] Broaden SARIF coverage to contract breaks, adapter known-gap notes, coverage gaps, and recommended verification actions
+- [x] Emit recommended verification actions as SARIF note results
+- [ ] Broaden SARIF coverage to contract breaks, adapter known-gap notes, and coverage gaps
 - [x] Token-budgeted repo map / context card exposed as `parallax repo-map` and MCP `parallax_repo_map`, ranking changed roots, affected files, tests/docs/config/work artifacts, evidence refs, verification actions, resources, confidence, provenance, known gaps, and omitted counts
 - [x] Dependency/PR triage dogfood lane: `parallax pr triage` wraps local diff analysis, SARIF output, `--fail-on`, and repo-map context without GitHub writes
 - [ ] Validate the budget tuning (brief/standard/deep) of `context_for_change` with usage telemetry

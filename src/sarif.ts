@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { PRODUCT_NAME } from './branding.js';
-import type { AffectedFile, Confidence, Evidence, ImpactReport } from './types.js';
+import type { AffectedFile, Confidence, Evidence, ImpactAction, ImpactReport } from './types.js';
 
 export interface SarifOptions {
   category?: string;
@@ -109,12 +109,13 @@ export interface SarifInvocation {
 const packageMetadata = loadPackageMetadata();
 
 const confidences: Confidence[] = ['proven', 'inferred', 'heuristic', 'unknown'];
+const verificationRuleId = 'parallax.verification';
 const maxSnippetLength = 400;
 
 export function impactReportToSarif(report: ImpactReport, options: SarifOptions = {}): SarifLog {
   const toolVersion = options.toolVersion ?? packageMetadata.version;
   const informationUri = options.informationUri ?? packageMetadata.homepage;
-  const rules = confidences.map((confidence) => ruleForConfidence(confidence));
+  const rules = [...confidences.map((confidence) => ruleForConfidence(confidence)), verificationActionRule()];
   const ruleIndex = new Map(rules.map((rule, index) => [rule.id, index]));
   const uploadableAffectedFiles = report.affectedFiles.filter((affectedFile) =>
     isRepoRelativeFilePath(affectedFile.path)
@@ -127,7 +128,7 @@ export function impactReportToSarif(report: ImpactReport, options: SarifOptions 
       reason: affectedFile.reason
     }));
   const evidenceByAffectedFile = groupEvidenceByAffectedFile(report.evidence, uploadableAffectedFiles);
-  const results = uploadableAffectedFiles.map((affectedFile) => {
+  const impactResults = uploadableAffectedFiles.map((affectedFile) => {
     const evidence = evidenceByAffectedFile.get(affectedFile.path) ?? [];
     const ruleId = `parallax.impact.${affectedFile.confidence}`;
     const location = locationForAffectedFile(affectedFile, evidence, options.checkoutRoot);
@@ -161,6 +162,13 @@ export function impactReportToSarif(report: ImpactReport, options: SarifOptions 
       properties
     } satisfies SarifResult;
   });
+  const uploadableActions = report.actions.filter((action) =>
+    action.target.path !== undefined && isRepoRelativeFilePath(action.target.path)
+  );
+  const verificationResults = uploadableActions.map((action) =>
+    verificationResultFor(report, action, ruleIndex, options.checkoutRoot)
+  );
+  const results = [...impactResults, ...verificationResults];
 
   const run: SarifRun = {
     tool: {
@@ -179,7 +187,9 @@ export function impactReportToSarif(report: ImpactReport, options: SarifOptions 
         changedFiles: report.changedFiles,
         warnings: report.warnings ?? [],
         omittedAffectedFileCount: omittedAffectedFiles.length,
-        omittedAffectedFiles
+        omittedAffectedFiles,
+        verificationActionCount: uploadableActions.length,
+        omittedVerificationActionCount: report.actions.length - uploadableActions.length
       }
     }],
     ...(options.category ? { automationDetails: { id: options.category } } : {}),
@@ -188,7 +198,9 @@ export function impactReportToSarif(report: ImpactReport, options: SarifOptions 
       changedFiles: report.changedFiles,
       warnings: report.warnings ?? [],
       omittedAffectedFileCount: omittedAffectedFiles.length,
-      omittedAffectedFiles
+      omittedAffectedFiles,
+      verificationActionCount: uploadableActions.length,
+      omittedVerificationActionCount: report.actions.length - uploadableActions.length
     }
   };
 
@@ -196,6 +208,22 @@ export function impactReportToSarif(report: ImpactReport, options: SarifOptions 
     version: '2.1.0',
     $schema: 'https://json.schemastore.org/sarif-2.1.0.json',
     runs: [run]
+  };
+}
+
+function verificationActionRule(): SarifReportingDescriptor {
+  return {
+    id: verificationRuleId,
+    name: 'Parallax verification action',
+    shortDescription: {
+      text: 'Parallax recommended verification action'
+    },
+    fullDescription: {
+      text: 'Parallax identified a test or review command that should be run for this impact analysis.'
+    },
+    defaultConfiguration: {
+      level: 'note'
+    }
   };
 }
 
@@ -217,6 +245,45 @@ function ruleForConfidence(confidence: Confidence): SarifReportingDescriptor {
 
 function levelForConfidence(confidence: Confidence): SarifResultLevel {
   return confidence === 'unknown' ? 'note' : 'warning';
+}
+
+function verificationResultFor(
+  report: ImpactReport,
+  action: ImpactAction,
+  ruleIndex: Map<string, number>,
+  checkoutRoot: string | undefined
+): SarifResult {
+  const targetPath = action.target.path!;
+  return {
+    ruleId: verificationRuleId,
+    ruleIndex: ruleIndex.get(verificationRuleId) ?? 0,
+    level: 'note',
+    message: {
+      text: `Recommended verification: ${action.display}`
+    },
+    locations: [{
+      physicalLocation: {
+        artifactLocation: artifactLocation(targetPath, checkoutRoot)
+      },
+      message: {
+        text: action.display
+      }
+    }],
+    partialFingerprints: {
+      parallaxImpact: fingerprintForAction(action)
+    },
+    properties: {
+      reportId: report.id,
+      indexRunId: report.indexRunId,
+      actionKind: action.kind,
+      confidence: action.confidence,
+      targetPath,
+      display: action.display,
+      ...(action.runnerId === undefined ? {} : { runnerId: action.runnerId }),
+      ...(action.command === undefined ? {} : { command: action.command }),
+      ...(action.args === undefined ? {} : { args: action.args })
+    }
+  };
 }
 
 function groupEvidenceByAffectedFile(
@@ -361,6 +428,17 @@ function fingerprintFor(affectedFile: AffectedFile, evidenceIds: readonly string
     confidence: affectedFile.confidence,
     relationPath: affectedFile.relationPath?.map(normalizeReportPath) ?? [],
     evidenceIds: [...evidenceIds].sort()
+  };
+  return createHash('sha256').update(JSON.stringify(payload)).digest('hex').slice(0, 32);
+}
+
+function fingerprintForAction(action: ImpactAction): string {
+  const payload = {
+    path: action.target.path ? normalizeReportPath(action.target.path) : action.target.id,
+    kind: action.kind,
+    display: action.display,
+    command: action.command,
+    args: action.args ?? []
   };
   return createHash('sha256').update(JSON.stringify(payload)).digest('hex').slice(0, 32);
 }

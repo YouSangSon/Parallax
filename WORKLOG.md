@@ -40,3 +40,21 @@
   - spec reviewer approved the D8 diff.
   - code quality reviewer found depth/fanout and docs-boundary issues; both
     were fixed and re-reviewed clean.
+- Shipped first D7 SARIF breadth slice.
+  - `src/sarif.ts` now projects `ImpactReport.actions` as
+    `parallax.verification` note results with target locations, stable
+    fingerprints, and command metadata.
+  - `tests/sarif.test.ts` covers the verification-action SARIF result.
+  - `docs/cli-reference*.md`, `docs/report-schema*.md`,
+    `docs/roadmap*.md`, and `IMPROVEMENT_OPPORTUNITIES.md` document that
+    verification actions are covered while contract breaks, adapter known gaps,
+    and coverage gaps remain open.
+- D7 verification:
+  - `node --import tsx --test tests/sarif.test.ts`
+  - `npm run check`
+  - `npm run docs:lint`
+  - `npm run build`
+  - `git diff --check`
+- Review:
+  - spec reviewer approved the verification-action SARIF slice.
+  - code quality reviewer found no blocking issues.

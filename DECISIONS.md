@@ -36,3 +36,16 @@ Why:
   a network dependency or a write-capable GitHub surface.
 - Uploading SARIF, checking out PR branches, commenting, merging, and pushing
   stay explicit external actions.
+
+## 2026-06-27: SARIF Verification Actions
+
+Decision: emit recommended verification actions as SARIF `note` results under a
+separate `parallax.verification` rule.
+
+Why:
+- `ImpactReport.actions` already has target paths and command metadata, so this
+  broadens Code Scanning output without adding new analysis.
+- Notes keep test/review commands visible without treating them as impact
+  warnings.
+- Contract breaks, adapter known gaps, and coverage gaps need more careful
+  location mapping, so they remain in the next D7 slices.

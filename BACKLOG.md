@@ -4,13 +4,15 @@ Canonical detailed backlog: `IMPROVEMENT_OPPORTUNITIES.md`.
 
 ## Now
 
-1. S1 incremental indexing follow-through: reduce unchanged-file bookkeeping cost.
+1. S1 incremental indexing follow-through: reduce remaining all-files scan /
+   coverage bookkeeping cost after the file-replay narrowing slice.
 
 ## Later
 
 1. S4 publish measured 10k/50k perf baseline limits.
-2. D2 remaining trend metrics.
-3. W4/W5 richer contract signatures.
+2. D9 affected verification planner from external affected-target research.
+3. D2 remaining trend metrics.
+4. W4/W5 richer contract signatures.
 
 ## Done
 

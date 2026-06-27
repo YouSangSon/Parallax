@@ -221,3 +221,32 @@
   - `npm run build`
   - `git diff --check`
   - `npm test`
+- Refreshed web/GitHub signals for the next product additions.
+  - GitHub issue/PR review still shows one open issue (#3) and Dependabot PRs
+    #23-#31 as the live remote queue.
+  - External affected-target systems (Nx affected and Bazel query/test
+    selection patterns) point to D9: convert Parallax impact output into ranked
+    verification commands, not only affected-file lists.
+  - SCIP and GitHub SARIF remain the standards/output lanes Parallax already
+    started covering through M10 and D7/D1.
+- Shipped first S1 unchanged-file bookkeeping slice.
+  - Incremental persistence now replays file-level rows only for changed files
+    plus contract files.
+  - Unchanged `files.index_run_id` rows are carried forward in SQL, file ids are
+    bulk-loaded once, and unchanged file `entity_versions` are canonicalized in
+    SQL after changed-file events so placeholder endpoints cannot drift from
+    full reindex output.
+  - The incremental oracle now snapshots current `files` rows, proving chained
+    incremental runs keep every live file stamped to the latest completed run
+    and remain byte-identical to a full reindex of the same end state.
+- S1 file-replay narrowing verification:
+  - `node --import tsx --test tests/index-delta.test.ts tests/incremental-index-oracle.test.ts`
+  - `npm run check`
+  - `npm run docs:lint`
+  - `npm run build`
+  - `git diff --check`
+  - `npm test`
+  - `npm run test:dogfood`
+  - `npm run bench`
+  - `npm run bench:perf -- --scales 10`
+  - `npm audit --audit-level=high`

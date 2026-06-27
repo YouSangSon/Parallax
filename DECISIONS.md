@@ -239,3 +239,44 @@ Why:
   hardware class, and full output table.
 - Exact timing and RSS stay outside `npm run verify`; `--max-ms-per-kfile`
   should be applied only after a project has a real baseline.
+
+## 2026-06-28: Narrow Incremental File Replay Before Scan Changes
+
+Decision: in incremental runs, replay file-level persistence only for changed
+files plus contract files; carry unchanged `files.index_run_id` forward in SQL;
+bulk-load file ids once; and canonicalize unchanged file `entity_versions` in
+SQL after changed-file events.
+
+Why:
+- The adapter extraction path already skips unchanged non-contract files, but
+  the persistence path still replayed every file row and re-selected every file
+  id.
+- Contract files still need per-run contract descriptors / versions, so they
+  remain in the replay set until a contract-specific carry-forward path exists.
+- Changed-file relations can create unchanged file endpoints as placeholders.
+  Replacing unchanged file `entity_versions` with the same canonical shape as a
+  full reindex keeps chained incremental snapshots byte-identical.
+- This is a small S1 slice with no schema or dependency changes; the remaining
+  cost is scan / coverage bookkeeping, not file replay.
+
+## 2026-06-28: Add Affected Verification Planner To Backlog
+
+Decision: add D9, an affected verification planner, as a user-facing follow-up
+from the latest web/GitHub review.
+
+Sources:
+- Nx affected commands: <https://nx.dev/ci/features/affected>
+- Bazel query guide: <https://bazel.build/query/guide>
+- GitHub Code Scanning SARIF upload: <https://docs.github.com/en/code-security/how-tos/find-and-fix-code-vulnerabilities/integrate-with-existing-tools/upload-sarif-file>
+- SCIP bridge context: <https://github.com/scip-code/scip>
+- Parallax open PR queue: <https://github.com/YouSangSon/Parallax/pulls?q=is%3Apr+is%3Aopen>
+- Parallax open issues: <https://github.com/YouSangSon/Parallax/issues?q=is%3Aissue+is%3Aopen>
+
+Why:
+- External affected-target tools emphasize tasks/tests, not just changed files.
+- Parallax already has impact reports, recommended actions, package manifests,
+  PR triage, SARIF, and repo-map output; the missing step is grouping affected
+  evidence into ranked verification commands.
+- Keeping the planner deterministic and local-first preserves the existing
+  safety boundary while making impact results more immediately actionable for
+  agents and reviewers.

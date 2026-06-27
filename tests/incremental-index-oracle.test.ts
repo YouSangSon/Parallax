@@ -17,6 +17,7 @@ import { getRepoId, latestCompletedIndexRun, openDatabase } from '../src/store.j
 // full-reindex-of-that-end-state.
 
 type GraphSnapshot = {
+  files: Array<Record<string, unknown>>;
   entities: Array<Record<string, unknown>>;
   entityVersions: Array<Record<string, unknown>>;
   relations: Array<Record<string, unknown>>;
@@ -37,6 +38,12 @@ function snapshotGraph(root: string): GraphSnapshot {
   const db = openDatabase(normalized, { readOnly: true });
   const repoId = getRepoId(db, normalized);
   const runId = latestCompletedIndexRun(db, repoId);
+  const files = db
+    .prepare(
+      `SELECT path, language, content_hash
+       FROM files WHERE repo_id = ? AND index_run_id = ? ORDER BY path`
+    )
+    .all(repoId, runId) as Array<Record<string, unknown>>;
   const entities = db
     .prepare(
       `SELECT id, kind, path, symbol, language_id, display_name
@@ -91,7 +98,7 @@ function snapshotGraph(root: string): GraphSnapshot {
        ORDER BY f.path, s.semantic_id`
     )
     .all(repoId, runId) as Array<Record<string, unknown>>;
-  return { entities, entityVersions, relations, relationEvidence, evidence, edges, symbols };
+  return { files, entities, entityVersions, relations, relationEvidence, evidence, edges, symbols };
 }
 
 function writeChain(root: string): void {

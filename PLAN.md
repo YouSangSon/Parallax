@@ -7,7 +7,13 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 ## Active Loop
 
 - Next loop: continue S1 incremental indexing follow-through by reducing
-  unchanged-file bookkeeping cost.
+  remaining all-files scan / coverage bookkeeping cost.
+- Completed slice: S1 incremental indexing now skips unchanged non-contract
+  file replay, bulk-loads file ids once, carries unchanged `files` rows forward,
+  and canonicalizes unchanged file `entity_versions` so chained incremental
+  runs stay byte-identical to full reindex snapshots.
+- Backlog addition from latest web/GitHub search: D9 affected verification
+  planner, turning impact graph output into ranked test/build commands.
 - Completed slice: S4 docs now define the standard large-repo baseline command:
   `npm run bench:perf -- --scales 10000,50000`, with commit/Node/OS/hardware
   metadata capture and no exact timing/RSS in `verify`.
@@ -46,5 +52,6 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Next
 
-1. Continue S1 incremental indexing follow-through by reducing unchanged-file bookkeeping cost.
-2. Publish measured S4 10k/50k perf baseline limits only from a stable baseline host.
+1. Continue S1 incremental indexing follow-through by reducing all-files scan / coverage bookkeeping cost.
+2. Prototype D9 affected verification planner from impact report actions and package metadata.
+3. Publish measured S4 10k/50k perf baseline limits only from a stable baseline host.

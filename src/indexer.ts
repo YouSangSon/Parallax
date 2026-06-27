@@ -68,7 +68,6 @@ interface PreparedStatements {
   insertFact: Statement;
   insertFactProvenance: Statement;
   upsertFile: Statement;
-  selectFile: Statement;
   upsertEntity: Statement;
   insertEntityIfMissing: Statement;
   updateEntityFreshness: Statement;
@@ -947,11 +946,18 @@ function persistCollectedIndexRun(input: {
         .run(input.memoryTxId, input.mainBranch.head_tx_id);
     }
 
-    for (const file of input.indexedFiles) {
+    const changedPaths = new Set(input.delta.changed);
+    const filesToReplay =
+      input.delta.mode === 'incremental'
+        ? input.indexedFiles.filter(
+            (file) =>
+              changedPaths.has(file.relativePath) ||
+              entityKindForPath(file.relativePath, file.language) === 'contract'
+          )
+        : input.indexedFiles;
+    for (const file of filesToReplay) {
       input.currentStateSnapshot.captureFile(file.relativePath);
       stmts.upsertFile.run(input.repoId, file.relativePath, file.language, file.hash, input.indexRunId);
-      const row = stmts.selectFile.get(input.repoId, file.relativePath) as { id: number };
-      persistCtx.fileIdByPath.set(file.relativePath, row.id);
       const fileEntId = fileEntityId(file.relativePath);
       const kind = entityKindForPath(file.relativePath, file.language);
       input.currentStateSnapshot.captureEntity(fileEntId);
@@ -986,6 +992,11 @@ function persistCollectedIndexRun(input: {
         persistCtx
       );
       persistCtx.canonicalEntityIds.add(fileEntId);
+    }
+    for (const row of input.db
+      .prepare('SELECT id, path FROM files WHERE repo_id = ?')
+      .all(input.repoId) as Array<{ id: number; path: string }>) {
+      if (indexedPaths.has(row.path)) persistCtx.fileIdByPath.set(row.path, row.id);
     }
 
     for (const collectedEvent of input.collected.events) {
@@ -1347,14 +1358,11 @@ function loadPriorCompletedRun(db: Db, repoId: number): PriorIndexRun | null {
 }
 
 // Carry an unchanged file's extraction-produced rows from the prior completed
-// run into the new run's cohort. The file-level rows (files, `file:` entities)
-// are already re-stamped by the main file loop, so this only moves the rows that
-// the (now-skipped) extraction would have produced: relations, their evidence,
-// scan evidence, edges, symbols, and symbol-level entities. Attribution is
-// inverted — bump everything still on the prior run EXCEPT rows owned by a
-// changed file — so the parameter list stays small (changed files are few) and a
-// changed file's vanished old rows are correctly left stranded on the prior run.
-// Wrapped in a SAVEPOINT so a mid-statement failure cannot half-move the graph.
+// run into the new run's cohort. Attribution is inverted — bump everything still
+// on the prior run EXCEPT rows owned by a changed file — so the parameter list
+// stays small (changed files are few) and a changed file's vanished old rows are
+// correctly left stranded on the prior run. Wrapped in a SAVEPOINT so a
+// mid-statement failure cannot half-move the graph.
 //
 // Known divergence (intentional): a carried relation keeps the prior run's
 // `adapter_run_id` rather than the current run's. This is invisible — nothing
@@ -1377,24 +1385,40 @@ function carryForwardUnchanged(
 
   db.exec('SAVEPOINT s1_carry_forward');
   try {
-    // Symbol-level entities of unchanged files (file entities are already on the
-    // new run via the main loop, so the prior-run filter excludes them).
+    db.prepare(
+      `UPDATE files SET index_run_id = ?
+       WHERE repo_id = ? AND index_run_id = ?
+         ${notInChanged ? `AND path NOT ${notInChanged}` : ''}`
+    ).run(newRunId, repoId, priorRunId, ...changedPaths);
+
     db.prepare(
       `UPDATE entities SET updated_index_run_id = ?
        WHERE repo_id = ? AND updated_index_run_id = ?
          ${notInChanged ? `AND (path IS NULL OR path NOT ${notInChanged})` : ''}`
     ).run(newRunId, repoId, priorRunId, ...changedPaths);
 
+    // File entity versions use the same canonical shape as the full-index file
+    // loop. Changed-file events may have inserted unchanged endpoints as
+    // placeholders first, so replace those rows before copying symbol versions.
+    db.prepare(
+      `INSERT OR REPLACE INTO entity_versions (entity_id, index_run_id, content_hash, location_json, state)
+       SELECT e.id, ?, f.content_hash, json_object('path', f.path), 'active'
+       FROM files f
+       INNER JOIN entities e ON e.repo_id = f.repo_id AND e.id = ('file:' || f.path)
+       WHERE f.repo_id = ? AND f.index_run_id = ?
+         ${notInChanged ? `AND f.path NOT ${notInChanged}` : ''}`
+    ).run(newRunId, repoId, newRunId, ...changedPaths);
+
     // entity_versions is keyed by (entity_id, index_run_id) — one row per run, not
-    // re-stamped in place. Copy the prior run's rows into the new run for entities
-    // not owned by a changed file. INSERT OR IGNORE: file entities already have a
-    // new-run row from the main loop, and changed entities are re-written by
-    // extraction, so only unchanged symbol entities are actually inserted.
+    // re-stamped in place. Copy the prior run's non-file rows into the new run for
+    // entities not owned by a changed file. Changed entities are re-written by
+    // extraction, so the insert mainly preserves unchanged symbol versions.
     db.prepare(
       `INSERT OR IGNORE INTO entity_versions (entity_id, index_run_id, content_hash, location_json, state)
        SELECT ev.entity_id, ?, ev.content_hash, ev.location_json, ev.state
        FROM entity_versions ev
        WHERE ev.index_run_id = ?
+         AND ev.entity_id NOT LIKE 'file:%'
          ${
            notInChanged
              ? `AND ev.entity_id NOT IN (SELECT id FROM entities WHERE repo_id = ? AND path ${notInChanged})`
@@ -1478,7 +1502,6 @@ function prepareStatements(db: Db): PreparedStatements {
         content_hash = excluded.content_hash,
         index_run_id = excluded.index_run_id
     `),
-    selectFile: db.prepare('SELECT id FROM files WHERE repo_id = ? AND path = ?'),
     upsertEntity: db.prepare(`
       INSERT INTO entities (
         id, repo_id, kind, path, symbol, language_id, display_name, created_index_run_id, updated_index_run_id

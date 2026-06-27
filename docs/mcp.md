@@ -16,6 +16,8 @@ The server speaks MCP over stdio (`StdioServerTransport`). It runs against the r
 
 Register Parallax as a stdio server with any MCP client. Conceptually the client launches `parallax mcp serve` as a child process and talks to it over stdio. With Claude Code or Codex, point the client at that command from the repo you want analyzed. Because the server resolves the repo from its working directory, launch it with the target repo as the current directory.
 
+For GitHub Copilot repository setup, run `parallax install-agent --copilot-package --target <repo> [--config .mcp.json]`. This writes repository instructions and a `parallax-impact` custom-agent profile into the explicit target repo only; it does not call GitHub. Add `--dry-run` to preview planned relative paths/actions, and `--force` to overwrite existing target files.
+
 ## Read-only-first invariant
 
 Parallax follows invariant **I-8** (see [invariants.md](invariants.md)): the agent surface stabilizes a safe read-only analysis layer first, and write permissions are added only behind a separate model and review. Each tool declares an MCP `readOnlyHint` annotation. Tools marked `readOnlyHint: true` in the table are source-tree read-only, not necessarily zero local database writes. Analysis/search/context tools may append `context_tool_runs` telemetry and context-pack rows in `.parallax/impact.db` as a side effect of answering, and MCP resource reads may append `context_resource_accesses` telemetry rows. Tools marked `readOnlyHint: false` include explicit memory-write and branch-management tools. None of them modify your source tree — actions are recommendations only (invariant **I-9**).

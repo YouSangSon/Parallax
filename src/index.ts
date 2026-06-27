@@ -65,8 +65,21 @@ export { executeGraphQuery, parseGraphQuery } from './graph_query.js';
 export type { GraphQueryResult, ParsedGraphQuery } from './graph_query.js';
 export { queryCoChanges } from './co_change_query.js';
 export type { CoChangePartner, CoChangeQueryOptions, CoChangeQueryResult } from './co_change_query.js';
-export { addParallaxMcpServer, installParallaxMcp } from './agent_config.js';
-export type { InstallResult, McpClientConfig, ParallaxMcpOptions } from './agent_config.js';
+export {
+  addParallaxMcpServer,
+  installCopilotAgentPackage,
+  installParallaxMcp,
+  planCopilotAgentPackage
+} from './agent_config.js';
+export type {
+  CopilotAgentPackageOptions,
+  CopilotAgentPackagePlan,
+  CopilotPackageFileAction,
+  InstallResult,
+  McpClientConfig,
+  ParallaxMcpOptions,
+  PlannedCopilotPackageFile
+} from './agent_config.js';
 export {
   addWorkspaceRepo,
   initWorkspace,

@@ -98,6 +98,9 @@
 | :--- | :--- |
 | `parallax mcp serve` | 为当前 repo 启动 MCP stdio 服务器（见 [mcp.zh.md](mcp.zh.md)） |
 | `parallax install-agent [--config <path>] [--name <name>] [--dry-run]` | 将 Parallax 只读 MCP 服务器注册到客户端的 `mcpServers` 配置（默认 `.mcp.json`）；`--dry-run` 仅预览合并结果而不写入 |
+| `parallax install-agent --copilot-package --target <repo> [--config <path>] [--name <name>] [--dry-run] [--force]` | 在显式目标 repo 中规划或安装 GitHub Copilot package：`.github/copilot-instructions.md`、`.github/agents/parallax-impact.agent.md`，以及仅在提供 `--config` 时生成 MCP 配置片段 |
+
+Copilot package 命令只会写入显式 `--target <repo>` 路径之下。它不会调用 GitHub、push 变更，也不会修改此 Parallax repo，除非把此 repo 作为 `--target` 传入。`--dry-run` 会打印计划的相对路径和 action；已有文件在没有 `--force` 时会跳过。
 
 ## UI
 

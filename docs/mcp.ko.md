@@ -16,6 +16,8 @@ parallax mcp serve
 
 Parallax를 어떤 MCP 클라이언트에든 stdio 서버로 등록한다. 개념적으로 클라이언트가 `parallax mcp serve`를 자식 프로세스로 띄우고 stdio로 통신한다. Claude Code나 Codex에서는 분석하려는 repo에서 그 명령을 클라이언트가 가리키게 한다. 서버는 작업 디렉터리에서 repo를 해석하므로, 대상 repo를 현재 디렉터리로 두고 실행한다.
 
+GitHub Copilot repo 설정에는 `parallax install-agent --copilot-package --target <repo> [--config .mcp.json]`를 사용한다. 이 명령은 repository instruction과 `parallax-impact` custom-agent profile을 명시한 대상 repo에만 쓰며 GitHub를 호출하지 않는다. `--dry-run`은 계획된 상대 경로/action을 미리 보여주고, `--force`는 기존 대상 파일을 덮어쓴다.
+
 ## read-only-first 불변 원칙
 
 Parallax는 불변 원칙 **I-8**([invariants.ko.md](invariants.ko.md) 참고)을 따른다 — agent surface는 안전한 read-only 분석 계층을 먼저 안정화하고, 쓰기 권한은 별도 모델과 리뷰 뒤에만 추가한다. 각 tool은 MCP `readOnlyHint` 어노테이션을 선언한다. 표에서 `readOnlyHint: true`는 source tree를 수정하지 않는다는 뜻이지, local database write가 전혀 없다는 뜻은 아니다. analysis/search/context tool은 응답 과정에서 `.parallax/impact.db`에 `context_tool_runs` telemetry 행과 context-pack 행을 추가할 수 있고, MCP resource read는 `context_resource_accesses` telemetry 행을 추가할 수 있다. `readOnlyHint: false` tool에는 명시적 memory write와 branch 관리 tool이 포함된다. 이들 중 어느 것도 source tree를 수정하지 않는다 — action은 추천일 뿐이다(불변 원칙 **I-9**).

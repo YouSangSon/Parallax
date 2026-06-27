@@ -56,7 +56,7 @@ package resolver는 common ecosystem의 manifest graph와 npm lockfile transitiv
 
 MCP는 read-only로 안정화됐다. 다음은 agent 사용성을 깊게 보는 단계.
 
-- [ ] GitHub-native agent package: Copilot repository instruction, MCP 설정 snippet, PR 작업용 least-privilege "먼저 Parallax 실행" workflow 생성
+- [x] GitHub-native agent package: Copilot repository instruction, MCP 설정 snippet, PR 작업용 least-privilege "먼저 Parallax 실행" workflow 생성
 - [x] affected-file impact finding용 SARIF / code-scanning export와 SARIF 파일 생성을 담당하는 composite GitHub Action
 - [ ] contract break, adapter known-gap note, coverage gap, recommended verification action까지 SARIF coverage 확장
 - [ ] agent가 다음에 볼 file, symbol, contract, test, evidence, provenance, known-gap note를 rank하는 token-budgeted repo map / context card

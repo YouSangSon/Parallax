@@ -98,6 +98,9 @@ The `remember`/`recall` value passed via `--value` is parsed as JSON when possib
 | :--- | :--- |
 | `parallax mcp serve` | Start the MCP stdio server for the current repo (see [mcp.md](mcp.md)) |
 | `parallax install-agent [--config <path>] [--name <name>] [--dry-run]` | Register Parallax's read-only MCP server in a client's `mcpServers` config (default `.mcp.json`); `--dry-run` previews the merged config without writing |
+| `parallax install-agent --copilot-package --target <repo> [--config <path>] [--name <name>] [--dry-run] [--force]` | Plan or install a GitHub Copilot package into the explicit target repo: `.github/copilot-instructions.md`, `.github/agents/parallax-impact.agent.md`, and an MCP config snippet only when `--config` is supplied |
+
+The Copilot package command writes only under the explicit `--target <repo>` path. It does not call GitHub, push changes, or modify this Parallax repo unless this repo is passed as `--target`. `--dry-run` prints the planned relative paths and actions; existing files are skipped unless `--force` is supplied.
 
 ## UI
 

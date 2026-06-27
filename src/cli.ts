@@ -556,16 +556,39 @@ async function main(): Promise<void> {
   }
 
   if (command === 'install-agent') {
-    const { resolve } = await import('node:path');
     const { existsSync, readFileSync } = await import('node:fs');
-    const { addParallaxMcpServer, installParallaxMcp } = await import('./index.js');
+    const {
+      addParallaxMcpServer,
+      installCopilotAgentPackage,
+      installParallaxMcp,
+      planCopilotAgentPackage
+    } = await import('./index.js');
     const name = parseOptionalArg(args, '--name');
     const commandOverride = parseOptionalArg(args, '--command');
-    const configPath = resolve(repoRoot, parseOptionalArg(args, '--config') ?? '.mcp.json');
     const options = {
       ...(name ? { name } : {}),
       ...(commandOverride ? { command: commandOverride } : {})
     };
+    if (args.includes('--copilot-package')) {
+      const target = resolve(repoRoot, parseRequiredArg(args, '--target'));
+      const config = parseOptionalArg(args, '--config');
+      const packageOptions = {
+        targetRepo: target,
+        ...(config !== undefined ? { config } : {}),
+        ...(args.includes('--force') ? { force: true } : {}),
+        ...options
+      };
+      const plan = args.includes('--dry-run')
+        ? planCopilotAgentPackage(packageOptions)
+        : installCopilotAgentPackage(packageOptions);
+      console.log(JSON.stringify({
+        targetRepo: plan.targetRepo,
+        files: plan.files.map((file) => ({ path: file.path, action: file.action }))
+      }, null, 2));
+      return;
+    }
+
+    const configPath = resolve(repoRoot, parseOptionalArg(args, '--config') ?? '.mcp.json');
     if (args.includes('--dry-run')) {
       const existing = existsSync(configPath)
         ? (JSON.parse(readFileSync(configPath, 'utf8') || '{}') as Record<string, unknown>)
@@ -768,6 +791,8 @@ Agent memory:
   ${PACKAGE_NAME} ingest-traces --file <traces.json>
   ${PACKAGE_NAME} query    "MATCH (a)-[r:DEPENDS_ON]->(b) RETURN a.path, b.path LIMIT 20"
   ${PACKAGE_NAME} install-agent [--config .mcp.json] [--name parallax] [--dry-run]
+  ${PACKAGE_NAME} install-agent --copilot-package --target <repo> [--config .mcp.json]
+                          [--name parallax] [--dry-run] [--force]
 `);
 }
 

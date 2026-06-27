@@ -56,7 +56,7 @@ The package resolver now covers manifest graphs across common ecosystems and npm
 
 MCP has stabilized as read-only. Next is the stage of looking deeply at agent usability.
 
-- [ ] GitHub-native agent package: generate Copilot repository instructions, MCP setup snippets, and a least-privilege "run Parallax first" workflow for PR work
+- [x] GitHub-native agent package: generate Copilot repository instructions, MCP setup snippets, and a least-privilege "run Parallax first" workflow for PR work
 - [x] SARIF / code-scanning export for affected-file impact findings, plus a composite GitHub Action that generates the SARIF file for explicit upload
 - [ ] Broaden SARIF coverage to contract breaks, adapter known-gap notes, coverage gaps, and recommended verification actions
 - [ ] Token-budgeted repo map / context card that ranks the files, symbols, contracts, tests, evidence, provenance, and known-gap notes an agent should inspect next

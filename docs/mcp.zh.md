@@ -16,6 +16,8 @@ parallax mcp serve
 
 将 Parallax 作为 stdio 服务器注册到任何 MCP 客户端。概念上，客户端把 `parallax mcp serve` 作为子进程启动并通过 stdio 通信。在 Claude Code 或 Codex 中，让客户端从你要分析的 repo 指向该命令。由于服务器从工作目录解析 repo，请以目标 repo 为当前目录来启动它。
 
+对于 GitHub Copilot repo 设置，运行 `parallax install-agent --copilot-package --target <repo> [--config .mcp.json]`。该命令只会把 repository instructions 和 `parallax-impact` custom-agent profile 写入显式目标 repo，不会调用 GitHub。使用 `--dry-run` 预览计划的相对路径/action，使用 `--force` 覆盖已有目标文件。
+
 ## read-only-first 不变量
 
 Parallax 遵循不变量 **I-8**（见 [invariants.zh.md](invariants.zh.md)）：agent surface 先稳定一个安全的 read-only 分析层，写权限只在单独的模型与评审之后才加入。每个 tool 都声明一个 MCP `readOnlyHint` 注解。表中标注为 `readOnlyHint: true` 表示 source tree read-only，并不表示完全没有 local database write。analysis/search/context tool 在应答时可能向 `.parallax/impact.db` 追加 `context_tool_runs` telemetry row 与 context-pack row，MCP resource read 也可能追加 `context_resource_accesses` telemetry row。标注为 `readOnlyHint: false` 的 tool 包括显式 memory write 与 branch 管理 tool。它们之中没有任何一个会修改你的 source tree——action 只是建议（不变量 **I-9**）。

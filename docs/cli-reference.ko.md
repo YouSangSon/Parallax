@@ -98,6 +98,9 @@
 | :--- | :--- |
 | `parallax mcp serve` | 현재 repo의 MCP stdio 서버를 시작([mcp.ko.md](mcp.ko.md) 참고) |
 | `parallax install-agent [--config <path>] [--name <name>] [--dry-run]` | 클라이언트의 `mcpServers` 설정에 Parallax 읽기전용 MCP 서버를 등록(기본 `.mcp.json`); `--dry-run`은 쓰지 않고 병합 결과만 미리보기 |
+| `parallax install-agent --copilot-package --target <repo> [--config <path>] [--name <name>] [--dry-run] [--force]` | 명시한 대상 repo에 GitHub Copilot package를 계획 또는 설치: `.github/copilot-instructions.md`, `.github/agents/parallax-impact.agent.md`, 그리고 `--config`가 있을 때만 MCP 설정 snippet |
+
+Copilot package 명령은 명시한 `--target <repo>` 아래에만 쓴다. GitHub를 호출하거나 push하지 않으며, 이 Parallax repo를 `--target`으로 넘기지 않는 한 이 repo를 수정하지 않는다. `--dry-run`은 계획된 상대 경로와 action을 출력하고, 기존 파일은 `--force`가 없으면 건너뛴다.
 
 ## UI
 

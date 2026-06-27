@@ -6,7 +6,10 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Active Loop
 
-- Next loop: continue D4 deep-linkable UI/export work.
+- Next loop: continue M10 SCIP bridge work.
+- Completed slice: D4 UI export/deep-linking now preserves selected impact path,
+  filter text, and report-delta policy preset in the URL, and exports JSON,
+  affected-path CSV, and PNG/SVG impact maps from the workbench toolbar.
 - Completed slice: D6 local Git hook installer now adds `parallax install-hook`
   for managed `pre-commit` / `pre-push` impact gates, preserving existing
   non-Parallax hooks unless forced.
@@ -30,5 +33,5 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Next
 
-1. Build D4 deep-linkable UI/export for human sharing.
-2. Keep M10 SCIP bridge queued after the adoption lane.
+1. Build M10 SCIP bridge.
+2. Keep S1/S4 scale and perf follow-through queued after the standards bridge.

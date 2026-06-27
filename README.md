@@ -116,6 +116,8 @@ parallax ui
 parallax ui --report <report-id> --port 3717
 ```
 
+The UI keeps the selected impact path, filter, and policy preset in the URL. It can export the current workbench as JSON, affected-path CSV, or a PNG/SVG impact map from the toolbar.
+
 For a worked tutorial that continues from the UI into MCP and CI guardrails, see [`docs/getting-started.md`](docs/getting-started.md).
 
 > 💡 `analyze` returns exit code `1` when there are affected files. This is intentional, so CI or agent guardrails can use "has impact" as a signal.

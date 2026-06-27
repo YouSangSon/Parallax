@@ -60,7 +60,7 @@ export function renderReportDeltaPanel(
   const addedRows = renderDeltaPathRows(comparison.addedAffectedFiles ?? comparison.addedAffectedPaths, 'added', m, sourceContext);
   const removedRows = renderDeltaPathRows(comparison.removedAffectedFiles ?? comparison.removedAffectedPaths, 'removed', m, sourceContext);
   const presetRows = comparison.policyPresets.map((preset) => `
-    <li class="delta-preset delta-preset-${escapeHtml(preset.summary)}">
+    <li class="delta-preset delta-preset-${escapeHtml(preset.summary)}" tabindex="0" role="button" data-policy-preset="${escapeHtml(preset.id)}">
       <strong>${escapeHtml(preset.label)}</strong>
       <span>${escapeHtml(preset.summary)}</span>
       <b>${escapeHtml(formatSignedDelta(preset.reviewLoadDelta))}</b>

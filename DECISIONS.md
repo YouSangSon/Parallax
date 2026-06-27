@@ -138,3 +138,23 @@ Why:
 - Local hooks remain intentionally bypassable with Git's `--no-verify` or
   `PARALLAX_SKIP_HOOK=1`; CI and GitHub Code Scanning remain the authoritative
   shared review surfaces.
+
+## 2026-06-28: UI Deep Links And Exports
+
+Decision: implement D4 with browser-native state and download APIs inside the
+existing static UI instead of adding a router, client framework, or export
+service.
+
+Sources:
+- URL state: <https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams>
+- History update: <https://developer.mozilla.org/en-US/docs/Web/API/History/replaceState>
+- Local export payloads: <https://developer.mozilla.org/en-US/docs/Web/API/Blob>
+
+Why:
+- The workbench already renders all selected report data into the bootstrap
+  JSON, so JSON/CSV export can be client-only.
+- `URLSearchParams` plus `history.replaceState` is enough to preserve selected
+  impact path, filter text, and policy preset in shareable URLs.
+- A PNG map export can use the existing SVG, `Blob`, object URLs, and canvas,
+  with SVG fallback when rasterization is unavailable.
+- No new dependency or server-side export path is needed.

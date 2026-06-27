@@ -122,7 +122,7 @@ The Copilot package command writes only under the explicit `--target <repo>` pat
 | :--- | :--- |
 | `parallax ui [--report <id>] [--port <n>]` | Start the local UI explorer; `--report` opens a specific report, `--port` sets the listen port |
 
-The UI runs until interrupted (`SIGINT`/`SIGTERM`); it prints its URL on startup.
+The UI runs until interrupted (`SIGINT`/`SIGTERM`); it prints its URL on startup. The workbench URL preserves the selected impact path, filter text, and report-delta policy preset, and the toolbar can export the current view as JSON, affected-path CSV, or a PNG/SVG impact map.
 
 ## Exit codes
 

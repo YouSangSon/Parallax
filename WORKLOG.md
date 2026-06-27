@@ -121,3 +121,20 @@
   - `npm run docs:lint`
   - `npm run build`
   - `git diff --check`
+- Shipped D4 deep-linkable UI/export slice.
+  - `src/ui/client.ts` now keeps selected impact path, filter text, and
+    report-delta policy preset in the URL using `URLSearchParams` and
+    `history.replaceState`.
+  - `src/ui.ts` and `src/ui/styles.ts` add toolbar controls for link copy,
+    JSON export, affected-path CSV export, and PNG/SVG impact-map export.
+  - `src/ui/report_delta.ts` makes policy preset cards selectable so shared
+    URLs can reopen the same preset context.
+  - `tests/ui.test.ts` covers the rendered export controls, deep-link state
+    script, preset state, mobile layout, and CSP image allowances.
+- D4 verification:
+  - `npm run check`
+  - `node --import tsx --test tests/ui.test.ts`
+  - `npm run docs:lint`
+  - `npm run build`
+  - `git diff --check`
+  - `npm test`

@@ -122,7 +122,7 @@ Copilot package 命令只会写入显式 `--target <repo>` 路径之下。它不
 | :--- | :--- |
 | `parallax ui [--report <id>] [--port <n>]` | 启动本地 UI explorer；`--report` 打开指定 report，`--port` 设置监听端口 |
 
-UI 会一直运行直到被中断（`SIGINT`/`SIGTERM`）；启动时打印其 URL。
+UI 会一直运行直到被中断（`SIGINT`/`SIGTERM`）；启动时打印其 URL。Workbench URL 会保留选中的影响路径、筛选文本与 report-delta 策略预设，toolbar 可将当前视图导出为 JSON、affected-path CSV 或 PNG/SVG 影响图。
 
 ## Exit code
 

@@ -73,6 +73,43 @@ export const UI_STYLES_MAIN = `    :root {
       outline: 2px solid #9ed3c4;
       outline-offset: 2px;
     }
+    .export-controls {
+      min-width: 0;
+      display: inline-grid;
+      grid-template-columns: repeat(4, minmax(44px, max-content));
+      gap: 4px;
+      align-items: center;
+    }
+    .toolbar-action {
+      min-height: 38px;
+      min-width: 44px;
+      border: 1px solid rgba(158, 211, 196, 0.36);
+      border-radius: 6px;
+      padding: 0 9px;
+      background: rgba(248, 244, 232, 0.08);
+      color: #dceae2;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 900;
+    }
+    .toolbar-action:hover {
+      border-color: #9ed3c4;
+      background: rgba(158, 211, 196, 0.16);
+    }
+    .toolbar-action:focus-visible {
+      outline: 2px solid #9ed3c4;
+      outline-offset: 2px;
+    }
+    .toolbar-action[data-state="copied"] {
+      border-color: #8bb8bc;
+      color: #f2fbfb;
+      background: rgba(139, 184, 188, 0.28);
+    }
+    .toolbar-action[data-state="failed"] {
+      border-color: #d9a0a0;
+      color: #fff1f0;
+      background: rgba(173, 73, 73, 0.22);
+    }
     .lang-switcher {
       display: inline-flex;
       align-items: center;
@@ -415,6 +452,15 @@ export const UI_STYLES_MAIN = `    :root {
     .delta-preset-wider { border-color: #d7b477; box-shadow: inset 3px 0 0 var(--amber); }
     .delta-preset-narrower { border-color: #89b6a5; box-shadow: inset 3px 0 0 var(--green); }
     .delta-preset-unchanged { border-color: #8bb8bc; box-shadow: inset 3px 0 0 var(--teal); }
+    .delta-preset.selected-preset {
+      border-color: #263d32;
+      background: #f4fbf7;
+      box-shadow: inset 3px 0 0 var(--green), 0 0 0 2px rgba(115, 194, 172, 0.18);
+    }
+    .delta-preset:focus-visible {
+      outline: 2px solid #73c2ac;
+      outline-offset: 2px;
+    }
     .delta-lanes {
       list-style: none;
       display: grid;
@@ -1739,6 +1785,14 @@ export const UI_STYLES_MAIN = `    :root {
         min-width: 0;
         min-height: 44px;
         padding: 0 8px;
+      }
+      .export-controls {
+        width: 100%;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+      .toolbar-action {
+        min-height: 44px;
+        padding: 0 4px;
       }
       .metrics {
         grid-template-columns: none;

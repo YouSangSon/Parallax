@@ -122,7 +122,7 @@ Copilot package 명령은 명시한 `--target <repo>` 아래에만 쓴다. GitHu
 | :--- | :--- |
 | `parallax ui [--report <id>] [--port <n>]` | 로컬 UI explorer를 시작; `--report`는 특정 report를 열고, `--port`는 리슨 포트를 지정 |
 
-UI는 중단(`SIGINT`/`SIGTERM`)될 때까지 실행되며, 시작 시 URL을 출력한다.
+UI는 중단(`SIGINT`/`SIGTERM`)될 때까지 실행되며, 시작 시 URL을 출력한다. workbench URL은 선택한 영향 경로, 필터 텍스트, report-delta 정책 프리셋을 유지하고, toolbar에서 현재 view를 JSON, affected-path CSV, PNG/SVG 영향 맵으로 내보낼 수 있다.
 
 ## Exit code
 

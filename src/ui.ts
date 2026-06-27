@@ -568,7 +568,8 @@ type UiMessageKey =
   | 'needsEvidence' | 'commandReady' | 'noCommandShort'
   | 'backToWorkbench' | 'lineLabel'
   // Buttons / actions
-  | 'copy' | 'copyConfig' | 'copyVerify' | 'copyCopied' | 'copyFailed' | 'verify' | 'review'
+  | 'copy' | 'copyConfig' | 'copyVerify' | 'copyCopied' | 'copyFailed' | 'copyLink'
+  | 'exportJson' | 'exportCsv' | 'exportPng' | 'exportDone' | 'shareExport' | 'verify' | 'review'
   // Trust state labels
   | 'reviewGaps' | 'useWithGaps' | 'readyToUse'
   | 'noSkippedPaths' | 'confidenceMetadataPresent' | 'openLimitations' | 'noneReported'
@@ -644,7 +645,8 @@ const UI_MESSAGES: Record<UiLanguage, UiMessages> = {
     needsEvidence: 'Needs evidence', commandReady: 'command ready', noCommandShort: 'no command',
     backToWorkbench: 'Back to Impact Workbench', lineLabel: 'Line',
     copy: 'Copy', copyConfig: 'Copy config', copyVerify: 'Copy verify',
-    copyCopied: 'Copied', copyFailed: 'Copy failed',
+    copyCopied: 'Copied', copyFailed: 'Copy failed', copyLink: 'Copy link',
+    exportJson: 'JSON', exportCsv: 'CSV', exportPng: 'PNG', exportDone: 'Exported', shareExport: 'Share and export',
     verify: 'Verify', review: 'Review',
     reviewGaps: 'Review gaps', useWithGaps: 'Use with gaps', readyToUse: 'Ready to use',
     noSkippedPaths: 'No skipped paths', confidenceMetadataPresent: 'Confidence metadata present',
@@ -729,7 +731,8 @@ const UI_MESSAGES: Record<UiLanguage, UiMessages> = {
     needsEvidence: '증거 필요', commandReady: '명령 준비됨', noCommandShort: '명령 없음',
     backToWorkbench: 'Impact Workbench로 돌아가기', lineLabel: '줄',
     copy: '복사', copyConfig: '설정 복사', copyVerify: '검증 복사',
-    copyCopied: '복사됨', copyFailed: '복사 실패',
+    copyCopied: '복사됨', copyFailed: '복사 실패', copyLink: '링크 복사',
+    exportJson: 'JSON', exportCsv: 'CSV', exportPng: 'PNG', exportDone: '내보냄', shareExport: '공유 및 내보내기',
     verify: '검증', review: '검토',
     reviewGaps: '갭 검토', useWithGaps: '갭 있음', readyToUse: '사용 가능',
     noSkippedPaths: '건너뛴 경로 없음', confidenceMetadataPresent: '신뢰도 메타데이터 존재',
@@ -814,7 +817,8 @@ const UI_MESSAGES: Record<UiLanguage, UiMessages> = {
     needsEvidence: '需要证据', commandReady: '命令就绪', noCommandShort: '无命令',
     backToWorkbench: '返回 Impact Workbench', lineLabel: '行',
     copy: '复制', copyConfig: '复制配置', copyVerify: '复制验证',
-    copyCopied: '已复制', copyFailed: '复制失败',
+    copyCopied: '已复制', copyFailed: '复制失败', copyLink: '复制链接',
+    exportJson: 'JSON', exportCsv: 'CSV', exportPng: 'PNG', exportDone: '已导出', shareExport: '分享与导出',
     verify: '验证', review: '审查',
     reviewGaps: '审查缺口', useWithGaps: '存在缺口', readyToUse: '可使用',
     noSkippedPaths: '无跳过路径', confidenceMetadataPresent: '存在置信度元数据',
@@ -1028,6 +1032,12 @@ ${UI_STYLES_MAIN}
       ${renderLanguageSwitcher(lang, snapshot.selectedReportId)}
       <select id="reportSelect" aria-label="${escapeHtml(m.reportSelector)}">${reportOptions || `<option value="">${escapeHtml(m.noReports)}</option>`}</select>
       <input id="filterInput" type="search" placeholder="${escapeHtml(m.filterPlaceholder)}" aria-label="${escapeHtml(m.filterRows)}">
+      <div class="export-controls" aria-label="${escapeHtml(m.shareExport)}">
+        <button id="copyLinkButton" class="toolbar-action" type="button">${escapeHtml(m.copyLink)}</button>
+        <button id="exportJsonButton" class="toolbar-action" type="button">${escapeHtml(m.exportJson)}</button>
+        <button id="exportCsvButton" class="toolbar-action" type="button">${escapeHtml(m.exportCsv)}</button>
+        <button id="exportPngButton" class="toolbar-action" type="button">${escapeHtml(m.exportPng)}</button>
+      </div>
     </div>
   </header>
   <main class="shell">
@@ -1315,7 +1325,7 @@ function htmlHeaders(): Record<string, string> {
     'content-type': 'text/html; charset=utf-8',
     'cache-control': 'no-store',
     'x-content-type-options': 'nosniff',
-    'content-security-policy': "default-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'"
+    'content-security-policy': "default-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; img-src 'self' blob: data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'"
   };
 }
 

@@ -116,6 +116,8 @@ parallax ui
 parallax ui --report <report-id> --port 3717
 ```
 
+UI는 선택한 영향 경로, 필터, 정책 프리셋을 URL에 유지한다. toolbar에서 현재 workbench를 JSON, affected-path CSV, PNG/SVG 영향 맵으로 내보낼 수 있다.
+
 UI 다음에 MCP와 CI guardrail까지 이어지는 튜토리얼은 [`docs/getting-started.ko.md`](docs/getting-started.ko.md)를 참고하자.
 
 > 💡 `analyze`는 영향받는 파일이 있으면 exit code `1`을 반환한다. CI나 agent guardrail에서 “영향 있음”을 신호로 쓰기 위한 의도적인 동작이다.

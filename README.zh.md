@@ -116,6 +116,8 @@ parallax ui
 parallax ui --report <report-id> --port 3717
 ```
 
+UI 会把选中的影响路径、筛选词与策略预设保存在 URL 中。也可以在 toolbar 中将当前 workbench 导出为 JSON、affected-path CSV，或 PNG/SVG 影响图。
+
 如果你想从 UI 继续走到 MCP 与 CI guardrail，可直接看 [`docs/getting-started.zh.md`](docs/getting-started.zh.md)。
 
 > 💡 当存在受影响文件时，`analyze` 会返回退出码 `1`。这是有意为之，便于 CI 或智能体护栏将“存在影响”作为信号。

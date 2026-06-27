@@ -135,41 +135,45 @@ also remain thinly bench-covered.
 Larger bets (L) that change the tool's ceiling: **A1** (TS TypeChecker), **A3** (Spring DI/persistence),
 **W3** (monorepo), **S1** (incremental). Sequence these after the quick wins land and are bench-guarded.
 
-## Ecosystem reassessment (2026-06-26)
+## Ecosystem reassessment (2026-06-27)
 
 The web/GitHub review changes the short-term adoption order without invalidating the core-engine order above. The durable product thesis is still local-first impact intelligence, but the highest-friction gap is now **where the result appears**: coding agents and reviewers live in Copilot / Claude / Cursor, GitHub PRs, Code Scanning, and compact repo-map context windows.
 
 ### Sources checked
 
-- GitHub Copilot repository instructions: <https://docs.github.com/copilot/customizing-copilot/adding-custom-instructions-for-github-copilot>
+- GitHub Copilot repository instructions: <https://docs.github.com/en/copilot/how-tos/copilot-on-github/customize-copilot/add-custom-instructions/add-repository-instructions>
 - GitHub Copilot custom agents: <https://docs.github.com/en/copilot/how-tos/copilot-on-github/customize-copilot/customize-cloud-agent/create-custom-agents>
+- GitHub Agentic Workflows: <https://github.com/github/gh-aw>
 - GitHub SARIF upload: <https://docs.github.com/en/code-security/how-tos/find-and-fix-code-vulnerabilities/integrate-with-existing-tools/upload-sarif-file>
 - GitHub SARIF support: <https://docs.github.com/en/code-security/reference/code-scanning/sarif-files/sarif-support>
 - Sourcegraph MCP: <https://sourcegraph.com/mcp>
 - SCIP: <https://github.com/scip-code/scip>
 - Aider repo map: <https://aider.chat/docs/repomap.html>
+- Repomix: <https://github.com/yamadashy/repomix>
 - CodeGraphContext: <https://github.com/CodeGraphContext/CodeGraphContext>
 - code-review-graph: <https://github.com/tirth8205/code-review-graph>
 - agentmap: <https://github.com/raymondchins/agentmap>
 - Semgrep MCP: <https://github.com/semgrep/mcp>
 - OpenRewrite docs: <https://docs.openrewrite.org/>
-- Parallax dependency PR queue, refreshed 2026-06-26: <https://github.com/YouSangSon/Parallax/pulls?q=is%3Apr+is%3Aopen+dependabot>
+- Parallax dependency PR queue, refreshed 2026-06-27: <https://github.com/YouSangSon/Parallax/pulls?q=is%3Apr+is%3Aopen+dependabot>
 
 ### What the search implies
 
 1. **GitHub-native output is the strongest next adoption slice.** GitHub supports repository instructions for Copilot and SARIF upload for third-party tools, so Parallax should emit both an agent setup package and a code-scanning artifact. This is D7 → D1 → M8.
-2. **Repo-map output is now table stakes for agent UX.** Aider, Sourcegraph, CodeGraphContext, code-review-graph, and agentmap all frame success as ranked, compact, tool-call-efficient code context. Parallax now has the named repo-map/context-card command and MCP surface from M9; the next work is dogfooding and tuning it against real PR workflows.
+2. **Repo-map output is now table stakes for agent UX.** Aider, Sourcegraph, Repomix, CodeGraphContext, code-review-graph, and agentmap all frame success as ranked, compact, tool-call-efficient code context. Parallax now has the named repo-map/context-card command and MCP surface from M9; the next work is dogfooding and tuning it against real PR workflows.
 3. **SCIP is the standards bridge for precision.** It is a practical path to cross-language definitions/references before Parallax owns parser-grade precision for every language. This is M10, and it complements A1/A2/A3 instead of replacing them.
 4. **Security and codemod systems should be integrations first.** Semgrep and OpenRewrite are mature in their own lanes. Parallax should recommend and scope scans/refactors based on affected files and evidence, not rebuild those engines.
-5. **Current repo state gives an immediate dogfood target, but only as a dated queue.** As of 2026-06-26, open Dependabot PRs (#23-#31) make dependency-impact triage a useful real workflow: analyze the bump, emit SARIF/Markdown, provide repo-map context, and show verification actions. Refresh the queue before starting D8.
+5. **Current repo state gives an immediate dogfood target.** As of 2026-06-27, open Dependabot PRs #23-#31 are still available: GitHub Actions major bumps (#23-#28), `@types/node` (#29), TypeScript 6 (#30), and Zod (#31). This makes dependency-impact triage a useful real workflow: analyze the bump, emit SARIF/Markdown, provide repo-map context, and show verification actions.
+6. **Agentic workflow safety reinforces Parallax's I-8 boundary.** GitHub Agentic Workflows emphasizes read-only defaults, guarded writes, sandboxing, and approval gates. Parallax should keep PR/action automation read-only by default, with explicit opt-in for any write surface.
 
 ### Reprioritized adoption lane
 
-1. **D7 SARIF export** — define the GitHub-native result schema and mapping from impact findings, confidence, provenance, and known-gap disclosure to code-scanning alerts.
-2. **D1 official Action** — run init → index → analyze over PR diffs, upload SARIF, append Markdown summary, and support `--fail-on`.
-3. **M8 Copilot / agent install package** — generate instructions and MCP snippets that teach agents to call Parallax before editing.
-4. **M9 repo-map/context card** ✅ — expose ranked context with budgets so agents see changed roots, high-confidence affected nodes, contracts, tests, evidence, provenance, known gaps, and verification actions in one compact response.
+1. **M9 hardening / dogfood** — finish the repo-map usability polish and validate that the human CLI and MCP JSON both expose query matches, resource URIs, provenance, omissions, and verification actions clearly.
+2. **D8 dependency PR dogfood lane** — use the live Dependabot queue (#23-#31) as the first real workflow: PR diff → `analyze` / SARIF → repo-map → verification plan.
+3. **D7 SARIF breadth** — extend Code Scanning projection beyond affected files to contract breaks, adapter known gaps, coverage gaps, and recommended verification actions.
+4. **D1 official PR wrapper** — run init → index → PR diff discovery → analyze, upload SARIF, append Markdown summary, and support `--fail-on`.
 5. **D4 deep-linkable UI/export** — let humans share the same selected impact path the agent saw.
+6. **M10 SCIP bridge** — ingest/export SCIP as a standards-based precision layer after the adoption lane is dogfooded.
 
 ## Larger-bet reassessment (2026-06-21)
 

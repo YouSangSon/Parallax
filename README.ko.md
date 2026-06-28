@@ -171,8 +171,8 @@ UI 다음에 MCP와 CI guardrail까지 이어지는 튜토리얼은 [`docs/getti
 | :--- | :--- |
 | **Workspace catalog** | `.parallax/workspace.json`에 사용자가 허용한 local repo만 등록. clone/network 없음 |
 | **Cross-repo resolver** | 등록된 repo 사이의 provider endpoint ↔ consumer file link를 저장 |
-| **Contract diff** | OpenAPI, GraphQL, Protobuf, AsyncAPI surface diff를 `breaking` / `non-breaking` / `unknown`으로 분류하고, OpenAPI response nullable addition, format change, enum-value removal도 감지 |
-| **Consumer impact** | removed endpoint/operation, field removal/type/nullable/format/enum change, required request field 추가 등을 known consumer와 연결 |
+| **Contract diff** | OpenAPI, GraphQL, Protobuf, AsyncAPI surface diff를 `breaking` / `non-breaking` / `unknown`으로 분류하고, OpenAPI response nullable addition, response format/enum change, request enum-value removal도 감지 |
+| **Consumer impact** | removed endpoint/operation, field removal/type/nullable/format/enum change, required request field 추가, request enum-value removal 등을 known consumer와 연결 |
 | **Event topology hint** | AsyncAPI producer/consumer 방향과 breaking provenance를 compact payload로 제공 |
 
 ```bash

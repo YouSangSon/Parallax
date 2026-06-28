@@ -6,9 +6,13 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Active Loop
 
-- Next loop: continue W4/W5 with OpenAPI request enum/format semantics,
-  response optionality rules, plus the reusable JSON Schema contract-kind
-  slice.
+- Next loop: continue W4/W5 with OpenAPI request format semantics, response
+  optionality rules, plus the reusable JSON Schema contract-kind slice.
+- Completed slice: W4 OpenAPI request enum-value removal now reuses existing
+  type-preserving enum property signatures. `analyzeContractDiff` emits
+  `removed_request_property_enum_value` breaking changes when current request
+  bodies remove previously accepted enum values, and the deterministic
+  `contractDiffQuality` bench now has a request enum-removal case.
 - Completed slice: W4 OpenAPI response nullable additions now flow through
   compatibility signatures. `OpenApiPropertySignature` records `nullable`,
   OpenAPI compatibility schemaVersion is bumped to 5, `analyzeContractDiff`

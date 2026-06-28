@@ -801,8 +801,9 @@ function changeKindOrder(kind: ContractDiffChangeKind): number {
   if (kind === 'changed_response_property_format') return 6;
   if (kind === 'added_response_property_nullable') return 7;
   if (kind === 'added_request_required_property') return 8;
-  if (kind === 'changed_request_property_type') return 9;
-  return 10;
+  if (kind === 'removed_request_property_enum_value') return 9;
+  if (kind === 'changed_request_property_type') return 10;
+  return 11;
 }
 
 function dedupeConsumers(consumers: ImpactedContractConsumer[]): ImpactedContractConsumer[] {

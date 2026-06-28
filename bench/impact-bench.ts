@@ -286,6 +286,7 @@ type ContractDiffQualityCaseSpec = {
 
 type ContractDiffBenchOpenApiOptions = {
   requestRequired?: string[];
+  requestRoleEnum?: string[];
   responseRequired?: string[];
   responseIdFormat?: string;
   responseIdNullable?: boolean;
@@ -341,6 +342,17 @@ const contractDiffQualityCases: readonly ContractDiffQualityCaseSpec[] = [
         kind: 'added_request_required_property',
         classification: 'breaking',
         schemaPath: 'requestBody.required.email'
+      }
+    ]
+  },
+  {
+    id: 'removed-request-enum-value',
+    current: { requestRoleEnum: ['admin', 'member'] },
+    expectedChanges: [
+      {
+        kind: 'removed_request_property_enum_value',
+        classification: 'breaking',
+        schemaPath: 'requestBody.properties.role.enum.string:"viewer"'
       }
     ]
   },
@@ -1154,7 +1166,11 @@ async function writeContractDiffBenchOpenApiJsonContract(
                   required: options.requestRequired ?? ['name'],
                   properties: {
                     name: { type: 'string' },
-                    email: { type: 'string' }
+                    email: { type: 'string' },
+                    role: {
+                      type: 'string',
+                      enum: options.requestRoleEnum ?? ['admin', 'member', 'viewer']
+                    }
                   }
                 }
               }

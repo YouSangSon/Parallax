@@ -554,3 +554,40 @@
   - `npm test`
   - `npm audit --audit-level=high`
   - `npm run test:dogfood`
+- Refreshed W4/W5 research and remote project signals for request enum-value
+  removals.
+  - Official OpenAPI 3.0.3 / 3.1.0 Schema Object docs and the JSON Schema
+    enum reference confirm `enum` is a validation constraint on allowed values.
+    Removing an allowed request value narrows provider acceptance for existing
+    clients.
+  - `gh issue list` still shows only issue #3 open; `gh pr list` still shows
+    Dependabot PRs #23-#31, so no remote issue displaced the W4 contract
+    fidelity slice.
+- Shipped W4 OpenAPI request enum-removal detection.
+  - `analyzeContractDiff` now emits
+    `removed_request_property_enum_value` breaking changes when a current
+    OpenAPI JSON request body removes a previously allowed enum value.
+  - The change reuses existing type-preserving enum provenance
+    (`enumValue`, `previousEnumValues`, `currentEnumValues`), so no OpenAPI
+    compatibility schemaVersion bump was required beyond the existing v5
+    property-signature shape.
+  - The deterministic `contractDiffQuality` bench now includes a request
+    enum-removal case, so CI summaries show 7/7 contract-diff cases and
+    changes.
+  - Backlog remains on W4/W5 for request format semantics, response optionality
+    rules, and the reusable JSON Schema contract kind.
+- W4 request enum-removal verification:
+  - `npm run check`
+  - `node --import tsx --test tests/contract-diff.test.ts`
+  - `node --import tsx --test tests/impact-bench.test.ts tests/impact-bench-report.test.ts`
+  - `node --import tsx --test tests/parallax.test.ts`
+  - `npm run docs:lint`
+  - `git diff --check`
+  - `npm run bench`
+  - `npm run bench:report`
+  - `npm run build`
+  - `npm test`
+  - `npm audit --audit-level=high`
+  - `npm run test:dogfood`
+  - Process check: no project dev server or test runner remained listening;
+    only unrelated system/MCP helper processes were visible.

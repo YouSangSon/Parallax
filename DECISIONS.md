@@ -583,3 +583,38 @@ Why:
   users to reindex rather than silently compare different signature shapes.
 - The deterministic contract-diff bench now includes a response nullable
   addition case so this signal stays visible in CI summaries.
+
+## 2026-06-28: Detect OpenAPI Request Enum-Value Removals
+
+Decision: classify OpenAPI request body enum value removals as breaking request
+narrowing, reusing the existing type-preserving `enumValues` property signature.
+No OpenAPI compatibility schemaVersion bump is needed because compat schema v5
+already persists enum provenance for properties.
+
+Sources:
+- OpenAPI 3.0.3 Schema Object:
+  <https://spec.openapis.org/oas/v3.0.3.html#schema-object>
+- OpenAPI 3.1.0 Schema Object:
+  <https://spec.openapis.org/oas/v3.1.0.html#schema-object>
+- JSON Schema enum reference:
+  <https://json-schema.org/understanding-json-schema/reference/enum>
+- Parallax open issue queue refreshed via `gh issue list` on 2026-06-28: #3 is
+  still the only open issue.
+- Parallax open PR queue refreshed via `gh pr list` on 2026-06-28: #23-#31
+  remain Dependabot PRs.
+
+Why:
+- OpenAPI schemas reuse JSON Schema-style validation constraints, and `enum`
+  defines the allowed value set. A current request body that removes a
+  previously allowed enum value rejects client payloads that were valid against
+  the earlier provider contract.
+- This is the request-side mirror of response enum removal, but with direction
+  adjusted for provider acceptance: removing a request enum value is breaking;
+  adding a request enum value is broadening and stays non-breaking/out of scope
+  for this slice.
+- The implementation can reuse the existing enum fingerprint/provenance fields
+  (`enumValue`, `previousEnumValues`, `currentEnumValues`) without changing the
+  compatibility JSON shape.
+- The deterministic contract-diff bench now includes a request enum-removal
+  case so CI summaries expose this contract-fidelity signal alongside response
+  nullable/format/enum coverage.

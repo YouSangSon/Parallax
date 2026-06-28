@@ -65,6 +65,15 @@ function classifyRequestBodyChanges(
     previousBody,
     currentBody
   }));
+  changes.push(...classifyPropertyEnumRemovals({
+    kind: 'removed_request_property_enum_value',
+    reason: 'request enum value removed from current contract',
+    httpMethod: currentOperation.method,
+    routePath: currentOperation.path,
+    schemaPathPrefix: 'requestBody.properties',
+    previousBody,
+    currentBody
+  }));
   return changes;
 }
 
@@ -116,7 +125,9 @@ function classifyResponseBodyChanges(
       previousBody,
       currentBody
     }));
-    changes.push(...classifyResponsePropertyEnumRemovals({
+    changes.push(...classifyPropertyEnumRemovals({
+      kind: 'removed_response_property_enum_value',
+      reason: 'response enum value removed from current contract',
       httpMethod: previousOperation.method,
       routePath: previousOperation.path,
       statusCode,
@@ -176,10 +187,12 @@ function classifyPropertyTypeChanges(options: {
   return changes;
 }
 
-function classifyResponsePropertyEnumRemovals(options: {
+function classifyPropertyEnumRemovals(options: {
+  kind: 'removed_request_property_enum_value' | 'removed_response_property_enum_value';
+  reason: string;
   httpMethod: string;
   routePath: string;
-  statusCode: string;
+  statusCode?: string;
   schemaPathPrefix: string;
   previousBody: OpenApiObjectSchemaSignature | undefined;
   currentBody: OpenApiObjectSchemaSignature | undefined;
@@ -194,12 +207,12 @@ function classifyResponsePropertyEnumRemovals(options: {
     for (const enumValue of previousProperty.enumValues) {
       if (currentEnumValues.has(enumValue)) continue;
       changes.push({
-        kind: 'removed_response_property_enum_value',
+        kind: options.kind,
         classification: 'breaking',
-        reason: 'response enum value removed from current contract',
+        reason: options.reason,
         httpMethod: options.httpMethod,
         routePath: options.routePath,
-        statusCode: options.statusCode,
+        ...(options.statusCode !== undefined ? { statusCode: options.statusCode } : {}),
         propertyName,
         schemaPath: `${options.schemaPathPrefix}.${propertyName}.enum.${enumValue}`,
         enumValue,

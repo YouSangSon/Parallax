@@ -548,6 +548,7 @@ async function writeOpenApiJsonUserSchemaContract(
     responseIdNullable?: boolean;
     responseStatusEnum?: OpenApiEnumValue[];
     requestRequired?: string[];
+    requestRoleEnum?: OpenApiEnumValue[];
   } = {}
 ): Promise<void> {
   await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
@@ -587,7 +588,11 @@ async function writeOpenApiJsonUserSchemaContract(
                     required: options.requestRequired ?? ['name'],
                     properties: {
                       name: { type: 'string' },
-                      email: { type: 'string' }
+                      email: { type: 'string' },
+                      role: {
+                        type: 'string',
+                        enum: options.requestRoleEnum ?? ['admin', 'member', 'viewer']
+                      }
                     }
                   }
                 }
@@ -3635,6 +3640,34 @@ test('analyzeContractDiff classifies added OpenAPI JSON request required propert
       }
     ]
   );
+});
+
+test('analyzeContractDiff classifies removed OpenAPI JSON request enum values as breaking', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithResolvedJsonSchemaContract();
+  await writeOpenApiJsonUserSchemaContract(providerRoot, { requestRoleEnum: ['admin', 'member'] });
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/openapi.json'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'removed_request_property_enum_value',
+      classification: 'breaking',
+      reason: 'request enum value removed from current contract',
+      httpMethod: 'POST',
+      routePath: '/api/users',
+      propertyName: 'role',
+      schemaPath: 'requestBody.properties.role.enum.string:"viewer"',
+      enumValue: 'string:"viewer"',
+      previousEnumValues: ['string:"admin"', 'string:"member"', 'string:"viewer"'],
+      currentEnumValues: ['string:"admin"', 'string:"member"']
+    }
+  ]);
 });
 
 test('analyzeContractDiff classifies added OpenAPI YAML request required properties as breaking', async () => {

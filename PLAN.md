@@ -6,7 +6,15 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Active Loop
 
-- Next loop: continue W5 with the reusable JSON Schema contract-kind slice.
+- Next loop: start W3 monorepo sub-packages as first-class catalog members.
+- Completed slice: W5 JSON Schema contract-kind first slice now recognizes
+  `*.schema.json` and contract-located `schema.json` files as `json-schema`
+  contracts, stores `$schema` dialect and compatibility signatures, declares a
+  synthetic `SCHEMA #` endpoint, and classifies root-object required removal,
+  optional removal, property type changes, and nullable additions through
+  `analyzeContractDiff`. The deterministic `contractDiffQuality` bench now has
+  10/10 cases including JSON Schema required-property removal. Avro remains a
+  lower-priority W5 follow-on.
 - Completed slice: W4 OpenAPI response optional property removals now surface
   through contract diff as `removed_response_optional_property` non-breaking
   changes. Required response removals still drive breaking consumer links, but

@@ -104,7 +104,20 @@ export function isObviousContractPath(relativePath: string): boolean {
   return (
     withoutExtension.includes('openapi') ||
     withoutExtension.includes('swagger') ||
-    withoutExtension.includes('asyncapi')
+    withoutExtension.includes('asyncapi') ||
+    isJsonSchemaContractPath(relativePath)
+  );
+}
+
+export function isJsonSchemaContractPath(relativePath: string): boolean {
+  const basename = path.posix.basename(relativePath).toLowerCase();
+  const normalizedPath = relativePath.toLowerCase();
+  return (
+    basename.endsWith('.schema.json') ||
+    (
+      basename === 'schema.json' &&
+      /(^|\/)(api|apis|contracts?|schemas?)\//.test(normalizedPath)
+    )
   );
 }
 

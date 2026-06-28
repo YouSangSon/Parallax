@@ -687,3 +687,47 @@ Why:
   `non-breaking` and the deterministic bench pins that visibility.
 - No OpenAPI compatibility schemaVersion bump is required because schema v5
   already persists response property names.
+
+## 2026-06-28: Add JSON Schema Contract Kind As A Response-Like First Slice
+
+Decision: add a `json-schema` contract kind for `*.schema.json` and
+contract-located `schema.json` files, with one synthetic `SCHEMA #` endpoint
+per root schema. Reuse the existing OpenAPI object-schema signature for a
+directional produced-data comparison: required property removals are breaking,
+optional property removals are non-breaking, property type changes are
+breaking, and newly allowed `null` is breaking. Defer full subschema
+containment, `additionalProperties`, enum/format policy, multi-schema graph
+resolution, and Avro.
+
+Sources:
+- JSON Schema Validation draft 2020-12:
+  <https://json-schema.org/draft/2020-12/json-schema-validation>
+- JSON Schema object / required reference:
+  <https://json-schema.org/understanding-json-schema/reference/object#required>
+- OpenAPI 3.1.0 Schema Object:
+  <https://spec.openapis.org/oas/v3.1.0.html#schema-object>
+- OpenAPI 3.0.3 Schema Object:
+  <https://spec.openapis.org/oas/v3.0.3.html#schema-object>
+- Parallax open issue queue refreshed via `gh issue list` on 2026-06-28: #3 is
+  still the only open issue.
+- Parallax open PR queue refreshed via `gh pr list` on 2026-06-28: #23-#31
+  remain Dependabot PRs.
+
+Why:
+- JSON Schema defines validation keywords (`required`, `type`, `enum`,
+  `format`) but does not define one canonical producer/consumer compatibility
+  direction. A broad "JSON Schema compatibility checker" would need subschema
+  containment semantics beyond this slice.
+- Parallax already has a stable object-schema signature for OpenAPI response
+  bodies. Reusing it gives immediate user value for standalone data-contract
+  schemas without adding a new dependency or solver.
+- Treating the root schema as produced data matches Parallax's current
+  contract-diff UX: a provider that stops producing a required field, changes a
+  field type, or starts allowing `null` can break consumers; removing an
+  optional property should remain visible but should not create breaking links.
+- `format` and `enum` are intentionally left to a later JSON Schema-specific
+  policy pass because JSON Schema 2020-12 treats `format` assertion as
+  vocabulary-dependent, and enum compatibility needs the same direction-specific
+  treatment already built incrementally for OpenAPI.
+- The deterministic contract-diff bench now includes a JSON Schema
+  required-property removal case so CI summaries expose the new contract kind.

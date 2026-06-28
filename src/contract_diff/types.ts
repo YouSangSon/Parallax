@@ -1,5 +1,6 @@
 import type { AsyncApiCompatibilitySignature } from '../asyncapi_compat.js';
 import type { GraphqlCompatibilitySignature } from '../graphql_compat.js';
+import type { JsonSchemaCompatibilitySignature } from '../json_schema_compat.js';
 import type { OpenApiCompatibilitySignature } from '../openapi_compat.js';
 import type { ProtobufCompatibilitySignature } from '../protobuf_compat.js';
 
@@ -58,5 +59,6 @@ export type CurrentContractParse = {
   protobufCompatibility?: ProtobufCompatibilitySignature;
   graphqlCompatibility?: GraphqlCompatibilitySignature;
   asyncApiCompatibility?: AsyncApiCompatibilitySignature;
+  jsonSchemaCompatibility?: JsonSchemaCompatibilitySignature;
   warning?: string;
 };

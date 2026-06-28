@@ -15,7 +15,7 @@ import {
 } from './adapters/multi-language-regex.js';
 import { DATA_DIR } from './branding.js';
 import { computeCoChanges, readCommitHistory } from './co-change.js';
-import { entityKindForPath, languageIdForPath } from './entity_classification.js';
+import { entityKindForPath, isJsonSchemaContractPath, languageIdForPath } from './entity_classification.js';
 import { readGitSnapshot, readIgnoredGitPaths, readTrackedGitPaths } from './git-snapshot.js';
 import { computeIndexDelta, type IndexDelta, type IndexRunFiles } from './index_delta.js';
 import type {
@@ -2031,6 +2031,7 @@ function contractKindForPath(relativePath: string): string | undefined {
   if (withoutExtension.includes('asyncapi')) return 'asyncapi';
   if (withoutExtension.includes('swagger')) return 'openapi';
   if (withoutExtension.includes('openapi')) return 'openapi';
+  if (isJsonSchemaContractPath(relativePath)) return 'json-schema';
   return undefined;
 }
 

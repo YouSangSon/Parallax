@@ -18,6 +18,11 @@ import {
   parseOpenApiCompatibility
 } from './contract_diff/openapi.js';
 import {
+  classifyJsonSchemaCompatibilityChanges,
+  parseCurrentJsonSchemaContract,
+  parseJsonSchemaCompatibility
+} from './contract_diff/json_schema.js';
+import {
   classifyProtobufCompatibilityChanges,
   parseCurrentProtobufContract,
   parseProtobufCompatibility
@@ -30,6 +35,7 @@ import type {
   ContractEndpoint,
   CurrentContractParse
 } from './contract_diff/types.js';
+import { isJsonSchemaContractPath } from './entity_classification.js';
 import { normalizeRepoRoot, resolveInsideRoot } from './security.js';
 import { contentHash, ensureRepo, getRepoId, latestCompletedIndexRun, openDatabase } from './store.js';
 import { listWorkspaces, type WorkspaceSummary } from './workspace.js';
@@ -415,6 +421,11 @@ function classifyChanges(
     if (previousCompatibility !== undefined && current.asyncApiCompatibility !== undefined) {
       changes.push(...classifyAsyncApiCompatibilityChanges(previousCompatibility, current.asyncApiCompatibility));
     }
+  } else if (provider.contract.kind === 'json-schema') {
+    const previousCompatibility = parseJsonSchemaCompatibility(provider.contract.compatibility_json, warnings);
+    if (previousCompatibility !== undefined && current.jsonSchemaCompatibility !== undefined) {
+      changes.push(...classifyJsonSchemaCompatibilityChanges(previousCompatibility, current.jsonSchemaCompatibility));
+    }
   } else {
     const previousCompatibility = parseOpenApiCompatibility(provider.contract.compatibility_json, warnings);
     if (previousCompatibility !== undefined && current.compatibility !== undefined) {
@@ -646,6 +657,7 @@ function parseCurrentContractByKind(content: string, contractPath: string, contr
     return parseCurrentGraphqlContract(content);
   }
   if (contractKind === 'asyncapi' || isAsyncApiContractPath(contractPath)) return parseCurrentAsyncApiContract(content, contractPath);
+  if (contractKind === 'json-schema') return parseCurrentJsonSchemaContract(content);
   return parseCurrentOpenApiContract(content, contractPath);
 }
 
@@ -723,6 +735,8 @@ function currentEndpointId(contractPath: string, endpoint: ContractEndpoint): st
   const lowerPath = contractPath.toLowerCase();
   const languageId = isAsyncApiContractPath(contractPath)
     ? 'asyncapi'
+    : isJsonSchemaContractPath(contractPath)
+      ? 'json-schema'
     : lowerPath.endsWith('.proto')
     ? 'protobuf'
     : lowerPath.endsWith('.graphql') || lowerPath.endsWith('.gql')
@@ -739,6 +753,9 @@ function currentEndpointId(contractPath: string, endpoint: ContractEndpoint): st
   if (languageId === 'asyncapi') {
     return `endpoint:asyncapi:${endpointKey(endpoint.httpMethod, endpoint.routePath)}`;
   }
+  if (languageId === 'json-schema' && endpoint.httpMethod === 'SCHEMA') {
+    return `endpoint:json-schema:${endpoint.routePath}`;
+  }
   return `endpoint:${languageId}:${endpointKey(endpoint.httpMethod, endpoint.routePath)}`;
 }
 
@@ -746,6 +763,7 @@ function endpointDisplayForContractKind(kind: string, displayName: string): { me
   if (kind === 'protobuf') return parseProtobufEndpointDisplay(displayName);
   if (kind === 'graphql') return parseGraphqlEndpointDisplay(displayName);
   if (kind === 'asyncapi') return parseAsyncApiEndpointDisplay(displayName);
+  if (kind === 'json-schema') return parseJsonSchemaEndpointDisplay(displayName);
   return parseHttpEndpointDisplay(displayName);
 }
 
@@ -771,6 +789,12 @@ function parseAsyncApiEndpointDisplay(displayName: string): { method: string; pa
   const match = /^([A-Z][A-Z0-9_-]*)\s+(.+)$/.exec(displayName.trim());
   if (!match) return undefined;
   return { method: match[1]!, path: match[2]! };
+}
+
+function parseJsonSchemaEndpointDisplay(displayName: string): { method: string; path: string } | undefined {
+  const match = /^SCHEMA\s+(.+)$/i.exec(displayName.trim());
+  if (!match) return undefined;
+  return { method: 'SCHEMA', path: match[1]! };
 }
 
 function isAsyncApiContractPath(contractPath: string): boolean {

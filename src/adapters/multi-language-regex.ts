@@ -7,7 +7,9 @@ import {
   type AsyncApiOperationSignature
 } from '../asyncapi_compat.js';
 import { markdownEntityKindForPath } from '../artifacts.js';
+import { isJsonSchemaContractPath } from '../entity_classification.js';
 import { extractGraphqlCompatibility, stripGraphqlComments } from '../graphql_compat.js';
+import { extractJsonSchemaCompatibility } from '../json_schema_compat.js';
 import { extractOpenApiJsonCompatibility, extractOpenApiYamlCompatibility } from '../openapi_compat.js';
 import { extractProtobufCompatibility, stripProtobufComments } from '../protobuf_compat.js';
 import type { Confidence, RelationKind, ScannedFile } from '../types.js';
@@ -23,7 +25,7 @@ import type {
 } from './types.js';
 
 export const MULTI_LANG_REGEX_ADAPTER_ID = 'multi-language-regex-mvp';
-export const MULTI_LANG_REGEX_ADAPTER_VERSION = '36';
+export const MULTI_LANG_REGEX_ADAPTER_VERSION = '37';
 export const TS_JS_SEMANTIC_ADAPTER_ID = 'typescript-javascript-semantic-v0';
 export const JVM_SPRING_SEMANTIC_ADAPTER_ID = 'jvm-spring-semantic-v0';
 export const PYTHON_SEMANTIC_ADAPTER_ID = 'python-semantic-v0';
@@ -575,7 +577,9 @@ async function* extractContractEndpointEvents(
         ? extractGraphqlEndpoints(file)
         : contractKind === 'asyncapi'
           ? extractAsyncApiEndpoints(file)
-          : extractOpenApiEndpoints(file);
+          : contractKind === 'json-schema'
+            ? extractJsonSchemaEndpoints(file)
+            : extractOpenApiEndpoints(file);
 
   for (const endpoint of endpoints) {
     const endpointDescriptor: EntityDescriptor = {
@@ -636,6 +640,9 @@ function contractMetadataForFile(file: ScannedFile): Readonly<Record<string, unk
       ...(compatibility !== undefined ? { compatibility } : {})
     };
   }
+  if (file.language === 'json' && contractKindForPath(file.relativePath) === 'json-schema') {
+    return jsonSchemaJsonMetadata(file.content);
+  }
   if (file.language === 'json') return openApiJsonMetadata(file.content, contractKindForPath(file.relativePath));
   return openApiYamlMetadata(file.content, contractKindForPath(file.relativePath));
 }
@@ -644,7 +651,21 @@ function contractKindForPath(relativePath: string): string {
   const basename = path.posix.basename(relativePath);
   const withoutExtension = basename.replace(/\.[^.]+$/, '').toLowerCase();
   if (withoutExtension.includes('asyncapi')) return 'asyncapi';
+  if (isJsonSchemaContractPath(relativePath)) return 'json-schema';
   return 'openapi';
+}
+
+function jsonSchemaJsonMetadata(content: string): Readonly<Record<string, unknown>> {
+  const metadata: Record<string, unknown> = { contractKind: 'json-schema' };
+  try {
+    const parsed = JSON.parse(content) as { $schema?: unknown };
+    if (typeof parsed.$schema === 'string') metadata.schemaVersion = parsed.$schema;
+  } catch {
+    // Keep contract kind metadata even when the current JSON is invalid.
+  }
+  const compatibility = extractJsonSchemaCompatibility(content);
+  if (compatibility !== undefined) metadata.compatibility = compatibility;
+  return metadata;
 }
 
 function openApiJsonMetadata(
@@ -766,6 +787,21 @@ function extractAsyncApiEndpoints(file: ScannedFile): ContractEndpoint[] {
       messageIds: operation.messageIds
     },
     evidence: evidenceLineAt(file.content, asyncApiOperationOffset(file.content, operation))
+  }));
+}
+
+function extractJsonSchemaEndpoints(file: ScannedFile): ContractEndpoint[] {
+  const compatibility = extractJsonSchemaCompatibility(file.content);
+  if (compatibility === undefined) return [];
+  return compatibility.schemas.map((schema) => ({
+    displayName: `SCHEMA ${schema.path}`,
+    languageId: 'json-schema',
+    metadata: {
+      contractKind: 'json-schema',
+      path: schema.path,
+      ...(schema.id !== undefined ? { schemaId: schema.id } : {})
+    },
+    evidence: evidenceLineAt(file.content, 0)
   }));
 }
 
@@ -5777,7 +5813,8 @@ function isContractLikeFile(relativePath: string, languageId: string): boolean {
   return (
     withoutExtension.includes('openapi') ||
     withoutExtension.includes('swagger') ||
-    withoutExtension.includes('asyncapi')
+    withoutExtension.includes('asyncapi') ||
+    isJsonSchemaContractPath(relativePath)
   );
 }
 

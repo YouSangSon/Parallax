@@ -642,6 +642,35 @@ async function writeOpenApiJsonUserSchemaContract(
   );
 }
 
+async function writeJsonSchemaContract(
+  repoRoot: string,
+  options: {
+    required?: string[];
+    nameType?: string | readonly string[];
+    includeStatus?: boolean;
+    statusType?: string | readonly string[];
+  } = {}
+): Promise<void> {
+  await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
+  const properties: Record<string, { type: string | readonly string[] }> = {
+    id: { type: 'string' },
+    name: { type: options.nameType ?? 'string' }
+  };
+  if (options.includeStatus !== false) {
+    properties.status = { type: options.statusType ?? 'string' };
+  }
+  await writeFile(
+    path.join(repoRoot, 'contracts/user.schema.json'),
+    `${JSON.stringify({
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      $id: 'https://example.test/schemas/user',
+      type: 'object',
+      required: options.required ?? ['id', 'name'],
+      properties
+    }, null, 2)}\n`
+  );
+}
+
 async function writeOpenApiJsonChainedRefContract(repoRoot: string, userIdType: 'string' | 'integer'): Promise<void> {
   await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
   await writeFile(
@@ -1667,6 +1696,33 @@ function downgradeOpenApiCompatibilityBaseline(repoRoot: string, schemaVersion: 
   }
 }
 
+function downgradeJsonSchemaCompatibilityBaseline(repoRoot: string, schemaVersion: number): void {
+  const db = new DatabaseSync(databasePath(repoRoot));
+  try {
+    const row = db
+      .prepare(
+        `SELECT v.contract_id, v.index_run_id, v.compatibility_json
+         FROM contract_versions v
+         INNER JOIN contracts c ON c.id = v.contract_id
+         WHERE c.path = ?
+         LIMIT 1`
+      )
+      .get('contracts/user.schema.json') as { contract_id: string; index_run_id: number; compatibility_json: string };
+    const compatibility = JSON.parse(row.compatibility_json) as { schemaVersion?: number };
+    compatibility.schemaVersion = schemaVersion;
+    db
+      .prepare(
+        `UPDATE contract_versions
+         SET compatibility_json = ?
+         WHERE contract_id = ?
+           AND index_run_id = ?`
+      )
+      .run(JSON.stringify(compatibility), row.contract_id, row.index_run_id);
+  } finally {
+    db.close();
+  }
+}
+
 async function setupWorkspaceWithResolvedContract(): Promise<{
   consumerRoot: string;
   providerRoot: string;
@@ -2040,6 +2096,19 @@ async function setupWorkspaceWithResolvedJsonSchemaContract(options: {
     consumerReal: realpathSync(consumerRoot),
     providerReal: realpathSync(providerRoot)
   };
+}
+
+async function setupWorkspaceWithJsonSchemaContract(): Promise<{
+  providerRoot: string;
+}> {
+  const providerRoot = await makeRepo('parallax-diff-json-schema-provider-');
+  await writeJsonSchemaContract(providerRoot);
+
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: providerRoot, name: 'platform', serviceName: 'users-schema' });
+
+  return { providerRoot };
 }
 
 async function setupWorkspaceWithResolvedJsonChainedRefContract(): Promise<{
@@ -3654,6 +3723,159 @@ test('analyzeContractDiff classifies OpenAPI JSON response properties becoming n
       currentNullable: true
     }
   ]);
+});
+
+test('analyzeContractDiff classifies JSON Schema required property removals as breaking', async () => {
+  const { providerRoot } = await setupWorkspaceWithJsonSchemaContract();
+  await writeJsonSchemaContract(providerRoot, { required: ['id'] });
+
+  const result = analyzeContractDiff({
+    repoRoot: providerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-schema',
+    contractPath: 'contracts/user.schema.json'
+  });
+
+  assert.equal(result.contract.kind, 'json-schema');
+  assert.equal(result.summary.classification, 'breaking');
+  assert.equal(result.summary.breakingChangeCount, 1);
+  assert.equal(result.summary.nonBreakingChangeCount, 0);
+  assert.equal(result.summary.unknownChangeCount, 0);
+  assert.equal(result.summary.impactedConsumerCount, 0);
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'removed_response_required_property',
+      classification: 'breaking',
+      reason: 'JSON Schema required property removed from current contract',
+      httpMethod: 'SCHEMA',
+      routePath: '#',
+      statusCode: 'schema',
+      propertyName: 'name',
+      schemaPath: '#.required.name'
+    }
+  ]);
+});
+
+test('analyzeContractDiff classifies JSON Schema optional property removals as non-breaking', async () => {
+  const { providerRoot } = await setupWorkspaceWithJsonSchemaContract();
+  await writeJsonSchemaContract(providerRoot, { includeStatus: false });
+
+  const result = analyzeContractDiff({
+    repoRoot: providerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-schema',
+    contractPath: 'contracts/user.schema.json'
+  });
+
+  assert.equal(result.summary.classification, 'non-breaking');
+  assert.equal(result.summary.breakingChangeCount, 0);
+  assert.equal(result.summary.nonBreakingChangeCount, 1);
+  assert.equal(result.summary.unknownChangeCount, 0);
+  assert.equal(result.summary.impactedConsumerCount, 0);
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'removed_response_optional_property',
+      classification: 'non-breaking',
+      reason: 'JSON Schema optional property removed from current contract',
+      httpMethod: 'SCHEMA',
+      routePath: '#',
+      statusCode: 'schema',
+      propertyName: 'status',
+      schemaPath: '#.properties.status'
+    }
+  ]);
+});
+
+test('analyzeContractDiff classifies JSON Schema property type changes as breaking', async () => {
+  const { providerRoot } = await setupWorkspaceWithJsonSchemaContract();
+  await writeJsonSchemaContract(providerRoot, { nameType: 'integer' });
+
+  const result = analyzeContractDiff({
+    repoRoot: providerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-schema',
+    contractPath: 'contracts/user.schema.json'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.equal(result.summary.breakingChangeCount, 1);
+  assert.equal(result.summary.impactedConsumerCount, 0);
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'changed_response_property_type',
+      classification: 'breaking',
+      reason: 'JSON Schema property type changed in current contract',
+      httpMethod: 'SCHEMA',
+      routePath: '#',
+      statusCode: 'schema',
+      propertyName: 'name',
+      schemaPath: '#.properties.name',
+      previousSchemaType: 'string',
+      currentSchemaType: 'integer'
+    }
+  ]);
+});
+
+test('analyzeContractDiff classifies JSON Schema nullable additions as breaking without duplicate type changes', async () => {
+  const { providerRoot } = await setupWorkspaceWithJsonSchemaContract();
+  await writeJsonSchemaContract(providerRoot, { nameType: ['string', 'null'] });
+
+  const result = analyzeContractDiff({
+    repoRoot: providerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-schema',
+    contractPath: 'contracts/user.schema.json'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.equal(result.summary.breakingChangeCount, 1);
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'added_response_property_nullable',
+      classification: 'breaking',
+      reason: 'JSON Schema property now allows null in current contract',
+      httpMethod: 'SCHEMA',
+      routePath: '#',
+      statusCode: 'schema',
+      propertyName: 'name',
+      schemaPath: '#.properties.name.type',
+      previousNullable: false,
+      currentNullable: true
+    }
+  ]);
+});
+
+test('analyzeContractDiff warns when indexed JSON Schema compatibility baseline is stale', async () => {
+  const { providerRoot } = await setupWorkspaceWithJsonSchemaContract();
+  downgradeJsonSchemaCompatibilityBaseline(providerRoot, 0);
+  await writeJsonSchemaContract(providerRoot, { nameType: 'integer' });
+
+  const result = analyzeContractDiff({
+    repoRoot: providerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-schema',
+    contractPath: 'contracts/user.schema.json'
+  });
+
+  assert.equal(result.summary.classification, 'unknown');
+  assert.equal(
+    result.changes.some((change) => change.kind === 'changed_response_property_type'),
+    false
+  );
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'changed_contract_without_endpoint_delta',
+      classification: 'unknown',
+      reason: 'contract content changed but endpoint surface is unchanged in the v0 analyzer'
+    }
+  ]);
+  assert.ok(
+    result.warnings.some((warning) =>
+      warning.includes('indexed JSON Schema compatibility baseline uses schemaVersion 0') &&
+      warning.includes('reindex provider contract')
+    ),
+    `expected stale compatibility warning, got ${JSON.stringify(result.warnings)}`
+  );
 });
 
 test('analyzeContractDiff classifies added OpenAPI JSON request required properties as breaking', async () => {

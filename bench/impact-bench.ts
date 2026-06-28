@@ -278,11 +278,19 @@ type TracePromotionQualityBench = {
   unmatchedEdges: string[];
 };
 
-type ContractDiffQualityCaseSpec = {
-  id: string;
-  current: ContractDiffBenchOpenApiOptions;
-  expectedChanges: ContractDiffQualityExpectedChange[];
-};
+type ContractDiffQualityCaseSpec =
+  | {
+      id: string;
+      contractKind?: 'openapi';
+      current: ContractDiffBenchOpenApiOptions;
+      expectedChanges: ContractDiffQualityExpectedChange[];
+    }
+  | {
+      id: string;
+      contractKind: 'json-schema';
+      current: ContractDiffBenchJsonSchemaOptions;
+      expectedChanges: ContractDiffQualityExpectedChange[];
+    };
 
 type ContractDiffBenchOpenApiOptions = {
   requestRequired?: string[];
@@ -294,6 +302,10 @@ type ContractDiffBenchOpenApiOptions = {
   responseNameType?: string;
   includeResponseStatus?: boolean;
   responseStatusEnum?: string[];
+};
+
+type ContractDiffBenchJsonSchemaOptions = {
+  required?: string[];
 };
 
 const retrievalQueries: readonly RetrievalQuerySpec[] = [
@@ -333,6 +345,18 @@ const contractDiffQualityCases: readonly ContractDiffQualityCaseSpec[] = [
         kind: 'removed_response_required_property',
         classification: 'breaking',
         schemaPath: 'responses.200.body.required.name'
+      }
+    ]
+  },
+  {
+    id: 'json-schema-required-property-removal',
+    contractKind: 'json-schema',
+    current: { required: ['id'] },
+    expectedChanges: [
+      {
+        kind: 'removed_response_required_property',
+        classification: 'breaking',
+        schemaPath: '#.required.name'
       }
     ]
   },
@@ -1084,6 +1108,7 @@ async function runContractDiffQualityBench(): Promise<ContractDiffQualityBench> 
     await mkdir(providerRoot, { recursive: true });
     await writeFile(path.join(providerRoot, 'README.md'), 'provider\n', 'utf8');
     await writeContractDiffBenchOpenApiJsonContract(providerRoot);
+    await writeContractDiffBenchJsonSchemaContract(providerRoot);
 
     await initProject({ repoRoot: providerRoot });
     await indexProject({ repoRoot: providerRoot });
@@ -1091,12 +1116,19 @@ async function runContractDiffQualityBench(): Promise<ContractDiffQualityBench> 
 
     const cases: ContractDiffQualityCaseReport[] = [];
     for (const spec of contractDiffQualityCases) {
-      await writeContractDiffBenchOpenApiJsonContract(providerRoot, spec.current);
+      const contractPath = spec.contractKind === 'json-schema'
+        ? 'contracts/user.schema.json'
+        : 'contracts/openapi.json';
+      if (spec.contractKind === 'json-schema') {
+        await writeContractDiffBenchJsonSchemaContract(providerRoot, spec.current);
+      } else {
+        await writeContractDiffBenchOpenApiJsonContract(providerRoot, spec.current);
+      }
       const result = analyzeContractDiff({
         repoRoot: providerRoot,
         workspaceName: 'platform',
         providerServiceName: 'users-api',
-        contractPath: 'contracts/openapi.json',
+        contractPath,
         persist: false
       });
       const actualKeys = new Set(result.changes.map(contractDiffChangeKey));
@@ -1218,6 +1250,29 @@ async function writeContractDiffBenchOpenApiJsonContract(
   };
   await writeFile(
     path.join(repoRoot, 'contracts/openapi.json'),
+    `${JSON.stringify(contract, null, 2)}\n`,
+    'utf8'
+  );
+}
+
+async function writeContractDiffBenchJsonSchemaContract(
+  repoRoot: string,
+  options: ContractDiffBenchJsonSchemaOptions = {}
+): Promise<void> {
+  await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
+  const contract = {
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    $id: 'https://example.test/schemas/user',
+    type: 'object',
+    required: options.required ?? ['id', 'name'],
+    properties: {
+      id: { type: 'string' },
+      name: { type: 'string' },
+      status: { type: 'string' }
+    }
+  };
+  await writeFile(
+    path.join(repoRoot, 'contracts/user.schema.json'),
     `${JSON.stringify(contract, null, 2)}\n`,
     'utf8'
   );

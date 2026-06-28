@@ -647,3 +647,41 @@
   - `npm run docs:lint`
   - `git diff --check`
   - `npm run verify`
+- Refreshed W5 research and remote project signals for standalone JSON Schema
+  contract support.
+  - JSON Schema Validation draft 2020-12 and the JSON Schema object/required
+    reference confirm `required` controls mandatory object members and `type`
+    can include `null`.
+  - OpenAPI 3.1.0 Schema Object confirms OpenAPI 3.1 aligns with JSON Schema
+    vocabularies, while OpenAPI 3.0.3 keeps the older `nullable` keyword.
+  - The practical compatibility decision is direction-specific rather than a
+    full JSON Schema subschema solver: compare root schemas as produced data,
+    and defer `additionalProperties`, enum/format policy, multi-schema graph
+    resolution, and Avro.
+  - `gh issue list` still shows only issue #3 open; `gh pr list` still shows
+    Dependabot PRs #23-#31, so no remote issue displaced the W5 JSON Schema
+    slice.
+- Shipped W5 JSON Schema contract-kind first slice.
+  - `*.schema.json` and contract-located `schema.json` files now classify as
+    `json-schema` contracts without treating ordinary `config/schema.json` as a
+    contract.
+  - Indexing persists `$schema` dialect, compatibility JSON, and a synthetic
+    `SCHEMA #` endpoint for root object schemas.
+  - `analyzeContractDiff` now compares JSON Schema root-object signatures for
+    required property removals, optional property removals, property type
+    changes, and nullable additions.
+  - Nullable additions are reported once as
+    `added_response_property_nullable`, not double-counted as generic type
+    changes.
+  - The deterministic `contractDiffQuality` bench now includes a JSON Schema
+    required-property removal case, so CI summaries show 10/10 contract-diff
+    cases and changes.
+  - Backlog now moves to W3 monorepo sub-packages as first-class catalog
+    members; W5 Avro remains a later mechanical follow-on.
+- W5 JSON Schema verification:
+  - `npm run check`
+  - `node --import tsx --test tests/entity_classification.test.ts tests/parallax.test.ts tests/contract-diff.test.ts tests/impact-bench.test.ts`
+  - `git diff --check`
+  - `npm run verify`
+  - Full verify result: lint, install smoke/build, 668 unit tests, dogfood, bench, and `npm audit --audit-level=high` all passed.
+  - Bench result: `summary.passed=true`, score `0.9987`, `contractDiffQuality` `expectedCases=10`, `matchedCases=10`, `expectedChanges=10`, `matchedChanges=10`, and `missingChanges=[]`.

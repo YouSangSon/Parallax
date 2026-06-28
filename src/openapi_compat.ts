@@ -185,7 +185,7 @@ function selectJsonMediaContent(content: unknown): Record<string, unknown> | und
   return selected && isRecord(selected[1]) ? selected[1] : undefined;
 }
 
-function objectSchemaSignature(
+export function objectSchemaSignature(
   root: Record<string, unknown>,
   schemaValue: unknown,
   seenRefs: Set<string>

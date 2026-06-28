@@ -4,11 +4,12 @@ Canonical detailed backlog: `IMPROVEMENT_OPPORTUNITIES.md`.
 
 ## Now
 
-1. W5 reusable JSON Schema contract kind.
+1. W3 monorepo sub-packages as first-class catalog members.
 
 ## Later
 
-1. S1 residual dirty/non-git scan-cost reduction after a measured adapter-contract design.
+1. W5 Avro contract-kind follow-on after the shipped JSON Schema first slice.
+2. S1 residual dirty/non-git scan-cost reduction after a measured adapter-contract design.
 
 ## Done
 
@@ -30,3 +31,4 @@ Canonical detailed backlog: `IMPROVEMENT_OPPORTUNITIES.md`.
 16. W4 OpenAPI request enum-value removal compatibility detection.
 17. W4 OpenAPI request format-addition/change compatibility detection.
 18. W4 OpenAPI response optional-property removal contract-diff visibility.
+19. W5 JSON Schema contract-kind first slice.

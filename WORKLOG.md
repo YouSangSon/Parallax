@@ -428,3 +428,30 @@
   - `npm test`
   - `npm audit --audit-level=high`
   - `npm run test:dogfood`
+- Refreshed web/GitHub signals for the final D2 metric.
+  - OpenTelemetry trace docs reinforce the runtime-observed-edge model, but the
+    bench does not need a collector or dependency.
+  - GitHub issue/PR review still shows issue #3 and Dependabot PRs #23-#31, so
+    no remote issue displaces finishing the trace-promotion trend metric.
+- Shipped D2 trace-promotion quality trend metric.
+  - `bench/impact-bench.ts` now emits `tracePromotionQuality` by ingesting a
+    runtime-observed `src/beta.ts -> src/alpha.ts` edge into the same tiny
+    co-change fixture.
+  - The lane checks the promotion count, unmatched trace edge count, and
+    post-ingest `analyzeDiff` proven affected-file output.
+  - `bench/impact-bench-report.ts` now renders trace-promotion quality,
+    promotion counts, proven affected-file counts, and unmatched trace edge
+    deltas in Markdown and GitHub Step Summary output.
+  - Backlog now moves from D2 to W4/W5 richer contract signatures.
+- D2 trace-promotion quality verification:
+  - `npm run check`
+  - `node --import tsx --test tests/impact-bench-report.test.ts`
+  - `node --import tsx --test tests/impact-bench.test.ts`
+  - `npm run docs:lint`
+  - `git diff --check`
+  - `npm run bench`
+  - `npm run bench:report`
+  - `npm run build`
+  - `npm test`
+  - `npm audit --audit-level=high`
+  - `npm run test:dogfood`

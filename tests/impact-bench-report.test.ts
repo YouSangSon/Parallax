@@ -13,16 +13,17 @@ import {
 
 type BenchReportOverrides = Omit<
   Partial<ImpactBenchReport>,
-  'crossRepoContracts' | 'contractDiffQuality' | 'coChangeQuality'
+  'crossRepoContracts' | 'contractDiffQuality' | 'coChangeQuality' | 'tracePromotionQuality'
 > & {
   crossRepoContracts?: ImpactBenchReport['crossRepoContracts'] | undefined;
   contractDiffQuality?: ImpactBenchReport['contractDiffQuality'] | undefined;
   coChangeQuality?: ImpactBenchReport['coChangeQuality'] | undefined;
+  tracePromotionQuality?: ImpactBenchReport['tracePromotionQuality'] | undefined;
 };
 
 function makeReport(overrides: BenchReportOverrides = {}): ImpactBenchReport {
   const report: ImpactBenchReport = {
-    schemaVersion: 6,
+    schemaVersion: 7,
     fixtureId: 'phase6b-multilanguage-v0',
     summary: {
       passed: true,
@@ -125,6 +126,25 @@ function makeReport(overrides: BenchReportOverrides = {}): ImpactBenchReport {
       expectedAffectedFiles: ['src/beta.ts'],
       matchedAffectedFiles: ['src/beta.ts'],
       missingAffectedFiles: []
+    },
+    tracePromotionQuality: {
+      fixtureId: 'trace-promotion-quality-v0',
+      summary: {
+        passed: true,
+        score: 1,
+        expectedPromotions: 1,
+        matchedPromotions: 1,
+        expectedProvenAffectedFiles: 1,
+        matchedProvenAffectedFiles: 1,
+        unmatchedEdges: 0
+      },
+      expectedPromotedEdges: ['src/beta.ts->src/alpha.ts'],
+      matchedPromotedEdges: ['src/beta.ts->src/alpha.ts'],
+      missingPromotedEdges: [],
+      expectedProvenAffectedFiles: ['src/beta.ts'],
+      matchedProvenAffectedFiles: ['src/beta.ts'],
+      missingProvenAffectedFiles: [],
+      unmatchedEdges: []
     },
     retrieval: {
       fixtureId: 'search-context-retrieval-v0',
@@ -242,6 +262,13 @@ function makeReport(overrides: BenchReportOverrides = {}): ImpactBenchReport {
   } else {
     merged.coChangeQuality = report.coChangeQuality;
   }
+  if ('tracePromotionQuality' in overrides) {
+    merged.tracePromotionQuality = (overrides.tracePromotionQuality === undefined
+      ? undefined
+      : { ...report.tracePromotionQuality, ...overrides.tracePromotionQuality }) as ImpactBenchReport['tracePromotionQuality'];
+  } else {
+    merged.tracePromotionQuality = report.tracePromotionQuality;
+  }
   return merged;
 }
 
@@ -261,6 +288,10 @@ test('bench report summary renders current metrics without a baseline', () => {
   assert.match(markdown, /\| Co-change quality \| 1\.0000 \| n\/a \|/);
   assert.match(markdown, /\| Co-change partners \| 1\/1 \| n\/a \|/);
   assert.match(markdown, /\| Co-change affected files \| 1\/1 \| n\/a \|/);
+  assert.match(markdown, /\| Trace-promotion quality \| 1\.0000 \| n\/a \|/);
+  assert.match(markdown, /\| Trace promotions \| 1\/1 \| n\/a \|/);
+  assert.match(markdown, /\| Trace proven affected files \| 1\/1 \| n\/a \|/);
+  assert.match(markdown, /\| Trace unmatched edges \| 0 \| n\/a \|/);
   assert.match(markdown, /\| Semantic recall@1 \| 1\.0000 \| n\/a \|/);
   assert.match(markdown, /\| Semantic model isolation \| 1\.0000 \| n\/a \|/);
   assert.match(markdown, /\| `evidence-fts-policy` \| 1\.0000 \| 1\.0000 \| 966 \| no \|/);
@@ -269,6 +300,9 @@ test('bench report summary renders current metrics without a baseline', () => {
   assert.match(markdown, /### Missing contract-diff changes\n\nNone\./);
   assert.match(markdown, /### Missing co-change partners\n\nNone\./);
   assert.match(markdown, /### Missing co-change affected files\n\nNone\./);
+  assert.match(markdown, /### Missing trace promotions\n\nNone\./);
+  assert.match(markdown, /### Missing trace proven affected files\n\nNone\./);
+  assert.match(markdown, /### Unmatched trace edges\n\nNone\./);
   assert.match(markdown, /### Missing relations\n\nNone\./);
   assert.match(markdown, /### Unexpected relations\n\nNone\./);
 });
@@ -373,6 +407,23 @@ test('bench report summary renders metric and count deltas against a baseline', 
       matchedAffectedFiles: [],
       missingAffectedFiles: ['src/beta.ts']
     },
+    tracePromotionQuality: {
+      ...makeReport().tracePromotionQuality,
+      summary: {
+        passed: false,
+        score: 0,
+        expectedPromotions: 1,
+        matchedPromotions: 0,
+        expectedProvenAffectedFiles: 1,
+        matchedProvenAffectedFiles: 0,
+        unmatchedEdges: 1
+      },
+      matchedPromotedEdges: [],
+      missingPromotedEdges: ['src/beta.ts->src/alpha.ts'],
+      matchedProvenAffectedFiles: [],
+      missingProvenAffectedFiles: ['src/beta.ts'],
+      unmatchedEdges: ['src/beta.ts->src/alpha.ts']
+    },
     retrieval: {
       ...makeReport().retrieval,
       summary: {
@@ -411,6 +462,10 @@ test('bench report summary renders metric and count deltas against a baseline', 
   assert.match(markdown, /\| Co-change quality \| 1\.0000 \| \+1\.0000 \|/);
   assert.match(markdown, /\| Co-change partners \| 1\/1 \| \+1 \|/);
   assert.match(markdown, /\| Co-change affected files \| 1\/1 \| \+1 \|/);
+  assert.match(markdown, /\| Trace-promotion quality \| 1\.0000 \| \+1\.0000 \|/);
+  assert.match(markdown, /\| Trace promotions \| 1\/1 \| \+1 \|/);
+  assert.match(markdown, /\| Trace proven affected files \| 1\/1 \| \+1 \|/);
+  assert.match(markdown, /\| Trace unmatched edges \| 0 \| -1 better \|/);
   assert.match(markdown, /\| Retrieval recall@5 \| 1\.0000 \| \+0\.5000 \|/);
   assert.match(markdown, /\| Semantic recall@1 \| 1\.0000 \| \+0\.5000 \|/);
   assert.match(markdown, /\| Semantic model isolation \| 1\.0000 \| \+0\.5000 \|/);
@@ -438,6 +493,7 @@ test('bench report summary accepts a schema v2 baseline without semantic metrics
     crossRepoContracts: _crossRepoContracts,
     contractDiffQuality: _contractDiffQuality,
     coChangeQuality: _coChangeQuality,
+    tracePromotionQuality: _tracePromotionQuality,
     ...baseline
   } = makeReport({
     schemaVersion: 2
@@ -508,6 +564,26 @@ test('bench report summary skips co-change rows for a schema v5 current report w
   assert.doesNotMatch(markdown, /### Missing co-change affected files/);
 });
 
+test('bench report summary skips trace-promotion rows for a schema v6 current report without tracePromotionQuality', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'parallax-bench-report-current-v6-'));
+  const reportPath = path.join(root, 'current-v6.json');
+  const current = makeReport({
+    schemaVersion: 6,
+    tracePromotionQuality: undefined
+  });
+  await writeFile(reportPath, JSON.stringify(current, null, 2));
+
+  const markdown = await generateBenchSummaryMarkdown({ reportPath });
+
+  assert.doesNotMatch(markdown, /\| Trace-promotion quality \|/);
+  assert.doesNotMatch(markdown, /\| Trace promotions \|/);
+  assert.doesNotMatch(markdown, /\| Trace proven affected files \|/);
+  assert.doesNotMatch(markdown, /\| Trace unmatched edges \|/);
+  assert.doesNotMatch(markdown, /### Missing trace promotions/);
+  assert.doesNotMatch(markdown, /### Missing trace proven affected files/);
+  assert.doesNotMatch(markdown, /### Unmatched trace edges/);
+});
+
 test('loadBenchReport rejects a schema v4 current report without crossRepoContracts', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'parallax-bench-report-invalid-v4-'));
   const reportPath = path.join(root, 'current-v4.json');
@@ -550,6 +626,21 @@ test('loadBenchReport rejects a schema v6 current report without coChangeQuality
   await assert.rejects(
     () => generateBenchSummaryMarkdown({ reportPath }),
     /invalid bench report .*coChangeQuality/
+  );
+});
+
+test('loadBenchReport rejects a schema v7 current report without tracePromotionQuality', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'parallax-bench-report-invalid-v7-'));
+  const reportPath = path.join(root, 'current-v7.json');
+  const invalid = makeReport({
+    schemaVersion: 7,
+    tracePromotionQuality: undefined
+  });
+  await writeFile(reportPath, JSON.stringify(invalid, null, 2));
+
+  await assert.rejects(
+    () => generateBenchSummaryMarkdown({ reportPath }),
+    /invalid bench report .*tracePromotionQuality/
   );
 });
 

@@ -6,7 +6,12 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Active Loop
 
-- Next loop: add the remaining D2 trace-ingest promotion trend metric.
+- Next loop: improve W4/W5 richer contract property signatures.
+- Completed slice: D2 trace-promotion quality now adds a deterministic
+  `tracePromotionQuality` bench lane. The lane ingests a runtime-observed
+  `src/beta.ts -> src/alpha.ts` edge, checks the promotion count, verifies
+  `analyzeDiff` surfaces `src/beta.ts` as proven impact, and adds trace
+  promotion/count deltas to `bench:report`.
 - Completed slice: D2 co-change quality now adds a deterministic
   `coChangeQuality` bench lane with a tiny git-history fixture where
   `src/alpha.ts` and `src/beta.ts` repeatedly change together. The lane checks
@@ -83,6 +88,5 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Next
 
-1. Add the remaining D2 trace-ingest promotion trend metric.
-2. Improve W4/W5 contract property signatures.
-3. Return to S1 residual scan-cost work only with a measured adapter-contract design.
+1. Improve W4/W5 contract property signatures.
+2. Return to S1 residual scan-cost work only with a measured adapter-contract design.

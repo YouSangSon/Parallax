@@ -79,7 +79,7 @@ and analyzer traversal is N+1 per frontier node.
 | S5 | **Retention / prune superseded index runs (+ VACUUM)** — every run inserts a new cohort; nothing prunes old ones, so the DB grows by a full snapshot per run. Add deterministic retention (keep last N completed) inside a transaction + optional VACUUM. | M | MED |
 | S6 | **Committable / shareable index artifact** — define export/import of a compacted single-cohort DB + a `{extractor_version, git_commit_sha, content_hash set}` manifest; on import warn when hashes diverge from the working tree. "Index once in CI, everyone consumes." Depends on S5. | M | MED |
 
-**Sequencing:** D2 trend metrics → W4/W5 contract fidelity → S5/S6 storage/shareability. Residual S1 dirty/non-git scan-cost work waits for a measured adapter-contract design.
+**Sequencing:** W4/W5 contract fidelity → S5/S6 storage/shareability. Residual S1 dirty/non-git scan-cost work waits for a measured adapter-contract design.
 
 ---
 
@@ -111,7 +111,7 @@ also remain thinly bench-covered.
 | # | Opportunity | Effort | Value |
 | :-- | :-- | :-- | :-- |
 | D1 | ✅ **shipped** — Official GitHub Action + PR wrapper now runs `parallax init`, `parallax index`, and `parallax pr triage`; supports `changed` or `base`/`head` diff discovery; writes SARIF; appends a GitHub step summary; keeps SARIF upload explicit via `github/codeql-action/upload-sarif`; and honors confidence-aware `fail-on`. Remaining impact-gate surface work is now tracked by D6 / hook installation and the separate `--min-affected=N` decision. | M | HIGH |
-| D2 | **Bench coverage for co-change / traces / cross-repo / contract-diff** — W1-focused cross-repo coverage is ✅ **shipped**: `npm run bench` now includes a deterministic two-repo contract-impact lane that gates `summary.passed` when primary `analyzeDiff` or report graph export loses the expected consumer break. Contract-diff quality trend metrics are also ✅ **shipped**: the bench now reports `contractDiffQuality` over paired OpenAPI v1/v2 cases for removed response required properties, added request required properties, and response property type changes, and `bench:report` shows metric/count deltas. Co-change quality trend metrics are ✅ **shipped**: the bench now reports `coChangeQuality` over a tiny git-history fixture that checks both `queryCoChanges` partner output and `analyzeDiff` heuristic affected-file output for the same coupled files. Still open: trend metric for trace-ingest promotion. | M | HIGH |
+| D2 | ✅ **shipped** — Bench coverage for co-change / traces / cross-repo / contract-diff: `npm run bench` now includes deterministic quality lanes for W1 cross-repo contract impact (`crossRepoContracts`), contract-diff detection (`contractDiffQuality`), git-history co-change impact (`coChangeQuality`), and runtime trace promotion (`tracePromotionQuality`). `bench:report` shows metric/count deltas for each lane in Markdown and GitHub Step Summary output. | M | HIGH |
 | D3 | ✅ **shipped** (impact report) — `parallax analyze --json` output now has a published, versioned JSON Schema (`schemas/impact-report.schema.json`, draft 2020-12). The hand-written `ImpactReport` stays authoritative; a zod mirror (`src/report_schema.ts`) generates the artifact, with a compile-time conformance assertion + a `npm run lint` drift guard + a test that validates real `analyze --json` output against the schema. Still open: **bench-report schema** (deferred — `bench/` is outside `tsc` scope and `RetrievalBenchReport` isn't exported; it is an internal artifact, not an external contract). | S | MED-HIGH |
 | D4 | ✅ **shipped** — UI export + deep-linkable state now preserves selected impact path, filter text, and report-delta policy preset in the workbench URL. The toolbar exports the current workbench as JSON, affected-path CSV, and PNG impact maps with SVG fallback, using browser-native APIs only. | S-M | MED-HIGH |
 | D5 | ✅ **shipped** — trilingual getting-started tutorials now exist (`docs/getting-started*.md`) with a worked init→index→analyze walkthrough, expected affected output, and MCP / CI / UI next steps. | S | MED |
@@ -120,7 +120,7 @@ also remain thinly bench-covered.
 | D8 | ✅ **shipped** — local dependency/PR dogfood lane exists as `parallax pr triage`. It accepts `--changed` or `--base/--head`, persists the impact report, writes SARIF (default `.parallax/pr-triage.sarif`), applies `--fail-on`, and prints a dependency-focused repo map without calling GitHub or changing remote state. The open Dependabot queue was refreshed on 2026-06-27 (#23-#31) as the first real dogfood target. | S | MED-HIGH |
 | D9 | ✅ **shipped** — affected verification planner: `parallax repo-map` / MCP `parallax_repo_map` now include `verificationPlan`, grouping existing `ImpactReport.actions` by nearest `package.json` package root and runner into ranked, copy-pasteable commands with covered changed / affected / target paths, confidence, source actions, and omitted counts. It stays deterministic and does not execute Nx, Bazel, or other external build tools. | M | HIGH |
 
-**Sequencing:** continue S4/D2 and only return to the residual S1 dirty/non-git scan-cost work with a measured adapter-contract design. The `--fail-on` primitive, broad SARIF projection, repo-map, affected verification planner, local PR triage wrapper, official PR action wrapper, local Git hook installer, shareable UI/export surface, and M10 SCIP bridge are landed.
+**Sequencing:** continue W4/W5 contract fidelity and only return to the residual S1 dirty/non-git scan-cost work with a measured adapter-contract design. The D2 trend metrics, `--fail-on` primitive, broad SARIF projection, repo-map, affected verification planner, local PR triage wrapper, official PR action wrapper, local Git hook installer, shareable UI/export surface, and M10 SCIP bridge are landed.
 
 ---
 
@@ -198,9 +198,9 @@ The web/GitHub review changes the short-term adoption order without invalidating
 
 The quick-win layer has largely shipped (A5, M1, M2, M3 + co-change context fold,
 M6, D3, S2), and the first S4 perf measurement guardrail now exists via
-`bench:perf`. The remaining gap is narrower: D2 feature bench coverage is still
-partially open: contract-diff quality and co-change quality are now tracked,
-while the trace-ingest promotion metric remains. S4 now has published local limits rather
+`bench:perf`. The remaining gap is narrower: D2 feature bench coverage is now
+tracked for cross-repo, contract-diff, co-change, and trace-promotion quality.
+S4 now has published local limits rather
 than green 10k/50k timing.
 Every larger bet is a structural change to the determinism/honesty core, so
 guarding must keep moving first.
@@ -228,8 +228,8 @@ Reassessed order across the four L bets:
      unguarded — D2 adds quality-metric *trend* tracking on top, which is real
      but incremental and determinism-delicate. Contract-diff now has a
      deterministic `contractDiffQuality` lane, co-change now has a deterministic
-     `coChangeQuality` git-history lane, and trace-ingest still needs
-     promotion/unmatched trend counts.
+     `coChangeQuality` git-history lane, and trace-ingest now has a deterministic
+     `tracePromotionQuality` promotion-count lane.
 2. **S1 — incremental indexing.** Highest structural leverage; prereqs already
    exist (`files.content_hash` + `index_run.extractor_version` columns are
    present — only carry-forward logic is missing). Risk lives in reproducing an

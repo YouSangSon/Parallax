@@ -4,12 +4,11 @@ Canonical detailed backlog: `IMPROVEMENT_OPPORTUNITIES.md`.
 
 ## Now
 
-1. D2 trace-ingest promotion trend metric.
+1. W4/W5 richer contract signatures.
 
 ## Later
 
-1. W4/W5 richer contract signatures.
-2. S1 residual dirty/non-git scan-cost reduction after a measured adapter-contract design.
+1. S1 residual dirty/non-git scan-cost reduction after a measured adapter-contract design.
 
 ## Done
 
@@ -24,3 +23,4 @@ Canonical detailed backlog: `IMPROVEMENT_OPPORTUNITIES.md`.
 9. S4 measured perf baseline limits.
 10. D2 contract-diff quality trend metric.
 11. D2 co-change quality trend metric.
+12. D2 trace-ingest promotion trend metric.

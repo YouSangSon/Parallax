@@ -111,6 +111,7 @@ MCP 已稳定为 read-only。接下来是深入审视 agent 可用性的阶段�
   - 当前 cross-repo gate：bench 包含 two-repo contract-impact fixture，用来验证 W1 primary cross-repo consumer impact 与 report graph edge 仍然可见。
   - 当前 contract-diff gate：bench 包含 removed response required property、added request required property、response property type change 的 paired OpenAPI v1/v2 quality case，并通过 `contractDiffQuality` 报告，方便 CI summary 跟踪 delta。
   - 当前 co-change gate：bench 包含一个小型 git-history fixture，其中 `src/alpha.ts` 与 `src/beta.ts` 反复共同变更，并通过 `coChangeQuality` 报告，方便 CI summary 跟踪 partner 与 affected-file delta。
+  - 当前 trace-promotion gate：bench 会 ingest 一个运行时观测到的 `src/beta.ts -> src/alpha.ts` edge，并通过 `tracePromotionQuality` 报告，方便 CI summary 跟踪 promotion 与 proven-impact delta。
 - [x] 独立的 scale/perf bench，可分别报告 full index、no-op incremental index、edited-file incremental index 与 analyze phases，而不把精确耗时伪装成确定性契约
   - 当前工具：`npm run bench:perf` 在 synthetic-repo generator 上测量这些阶段和 `observed_peak_rss_mb`，并保持在 `npm run verify` 之外，因此 timing/RSS 是建议性的，而不是逐字节 CI 合同。标准 large-repo baseline command 是 `npm run bench:perf -- --scales 10000,50000`；`docs/verification.zh.md` 的当前 local baseline 记录了 1k/2k row 和 10k timeout limit，而不是 green 10k/50k claim。
 - [x] 在 embedding 模型 / LLM provider 交叉时对 recall 质量的回归 detection

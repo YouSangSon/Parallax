@@ -456,3 +456,28 @@ Why:
 - Trace-ingest promotion stays as the next D2 slice because it exercises a write
   surface and promotion counters, so it should remain separate from this
   read-only co-change fixture.
+
+## 2026-06-28: Add Trace-Promotion Quality To The Deterministic Bench
+
+Decision: finish D2 with a small `tracePromotionQuality` lane in the existing
+deterministic impact bench, reusing the co-change fixture and `ingestTraces`.
+
+Sources:
+- OpenTelemetry traces concept docs:
+  <https://opentelemetry.io/docs/concepts/signals/traces/>
+- Parallax open issue queue refreshed via `gh issue list` on 2026-06-28: #3 is
+  still the only open issue.
+- Parallax open PR queue refreshed via `gh pr list` on 2026-06-28: #23-#31
+  remain Dependabot PRs.
+
+Why:
+- Runtime traces represent observed execution paths, which matches Parallax's
+  model of promoting matching heuristic/inferred relations to proven confidence.
+- The repo already has trace-ingest integration tests. The missing D2 piece was
+  trend visibility in the same deterministic bench and PR summary as the other
+  impact-quality lanes.
+- Reusing the tiny co-change fixture keeps this deterministic: first create a
+  heuristic `src/beta.ts -> src/alpha.ts` relation, then ingest that observed
+  edge and assert `analyzeDiff` reports `src/beta.ts` as proven impact.
+- No new trace collector, OpenTelemetry dependency, or write-capable MCP surface
+  is needed for this bench metric.

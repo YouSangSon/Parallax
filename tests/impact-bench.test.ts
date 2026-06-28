@@ -27,7 +27,8 @@ test('ImpactBench runner writes deterministic report shape', async () => {
     assert.equal(serializedReport.includes('impact-bench-fixture-'), false);
     assert.equal(serializedReport.includes('impact-bench-cross-repo-'), false);
     assert.equal(serializedReport.includes('impact-bench-co-change-'), false);
-    assert.equal(report.schemaVersion, 6);
+    assert.equal(serializedReport.includes('impact-bench-trace-promotion-'), false);
+    assert.equal(report.schemaVersion, 7);
     assert.equal(report.fixtureId, 'phase6b-multilanguage-v0');
     assert.equal(report.outputPath, '.parallax/bench/impact-bench-report.json');
     assert.equal(report.summary.passed, true);
@@ -109,6 +110,21 @@ test('ImpactBench runner writes deterministic report shape', async () => {
     assert.deepEqual(report.coChangeQuality.expectedAffectedFiles, ['src/beta.ts']);
     assert.deepEqual(report.coChangeQuality.matchedAffectedFiles, ['src/beta.ts']);
     assert.deepEqual(report.coChangeQuality.missingAffectedFiles, []);
+    assert.equal(report.tracePromotionQuality.fixtureId, 'trace-promotion-quality-v0');
+    assert.equal(report.tracePromotionQuality.summary.passed, true);
+    assert.equal(report.tracePromotionQuality.summary.score, 1);
+    assert.equal(report.tracePromotionQuality.summary.expectedPromotions, 1);
+    assert.equal(report.tracePromotionQuality.summary.matchedPromotions, 1);
+    assert.equal(report.tracePromotionQuality.summary.expectedProvenAffectedFiles, 1);
+    assert.equal(report.tracePromotionQuality.summary.matchedProvenAffectedFiles, 1);
+    assert.equal(report.tracePromotionQuality.summary.unmatchedEdges, 0);
+    assert.deepEqual(report.tracePromotionQuality.expectedPromotedEdges, ['src/beta.ts->src/alpha.ts']);
+    assert.deepEqual(report.tracePromotionQuality.matchedPromotedEdges, ['src/beta.ts->src/alpha.ts']);
+    assert.deepEqual(report.tracePromotionQuality.missingPromotedEdges, []);
+    assert.deepEqual(report.tracePromotionQuality.expectedProvenAffectedFiles, ['src/beta.ts']);
+    assert.deepEqual(report.tracePromotionQuality.matchedProvenAffectedFiles, ['src/beta.ts']);
+    assert.deepEqual(report.tracePromotionQuality.missingProvenAffectedFiles, []);
+    assert.deepEqual(report.tracePromotionQuality.unmatchedEdges, []);
     assert.ok(report.retrieval.budgets.brief.maxReturnedBytes <= 5_000);
     assert.equal(report.retrieval.budgets.brief.budgetExceededCount, 0);
     assert.ok(

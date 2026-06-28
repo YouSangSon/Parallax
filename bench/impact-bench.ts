@@ -13,6 +13,7 @@ import {
   indexProject,
   initProject,
   initWorkspace,
+  ingestTraces,
   queryCoChanges,
   resolveCrossRepoContracts
 } from '../src/index.js';
@@ -31,10 +32,11 @@ import { BUILD_SYSTEM_PACKAGE_ADAPTER_ID } from '../src/adapters/build-system-pa
 import { CONFIG_INFRA_SEMANTIC_ADAPTER_ID } from '../src/adapters/config-infra.js';
 
 const fixtureId = 'phase6b-multilanguage-v0';
-const schemaVersion = 6;
+const schemaVersion = 7;
 const crossRepoContractFixtureId = 'cross-repo-contract-impact-v0';
 const contractDiffQualityFixtureId = 'contract-diff-quality-v0';
 const coChangeQualityFixtureId = 'co-change-quality-v0';
+const tracePromotionQualityFixtureId = 'trace-promotion-quality-v0';
 const defaultOutputPath = '.parallax/bench/impact-bench-report.json';
 const regexAdapterId = MULTI_LANG_REGEX_ADAPTER_ID;
 const retrievalFixtureId = 'search-context-retrieval-v0';
@@ -43,7 +45,7 @@ const semanticModelA = 'bench-semantic-model-a';
 const semanticModelB = 'bench-semantic-model-b';
 
 export type ImpactBenchReport = {
-  schemaVersion: 2 | 3 | 4 | 5 | 6;
+  schemaVersion: 2 | 3 | 4 | 5 | 6 | 7;
   fixtureId: typeof fixtureId;
   summary: {
     passed: boolean;
@@ -72,6 +74,7 @@ export type ImpactBenchReport = {
   crossRepoContracts: CrossRepoContractBench;
   contractDiffQuality: ContractDiffQualityBench;
   coChangeQuality: CoChangeQualityBench;
+  tracePromotionQuality: TracePromotionQualityBench;
   retrieval: RetrievalBenchReport;
   outputPath: string;
 };
@@ -253,6 +256,26 @@ type CoChangeQualityBench = {
   expectedAffectedFiles: string[];
   matchedAffectedFiles: string[];
   missingAffectedFiles: string[];
+};
+
+type TracePromotionQualityBench = {
+  fixtureId: typeof tracePromotionQualityFixtureId;
+  summary: {
+    passed: boolean;
+    score: number;
+    expectedPromotions: number;
+    matchedPromotions: number;
+    expectedProvenAffectedFiles: number;
+    matchedProvenAffectedFiles: number;
+    unmatchedEdges: number;
+  };
+  expectedPromotedEdges: string[];
+  matchedPromotedEdges: string[];
+  missingPromotedEdges: string[];
+  expectedProvenAffectedFiles: string[];
+  matchedProvenAffectedFiles: string[];
+  missingProvenAffectedFiles: string[];
+  unmatchedEdges: string[];
 };
 
 type ContractDiffQualityCaseSpec = {
@@ -506,6 +529,7 @@ export async function runImpactBench(options: RunImpactBenchOptions = {}): Promi
     const score = weightedScore(scores);
     const contractDiffQuality = await runContractDiffQualityBench();
     const coChangeQuality = await runCoChangeQualityBench();
+    const tracePromotionQuality = await runTracePromotionQualityBench();
     const passed =
       relationRecall >= 0.95 &&
       relationPrecision >= 0.95 &&
@@ -520,6 +544,7 @@ export async function runImpactBench(options: RunImpactBenchOptions = {}): Promi
       crossRepoContracts.summary.passed === true &&
       contractDiffQuality.summary.passed === true &&
       coChangeQuality.summary.passed === true &&
+      tracePromotionQuality.summary.passed === true &&
       score >= 0.9;
 
     const report: ImpactBenchReport = {
@@ -544,6 +569,7 @@ export async function runImpactBench(options: RunImpactBenchOptions = {}): Promi
       crossRepoContracts,
       contractDiffQuality,
       coChangeQuality,
+      tracePromotionQuality,
       retrieval,
       outputPath: outputPathForReport
     };
@@ -892,6 +918,71 @@ async function runCoChangeQualityBench(): Promise<CoChangeQualityBench> {
   } finally {
     await rm(fixtureRoot, { recursive: true, force: true });
   }
+}
+
+async function runTracePromotionQualityBench(): Promise<TracePromotionQualityBench> {
+  const fixtureRoot = await mkdtemp(path.join(tmpdir(), 'impact-bench-trace-promotion-'));
+  try {
+    await writeCoChangeBenchGitHistory(fixtureRoot);
+    await initProject({ repoRoot: fixtureRoot });
+    await indexProject({ repoRoot: fixtureRoot });
+
+    const edge = { source: 'src/beta.ts', target: 'src/alpha.ts' };
+    const expectedPromotedEdges = [traceEdgeKey(edge)];
+    const summary = ingestTraces(fixtureRoot, [edge]);
+    const report = await analyzeDiff({
+      repoRoot: fixtureRoot,
+      changedFiles: ['src/alpha.ts'],
+      persistReport: false,
+      readOnly: true
+    });
+    const matchedPromotedEdges =
+      summary.promoted === expectedPromotedEdges.length && summary.unmatched.length === 0
+        ? expectedPromotedEdges
+        : [];
+    const expectedProvenAffectedFiles = ['src/beta.ts'];
+    const matchedProvenAffectedFiles = expectedProvenAffectedFiles
+      .filter((expectedPath) =>
+        report.affectedFiles.some((file) =>
+          file.path === expectedPath && file.confidence === 'proven'
+        )
+      )
+      .sort();
+    const matched = matchedPromotedEdges.length + matchedProvenAffectedFiles.length;
+    const expected = expectedPromotedEdges.length + expectedProvenAffectedFiles.length;
+    const score = ratio(matched, expected);
+    const unmatchedEdges = summary.unmatched.map(traceEdgeKey).sort();
+
+    return {
+      fixtureId: tracePromotionQualityFixtureId,
+      summary: {
+        passed: matched === expected && unmatchedEdges.length === 0,
+        score,
+        expectedPromotions: expectedPromotedEdges.length,
+        matchedPromotions: matchedPromotedEdges.length,
+        expectedProvenAffectedFiles: expectedProvenAffectedFiles.length,
+        matchedProvenAffectedFiles: matchedProvenAffectedFiles.length,
+        unmatchedEdges: unmatchedEdges.length
+      },
+      expectedPromotedEdges,
+      matchedPromotedEdges,
+      missingPromotedEdges: expectedPromotedEdges.filter((expectedEdge) =>
+        !matchedPromotedEdges.includes(expectedEdge)
+      ),
+      expectedProvenAffectedFiles,
+      matchedProvenAffectedFiles,
+      missingProvenAffectedFiles: expectedProvenAffectedFiles.filter((expectedPath) =>
+        !matchedProvenAffectedFiles.includes(expectedPath)
+      ),
+      unmatchedEdges
+    };
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+}
+
+function traceEdgeKey(edge: { source: string; target: string }): string {
+  return `${edge.source}->${edge.target}`;
 }
 
 async function writeCoChangeBenchGitHistory(repoRoot: string): Promise<void> {

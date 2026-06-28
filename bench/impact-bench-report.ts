@@ -6,10 +6,14 @@ import type { ImpactBenchReport } from './impact-bench.js';
 
 const defaultReportPath = '.parallax/bench/impact-bench-report.json';
 
-type LoadedBenchReport = Omit<ImpactBenchReport, 'crossRepoContracts' | 'contractDiffQuality' | 'coChangeQuality'> & {
+type LoadedBenchReport = Omit<
+  ImpactBenchReport,
+  'crossRepoContracts' | 'contractDiffQuality' | 'coChangeQuality' | 'tracePromotionQuality'
+> & {
   crossRepoContracts?: ImpactBenchReport['crossRepoContracts'];
   contractDiffQuality?: ImpactBenchReport['contractDiffQuality'];
   coChangeQuality?: ImpactBenchReport['coChangeQuality'];
+  tracePromotionQuality?: ImpactBenchReport['tracePromotionQuality'];
 };
 
 type FormatOptions = {
@@ -81,6 +85,7 @@ export function formatBenchSummaryMarkdown(
   const currentCrossRepoContracts = report.crossRepoContracts;
   const currentContractDiffQuality = report.contractDiffQuality;
   const currentCoChangeQuality = report.coChangeQuality;
+  const currentTracePromotionQuality = report.tracePromotionQuality;
   const metricRows = [
     metricRow('Overall score', report.summary.score, baseline?.summary.score),
     metricRow('Relation recall', report.scores.relationRecall, baseline?.scores.relationRecall),
@@ -108,6 +113,11 @@ export function formatBenchSummaryMarkdown(
       'Co-change quality',
       currentCoChangeQuality.summary.score,
       baseline?.coChangeQuality?.summary.score
+    )] : []),
+    ...(currentTracePromotionQuality ? [metricRow(
+      'Trace-promotion quality',
+      currentTracePromotionQuality.summary.score,
+      baseline?.tracePromotionQuality?.summary.score
     )] : []),
     metricRow('Retrieval recall@5', report.retrieval.summary.recallAt5, baseline?.retrieval.summary.recallAt5),
     metricRow('Retrieval MRR', report.retrieval.summary.mrr, baseline?.retrieval.summary.mrr),
@@ -175,6 +185,27 @@ export function formatBenchSummaryMarkdown(
         currentCoChangeQuality.summary.matchedAffectedFiles,
         baseline?.coChangeQuality?.summary.matchedAffectedFiles
       )
+    ] : []),
+    ...(currentTracePromotionQuality ? [
+      countRow(
+        'Trace promotions',
+        `${currentTracePromotionQuality.summary.matchedPromotions}/${currentTracePromotionQuality.summary.expectedPromotions}`,
+        currentTracePromotionQuality.summary.matchedPromotions,
+        baseline?.tracePromotionQuality?.summary.matchedPromotions
+      ),
+      countRow(
+        'Trace proven affected files',
+        `${currentTracePromotionQuality.summary.matchedProvenAffectedFiles}/${currentTracePromotionQuality.summary.expectedProvenAffectedFiles}`,
+        currentTracePromotionQuality.summary.matchedProvenAffectedFiles,
+        baseline?.tracePromotionQuality?.summary.matchedProvenAffectedFiles
+      ),
+      countRow(
+        'Trace unmatched edges',
+        String(currentTracePromotionQuality.summary.unmatchedEdges),
+        currentTracePromotionQuality.summary.unmatchedEdges,
+        baseline?.tracePromotionQuality?.summary.unmatchedEdges,
+        { lowerIsBetter: true }
+      )
     ] : [])
   ];
   const listSections = [
@@ -183,6 +214,11 @@ export function formatBenchSummaryMarkdown(
     ...(currentCoChangeQuality ? [
       listSection('Missing co-change partners', currentCoChangeQuality.missingPartners),
       listSection('Missing co-change affected files', currentCoChangeQuality.missingAffectedFiles)
+    ] : []),
+    ...(currentTracePromotionQuality ? [
+      listSection('Missing trace promotions', currentTracePromotionQuality.missingPromotedEdges),
+      listSection('Missing trace proven affected files', currentTracePromotionQuality.missingProvenAffectedFiles),
+      listSection('Unmatched trace edges', currentTracePromotionQuality.unmatchedEdges)
     ] : []),
     listSection('Missing relations', report.missingRelations),
     listSection('Unexpected relations', report.unexpectedRelations)
@@ -488,6 +524,57 @@ function assertBenchReport(value: unknown, label: string): asserts value is Impa
       label,
       'coChangeQuality.missingAffectedFiles'
     );
+  }
+  if (value.schemaVersion >= 7 || value.tracePromotionQuality !== undefined) {
+    assertRecord(value.tracePromotionQuality, label, 'tracePromotionQuality');
+    assertString(value.tracePromotionQuality.fixtureId, label, 'tracePromotionQuality.fixtureId');
+    assertRecord(value.tracePromotionQuality.summary, label, 'tracePromotionQuality.summary');
+    assertBoolean(
+      value.tracePromotionQuality.summary.passed,
+      label,
+      'tracePromotionQuality.summary.passed'
+    );
+    for (const key of [
+      'score',
+      'expectedPromotions',
+      'matchedPromotions',
+      'expectedProvenAffectedFiles',
+      'matchedProvenAffectedFiles',
+      'unmatchedEdges'
+    ]) {
+      assertNumber(value.tracePromotionQuality.summary[key], label, `tracePromotionQuality.summary.${key}`);
+    }
+    assertStringArray(
+      value.tracePromotionQuality.expectedPromotedEdges,
+      label,
+      'tracePromotionQuality.expectedPromotedEdges'
+    );
+    assertStringArray(
+      value.tracePromotionQuality.matchedPromotedEdges,
+      label,
+      'tracePromotionQuality.matchedPromotedEdges'
+    );
+    assertStringArray(
+      value.tracePromotionQuality.missingPromotedEdges,
+      label,
+      'tracePromotionQuality.missingPromotedEdges'
+    );
+    assertStringArray(
+      value.tracePromotionQuality.expectedProvenAffectedFiles,
+      label,
+      'tracePromotionQuality.expectedProvenAffectedFiles'
+    );
+    assertStringArray(
+      value.tracePromotionQuality.matchedProvenAffectedFiles,
+      label,
+      'tracePromotionQuality.matchedProvenAffectedFiles'
+    );
+    assertStringArray(
+      value.tracePromotionQuality.missingProvenAffectedFiles,
+      label,
+      'tracePromotionQuality.missingProvenAffectedFiles'
+    );
+    assertStringArray(value.tracePromotionQuality.unmatchedEdges, label, 'tracePromotionQuality.unmatchedEdges');
   }
   assertRecord(value.retrieval, label, 'retrieval');
   assertRecord(value.retrieval.summary, label, 'retrieval.summary');

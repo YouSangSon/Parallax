@@ -194,6 +194,55 @@ The web/GitHub review changes the short-term adoption order without invalidating
 7. ✅ **M10 SCIP bridge** — JSON import, CLI-backed binary ingest, and JSON export shipped; binary protobuf writing stays deferred until JSON is insufficient.
 8. ✅ **D9 affected verification planner** — repo-map and MCP output now rank verification command groups by package root/runner and show what impact paths each command covers.
 
+## Monorepo / workspace reassessment (2026-06-28)
+
+The latest web/GitHub pass reinforces W3 as the next product-fit gap rather
+than introducing a higher-priority new lane. Modern monorepo tools model impact
+around packages/projects, while Parallax's workspace catalog still models only
+whole repo roots.
+
+### Sources checked
+
+- npm workspaces: <https://docs.npmjs.com/cli/using-npm/workspaces/>
+- pnpm workspace manifest: <https://pnpm.io/pnpm-workspace_yaml>
+- Nx affected commands: <https://nx.dev/docs/features/ci-features/affected>
+- Turborepo filters: <https://turbo.build/repo/docs/crafting-your-repository/running-tasks>
+- GitHub semantic-code-graph search examples:
+  <https://github.com/VirtusLab/scg-cli>,
+  <https://github.com/LordCasser/atlas>,
+  <https://github.com/suatkocar/codegraph>,
+  <https://github.com/iamsaquib8/tessera>
+- Parallax open issue queue refreshed 2026-06-28:
+  <https://github.com/YouSangSon/Parallax/issues/3>
+- Parallax open PR queue refreshed 2026-06-28:
+  <https://github.com/YouSangSon/Parallax/pulls?q=is%3Apr+is%3Aopen+dependabot>
+
+### What the search implies
+
+1. **W3 should start with package identity, not task execution.** npm and pnpm
+   expose deterministic workspace membership through manifest fields/globs, so
+   Parallax can discover addressable package units without `npm install`,
+   `pnpm install`, or tool daemons.
+2. **Affected-task tools validate the package/project graph shape.** Nx
+   computes affected projects from Git changes plus the project graph, and
+   Turborepo filters by package, directory, dependents/dependencies, and Git
+   ranges. Parallax already has change and relation graphs; the missing piece is
+   mapping files/contracts to a package-scoped workspace member.
+3. **Implementation should preserve the local-first boundary.** Parse
+   `package.json` workspaces and `pnpm-workspace.yaml` first. Treat Nx/Turbo as
+   metadata sources only when their config is parseable; do not execute
+   external CLIs, use remote caches, or depend on daemons.
+4. **The resolver needs member identity, not just repo identity.** Current
+   cross-repo resolution skips when `repoPath` is equal, and
+   `workspace_repos` is unique on `(workspace_id, local_path)`. Same-monorepo
+   sibling packages need a stable member key such as
+   `(repo_root, package_path/service_name)` so same-repo skip can become
+   same-package skip.
+5. **Do not pivot to generic semantic-code-graph parity.** GitHub search shows
+   several small/local code graph + MCP projects, but Parallax's differentiated
+   lane is contract-aware impact, CI/SARIF/repo-map integration, and read-only
+   agent workflows. W3 makes that lane work for a common repo topology.
+
 ## Larger-bet reassessment (2026-06-21)
 
 The quick-win layer has largely shipped (A5, M1, M2, M3 + co-change context fold,

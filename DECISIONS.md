@@ -731,3 +731,37 @@ Why:
   treatment already built incrementally for OpenAPI.
 - The deterministic contract-diff bench now includes a JSON Schema
   required-property removal case so CI summaries expose the new contract kind.
+
+## 2026-06-28: Sequence W3 Around Package Identity, Not Task Execution
+
+Decision: implement W3 by first adding package-scoped workspace member identity
+inside an indexed repo, then deterministic workspace manifest discovery. Do not
+execute npm, pnpm, Nx, Turbo, or any external monorepo CLI as part of discovery.
+
+Sources:
+- npm workspaces:
+  <https://docs.npmjs.com/cli/using-npm/workspaces/>
+- pnpm `pnpm-workspace.yaml`:
+  <https://pnpm.io/pnpm-workspace_yaml>
+- Nx affected commands:
+  <https://nx.dev/docs/features/ci-features/affected>
+- Turborepo task filters:
+  <https://turbo.build/repo/docs/crafting-your-repository/running-tasks>
+- Parallax open issue queue refreshed via `gh issue list` on 2026-06-28: #3 is
+  still the only open issue.
+- Parallax open PR queue refreshed via `gh pr list` on 2026-06-28: #23-#31
+  remain Dependabot PRs.
+
+Why:
+- npm/pnpm workspace membership is manifest data and can be parsed
+  deterministically without network, installs, or package-manager execution.
+- Nx/Turbo affected workflows validate the package/project graph shape, but
+  their task execution and cache behavior are outside Parallax's local-first
+  impact-indexing boundary.
+- Current cross-repo resolution skips every provider/consumer pair with the
+  same `repoPath`, and `workspace_repos` is unique by whole local path. Same
+  monorepo sibling packages therefore need a member identity such as
+  `(repo_root, package_path/service_name)` before discovery can be useful.
+- The first slice should make same-repo skip become same-package skip and filter
+  provider/consumer files by package path. Nx/Turbo metadata can follow as
+  parse-only hints once the member model is stable.

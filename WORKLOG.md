@@ -685,3 +685,17 @@
   - `npm run verify`
   - Full verify result: lint, install smoke/build, 668 unit tests, dogfood, bench, and `npm audit --audit-level=high` all passed.
   - Bench result: `summary.passed=true`, score `0.9987`, `contractDiffQuality` `expectedCases=10`, `matchedCases=10`, `expectedChanges=10`, `matchedChanges=10`, and `missingChanges=[]`.
+- Refreshed W3 web/GitHub research for the next improvement loop.
+  - Official npm/pnpm docs confirm workspace package membership can be derived
+    from manifests/globs without installing dependencies.
+  - Nx affected and Turborepo filters confirm modern monorepo impact workflows
+    operate on package/project graphs plus Git changes.
+  - GitHub repo search found small/local semantic code graph + MCP projects,
+    but no higher-priority pivot than Parallax's contract-aware impact lane.
+  - Current code inspection found the concrete W3 blocker:
+    `cross_repo_resolver.ts` skips same-`repoPath` pairs and
+    `workspace_repos` is unique by `(workspace_id, local_path)`, so sibling
+    packages inside one monorepo cannot yet be provider/consumer members.
+  - Updated `IMPROVEMENT_OPPORTUNITIES.md`, `PLAN.md`, and `DECISIONS.md` to
+    sequence W3 around package-scoped workspace identity before parse-only
+    npm/pnpm discovery and later Nx/Turbo metadata.

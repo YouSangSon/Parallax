@@ -7,6 +7,12 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 ## Active Loop
 
 - Next loop: start W3 monorepo sub-packages as first-class catalog members.
+- Research refresh: the 2026-06-28 web/GitHub pass confirms W3 remains the
+  highest-value next slice. npm/pnpm expose deterministic workspace membership
+  through manifests/globs, Nx/Turbo affected workflows operate on a
+  package/project graph, and Parallax's current workspace resolver still skips
+  every same-`repoPath` pair. Start with package-scoped workspace identity and
+  deterministic manifest parsing; do not execute external monorepo CLIs.
 - Completed slice: W5 JSON Schema contract-kind first slice now recognizes
   `*.schema.json` and contract-located `schema.json` files as `json-schema`
   contracts, stores `$schema` dialect and compatibility signatures, declares a
@@ -131,5 +137,9 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Next
 
-1. Improve W5 contract kind reuse.
-2. Return to S1 residual scan-cost work only with a measured adapter-contract design.
+1. Ship a W3 first slice: package-scoped workspace member identity for
+   same-monorepo provider/consumer resolution.
+2. Add deterministic npm/pnpm workspace discovery, then consider parse-only
+   Nx/Turbo metadata after the member model is stable.
+3. Keep W5 Avro and residual S1 scan-cost work behind W3 unless new evidence
+   displaces the sequence.

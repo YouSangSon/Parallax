@@ -544,6 +544,7 @@ async function writeOpenApiJsonUserSchemaContract(
   repoRoot: string,
   options: {
     responseRequired?: string[];
+    responseIdFormat?: string | null;
     responseStatusEnum?: OpenApiEnumValue[];
     requestRequired?: string[];
   } = {}
@@ -605,7 +606,10 @@ async function writeOpenApiJsonUserSchemaContract(
             type: 'object',
             required: options.responseRequired ?? ['id', 'name'],
             properties: {
-              id: { type: 'string' },
+              id: {
+                type: 'string',
+                ...(options.responseIdFormat !== null ? { format: options.responseIdFormat ?? 'uuid' } : {})
+              },
               name: { type: 'string' },
               status: {
                 type: 'string',
@@ -3518,6 +3522,61 @@ test('analyzeContractDiff preserves mixed OpenAPI JSON response enum value ident
       }
     ]
   );
+});
+
+test('analyzeContractDiff classifies changed OpenAPI JSON response formats as breaking', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithResolvedJsonSchemaContract();
+  await writeOpenApiJsonUserSchemaContract(providerRoot, { responseIdFormat: 'date-time' });
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/openapi.json'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'changed_response_property_format',
+      classification: 'breaking',
+      reason: 'response property format changed in current contract',
+      httpMethod: 'GET',
+      routePath: '/api/users',
+      statusCode: '200',
+      propertyName: 'id',
+      schemaPath: 'responses.200.body.properties.id.format',
+      previousFormat: 'uuid',
+      currentFormat: 'date-time'
+    }
+  ]);
+});
+
+test('analyzeContractDiff classifies removed OpenAPI JSON response formats as breaking', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithResolvedJsonSchemaContract();
+  await writeOpenApiJsonUserSchemaContract(providerRoot, { responseIdFormat: null });
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/openapi.json'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'changed_response_property_format',
+      classification: 'breaking',
+      reason: 'response property format changed in current contract',
+      httpMethod: 'GET',
+      routePath: '/api/users',
+      statusCode: '200',
+      propertyName: 'id',
+      schemaPath: 'responses.200.body.properties.id.format',
+      previousFormat: 'uuid'
+    }
+  ]);
 });
 
 test('analyzeContractDiff classifies added OpenAPI JSON request required properties as breaking', async () => {

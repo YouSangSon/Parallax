@@ -1,7 +1,7 @@
 import { parse as parseYaml } from 'yaml';
 
 export const OPENAPI_COMPAT_ANALYZER_ID = 'openapi-compat-v0';
-export const OPENAPI_COMPAT_SCHEMA_VERSION = 3;
+export const OPENAPI_COMPAT_SCHEMA_VERSION = 4;
 
 export type OpenApiCompatibilitySignature = {
   readonly schemaVersion: typeof OPENAPI_COMPAT_SCHEMA_VERSION;
@@ -28,6 +28,7 @@ export type OpenApiObjectSchemaSignature = {
 
 export type OpenApiPropertySignature = {
   readonly type: string;
+  readonly format?: string;
   readonly enumValues?: readonly string[];
 };
 
@@ -51,6 +52,7 @@ type SchemaSignatureBuilder = {
 
 type PropertySignatureBuilder = {
   types: Set<string>;
+  formats: Set<string>;
   enumValues: Set<string>;
 };
 
@@ -396,23 +398,28 @@ function recordPropertySignature(
   seenRefs: Set<string>
 ): void {
   const propertyType = schemaType(root, schemaValue, new Set(seenRefs));
+  const formats = schemaFormats(root, schemaValue, new Set(seenRefs));
   const enumValues = schemaEnumValues(root, schemaValue, new Set(seenRefs));
   const existing = builder.properties.get(propertyPath);
   if (existing) {
     existing.types.add(propertyType);
+    for (const format of formats) existing.formats.add(format);
     for (const enumValue of enumValues) existing.enumValues.add(enumValue);
     return;
   }
   builder.properties.set(propertyPath, {
     types: new Set([propertyType]),
+    formats: new Set(formats),
     enumValues: new Set(enumValues)
   });
 }
 
 function propertySignature(property: PropertySignatureBuilder): OpenApiPropertySignature {
+  const formats = uniqueSorted([...property.formats]);
   const enumValues = uniqueSorted([...property.enumValues]);
   return {
     type: propertyTypeSignature(property.types),
+    ...(formats.length > 0 ? { format: propertyTypeSignature(new Set(formats)) } : {}),
     ...(enumValues.length > 0 ? { enumValues } : {})
   };
 }
@@ -420,6 +427,18 @@ function propertySignature(property: PropertySignatureBuilder): OpenApiPropertyS
 function propertyTypeSignature(propertyTypes: Set<string>): string {
   const types = uniqueSorted([...propertyTypes]);
   return types.length === 1 ? types[0]! : `allOf<${types.join('|')}>`;
+}
+
+function schemaFormats(root: Record<string, unknown>, schemaValue: unknown, seenRefs: Set<string>): string[] {
+  const schema = resolveMaybeRef(root, schemaValue, seenRefs);
+  if (!isRecord(schema)) return [];
+  const formats = typeof schema.format === 'string' && schema.format.length > 0 ? [schema.format] : [];
+  const composedFormats = ['allOf', 'oneOf', 'anyOf'].flatMap((keyword) => {
+    const variants = schema[keyword];
+    if (!Array.isArray(variants)) return [];
+    return variants.flatMap((variant) => schemaFormats(root, variant, new Set(seenRefs)));
+  });
+  return uniqueSorted([...formats, ...composedFormats]);
 }
 
 function schemaEnumValues(root: Record<string, unknown>, schemaValue: unknown, seenRefs: Set<string>): string[] {

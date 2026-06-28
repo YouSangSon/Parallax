@@ -124,6 +124,14 @@ function classifyResponseBodyChanges(
       previousBody,
       currentBody
     }));
+    changes.push(...classifyResponsePropertyFormatChanges({
+      httpMethod: previousOperation.method,
+      routePath: previousOperation.path,
+      statusCode,
+      schemaPathPrefix: `responses.${statusCode}.body.properties`,
+      previousBody,
+      currentBody
+    }));
   }
   return changes;
 }
@@ -191,6 +199,36 @@ function classifyResponsePropertyEnumRemovals(options: {
         currentEnumValues: currentProperty.enumValues
       });
     }
+  }
+  return changes;
+}
+
+function classifyResponsePropertyFormatChanges(options: {
+  httpMethod: string;
+  routePath: string;
+  statusCode: string;
+  schemaPathPrefix: string;
+  previousBody: OpenApiObjectSchemaSignature | undefined;
+  currentBody: OpenApiObjectSchemaSignature | undefined;
+}): ContractDiffChange[] {
+  if (options.previousBody === undefined || options.currentBody === undefined) return [];
+  const changes: ContractDiffChange[] = [];
+  for (const [propertyName, previousProperty] of Object.entries(options.previousBody.properties)) {
+    const currentProperty = options.currentBody.properties[propertyName];
+    if (currentProperty === undefined || previousProperty.format === undefined) continue;
+    if (previousProperty.format === currentProperty.format) continue;
+    changes.push({
+      kind: 'changed_response_property_format',
+      classification: 'breaking',
+      reason: 'response property format changed in current contract',
+      httpMethod: options.httpMethod,
+      routePath: options.routePath,
+      statusCode: options.statusCode,
+      propertyName,
+      schemaPath: `${options.schemaPathPrefix}.${propertyName}.format`,
+      previousFormat: previousProperty.format,
+      ...(currentProperty.format !== undefined ? { currentFormat: currentProperty.format } : {})
+    });
   }
   return changes;
 }

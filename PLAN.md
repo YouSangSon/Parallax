@@ -6,8 +6,14 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Active Loop
 
-- Next loop: continue W4/W5 with OpenAPI `format`/`nullable` signatures and the
-  reusable JSON Schema contract-kind slice.
+- Next loop: continue W4/W5 with OpenAPI `nullable` / request enum and format
+  semantics, plus the reusable JSON Schema contract-kind slice.
+- Completed slice: W4 OpenAPI response format changes now flow through
+  compatibility signatures. `OpenApiPropertySignature` records `format`,
+  OpenAPI compatibility schemaVersion is bumped to 4, `analyzeContractDiff`
+  emits `changed_response_property_format` breaking changes with format
+  provenance, and the deterministic `contractDiffQuality` bench now has a
+  response format-change case.
 - Completed slice: W4 OpenAPI response enum removals now flow through
   compatibility signatures. `OpenApiPropertySignature` records `enumValues`,
   OpenAPI compatibility schemaVersion is bumped to 3, `analyzeContractDiff`

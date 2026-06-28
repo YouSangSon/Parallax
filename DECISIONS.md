@@ -515,3 +515,37 @@ Why:
   reindex rather than silently compare different signature shapes.
 - The deterministic contract-diff bench now includes an enum-removal case so the
   new signal is visible in CI summaries, not only in focused unit tests.
+
+## 2026-06-28: Detect OpenAPI Response Format Changes
+
+Decision: extend the W4 OpenAPI property signature with response `format`
+provenance, classify response format changes/removals as breaking, and bump the
+OpenAPI compatibility signature schema to v4.
+
+Sources:
+- OpenAPI 3.0.3 Data Types:
+  <https://spec.openapis.org/oas/v3.0.3.html#data-types>
+- OpenAPI 3.0.3 Schema Object:
+  <https://spec.openapis.org/oas/v3.0.3.html#schema-object>
+- OpenAPI 3.1.0 Schema Object:
+  <https://spec.openapis.org/oas/v3.1.0.html#schema-object>
+- JSON Schema format vocabularies:
+  <https://json-schema.org/draft/2020-12/json-schema-validation#name-format-vocabularies>
+- Parallax open issue queue refreshed via `gh issue list` on 2026-06-28: #3 is
+  still the only open issue.
+- Parallax open PR queue refreshed via `gh pr list` on 2026-06-28: #23-#31
+  remain Dependabot PRs.
+
+Why:
+- OpenAPI `format` further qualifies primitive values such as `uuid` and
+  `date-time`. A response property changing from one format to another can
+  break consumers even when its base JSON type remains `string`.
+- The smallest useful W4 follow-up is response-side detection only: record an
+  optional `format` on each property signature, compare previous/current
+  response body properties, and leave request-side broadening/narrowing
+  semantics plus `nullable` for separate slices.
+- A schemaVersion bump is required because indexed OpenAPI compatibility JSON
+  now carries additional property-signature data; old baselines should ask
+  users to reindex rather than silently compare different signature shapes.
+- The deterministic contract-diff bench now includes a response format-change
+  case so this signal stays visible in CI summaries.

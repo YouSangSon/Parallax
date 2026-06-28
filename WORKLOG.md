@@ -490,3 +490,35 @@
   - `npm audit --audit-level=high`
   - `npm run test:dogfood`
   - `npm test`
+- Refreshed W4/W5 research and remote project signals for response format
+  changes.
+  - Official OpenAPI 3.0.3 data type / Schema Object docs, OpenAPI 3.1.0
+    Schema Object docs, and JSON Schema format vocabulary docs confirm
+    `format` is schema-level information that can refine primitive values.
+  - `gh issue list` still shows only issue #3 open; `gh pr list` still shows
+    Dependabot PRs #23-#31, so no remote issue displaced the W4 contract
+    fidelity slice.
+- Shipped W4 OpenAPI response format-change detection.
+  - `OpenApiPropertySignature` now records `format`, and OpenAPI compatibility
+    baselines moved to schemaVersion 4.
+  - `analyzeContractDiff` now emits
+    `changed_response_property_format` breaking changes with previous/current
+    format provenance and schema path.
+  - The deterministic `contractDiffQuality` bench now includes a response
+    format-change case, so CI summaries show 5/5 contract-diff cases and
+    changes.
+  - Backlog remains on W4/W5 for `nullable`, request enum/format semantics, and
+    the reusable JSON Schema contract kind.
+- W4 format-change verification:
+  - `npm run check`
+  - `node --import tsx --test tests/contract-diff.test.ts`
+  - `node --import tsx --test tests/impact-bench.test.ts tests/impact-bench-report.test.ts`
+  - `node --import tsx --test tests/parallax.test.ts`
+  - `npm run docs:lint`
+  - `git diff --check`
+  - `npm run bench`
+  - `npm run bench:report`
+  - `npm run build`
+  - `npm test`
+  - `npm audit --audit-level=high`
+  - `npm run test:dogfood`

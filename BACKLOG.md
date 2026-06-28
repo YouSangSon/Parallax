@@ -4,7 +4,7 @@ Canonical detailed backlog: `IMPROVEMENT_OPPORTUNITIES.md`.
 
 ## Now
 
-1. W4/W5 richer contract signatures: OpenAPI `format`/`nullable` and reusable JSON Schema contract kind.
+1. W4/W5 richer contract signatures: OpenAPI `nullable`, request enum/format semantics, and reusable JSON Schema contract kind.
 
 ## Later
 
@@ -25,3 +25,4 @@ Canonical detailed backlog: `IMPROVEMENT_OPPORTUNITIES.md`.
 11. D2 co-change quality trend metric.
 12. D2 trace-ingest promotion trend metric.
 13. W4 OpenAPI response enum-removal compatibility detection.
+14. W4 OpenAPI response format-change compatibility detection.

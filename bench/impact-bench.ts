@@ -287,6 +287,7 @@ type ContractDiffQualityCaseSpec = {
 type ContractDiffBenchOpenApiOptions = {
   requestRequired?: string[];
   responseRequired?: string[];
+  responseIdFormat?: string;
   responseNameType?: string;
   responseStatusEnum?: string[];
 };
@@ -350,6 +351,17 @@ const contractDiffQualityCases: readonly ContractDiffQualityCaseSpec[] = [
         kind: 'changed_response_property_type',
         classification: 'breaking',
         schemaPath: 'responses.200.body.properties.name'
+      }
+    ]
+  },
+  {
+    id: 'changed-response-property-format',
+    current: { responseIdFormat: 'date-time' },
+    expectedChanges: [
+      {
+        kind: 'changed_response_property_format',
+        classification: 'breaking',
+        schemaPath: 'responses.200.body.properties.id.format'
       }
     ]
   },
@@ -1102,7 +1114,10 @@ async function writeContractDiffBenchOpenApiJsonContract(
                     type: 'object',
                     required: options.responseRequired ?? ['id', 'name'],
                     properties: {
-                      id: { type: 'string' },
+                      id: {
+                        type: 'string',
+                        format: options.responseIdFormat ?? 'uuid'
+                      },
                       name: { type: options.responseNameType ?? 'string' },
                       status: {
                         type: 'string',

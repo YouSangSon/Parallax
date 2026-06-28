@@ -798,9 +798,10 @@ function changeKindOrder(kind: ContractDiffChangeKind): number {
   if (kind === 'removed_response_required_property') return 3;
   if (kind === 'changed_response_property_type') return 4;
   if (kind === 'removed_response_property_enum_value') return 5;
-  if (kind === 'added_request_required_property') return 6;
-  if (kind === 'changed_request_property_type') return 7;
-  return 8;
+  if (kind === 'changed_response_property_format') return 6;
+  if (kind === 'added_request_required_property') return 7;
+  if (kind === 'changed_request_property_type') return 8;
+  return 9;
 }
 
 function dedupeConsumers(consumers: ImpactedContractConsumer[]): ImpactedContractConsumer[] {
@@ -871,7 +872,9 @@ function breakingLinkProvenance(link: PersistableBreakLink): string {
       ...(link.change.currentSchemaType !== undefined ? { currentSchemaType: link.change.currentSchemaType } : {}),
       ...(link.change.enumValue !== undefined ? { enumValue: link.change.enumValue } : {}),
       ...(link.change.previousEnumValues !== undefined ? { previousEnumValues: link.change.previousEnumValues } : {}),
-      ...(link.change.currentEnumValues !== undefined ? { currentEnumValues: link.change.currentEnumValues } : {})
+      ...(link.change.currentEnumValues !== undefined ? { currentEnumValues: link.change.currentEnumValues } : {}),
+      ...(link.change.previousFormat !== undefined ? { previousFormat: link.change.previousFormat } : {}),
+      ...(link.change.currentFormat !== undefined ? { currentFormat: link.change.currentFormat } : {})
     },
     ...(link.consumer.eventTopology !== undefined ? { eventTopology: link.consumer.eventTopology } : {}),
     evidence: {
@@ -893,7 +896,9 @@ function changeFingerprint(change: ContractDiffChange): string {
     currentSchemaType: change.currentSchemaType,
     enumValue: change.enumValue,
     previousEnumValues: change.previousEnumValues,
-    currentEnumValues: change.currentEnumValues
+    currentEnumValues: change.currentEnumValues,
+    previousFormat: change.previousFormat,
+    currentFormat: change.currentFormat
   });
 }
 

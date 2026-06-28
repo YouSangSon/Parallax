@@ -546,6 +546,7 @@ async function writeOpenApiJsonUserSchemaContract(
     responseRequired?: string[];
     responseIdFormat?: string | null;
     responseIdNullable?: boolean;
+    includeResponseStatus?: boolean;
     responseStatusEnum?: OpenApiEnumValue[];
     requestRequired?: string[];
     requestEmailFormat?: string | null;
@@ -625,10 +626,14 @@ async function writeOpenApiJsonUserSchemaContract(
                 ...(options.responseIdNullable ? { nullable: true } : {})
               },
               name: { type: 'string' },
-              status: {
-                type: 'string',
-                enum: options.responseStatusEnum ?? ['active', 'disabled', 'pending']
-              }
+              ...(options.includeResponseStatus === false
+                ? {}
+                : {
+                  status: {
+                    type: 'string',
+                    enum: options.responseStatusEnum ?? ['active', 'disabled', 'pending']
+                  }
+                })
             }
           }
         }
@@ -3404,6 +3409,36 @@ test('analyzeContractDiff classifies removed OpenAPI YAML response required prop
       httpMethod: 'GET',
       routePath: '/api/users',
       evidenceSnippet: 'return fetch("https://users.example.test/api/users");'
+    }
+  ]);
+});
+
+test('analyzeContractDiff classifies removed OpenAPI JSON response optional properties as non-breaking', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithResolvedJsonSchemaContract();
+  await writeOpenApiJsonUserSchemaContract(providerRoot, { includeResponseStatus: false });
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/openapi.json'
+  });
+
+  assert.equal(result.summary.classification, 'non-breaking');
+  assert.equal(result.summary.breakingChangeCount, 0);
+  assert.equal(result.summary.nonBreakingChangeCount, 1);
+  assert.equal(result.summary.unknownChangeCount, 0);
+  assert.equal(result.summary.impactedConsumerCount, 0);
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'removed_response_optional_property',
+      classification: 'non-breaking',
+      reason: 'response optional property removed from current contract',
+      httpMethod: 'GET',
+      routePath: '/api/users',
+      statusCode: '200',
+      propertyName: 'status',
+      schemaPath: 'responses.200.body.properties.status'
     }
   ]);
 });

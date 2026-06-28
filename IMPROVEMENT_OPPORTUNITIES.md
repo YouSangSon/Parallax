@@ -79,14 +79,14 @@ and analyzer traversal is N+1 per frontier node.
 | S5 | **Retention / prune superseded index runs (+ VACUUM)** — every run inserts a new cohort; nothing prunes old ones, so the DB grows by a full snapshot per run. Add deterministic retention (keep last N completed) inside a transaction + optional VACUUM. | M | MED |
 | S6 | **Committable / shareable index artifact** — define export/import of a compacted single-cohort DB + a `{extractor_version, git_commit_sha, content_hash set}` manifest; on import warn when hashes diverge from the working tree. "Index once in CI, everyone consumes." Depends on S5. | M | MED |
 
-**Sequencing:** W4/W5 contract fidelity → S5/S6 storage/shareability. Residual S1 dirty/non-git scan-cost work waits for a measured adapter-contract design.
+**Sequencing:** W5 contract-kind reuse → S5/S6 storage/shareability. Residual S1 dirty/non-git scan-cost work waits for a measured adapter-contract design.
 
 ---
 
 ## 4. Workspace, contracts & cross-repo
 
 A cross-repo workspace catalog, provider↔consumer resolver, and OpenAPI/GraphQL/Protobuf/AsyncAPI
-breaking-change diff exist. W1/W2/W6 are shipped; remaining work focuses on W4/W5
+breaking-change diff exist. W1/W2/W4/W6 are shipped; remaining work focuses on W5
 contract fidelity and W3 package modeling.
 
 | # | Opportunity | Effort | Value |
@@ -94,11 +94,11 @@ contract fidelity and W3 package modeling.
 | W1 | ✅ **shipped** — W1 shipped: primary `analyzeDiff` reports now include persisted workspace `BREAKS_COMPATIBILITY_WITH` consumers as `crossRepoImpacts`, affected external entities, relation-bearing evidence, graph edges, and UI cross-repo lane entries. | M | HIGH |
 | W2 | ✅ **shipped** — cross-repo link consistency now has a shared read model plus `parallax workspace verify`, flagging malformed provenance, stale workspace membership, and orphan `BREAKS_COMPATIBILITY_WITH` rows without duplicate inverse storage. | M | HIGH |
 | W3 | **Monorepo sub-packages as first-class catalog members** — the catalog treats each entry as one whole repo; sibling packages inside one monorepo can't be provider/consumer. Parse `package.json` workspaces / `pnpm-workspace.yaml` / `nx`/`turbo` (deterministic, no install) into addressable units; same-repo skip becomes same-package skip. | L | HIGH |
-| W4 | **Richer contract property signatures** — ✅ response enum-value removal, response format changes, response nullable additions, request enum-value removal, and request format additions/changes are now captured for OpenAPI via richer property signatures, compat schemaVersion 5, persisted breaking-change provenance, and `contractDiffQuality` bench cases. Remaining: response optionality rules. The substance of "nested-schema-level". | M | MED-HIGH |
+| W4 | ✅ **shipped** — richer OpenAPI contract property signatures: response enum-value removal, response format changes, response nullable additions, request enum-value removal, request format additions/changes, and response optional-property removals are now captured via richer property signatures, compat schemaVersion 5 where needed, provenance on breaking changes, non-breaking optional-removal visibility, and `contractDiffQuality` bench cases. | M | MED-HIGH |
 | W5 | **JSON Schema (and Avro) contract kinds** — contract kinds are hardcoded to four; the OpenAPI object-schema signature is ~90% of a JSON Schema diff already. Add a `json-schema` kind reusing it (one synthetic endpoint per top-level schema); Avro as a mechanical follow-on. | S (JSON Schema) / M (Avro) | MED |
 | W6 | ✅ **shipped** — agents can query provider consumers/providers through read-only MCP tools and preview cross-repo resolution without mutating `cross_repo_links`; CLI persistence remains the explicit write workflow. | S | MED |
 
-**Sequencing remaining work:** W4 follow-up response optionality rules then W5 JSON Schema reuse → W3 (biggest scope, monorepo users). W1/W2/W6 are already shipped.
+**Sequencing remaining work:** W5 JSON Schema reuse → W3 (biggest scope, monorepo users). W1/W2/W4/W6 are already shipped.
 
 ---
 
@@ -120,7 +120,7 @@ also remain thinly bench-covered.
 | D8 | ✅ **shipped** — local dependency/PR dogfood lane exists as `parallax pr triage`. It accepts `--changed` or `--base/--head`, persists the impact report, writes SARIF (default `.parallax/pr-triage.sarif`), applies `--fail-on`, and prints a dependency-focused repo map without calling GitHub or changing remote state. The open Dependabot queue was refreshed on 2026-06-27 (#23-#31) as the first real dogfood target. | S | MED-HIGH |
 | D9 | ✅ **shipped** — affected verification planner: `parallax repo-map` / MCP `parallax_repo_map` now include `verificationPlan`, grouping existing `ImpactReport.actions` by nearest `package.json` package root and runner into ranked, copy-pasteable commands with covered changed / affected / target paths, confidence, source actions, and omitted counts. It stays deterministic and does not execute Nx, Bazel, or other external build tools. | M | HIGH |
 
-**Sequencing:** continue W4/W5 contract fidelity and only return to the residual S1 dirty/non-git scan-cost work with a measured adapter-contract design. The D2 trend metrics, `--fail-on` primitive, broad SARIF projection, repo-map, affected verification planner, local PR triage wrapper, official PR action wrapper, local Git hook installer, shareable UI/export surface, and M10 SCIP bridge are landed.
+**Sequencing:** continue W5 contract-kind reuse and only return to the residual S1 dirty/non-git scan-cost work with a measured adapter-contract design. The D2 trend metrics, `--fail-on` primitive, broad SARIF projection, repo-map, affected verification planner, local PR triage wrapper, official PR action wrapper, local Git hook installer, shareable UI/export surface, and M10 SCIP bridge are landed.
 
 ---
 

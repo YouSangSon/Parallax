@@ -653,3 +653,37 @@ Why:
 - The deterministic contract-diff bench now includes a request format-addition
   case so CI summaries expose the signal alongside request required/enum and
   response nullable/format/enum coverage.
+
+## 2026-06-28: Surface OpenAPI Response Optional Property Removals
+
+Decision: classify OpenAPI response optional property removals as non-breaking
+contract-diff changes. The change is visible in `analyzeContractDiff().changes`
+and in the `contractDiffQuality` bench, but it does not create
+`BREAKS_COMPATIBILITY_WITH` consumer links.
+
+Sources:
+- OpenAPI 3.0.3 Schema Object:
+  <https://spec.openapis.org/oas/v3.0.3.html#schema-object>
+- OpenAPI 3.1.0 Schema Object:
+  <https://spec.openapis.org/oas/v3.1.0.html#schema-object>
+- JSON Schema object / required reference:
+  <https://json-schema.org/understanding-json-schema/reference/object#required>
+- OpenAPITools openapi-diff issue #198:
+  <https://github.com/OpenAPITools/openapi-diff/issues/198>
+- Parallax open issue queue refreshed via `gh issue list` on 2026-06-28: #3 is
+  still the only open issue.
+- Parallax open PR queue refreshed via `gh pr list` on 2026-06-28: #23-#31
+  remain Dependabot PRs.
+
+Why:
+- JSON Schema/OpenAPI `required` identifies the properties that must appear in
+  an object. A property listed only under `properties` is documented contract
+  surface, but valid responses may omit it.
+- Treating optional response property removal as breaking would overstate the
+  compatibility risk and would create downstream consumer links for a change
+  that clients should already tolerate when following the schema.
+- Hiding the removal entirely weakens Parallax's "what changed in the contract"
+  UX, so the classifier emits `removed_response_optional_property` as
+  `non-breaking` and the deterministic bench pins that visibility.
+- No OpenAPI compatibility schemaVersion bump is required because schema v5
+  already persists response property names.

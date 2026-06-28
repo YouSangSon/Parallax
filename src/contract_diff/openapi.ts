@@ -124,6 +124,13 @@ function classifyResponseBodyChanges(
         schemaPath: `responses.${statusCode}.body.required.${propertyName}`
       });
     }
+    changes.push(...classifyResponseOptionalPropertyRemovals({
+      httpMethod: previousOperation.method,
+      routePath: previousOperation.path,
+      statusCode,
+      previousBody,
+      currentBody
+    }));
     changes.push(...classifyPropertyTypeChanges({
       kind: 'changed_response_property_type',
       reason: 'response property type changed in current contract',
@@ -162,6 +169,32 @@ function classifyResponseBodyChanges(
       previousBody,
       currentBody
     }));
+  }
+  return changes;
+}
+
+function classifyResponseOptionalPropertyRemovals(options: {
+  httpMethod: string;
+  routePath: string;
+  statusCode: string;
+  previousBody: OpenApiObjectSchemaSignature;
+  currentBody: OpenApiObjectSchemaSignature | undefined;
+}): ContractDiffChange[] {
+  const previousRequired = new Set(options.previousBody.required);
+  const currentProperties = new Set(Object.keys(options.currentBody?.properties ?? {}));
+  const changes: ContractDiffChange[] = [];
+  for (const propertyName of Object.keys(options.previousBody.properties)) {
+    if (previousRequired.has(propertyName) || currentProperties.has(propertyName)) continue;
+    changes.push({
+      kind: 'removed_response_optional_property',
+      classification: 'non-breaking',
+      reason: 'response optional property removed from current contract',
+      httpMethod: options.httpMethod,
+      routePath: options.routePath,
+      statusCode: options.statusCode,
+      propertyName,
+      schemaPath: `responses.${options.statusCode}.body.properties.${propertyName}`
+    });
   }
   return changes;
 }

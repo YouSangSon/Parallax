@@ -618,3 +618,32 @@
   - `git diff --check`
   - `npm run verify`
   - `npm run bench:report`
+- Refreshed W4/W5 research and remote project signals for response optional
+  property removals.
+  - Official OpenAPI 3.0.3 / 3.1.0 Schema Object docs and the JSON Schema
+    object/required reference confirm that `required` controls which object
+    properties must appear; properties outside `required` remain documented but
+    optional.
+  - OpenAPITools openapi-diff issue #198 shows the ecosystem treats optional
+    response field removal as a debated/false-positive breaking signal.
+  - `gh issue list` still shows only issue #3 open; `gh pr list` still shows
+    Dependabot PRs #23-#31, so no remote issue displaced the W4 optionality
+    slice.
+- Shipped W4 OpenAPI response optional-property removal visibility.
+  - `analyzeContractDiff` now emits `removed_response_optional_property`
+    non-breaking changes when an optional OpenAPI JSON response property was
+    present in the indexed baseline but is absent from the current contract.
+  - The change intentionally does not create `BREAKS_COMPATIBILITY_WITH`
+    consumer links because a schema-valid response could already omit optional
+    properties.
+  - The deterministic `contractDiffQuality` bench now includes a response
+    optional-property removal case, so CI summaries show 9/9 contract-diff
+    cases and changes.
+  - Backlog now moves to W5 reusable JSON Schema contract-kind support.
+- W4 response optional-property verification:
+  - `npm run check`
+  - `node --import tsx --test tests/contract-diff.test.ts`
+  - `node --import tsx --test tests/impact-bench.test.ts tests/impact-bench-report.test.ts`
+  - `npm run docs:lint`
+  - `git diff --check`
+  - `npm run verify`

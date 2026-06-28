@@ -10,6 +10,7 @@ export type ContractDiffChangeKind =
   | 'added_endpoint'
   | 'removed_response_status'
   | 'removed_response_required_property'
+  | 'removed_response_optional_property'
   | 'changed_response_property_type'
   | 'removed_response_property_enum_value'
   | 'changed_response_property_format'

@@ -292,6 +292,7 @@ type ContractDiffBenchOpenApiOptions = {
   responseIdFormat?: string;
   responseIdNullable?: boolean;
   responseNameType?: string;
+  includeResponseStatus?: boolean;
   responseStatusEnum?: string[];
 };
 
@@ -332,6 +333,17 @@ const contractDiffQualityCases: readonly ContractDiffQualityCaseSpec[] = [
         kind: 'removed_response_required_property',
         classification: 'breaking',
         schemaPath: 'responses.200.body.required.name'
+      }
+    ]
+  },
+  {
+    id: 'removed-response-optional-property',
+    current: { includeResponseStatus: false },
+    expectedChanges: [
+      {
+        kind: 'removed_response_optional_property',
+        classification: 'non-breaking',
+        schemaPath: 'responses.200.body.properties.status'
       }
     ]
   },
@@ -1156,10 +1168,14 @@ async function writeContractDiffBenchOpenApiJsonContract(
                         ...(options.responseIdNullable ? { nullable: true } : {})
                       },
                       name: { type: options.responseNameType ?? 'string' },
-                      status: {
-                        type: 'string',
-                        enum: options.responseStatusEnum ?? ['active', 'disabled', 'pending']
-                      }
+                      ...(options.includeResponseStatus === false
+                        ? {}
+                        : {
+                          status: {
+                            type: 'string',
+                            enum: options.responseStatusEnum ?? ['active', 'disabled', 'pending']
+                          }
+                        })
                     }
                   }
                 }

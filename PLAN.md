@@ -6,8 +6,13 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Active Loop
 
-- Next loop: continue W4/W5 with OpenAPI response optionality rules plus the
-  reusable JSON Schema contract-kind slice.
+- Next loop: continue W5 with the reusable JSON Schema contract-kind slice.
+- Completed slice: W4 OpenAPI response optional property removals now surface
+  through contract diff as `removed_response_optional_property` non-breaking
+  changes. Required response removals still drive breaking consumer links, but
+  optional property removals remain visible in `changes` and the deterministic
+  `contractDiffQuality` bench now has a response optional-property removal
+  case.
 - Completed slice: W4 OpenAPI request format additions/changes now reuse the
   existing `format` property signature. `analyzeContractDiff` emits
   `changed_request_property_format` breaking changes when current request
@@ -118,5 +123,5 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Next
 
-1. Improve W4/W5 contract property signatures.
+1. Improve W5 contract kind reuse.
 2. Return to S1 residual scan-cost work only with a measured adapter-contract design.

@@ -549,3 +549,37 @@ Why:
   users to reindex rather than silently compare different signature shapes.
 - The deterministic contract-diff bench now includes a response format-change
   case so this signal stays visible in CI summaries.
+
+## 2026-06-28: Detect OpenAPI Response Nullable Additions
+
+Decision: extend the W4 OpenAPI property signature with response
+`nullable: true` provenance, classify non-nullable response properties becoming
+nullable as breaking, and bump the OpenAPI compatibility signature schema to v5.
+
+Sources:
+- OpenAPI 3.0.3 Schema Object:
+  <https://spec.openapis.org/oas/v3.0.3.html#schema-object>
+- OpenAPI 3.1.0 Schema Object:
+  <https://spec.openapis.org/oas/v3.1.0.html#schema-object>
+- JSON Schema null type reference:
+  <https://json-schema.org/understanding-json-schema/reference/null>
+- Parallax open issue queue refreshed via `gh issue list` on 2026-06-28: #3 is
+  still the only open issue.
+- Parallax open PR queue refreshed via `gh pr list` on 2026-06-28: #23-#31
+  remain Dependabot PRs.
+
+Why:
+- OpenAPI 3.0 `nullable: true` adds `null` to the allowed value set for a typed
+  schema. A response property that can newly be `null` can break consumers even
+  when its base type stays the same.
+- The smallest useful W4 follow-up is response-side detection only: record
+  nullable truth on property signatures and emit a breaking change when the
+  previous response was not nullable and the current response is nullable.
+- OpenAPI 3.1 / JSON Schema `type: ["string", "null"]` already flows through
+  the existing type-signature path, so this slice deliberately targets the
+  OpenAPI 3.0 `nullable` keyword without adding request-side semantics.
+- A schemaVersion bump is required because indexed OpenAPI compatibility JSON
+  now carries additional property-signature data; old baselines should ask
+  users to reindex rather than silently compare different signature shapes.
+- The deterministic contract-diff bench now includes a response nullable
+  addition case so this signal stays visible in CI summaries.

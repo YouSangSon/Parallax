@@ -132,6 +132,14 @@ function classifyResponseBodyChanges(
       previousBody,
       currentBody
     }));
+    changes.push(...classifyResponsePropertyNullableAdditions({
+      httpMethod: previousOperation.method,
+      routePath: previousOperation.path,
+      statusCode,
+      schemaPathPrefix: `responses.${statusCode}.body.properties`,
+      previousBody,
+      currentBody
+    }));
   }
   return changes;
 }
@@ -228,6 +236,35 @@ function classifyResponsePropertyFormatChanges(options: {
       schemaPath: `${options.schemaPathPrefix}.${propertyName}.format`,
       previousFormat: previousProperty.format,
       ...(currentProperty.format !== undefined ? { currentFormat: currentProperty.format } : {})
+    });
+  }
+  return changes;
+}
+
+function classifyResponsePropertyNullableAdditions(options: {
+  httpMethod: string;
+  routePath: string;
+  statusCode: string;
+  schemaPathPrefix: string;
+  previousBody: OpenApiObjectSchemaSignature | undefined;
+  currentBody: OpenApiObjectSchemaSignature | undefined;
+}): ContractDiffChange[] {
+  if (options.previousBody === undefined || options.currentBody === undefined) return [];
+  const changes: ContractDiffChange[] = [];
+  for (const [propertyName, previousProperty] of Object.entries(options.previousBody.properties)) {
+    const currentProperty = options.currentBody.properties[propertyName];
+    if (currentProperty === undefined || previousProperty.nullable === true || currentProperty.nullable !== true) continue;
+    changes.push({
+      kind: 'added_response_property_nullable',
+      classification: 'breaking',
+      reason: 'response property became nullable in current contract',
+      httpMethod: options.httpMethod,
+      routePath: options.routePath,
+      statusCode: options.statusCode,
+      propertyName,
+      schemaPath: `${options.schemaPathPrefix}.${propertyName}.nullable`,
+      previousNullable: false,
+      currentNullable: true
     });
   }
   return changes;

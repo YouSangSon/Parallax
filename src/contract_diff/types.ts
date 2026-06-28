@@ -13,6 +13,7 @@ export type ContractDiffChangeKind =
   | 'changed_response_property_type'
   | 'removed_response_property_enum_value'
   | 'changed_response_property_format'
+  | 'added_response_property_nullable'
   | 'added_request_required_property'
   | 'changed_request_property_type'
   | 'unreadable_current_contract'
@@ -37,6 +38,8 @@ export type ContractDiffChange = {
   currentEnumValues?: readonly string[];
   previousFormat?: string;
   currentFormat?: string;
+  previousNullable?: boolean;
+  currentNullable?: boolean;
 };
 
 export type ContractEndpoint = {

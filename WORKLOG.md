@@ -522,3 +522,35 @@
   - `npm test`
   - `npm audit --audit-level=high`
   - `npm run test:dogfood`
+- Refreshed W4/W5 research and remote project signals for response nullable
+  additions.
+  - Official OpenAPI 3.0.3 Schema Object docs confirm `nullable: true` adds
+    `null` to a typed schema; OpenAPI 3.1 Schema Object and JSON Schema null
+    docs confirm the equivalent type-level null model.
+  - `gh issue list` still shows only issue #3 open; `gh pr list` still shows
+    Dependabot PRs #23-#31, so no remote issue displaced the W4 nullable
+    fidelity slice.
+- Shipped W4 OpenAPI response nullable-addition detection.
+  - `OpenApiPropertySignature` now records `nullable`, and OpenAPI
+    compatibility baselines moved to schemaVersion 5.
+  - `analyzeContractDiff` now emits
+    `added_response_property_nullable` breaking changes with previous/current
+    nullable provenance and schema path.
+  - The deterministic `contractDiffQuality` bench now includes a response
+    nullable-addition case, so CI summaries show 6/6 contract-diff cases and
+    changes.
+  - Backlog remains on W4/W5 for request enum/format semantics, response
+    optionality rules, and the reusable JSON Schema contract kind.
+- W4 nullable-addition verification:
+  - `npm run check`
+  - `node --import tsx --test tests/contract-diff.test.ts`
+  - `node --import tsx --test tests/impact-bench.test.ts tests/impact-bench-report.test.ts`
+  - `node --import tsx --test tests/parallax.test.ts`
+  - `npm run docs:lint`
+  - `git diff --check`
+  - `npm run bench`
+  - `npm run bench:report`
+  - `npm run build`
+  - `npm test`
+  - `npm audit --audit-level=high`
+  - `npm run test:dogfood`

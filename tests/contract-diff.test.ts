@@ -545,6 +545,7 @@ async function writeOpenApiJsonUserSchemaContract(
   options: {
     responseRequired?: string[];
     responseIdFormat?: string | null;
+    responseIdNullable?: boolean;
     responseStatusEnum?: OpenApiEnumValue[];
     requestRequired?: string[];
   } = {}
@@ -608,7 +609,8 @@ async function writeOpenApiJsonUserSchemaContract(
             properties: {
               id: {
                 type: 'string',
-                ...(options.responseIdFormat !== null ? { format: options.responseIdFormat ?? 'uuid' } : {})
+                ...(options.responseIdFormat !== null ? { format: options.responseIdFormat ?? 'uuid' } : {}),
+                ...(options.responseIdNullable ? { nullable: true } : {})
               },
               name: { type: 'string' },
               status: {
@@ -3575,6 +3577,34 @@ test('analyzeContractDiff classifies removed OpenAPI JSON response formats as br
       propertyName: 'id',
       schemaPath: 'responses.200.body.properties.id.format',
       previousFormat: 'uuid'
+    }
+  ]);
+});
+
+test('analyzeContractDiff classifies OpenAPI JSON response properties becoming nullable as breaking', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithResolvedJsonSchemaContract();
+  await writeOpenApiJsonUserSchemaContract(providerRoot, { responseIdNullable: true });
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/openapi.json'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'added_response_property_nullable',
+      classification: 'breaking',
+      reason: 'response property became nullable in current contract',
+      httpMethod: 'GET',
+      routePath: '/api/users',
+      statusCode: '200',
+      propertyName: 'id',
+      schemaPath: 'responses.200.body.properties.id.nullable',
+      previousNullable: false,
+      currentNullable: true
     }
   ]);
 });

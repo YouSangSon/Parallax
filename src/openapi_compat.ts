@@ -1,7 +1,7 @@
 import { parse as parseYaml } from 'yaml';
 
 export const OPENAPI_COMPAT_ANALYZER_ID = 'openapi-compat-v0';
-export const OPENAPI_COMPAT_SCHEMA_VERSION = 4;
+export const OPENAPI_COMPAT_SCHEMA_VERSION = 5;
 
 export type OpenApiCompatibilitySignature = {
   readonly schemaVersion: typeof OPENAPI_COMPAT_SCHEMA_VERSION;
@@ -29,6 +29,7 @@ export type OpenApiObjectSchemaSignature = {
 export type OpenApiPropertySignature = {
   readonly type: string;
   readonly format?: string;
+  readonly nullable?: true;
   readonly enumValues?: readonly string[];
 };
 
@@ -53,6 +54,7 @@ type SchemaSignatureBuilder = {
 type PropertySignatureBuilder = {
   types: Set<string>;
   formats: Set<string>;
+  nullable: boolean;
   enumValues: Set<string>;
 };
 
@@ -399,17 +401,20 @@ function recordPropertySignature(
 ): void {
   const propertyType = schemaType(root, schemaValue, new Set(seenRefs));
   const formats = schemaFormats(root, schemaValue, new Set(seenRefs));
+  const nullable = schemaNullable(root, schemaValue, new Set(seenRefs));
   const enumValues = schemaEnumValues(root, schemaValue, new Set(seenRefs));
   const existing = builder.properties.get(propertyPath);
   if (existing) {
     existing.types.add(propertyType);
     for (const format of formats) existing.formats.add(format);
+    existing.nullable ||= nullable;
     for (const enumValue of enumValues) existing.enumValues.add(enumValue);
     return;
   }
   builder.properties.set(propertyPath, {
     types: new Set([propertyType]),
     formats: new Set(formats),
+    nullable,
     enumValues: new Set(enumValues)
   });
 }
@@ -420,6 +425,7 @@ function propertySignature(property: PropertySignatureBuilder): OpenApiPropertyS
   return {
     type: propertyTypeSignature(property.types),
     ...(formats.length > 0 ? { format: propertyTypeSignature(new Set(formats)) } : {}),
+    ...(property.nullable ? { nullable: true } : {}),
     ...(enumValues.length > 0 ? { enumValues } : {})
   };
 }
@@ -439,6 +445,16 @@ function schemaFormats(root: Record<string, unknown>, schemaValue: unknown, seen
     return variants.flatMap((variant) => schemaFormats(root, variant, new Set(seenRefs)));
   });
   return uniqueSorted([...formats, ...composedFormats]);
+}
+
+function schemaNullable(root: Record<string, unknown>, schemaValue: unknown, seenRefs: Set<string>): boolean {
+  const schema = resolveMaybeRef(root, schemaValue, seenRefs);
+  if (!isRecord(schema)) return false;
+  if (schema.nullable === true) return true;
+  return ['allOf', 'oneOf', 'anyOf'].some((keyword) => {
+    const variants = schema[keyword];
+    return Array.isArray(variants) && variants.some((variant) => schemaNullable(root, variant, new Set(seenRefs)));
+  });
 }
 
 function schemaEnumValues(root: Record<string, unknown>, schemaValue: unknown, seenRefs: Set<string>): string[] {

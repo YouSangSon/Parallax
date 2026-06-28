@@ -288,6 +288,7 @@ type ContractDiffBenchOpenApiOptions = {
   requestRequired?: string[];
   responseRequired?: string[];
   responseIdFormat?: string;
+  responseIdNullable?: boolean;
   responseNameType?: string;
   responseStatusEnum?: string[];
 };
@@ -362,6 +363,17 @@ const contractDiffQualityCases: readonly ContractDiffQualityCaseSpec[] = [
         kind: 'changed_response_property_format',
         classification: 'breaking',
         schemaPath: 'responses.200.body.properties.id.format'
+      }
+    ]
+  },
+  {
+    id: 'added-response-property-nullable',
+    current: { responseIdNullable: true },
+    expectedChanges: [
+      {
+        kind: 'added_response_property_nullable',
+        classification: 'breaking',
+        schemaPath: 'responses.200.body.properties.id.nullable'
       }
     ]
   },
@@ -1116,7 +1128,8 @@ async function writeContractDiffBenchOpenApiJsonContract(
                     properties: {
                       id: {
                         type: 'string',
-                        format: options.responseIdFormat ?? 'uuid'
+                        format: options.responseIdFormat ?? 'uuid',
+                        ...(options.responseIdNullable ? { nullable: true } : {})
                       },
                       name: { type: options.responseNameType ?? 'string' },
                       status: {

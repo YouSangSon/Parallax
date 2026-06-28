@@ -534,7 +534,7 @@ test('indexProject persists OpenAPI contracts and analyzeDiff reaches implementi
         }>;
       }>;
     };
-    assert.equal(yamlCompatibility.schemaVersion, 4);
+    assert.equal(yamlCompatibility.schemaVersion, 5);
     assert.equal(yamlCompatibility.analyzer, 'openapi-compat-v0');
     assert.deepEqual(
       yamlCompatibility.operations?.find((operation) => operation.method === 'GET' && operation.path === '/api/users'),
@@ -630,7 +630,7 @@ test('indexProject persists OpenAPI contracts and analyzeDiff reaches implementi
         }>;
       }>;
     };
-    assert.equal(compatibility.schemaVersion, 4);
+    assert.equal(compatibility.schemaVersion, 5);
     assert.equal(compatibility.analyzer, 'openapi-compat-v0');
     assert.deepEqual(
       compatibility.operations?.find((operation) => operation.method === 'GET' && operation.path === '/api/users'),

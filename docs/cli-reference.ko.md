@@ -102,7 +102,7 @@ parallax pr triage --base origin/main --head HEAD --fail-on proven
 
 `workspace verify`, `workspace consumers`, `workspace providers`는 저장된 link만 읽는다. resolution이나 contract diff를 실행하지 않는다. `CONSUMES_HTTP_ENDPOINT` link를 갱신하려면 `workspace resolve-contracts`를 사용하고, `BREAKS_COMPATIBILITY_WITH` link를 갱신하려면 `workspace contract-diff`를 사용한다.
 
-`workspace add-repo`는 repo 경로를 positional 인자로 받는다. cross-repo 범위는 사용자가 명시적으로 등록한 로컬 repo로 한정된다 — clone이나 네트워크 접근 없음.
+`workspace add-repo`는 repo 경로를 positional 인자로 받는다. cross-repo 범위는 사용자가 명시적으로 등록한 로컬 repo로 한정된다 — clone이나 네트워크 접근 없음. catalog entry는 같은 monorepo 안에서 이미 인덱싱된 package directory를 가리킬 수도 있으며, `resolve-contracts`는 가장 가까운 상위 Parallax DB를 읽고 path를 해당 member 기준으로 제한한다.
 
 ## Diagnostics
 

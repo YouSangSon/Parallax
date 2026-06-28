@@ -10,10 +10,15 @@ import { test } from 'node:test';
 
 import {
   addWorkspaceRepo,
+  consumersOf,
   indexProject,
   initProject,
   initWorkspace,
-  resolveCrossRepoContracts
+  providersFor,
+  resolveCrossRepoContracts,
+  syncWorkspaceCatalog,
+  verifyCrossRepoLinks,
+  workspaceCatalogPath
 } from '../src/index.js';
 import { databasePath } from '../src/store.js';
 
@@ -140,6 +145,131 @@ test('resolveCrossRepoContracts links workspace consumer files to provider OpenA
   const cliRun = runCli(consumerRoot, ['workspace', 'resolve-contracts', '--name', 'platform', '--json']);
   assert.equal(cliRun.status, 0, `workspace resolve-contracts failed: ${cliRun.stderr}`);
   assert.deepEqual(JSON.parse(cliRun.stdout), result);
+});
+
+test('resolveCrossRepoContracts links same-monorepo package members through the root index', async () => {
+  const repoRoot = await makeRepo('parallax-monorepo-contracts-');
+  const webRoot = path.join(repoRoot, 'packages/web');
+  const providerRoot = path.join(repoRoot, 'packages/users');
+  const otherRoot = path.join(repoRoot, 'packages/other');
+  await mkdir(path.join(webRoot, 'src'), { recursive: true });
+  await mkdir(path.join(providerRoot, 'contracts'), { recursive: true });
+  await mkdir(path.join(otherRoot, 'src'), { recursive: true });
+
+  await writeFile(path.join(webRoot, 'src/client.ts'), [
+    'export async function loadUsers() {',
+    '  return fetch("https://users.example.test/api/users");',
+    '}',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(otherRoot, 'src/noise.ts'), [
+    'export const docExample = "GET /api/users";',
+    ''
+  ].join('\n'));
+  await writeFile(path.join(providerRoot, 'contracts/openapi.yaml'), [
+    'openapi: 3.0.0',
+    'info:',
+    '  title: Users API',
+    '  version: 1.0.0',
+    'paths:',
+    '  /api/users:',
+    '    get:',
+    '      operationId: listUsers',
+    '      responses:',
+    "        '200':",
+    '          description: ok',
+    ''
+  ].join('\n'));
+
+  await initProject({ repoRoot });
+  await indexProject({ repoRoot });
+
+  const catalogPath = workspaceCatalogPath(repoRoot);
+  const catalogDir = path.dirname(catalogPath);
+  const portable = (target: string) => path.relative(catalogDir, target).split(path.sep).join('/');
+  await writeFile(catalogPath, `${JSON.stringify({
+    schemaVersion: 1,
+    name: 'platform',
+    repos: [
+      { localPath: portable(webRoot), serviceName: 'web', remoteUrl: null, trustPolicy: { readOnly: true } },
+      { localPath: portable(providerRoot), serviceName: 'users-api', remoteUrl: null, trustPolicy: { readOnly: true } }
+    ]
+  }, null, 2)}\n`);
+  syncWorkspaceCatalog({ repoRoot });
+
+  const result = resolveCrossRepoContracts({ repoRoot, workspaceName: 'platform' });
+  const webReal = realpathSync(webRoot);
+  const providerReal = realpathSync(providerRoot);
+
+  assert.equal(result.warnings.length, 0);
+  assert.equal(result.links.length, 1);
+  assert.deepEqual(result.links[0], {
+    kind: 'CONSUMES_HTTP_ENDPOINT',
+    confidence: 'heuristic',
+    consumerService: 'web',
+    consumerRepoPath: webReal,
+    consumerPath: 'src/client.ts',
+    providerService: 'users-api',
+    providerRepoPath: providerReal,
+    providerContractPath: 'contracts/openapi.yaml',
+    providerEndpointId: 'endpoint:yaml:GET /api/users',
+    httpMethod: 'GET',
+    routePath: '/api/users'
+  });
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const row = db.prepare('SELECT provenance FROM cross_repo_links').get() as { provenance: string };
+    assert.deepEqual(JSON.parse(row.provenance), {
+      schemaVersion: 1,
+      resolver: 'cross-repo-contracts-v0',
+      consumer: {
+        serviceName: 'web',
+        repoPath: webReal,
+        path: 'src/client.ts'
+      },
+      provider: {
+        serviceName: 'users-api',
+        repoPath: providerReal,
+        contractPath: 'contracts/openapi.yaml',
+        endpointId: 'endpoint:yaml:GET /api/users'
+      },
+      http: {
+        method: 'GET',
+        path: '/api/users'
+      },
+      evidence: {
+        filePath: 'src/client.ts',
+        snippet: 'return fetch("https://users.example.test/api/users");'
+      }
+    });
+  } finally {
+    db.close();
+  }
+
+  const verify = verifyCrossRepoLinks({ repoRoot, workspaceName: 'platform' });
+  assert.equal(verify.summary.passed, true);
+  assert.equal(verify.summary.staleWorkspaceLinks, 0);
+
+  const consumers = consumersOf({ repoRoot, workspaceName: 'platform', providerServiceName: 'users-api' });
+  assert.deepEqual(consumers.consumers.map((consumer) => ({
+    consumerService: consumer.consumerService,
+    consumerRepoPath: consumer.consumerRepoPath,
+    consumerPath: consumer.consumerPath,
+    providerService: consumer.providerService,
+    providerRepoPath: consumer.providerRepoPath,
+    providerContractPath: consumer.providerContractPath
+  })), [{
+    consumerService: 'web',
+    consumerRepoPath: webReal,
+    consumerPath: 'src/client.ts',
+    providerService: 'users-api',
+    providerRepoPath: providerReal,
+    providerContractPath: 'contracts/openapi.yaml'
+  }]);
+
+  const providers = providersFor({ repoRoot, workspaceName: 'platform', consumerServiceName: 'web' });
+  assert.deepEqual(providers.providers.map((provider) => provider.providerService), ['users-api']);
 });
 
 test('resolveCrossRepoContracts persist false previews links without mutating cross_repo_links', async () => {

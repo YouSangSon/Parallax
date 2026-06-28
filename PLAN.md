@@ -6,7 +6,13 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Active Loop
 
-- Next loop: start W3 monorepo sub-packages as first-class catalog members.
+- Next loop: start W3 deterministic npm/pnpm workspace package discovery.
+- Completed slice: W3 explicit package-directory workspace members now share
+  the nearest parent Parallax index during `workspace resolve-contracts`.
+  Provider contracts and consumer files are filtered to the member package
+  prefix, returned paths are package-relative, persisted link provenance keeps
+  member paths, and `workspace verify` / `consumers` / `providers` continue to
+  read the persisted member-aware links.
 - Research refresh: the 2026-06-28 web/GitHub pass confirms W3 remains the
   highest-value next slice. npm/pnpm expose deterministic workspace membership
   through manifests/globs, Nx/Turbo affected workflows operate on a
@@ -137,9 +143,7 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Next
 
-1. Ship a W3 first slice: package-scoped workspace member identity for
-   same-monorepo provider/consumer resolution.
-2. Add deterministic npm/pnpm workspace discovery, then consider parse-only
+1. Add deterministic npm/pnpm workspace discovery, then consider parse-only
    Nx/Turbo metadata after the member model is stable.
-3. Keep W5 Avro and residual S1 scan-cost work behind W3 unless new evidence
+2. Keep W5 Avro and residual S1 scan-cost work behind W3 unless new evidence
    displaces the sequence.

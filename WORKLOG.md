@@ -699,3 +699,27 @@
   - Updated `IMPROVEMENT_OPPORTUNITIES.md`, `PLAN.md`, and `DECISIONS.md` to
     sequence W3 around package-scoped workspace identity before parse-only
     npm/pnpm discovery and later Nx/Turbo metadata.
+- Shipped W3 explicit package-directory member resolution.
+  - `resolveCrossRepoContracts` now opens the nearest parent Parallax DB when a
+    workspace member path is a package directory inside an indexed monorepo.
+  - Provider endpoints and consumer scans are filtered to the member package
+    prefix; result paths and provenance paths are member-relative/member-rooted.
+  - Persisted `CONSUMES_HTTP_ENDPOINT` links remain readable through
+    `workspace verify`, `workspace consumers`, and `workspace providers`.
+  - Added a monorepo regression fixture with `packages/web` consuming
+    `packages/users/contracts/openapi.yaml` from one root index, plus an
+    unregistered sibling package to guard package-prefix scoping.
+  - Deferred automatic `package.json` / `pnpm-workspace.yaml` discovery to the
+    next W3 slice.
+- W3 package-member verification:
+  - `npm run check`
+  - `node --import tsx --test tests/cross-repo-resolver.test.ts`
+  - `node --import tsx --test tests/cross-repo-links.test.ts`
+  - `npm run docs:lint`
+  - `git diff --check`
+  - `npm run verify`
+  - Full verify result: lint, install smoke/build, 669 unit tests, dogfood,
+    bench, and `npm audit --audit-level=high` all passed.
+  - Bench result: `summary.passed=true`, score `0.9987`, and all quality lanes
+    passed (`crossRepoContracts`, `contractDiffQuality`, `coChangeQuality`,
+    `tracePromotionQuality`).

@@ -169,7 +169,7 @@ For a worked tutorial that continues from the UI into MCP and CI guardrails, see
 
 | Feature | Description |
 | :--- | :--- |
-| **Workspace catalog** | Registers only the local repos a user has allowed in `.parallax/workspace.json`. No clone/network |
+| **Workspace catalog** | Registers only the local repos or explicit package directories a user has allowed in `.parallax/workspace.json`. No clone/network |
 | **Cross-repo resolver** | Stores provider endpoint ↔ consumer file links between registered repos |
 | **Contract diff** | Classifies OpenAPI, GraphQL, Protobuf, and AsyncAPI surface diffs as `breaking` / `non-breaking` / `unknown`, including OpenAPI response optional property removals, response nullable additions, response format/enum changes, request format additions/changes, and request enum-value removals |
 | **Consumer impact** | Links breaking removed endpoints/operations, required field removals, type/nullable/format/enum changes, added required request fields, request format additions/changes, and request enum-value removals to known consumers |
@@ -245,7 +245,7 @@ Registered tools are exposed through the MCP tool surface. Graph export is an MC
 | Principle | Detail |
 | :--- | :--- |
 | **Local-first** | All index and memory data is stored in the repo-local `.parallax/`. No external transfer |
-| **Explicit workspace** | Cross-repo covers only local repos the user registered. No clone/network |
+| **Explicit workspace** | Cross-repo covers only local repos or package directories the user registered. No clone/network |
 | **Redaction** | Secret-like strings are redacted before storage |
 | **Source-tree read-only by default** | MCP never edits source files; analysis/search tools, context-pack reuse, and MCP resource reads may append context-pack or telemetry rows in `.parallax/impact.db`, while explicit memory commands write facts |
 | **Deterministic output** | The same input yields the same report; reproducible in CI |

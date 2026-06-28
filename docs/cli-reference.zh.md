@@ -102,7 +102,7 @@ parallax pr triage --base origin/main --head HEAD --fail-on proven
 
 `workspace verify`、`workspace consumers` 和 `workspace providers` 只读取已持久化的 link。它们不会运行 resolution 或 contract diff。使用 `workspace resolve-contracts` 刷新 `CONSUMES_HTTP_ENDPOINT` link，使用 `workspace contract-diff` 刷新 `BREAKS_COMPATIBILITY_WITH` link。
 
-`workspace add-repo` 以 repo 路径作为 positional 参数。cross-repo 范围仅限用户显式注册的本地 repo——无 clone 或网络访问。
+`workspace add-repo` 以 repo 路径作为 positional 参数。cross-repo 范围仅限用户显式注册的本地 repo——无 clone 或网络访问。catalog entry 也可以指向同一 monorepo 内已经索引过的 package 目录；`resolve-contracts` 会读取最近的上级 Parallax 数据库，并将 path 限定在该 member 内。
 
 ## Diagnostics
 

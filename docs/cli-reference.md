@@ -102,7 +102,7 @@ The `remember`/`recall` value passed via `--value` is parsed as JSON when possib
 
 `workspace verify`, `workspace consumers`, and `workspace providers` read persisted links only. They do not run resolution or contract diff. Use `workspace resolve-contracts` to refresh `CONSUMES_HTTP_ENDPOINT` links and `workspace contract-diff` to refresh `BREAKS_COMPATIBILITY_WITH` links.
 
-`workspace add-repo` takes the repo path as a positional argument. Cross-repo coverage is limited to local repos the user explicitly registers — no clone or network access.
+`workspace add-repo` takes the repo path as a positional argument. Cross-repo coverage is limited to local repos the user explicitly registers — no clone or network access. A catalog entry may also point at an already indexed package directory inside the same monorepo; `resolve-contracts` reads the nearest parent Parallax database and scopes paths to that member.
 
 ## Diagnostics
 

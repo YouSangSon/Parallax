@@ -765,3 +765,28 @@ Why:
 - The first slice should make same-repo skip become same-package skip and filter
   provider/consumer files by package path. Nx/Turbo metadata can follow as
   parse-only hints once the member model is stable.
+
+## 2026-06-28: Reuse The Parent Index For Explicit Package Members
+
+Decision: for the W3 first slice, keep `.parallax/workspace.json` entries as
+plain `localPath` members and let `resolveCrossRepoContracts` find the nearest
+parent `.parallax/impact.db` when the member path itself is not an indexed repo.
+Provider/consumer scanning is filtered to that member's relative package
+prefix, while persisted link provenance keeps the package directory as
+`repoPath`.
+
+Sources:
+- Local implementation in `src/cross_repo_resolver.ts`.
+- Regression coverage in `tests/cross-repo-resolver.test.ts`.
+- Prior W3 sequencing decision above.
+
+Why:
+- This ships package-scoped provider/consumer resolution without a schema
+  migration, a second package database, or npm/pnpm discovery in the same slice.
+- Persisting member paths in provenance and link repo ids keeps the existing
+  `workspace verify`, `consumers`, and `providers` read model working without
+  new join tables.
+- Paths are returned package-relative, matching the member boundary a user
+  registered in the catalog.
+- Automatic `package.json` / `pnpm-workspace.yaml` discovery remains the next
+  W3 slice; this change only makes explicit package-directory entries useful.

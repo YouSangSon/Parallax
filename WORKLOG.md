@@ -591,3 +591,30 @@
   - `npm run test:dogfood`
   - Process check: no project dev server or test runner remained listening;
     only unrelated system/MCP helper processes were visible.
+- Refreshed W4/W5 research and remote project signals for request format
+  additions/changes.
+  - Official OpenAPI 3.0.3 data type / Schema Object docs, OpenAPI 3.1.0
+    Schema Object docs, and JSON Schema format vocabulary docs confirm
+    `format` is schema-level information that can refine primitive values.
+  - `gh issue list` still shows only issue #3 open; `gh pr list` still shows
+    Dependabot PRs #23-#31, so no remote issue displaced the W4 request-format
+    fidelity slice.
+- Shipped W4 OpenAPI request format-addition/change detection.
+  - `analyzeContractDiff` now emits `changed_request_property_format`
+    breaking changes when a current OpenAPI JSON request body adds a format
+    constraint or switches a property to a different format.
+  - Request format removals are intentionally omitted because removing a
+    request-side format constraint broadens provider acceptance rather than
+    breaking existing clients.
+  - The deterministic `contractDiffQuality` bench now includes a request
+    format-addition case, so CI summaries show 8/8 contract-diff cases and
+    changes.
+  - Backlog remains on W4/W5 for response optionality rules and the reusable
+    JSON Schema contract kind.
+- W4 request format verification:
+  - `npm run check`
+  - `node --import tsx --test tests/contract-diff.test.ts`
+  - `node --import tsx --test tests/impact-bench.test.ts tests/impact-bench-report.test.ts`
+  - `git diff --check`
+  - `npm run verify`
+  - `npm run bench:report`

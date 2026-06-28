@@ -548,6 +548,7 @@ async function writeOpenApiJsonUserSchemaContract(
     responseIdNullable?: boolean;
     responseStatusEnum?: OpenApiEnumValue[];
     requestRequired?: string[];
+    requestEmailFormat?: string | null;
     requestRoleEnum?: OpenApiEnumValue[];
   } = {}
 ): Promise<void> {
@@ -588,7 +589,13 @@ async function writeOpenApiJsonUserSchemaContract(
                     required: options.requestRequired ?? ['name'],
                     properties: {
                       name: { type: 'string' },
-                      email: { type: 'string' },
+                      email: {
+                        type: 'string',
+                        ...(options.requestEmailFormat !== null
+                          && options.requestEmailFormat !== undefined
+                          ? { format: options.requestEmailFormat }
+                          : {})
+                      },
                       role: {
                         type: 'string',
                         enum: options.requestRoleEnum ?? ['admin', 'member', 'viewer']
@@ -3666,6 +3673,32 @@ test('analyzeContractDiff classifies removed OpenAPI JSON request enum values as
       enumValue: 'string:"viewer"',
       previousEnumValues: ['string:"admin"', 'string:"member"', 'string:"viewer"'],
       currentEnumValues: ['string:"admin"', 'string:"member"']
+    }
+  ]);
+});
+
+test('analyzeContractDiff classifies added OpenAPI JSON request formats as breaking', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithResolvedJsonSchemaContract();
+  await writeOpenApiJsonUserSchemaContract(providerRoot, { requestEmailFormat: 'email' });
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/openapi.json'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'changed_request_property_format',
+      classification: 'breaking',
+      reason: 'request property format added or changed in current contract',
+      httpMethod: 'POST',
+      routePath: '/api/users',
+      propertyName: 'email',
+      schemaPath: 'requestBody.properties.email.format',
+      currentFormat: 'email'
     }
   ]);
 });

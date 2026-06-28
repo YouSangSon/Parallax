@@ -618,3 +618,38 @@ Why:
 - The deterministic contract-diff bench now includes a request enum-removal
   case so CI summaries expose this contract-fidelity signal alongside response
   nullable/format/enum coverage.
+
+## 2026-06-28: Detect OpenAPI Request Format Additions And Changes
+
+Decision: classify OpenAPI request body property format additions/changes as
+breaking request narrowing, reusing the existing `format` property signature.
+No OpenAPI compatibility schemaVersion bump is needed because compat schema v5
+already persists property format provenance.
+
+Sources:
+- OpenAPI 3.0.3 Data Types:
+  <https://spec.openapis.org/oas/v3.0.3.html#data-types>
+- OpenAPI 3.0.3 Schema Object:
+  <https://spec.openapis.org/oas/v3.0.3.html#schema-object>
+- OpenAPI 3.1.0 Schema Object:
+  <https://spec.openapis.org/oas/v3.1.0.html#schema-object>
+- JSON Schema format vocabularies:
+  <https://json-schema.org/draft/2020-12/json-schema-validation#name-format-vocabularies>
+- Parallax open issue queue refreshed via `gh issue list` on 2026-06-28: #3 is
+  still the only open issue.
+- Parallax open PR queue refreshed via `gh pr list` on 2026-06-28: #23-#31
+  remain Dependabot PRs.
+
+Why:
+- OpenAPI `format` qualifies primitive values. A current request schema that
+  adds `format: email` or switches from one format to another can reject client
+  payloads that were valid against the earlier provider contract.
+- Request format removals are deliberately not emitted in this slice because
+  removing a request-side format constraint broadens provider acceptance rather
+  than breaking existing clients.
+- The implementation reuses the existing response format provenance fields
+  (`previousFormat`, `currentFormat`) and the existing OpenAPI compatibility
+  JSON shape.
+- The deterministic contract-diff bench now includes a request format-addition
+  case so CI summaries expose the signal alongside request required/enum and
+  response nullable/format/enum coverage.

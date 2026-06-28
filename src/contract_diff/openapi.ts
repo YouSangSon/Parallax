@@ -74,6 +74,15 @@ function classifyRequestBodyChanges(
     previousBody,
     currentBody
   }));
+  changes.push(...classifyPropertyFormatChanges({
+    kind: 'changed_request_property_format',
+    reason: 'request property format added or changed in current contract',
+    httpMethod: currentOperation.method,
+    routePath: currentOperation.path,
+    schemaPathPrefix: 'requestBody.properties',
+    previousBody,
+    currentBody
+  }));
   return changes;
 }
 
@@ -135,7 +144,9 @@ function classifyResponseBodyChanges(
       previousBody,
       currentBody
     }));
-    changes.push(...classifyResponsePropertyFormatChanges({
+    changes.push(...classifyPropertyFormatChanges({
+      kind: 'changed_response_property_format',
+      reason: 'response property format changed in current contract',
       httpMethod: previousOperation.method,
       routePath: previousOperation.path,
       statusCode,
@@ -224,10 +235,12 @@ function classifyPropertyEnumRemovals(options: {
   return changes;
 }
 
-function classifyResponsePropertyFormatChanges(options: {
+function classifyPropertyFormatChanges(options: {
+  kind: 'changed_request_property_format' | 'changed_response_property_format';
+  reason: string;
   httpMethod: string;
   routePath: string;
-  statusCode: string;
+  statusCode?: string;
   schemaPathPrefix: string;
   previousBody: OpenApiObjectSchemaSignature | undefined;
   currentBody: OpenApiObjectSchemaSignature | undefined;
@@ -236,18 +249,20 @@ function classifyResponsePropertyFormatChanges(options: {
   const changes: ContractDiffChange[] = [];
   for (const [propertyName, previousProperty] of Object.entries(options.previousBody.properties)) {
     const currentProperty = options.currentBody.properties[propertyName];
-    if (currentProperty === undefined || previousProperty.format === undefined) continue;
+    if (currentProperty === undefined) continue;
     if (previousProperty.format === currentProperty.format) continue;
+    if (options.kind === 'changed_response_property_format' && previousProperty.format === undefined) continue;
+    if (options.kind === 'changed_request_property_format' && currentProperty.format === undefined) continue;
     changes.push({
-      kind: 'changed_response_property_format',
+      kind: options.kind,
       classification: 'breaking',
-      reason: 'response property format changed in current contract',
+      reason: options.reason,
       httpMethod: options.httpMethod,
       routePath: options.routePath,
-      statusCode: options.statusCode,
+      ...(options.statusCode !== undefined ? { statusCode: options.statusCode } : {}),
       propertyName,
       schemaPath: `${options.schemaPathPrefix}.${propertyName}.format`,
-      previousFormat: previousProperty.format,
+      ...(previousProperty.format !== undefined ? { previousFormat: previousProperty.format } : {}),
       ...(currentProperty.format !== undefined ? { currentFormat: currentProperty.format } : {})
     });
   }

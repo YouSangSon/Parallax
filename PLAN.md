@@ -6,8 +6,14 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Active Loop
 
-- Next loop: continue W4/W5 with OpenAPI request format semantics, response
-  optionality rules, plus the reusable JSON Schema contract-kind slice.
+- Next loop: continue W4/W5 with OpenAPI response optionality rules plus the
+  reusable JSON Schema contract-kind slice.
+- Completed slice: W4 OpenAPI request format additions/changes now reuse the
+  existing `format` property signature. `analyzeContractDiff` emits
+  `changed_request_property_format` breaking changes when current request
+  bodies add a new format constraint or switch to a different format, and the
+  deterministic `contractDiffQuality` bench now has a request format-addition
+  case.
 - Completed slice: W4 OpenAPI request enum-value removal now reuses existing
   type-preserving enum property signatures. `analyzeContractDiff` emits
   `removed_request_property_enum_value` breaking changes when current request

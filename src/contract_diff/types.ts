@@ -16,6 +16,7 @@ export type ContractDiffChangeKind =
   | 'added_response_property_nullable'
   | 'added_request_required_property'
   | 'removed_request_property_enum_value'
+  | 'changed_request_property_format'
   | 'changed_request_property_type'
   | 'unreadable_current_contract'
   | 'unparsed_current_contract'

@@ -4,7 +4,7 @@ Canonical detailed backlog: `IMPROVEMENT_OPPORTUNITIES.md`.
 
 ## Now
 
-1. W4/W5 richer contract signatures: OpenAPI request format semantics, response optionality rules, and reusable JSON Schema contract kind.
+1. W4/W5 richer contract signatures: OpenAPI response optionality rules and reusable JSON Schema contract kind.
 
 ## Later
 
@@ -28,3 +28,4 @@ Canonical detailed backlog: `IMPROVEMENT_OPPORTUNITIES.md`.
 14. W4 OpenAPI response format-change compatibility detection.
 15. W4 OpenAPI response nullable-addition compatibility detection.
 16. W4 OpenAPI request enum-value removal compatibility detection.
+17. W4 OpenAPI request format-addition/change compatibility detection.

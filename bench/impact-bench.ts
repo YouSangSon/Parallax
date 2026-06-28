@@ -288,6 +288,7 @@ type ContractDiffBenchOpenApiOptions = {
   requestRequired?: string[];
   responseRequired?: string[];
   responseNameType?: string;
+  responseStatusEnum?: string[];
 };
 
 const retrievalQueries: readonly RetrievalQuerySpec[] = [
@@ -349,6 +350,17 @@ const contractDiffQualityCases: readonly ContractDiffQualityCaseSpec[] = [
         kind: 'changed_response_property_type',
         classification: 'breaking',
         schemaPath: 'responses.200.body.properties.name'
+      }
+    ]
+  },
+  {
+    id: 'removed-response-enum-value',
+    current: { responseStatusEnum: ['active', 'pending'] },
+    expectedChanges: [
+      {
+        kind: 'removed_response_property_enum_value',
+        classification: 'breaking',
+        schemaPath: 'responses.200.body.properties.status.enum.string:"disabled"'
       }
     ]
   }
@@ -1091,7 +1103,11 @@ async function writeContractDiffBenchOpenApiJsonContract(
                     required: options.responseRequired ?? ['id', 'name'],
                     properties: {
                       id: { type: 'string' },
-                      name: { type: options.responseNameType ?? 'string' }
+                      name: { type: options.responseNameType ?? 'string' },
+                      status: {
+                        type: 'string',
+                        enum: options.responseStatusEnum ?? ['active', 'disabled', 'pending']
+                      }
                     }
                   }
                 }

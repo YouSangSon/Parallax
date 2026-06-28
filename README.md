@@ -171,8 +171,8 @@ For a worked tutorial that continues from the UI into MCP and CI guardrails, see
 | :--- | :--- |
 | **Workspace catalog** | Registers only the local repos a user has allowed in `.parallax/workspace.json`. No clone/network |
 | **Cross-repo resolver** | Stores provider endpoint ↔ consumer file links between registered repos |
-| **Contract diff** | Classifies OpenAPI, GraphQL, Protobuf, and AsyncAPI surface diffs as `breaking` / `non-breaking` / `unknown` |
-| **Consumer impact** | Links removed endpoints/operations, field removal/type changes, and added required request fields to known consumers |
+| **Contract diff** | Classifies OpenAPI, GraphQL, Protobuf, and AsyncAPI surface diffs as `breaking` / `non-breaking` / `unknown`, including OpenAPI response enum-value removals |
+| **Consumer impact** | Links removed endpoints/operations, field removal/type/enum changes, and added required request fields to known consumers |
 | **Event topology hint** | Provides AsyncAPI producer/consumer direction and breaking provenance as a compact payload |
 
 ```bash

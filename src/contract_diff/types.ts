@@ -11,6 +11,7 @@ export type ContractDiffChangeKind =
   | 'removed_response_status'
   | 'removed_response_required_property'
   | 'changed_response_property_type'
+  | 'removed_response_property_enum_value'
   | 'added_request_required_property'
   | 'changed_request_property_type'
   | 'unreadable_current_contract'
@@ -30,6 +31,9 @@ export type ContractDiffChange = {
   schemaPath?: string;
   previousSchemaType?: string;
   currentSchemaType?: string;
+  enumValue?: string;
+  previousEnumValues?: readonly string[];
+  currentEnumValues?: readonly string[];
 };
 
 export type ContractEndpoint = {

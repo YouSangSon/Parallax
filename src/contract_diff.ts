@@ -786,7 +786,8 @@ function compareChanges(left: ContractDiffChange, right: ContractDiffChange): nu
     (left.httpMethod ?? '').localeCompare(right.httpMethod ?? '') ||
     (left.statusCode ?? '').localeCompare(right.statusCode ?? '') ||
     (left.schemaPath ?? '').localeCompare(right.schemaPath ?? '') ||
-    (left.propertyName ?? '').localeCompare(right.propertyName ?? '')
+    (left.propertyName ?? '').localeCompare(right.propertyName ?? '') ||
+    (left.enumValue ?? '').localeCompare(right.enumValue ?? '')
   );
 }
 
@@ -796,9 +797,10 @@ function changeKindOrder(kind: ContractDiffChangeKind): number {
   if (kind === 'removed_response_status') return 2;
   if (kind === 'removed_response_required_property') return 3;
   if (kind === 'changed_response_property_type') return 4;
-  if (kind === 'added_request_required_property') return 5;
-  if (kind === 'changed_request_property_type') return 6;
-  return 7;
+  if (kind === 'removed_response_property_enum_value') return 5;
+  if (kind === 'added_request_required_property') return 6;
+  if (kind === 'changed_request_property_type') return 7;
+  return 8;
 }
 
 function dedupeConsumers(consumers: ImpactedContractConsumer[]): ImpactedContractConsumer[] {
@@ -866,7 +868,10 @@ function breakingLinkProvenance(link: PersistableBreakLink): string {
       ...(link.change.propertyName !== undefined ? { propertyName: link.change.propertyName } : {}),
       ...(link.change.schemaPath !== undefined ? { schemaPath: link.change.schemaPath } : {}),
       ...(link.change.previousSchemaType !== undefined ? { previousSchemaType: link.change.previousSchemaType } : {}),
-      ...(link.change.currentSchemaType !== undefined ? { currentSchemaType: link.change.currentSchemaType } : {})
+      ...(link.change.currentSchemaType !== undefined ? { currentSchemaType: link.change.currentSchemaType } : {}),
+      ...(link.change.enumValue !== undefined ? { enumValue: link.change.enumValue } : {}),
+      ...(link.change.previousEnumValues !== undefined ? { previousEnumValues: link.change.previousEnumValues } : {}),
+      ...(link.change.currentEnumValues !== undefined ? { currentEnumValues: link.change.currentEnumValues } : {})
     },
     ...(link.consumer.eventTopology !== undefined ? { eventTopology: link.consumer.eventTopology } : {}),
     evidence: {
@@ -885,7 +890,10 @@ function changeFingerprint(change: ContractDiffChange): string {
     propertyName: change.propertyName,
     schemaPath: change.schemaPath,
     previousSchemaType: change.previousSchemaType,
-    currentSchemaType: change.currentSchemaType
+    currentSchemaType: change.currentSchemaType,
+    enumValue: change.enumValue,
+    previousEnumValues: change.previousEnumValues,
+    currentEnumValues: change.currentEnumValues
   });
 }
 

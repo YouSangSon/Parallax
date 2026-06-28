@@ -74,10 +74,10 @@ function makeReport(overrides: BenchReportOverrides = {}): ImpactBenchReport {
       summary: {
         passed: true,
         score: 1,
-        expectedCases: 3,
-        matchedCases: 3,
-        expectedChanges: 3,
-        matchedChanges: 3
+        expectedCases: 4,
+        matchedCases: 4,
+        expectedChanges: 4,
+        matchedChanges: 4
       },
       cases: [
         {
@@ -105,6 +105,15 @@ function makeReport(overrides: BenchReportOverrides = {}): ImpactBenchReport {
           matchedChanges: 1,
           expectedChangeKeys: ['changed_response_property_type|breaking|responses.200.body.properties.name'],
           matchedChangeKeys: ['changed_response_property_type|breaking|responses.200.body.properties.name'],
+          missingChangeKeys: []
+        },
+        {
+          id: 'removed-response-enum-value',
+          score: 1,
+          expectedChanges: 1,
+          matchedChanges: 1,
+          expectedChangeKeys: ['removed_response_property_enum_value|breaking|responses.200.body.properties.status.enum.string:"disabled"'],
+          matchedChangeKeys: ['removed_response_property_enum_value|breaking|responses.200.body.properties.status.enum.string:"disabled"'],
           missingChangeKeys: []
         }
       ],
@@ -283,8 +292,8 @@ test('bench report summary renders current metrics without a baseline', () => {
   assert.match(markdown, /\| Cross-repo impacts \| 1\/1 \| n\/a \|/);
   assert.match(markdown, /\| Cross-repo graph edges \| 1\/1 \| n\/a \|/);
   assert.match(markdown, /\| Contract-diff quality \| 1\.0000 \| n\/a \|/);
-  assert.match(markdown, /\| Contract-diff cases \| 3\/3 \| n\/a \|/);
-  assert.match(markdown, /\| Contract-diff changes \| 3\/3 \| n\/a \|/);
+  assert.match(markdown, /\| Contract-diff cases \| 4\/4 \| n\/a \|/);
+  assert.match(markdown, /\| Contract-diff changes \| 4\/4 \| n\/a \|/);
   assert.match(markdown, /\| Co-change quality \| 1\.0000 \| n\/a \|/);
   assert.match(markdown, /\| Co-change partners \| 1\/1 \| n\/a \|/);
   assert.match(markdown, /\| Co-change affected files \| 1\/1 \| n\/a \|/);
@@ -352,11 +361,11 @@ test('bench report summary renders metric and count deltas against a baseline', 
       ...makeReport().contractDiffQuality,
       summary: {
         passed: false,
-        score: 0.3333,
-        expectedCases: 3,
-        matchedCases: 1,
-        expectedChanges: 3,
-        matchedChanges: 1
+        score: 0.5,
+        expectedCases: 4,
+        matchedCases: 2,
+        expectedChanges: 4,
+        matchedChanges: 2
       },
       cases: [
         {
@@ -385,6 +394,15 @@ test('bench report summary renders metric and count deltas against a baseline', 
           expectedChangeKeys: ['changed_response_property_type|breaking|responses.200.body.properties.name'],
           matchedChangeKeys: [],
           missingChangeKeys: ['changed_response_property_type|breaking|responses.200.body.properties.name']
+        },
+        {
+          id: 'removed-response-enum-value',
+          score: 1,
+          expectedChanges: 1,
+          matchedChanges: 1,
+          expectedChangeKeys: ['removed_response_property_enum_value|breaking|responses.200.body.properties.status.enum.string:"disabled"'],
+          matchedChangeKeys: ['removed_response_property_enum_value|breaking|responses.200.body.properties.status.enum.string:"disabled"'],
+          missingChangeKeys: []
         }
       ],
       missingChanges: [
@@ -456,9 +474,9 @@ test('bench report summary renders metric and count deltas against a baseline', 
   assert.match(markdown, /\| Cross-repo contract impact \| 1\.0000 \| \+1\.0000 \|/);
   assert.match(markdown, /\| Cross-repo impacts \| 1\/1 \| \+1 \|/);
   assert.match(markdown, /\| Cross-repo graph edges \| 1\/1 \| \+1 \|/);
-  assert.match(markdown, /\| Contract-diff quality \| 1\.0000 \| \+0\.6667 \|/);
-  assert.match(markdown, /\| Contract-diff cases \| 3\/3 \| \+2 \|/);
-  assert.match(markdown, /\| Contract-diff changes \| 3\/3 \| \+2 \|/);
+  assert.match(markdown, /\| Contract-diff quality \| 1\.0000 \| \+0\.5000 \|/);
+  assert.match(markdown, /\| Contract-diff cases \| 4\/4 \| \+2 \|/);
+  assert.match(markdown, /\| Contract-diff changes \| 4\/4 \| \+2 \|/);
   assert.match(markdown, /\| Co-change quality \| 1\.0000 \| \+1\.0000 \|/);
   assert.match(markdown, /\| Co-change partners \| 1\/1 \| \+1 \|/);
   assert.match(markdown, /\| Co-change affected files \| 1\/1 \| \+1 \|/);

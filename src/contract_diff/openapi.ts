@@ -116,6 +116,14 @@ function classifyResponseBodyChanges(
       previousBody,
       currentBody
     }));
+    changes.push(...classifyResponsePropertyEnumRemovals({
+      httpMethod: previousOperation.method,
+      routePath: previousOperation.path,
+      statusCode,
+      schemaPathPrefix: `responses.${statusCode}.body.properties`,
+      previousBody,
+      currentBody
+    }));
   }
   return changes;
 }
@@ -148,6 +156,41 @@ function classifyPropertyTypeChanges(options: {
       previousSchemaType: previousProperty.type,
       currentSchemaType: currentProperty.type
     });
+  }
+  return changes;
+}
+
+function classifyResponsePropertyEnumRemovals(options: {
+  httpMethod: string;
+  routePath: string;
+  statusCode: string;
+  schemaPathPrefix: string;
+  previousBody: OpenApiObjectSchemaSignature | undefined;
+  currentBody: OpenApiObjectSchemaSignature | undefined;
+}): ContractDiffChange[] {
+  if (options.previousBody === undefined || options.currentBody === undefined) return [];
+  const changes: ContractDiffChange[] = [];
+  for (const [propertyName, previousProperty] of Object.entries(options.previousBody.properties)) {
+    const currentProperty = options.currentBody.properties[propertyName];
+    if (currentProperty === undefined) continue;
+    if (previousProperty.enumValues === undefined || currentProperty.enumValues === undefined) continue;
+    const currentEnumValues = new Set(currentProperty.enumValues);
+    for (const enumValue of previousProperty.enumValues) {
+      if (currentEnumValues.has(enumValue)) continue;
+      changes.push({
+        kind: 'removed_response_property_enum_value',
+        classification: 'breaking',
+        reason: 'response enum value removed from current contract',
+        httpMethod: options.httpMethod,
+        routePath: options.routePath,
+        statusCode: options.statusCode,
+        propertyName,
+        schemaPath: `${options.schemaPathPrefix}.${propertyName}.enum.${enumValue}`,
+        enumValue,
+        previousEnumValues: previousProperty.enumValues,
+        currentEnumValues: currentProperty.enumValues
+      });
+    }
   }
   return changes;
 }

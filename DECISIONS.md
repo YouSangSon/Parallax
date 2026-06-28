@@ -481,3 +481,37 @@ Why:
   edge and assert `analyzeDiff` reports `src/beta.ts` as proven impact.
 - No new trace collector, OpenTelemetry dependency, or write-capable MCP surface
   is needed for this bench metric.
+
+## 2026-06-28: Detect OpenAPI Response Enum-Value Removals
+
+Decision: start W4 richer contract signatures with type-preserving OpenAPI
+response enum-value removal detection, and bump the OpenAPI compatibility
+signature schema to v3.
+
+Sources:
+- OpenAPI 3.0.3 Schema Object:
+  <https://spec.openapis.org/oas/v3.0.3.html#schema-object>
+- OpenAPI 3.1.0 Schema Object:
+  <https://spec.openapis.org/oas/v3.1.0.html#schema-object>
+- JSON Schema enum reference:
+  <https://json-schema.org/understanding-json-schema/reference/enum>
+- Parallax open issue queue refreshed via `gh issue list` on 2026-06-28: #3 is
+  still the only open issue.
+- Parallax open PR queue refreshed via `gh pr list` on 2026-06-28: #23-#31
+  remain Dependabot PRs.
+
+Why:
+- OpenAPI schema objects use JSON Schema vocabulary for schema constraints, and
+  `enum` is a validation constraint on allowed values. A property signature that
+  only records `type` cannot distinguish `status: active|disabled|pending` from
+  `status: active|pending`.
+- The smallest useful W4 slice is to record type-preserving `enumValues`
+  alongside the existing `type` without changing the endpoint resolver or
+  adding a dependency. Enum fingerprints keep JSON primitive identity, so
+  numeric `1`, string `"1"`, boolean `true`, string `"true"`, null, and
+  string `"null"` do not collapse into the same provenance key.
+- A schemaVersion bump is required because indexed OpenAPI compatibility JSON now
+  carries additional property-signature data; old baselines should ask users to
+  reindex rather than silently compare different signature shapes.
+- The deterministic contract-diff bench now includes an enum-removal case so the
+  new signal is visible in CI summaries, not only in focused unit tests.

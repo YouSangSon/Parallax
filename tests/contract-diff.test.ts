@@ -23,6 +23,8 @@ import { databasePath } from '../src/store.js';
 const require = createRequire(import.meta.url);
 const tsxLoaderPath = require.resolve('tsx');
 
+type OpenApiEnumValue = string | number | boolean | null;
+
 async function makeRepo(prefix: string): Promise<string> {
   const repoRoot = await mkdtemp(path.join(tmpdir(), prefix));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });
@@ -542,6 +544,7 @@ async function writeOpenApiJsonUserSchemaContract(
   repoRoot: string,
   options: {
     responseRequired?: string[];
+    responseStatusEnum?: OpenApiEnumValue[];
     requestRequired?: string[];
   } = {}
 ): Promise<void> {
@@ -603,7 +606,11 @@ async function writeOpenApiJsonUserSchemaContract(
             required: options.responseRequired ?? ['id', 'name'],
             properties: {
               id: { type: 'string' },
-              name: { type: 'string' }
+              name: { type: 'string' },
+              status: {
+                type: 'string',
+                enum: options.responseStatusEnum ?? ['active', 'disabled', 'pending']
+              }
             }
           }
         }
@@ -1975,7 +1982,9 @@ function seedAsyncApiConsumesLink(
   }
 }
 
-async function setupWorkspaceWithResolvedJsonSchemaContract(): Promise<{
+async function setupWorkspaceWithResolvedJsonSchemaContract(options: {
+  responseStatusEnum?: OpenApiEnumValue[];
+} = {}): Promise<{
   consumerRoot: string;
   providerRoot: string;
   consumerReal: string;
@@ -1984,7 +1993,9 @@ async function setupWorkspaceWithResolvedJsonSchemaContract(): Promise<{
   const consumerRoot = await makeRepo('parallax-diff-json-schema-consumer-');
   const providerRoot = await makeRepo('parallax-diff-json-schema-provider-');
   await writeConsumerClient(consumerRoot, '/api/users');
-  await writeOpenApiJsonUserSchemaContract(providerRoot);
+  await writeOpenApiJsonUserSchemaContract(providerRoot, {
+    ...(options.responseStatusEnum !== undefined ? { responseStatusEnum: options.responseStatusEnum } : {})
+  });
 
   await initProject({ repoRoot: consumerRoot });
   await initProject({ repoRoot: providerRoot });
@@ -3377,6 +3388,136 @@ test('analyzeContractDiff classifies removed OpenAPI YAML response required prop
       evidenceSnippet: 'return fetch("https://users.example.test/api/users");'
     }
   ]);
+});
+
+test('analyzeContractDiff classifies removed OpenAPI JSON response enum values as breaking', async () => {
+  const { consumerRoot, providerRoot, consumerReal, providerReal } =
+    await setupWorkspaceWithResolvedJsonSchemaContract();
+  await writeOpenApiJsonUserSchemaContract(providerRoot, {
+    responseStatusEnum: ['active', 'pending']
+  });
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/openapi.json'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.equal(result.summary.breakingChangeCount, 1);
+  assert.equal(result.summary.unknownChangeCount, 0);
+  assert.equal(result.summary.impactedConsumerCount, 1);
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'removed_response_property_enum_value',
+      classification: 'breaking',
+      reason: 'response enum value removed from current contract',
+      httpMethod: 'GET',
+      routePath: '/api/users',
+      statusCode: '200',
+      propertyName: 'status',
+      schemaPath: 'responses.200.body.properties.status.enum.string:"disabled"',
+      enumValue: 'string:"disabled"',
+      previousEnumValues: ['string:"active"', 'string:"disabled"', 'string:"pending"'],
+      currentEnumValues: ['string:"active"', 'string:"pending"']
+    }
+  ]);
+  assert.deepEqual(result.impactedConsumers, [
+    {
+      consumerService: 'web',
+      consumerRepoPath: consumerReal,
+      consumerPath: 'src/client.ts',
+      providerService: 'users-api',
+      providerRepoPath: providerReal,
+      providerContractPath: 'contracts/openapi.json',
+      httpMethod: 'GET',
+      routePath: '/api/users',
+      evidenceSnippet: 'return fetch("https://users.example.test/api/users");'
+    }
+  ]);
+
+  const db = new DatabaseSync(databasePath(consumerRoot), { readOnly: true });
+  try {
+    const row = db
+      .prepare(
+        `SELECT provenance
+         FROM cross_repo_links
+         WHERE kind = ?`
+      )
+      .get('BREAKS_COMPATIBILITY_WITH') as { provenance: string };
+    const provenance = JSON.parse(row.provenance) as { change?: { enumValue?: string; schemaPath?: string } };
+    assert.deepEqual(provenance.change, {
+      kind: 'removed_response_property_enum_value',
+      method: 'GET',
+      path: '/api/users',
+      statusCode: '200',
+      propertyName: 'status',
+      schemaPath: 'responses.200.body.properties.status.enum.string:"disabled"',
+      enumValue: 'string:"disabled"',
+      previousEnumValues: ['string:"active"', 'string:"disabled"', 'string:"pending"'],
+      currentEnumValues: ['string:"active"', 'string:"pending"']
+    });
+  } finally {
+    db.close();
+  }
+});
+
+test('analyzeContractDiff preserves mixed OpenAPI JSON response enum value identities', async () => {
+  const { consumerRoot, providerRoot } = await setupWorkspaceWithResolvedJsonSchemaContract({
+    responseStatusEnum: [1, '1', null, 'null', true, 'true']
+  });
+  await writeOpenApiJsonUserSchemaContract(providerRoot, {
+    responseStatusEnum: ['1', 'null', true, 'true']
+  });
+
+  const result = analyzeContractDiff({
+    repoRoot: consumerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-api',
+    contractPath: 'contracts/openapi.json'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.deepEqual(
+    result.changes.map((change) => ({
+      kind: change.kind,
+      enumValue: change.enumValue,
+      schemaPath: change.schemaPath,
+      previousEnumValues: change.previousEnumValues,
+      currentEnumValues: change.currentEnumValues
+    })),
+    [
+      {
+        kind: 'removed_response_property_enum_value',
+        enumValue: 'null:null',
+        schemaPath: 'responses.200.body.properties.status.enum.null:null',
+        previousEnumValues: [
+          'boolean:true',
+          'null:null',
+          'number:1',
+          'string:"1"',
+          'string:"null"',
+          'string:"true"'
+        ],
+        currentEnumValues: ['boolean:true', 'string:"1"', 'string:"null"', 'string:"true"']
+      },
+      {
+        kind: 'removed_response_property_enum_value',
+        enumValue: 'number:1',
+        schemaPath: 'responses.200.body.properties.status.enum.number:1',
+        previousEnumValues: [
+          'boolean:true',
+          'null:null',
+          'number:1',
+          'string:"1"',
+          'string:"null"',
+          'string:"true"'
+        ],
+        currentEnumValues: ['boolean:true', 'string:"1"', 'string:"null"', 'string:"true"']
+      }
+    ]
+  );
 });
 
 test('analyzeContractDiff classifies added OpenAPI JSON request required properties as breaking', async () => {

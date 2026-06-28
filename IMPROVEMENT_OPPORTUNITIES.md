@@ -94,11 +94,11 @@ contract fidelity and W3 package modeling.
 | W1 | ✅ **shipped** — W1 shipped: primary `analyzeDiff` reports now include persisted workspace `BREAKS_COMPATIBILITY_WITH` consumers as `crossRepoImpacts`, affected external entities, relation-bearing evidence, graph edges, and UI cross-repo lane entries. | M | HIGH |
 | W2 | ✅ **shipped** — cross-repo link consistency now has a shared read model plus `parallax workspace verify`, flagging malformed provenance, stale workspace membership, and orphan `BREAKS_COMPATIBILITY_WITH` rows without duplicate inverse storage. | M | HIGH |
 | W3 | **Monorepo sub-packages as first-class catalog members** — the catalog treats each entry as one whole repo; sibling packages inside one monorepo can't be provider/consumer. Parse `package.json` workspaces / `pnpm-workspace.yaml` / `nx`/`turbo` (deterministic, no install) into addressable units; same-repo skip becomes same-package skip. | L | HIGH |
-| W4 | **Richer contract property signatures** — `*PropertySignature` carries only a coarse `type`, so enum-narrowing, `format`, `nullable`, required-narrowing are invisible. Capture `enum`/`format`/`nullable`, bump compat schema versions, add classification rules (enum removal = breaking, response field optional = non-breaking). The substance of "nested-schema-level". | M | MED-HIGH |
+| W4 | **Richer contract property signatures** — ✅ response enum-value removal is now captured for OpenAPI via `enumValues`, compat schemaVersion 3, persisted breaking-change provenance, and a `contractDiffQuality` bench case. Remaining: `format`, `nullable`, request enum narrowing/broadening semantics, and response optionality rules. The substance of "nested-schema-level". | M | MED-HIGH |
 | W5 | **JSON Schema (and Avro) contract kinds** — contract kinds are hardcoded to four; the OpenAPI object-schema signature is ~90% of a JSON Schema diff already. Add a `json-schema` kind reusing it (one synthetic endpoint per top-level schema); Avro as a mechanical follow-on. | S (JSON Schema) / M (Avro) | MED |
 | W6 | ✅ **shipped** — agents can query provider consumers/providers through read-only MCP tools and preview cross-repo resolution without mutating `cross_repo_links`; CLI persistence remains the explicit write workflow. | S | MED |
 
-**Sequencing remaining work:** W4 / W5 (deepen the diff) → W3 (biggest scope, monorepo users). W1/W2/W6 are already shipped.
+**Sequencing remaining work:** W4 follow-ups (`format` / `nullable` / request enum semantics) then W5 JSON Schema reuse → W3 (biggest scope, monorepo users). W1/W2/W6 are already shipped.
 
 ---
 

@@ -6,7 +6,14 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Active Loop
 
-- Next loop: improve W4/W5 richer contract property signatures.
+- Next loop: continue W4/W5 with OpenAPI `format`/`nullable` signatures and the
+  reusable JSON Schema contract-kind slice.
+- Completed slice: W4 OpenAPI response enum removals now flow through
+  compatibility signatures. `OpenApiPropertySignature` records `enumValues`,
+  OpenAPI compatibility schemaVersion is bumped to 3, `analyzeContractDiff`
+  emits `removed_response_property_enum_value` breaking changes with enum
+  provenance, and the deterministic `contractDiffQuality` bench now has a
+  response enum-removal case.
 - Completed slice: D2 trace-promotion quality now adds a deterministic
   `tracePromotionQuality` bench lane. The lane ingests a runtime-observed
   `src/beta.ts -> src/alpha.ts` edge, checks the promotion count, verifies

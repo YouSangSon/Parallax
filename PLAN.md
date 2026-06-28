@@ -6,7 +6,12 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Active Loop
 
-- Next loop: add D2 trend metrics for co-change and trace-ingest promotion.
+- Next loop: add the remaining D2 trace-ingest promotion trend metric.
+- Completed slice: D2 co-change quality now adds a deterministic
+  `coChangeQuality` bench lane with a tiny git-history fixture where
+  `src/alpha.ts` and `src/beta.ts` repeatedly change together. The lane checks
+  `queryCoChanges` partner output and `analyzeDiff` heuristic affected-file
+  output, and `bench:report` now includes co-change metric/count deltas.
 - Completed slice: D2 contract-diff quality now adds a deterministic
   `contractDiffQuality` bench lane with paired OpenAPI v1/v2 cases for removed
   response required properties, added request required properties, and response
@@ -78,6 +83,6 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Next
 
-1. Add D2 trend metrics for co-change and trace-ingest promotion.
+1. Add the remaining D2 trace-ingest promotion trend metric.
 2. Improve W4/W5 contract property signatures.
 3. Return to S1 residual scan-cost work only with a measured adapter-contract design.

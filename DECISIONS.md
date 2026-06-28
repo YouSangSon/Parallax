@@ -428,3 +428,31 @@ Why:
   runtime dependency or nondeterministic timing.
 - Co-change and trace-ingest metrics remain separate D2 follow-ups because they
   need git-history and promotion-count fixtures respectively.
+
+## 2026-06-28: Add Co-Change Quality To The Deterministic Bench
+
+Decision: add a small `coChangeQuality` lane to `bench/impact-bench.ts` before
+the trace-ingest promotion metric.
+
+Sources:
+- Code Maat VCS mining tool: <https://github.com/adamtornhill/code-maat>
+- Adjacent local code-intelligence tool with git diff impact and co-change
+  analysis: <https://github.com/optave/ops-codegraph-tool>
+- Parallax open issue queue refreshed via `gh issue list` on 2026-06-28: #3 is
+  still the only open issue.
+- Parallax open PR queue refreshed via `gh pr list` on 2026-06-28: #23-#31
+  remain Dependabot PRs.
+
+Why:
+- External and adjacent tools reinforce that version-control history and
+  co-change coupling are useful impact signals, especially for relationships a
+  static graph structurally misses.
+- Parallax already has `CO_CHANGES`, `queryCoChanges`, and `analyzeDiff`
+  coverage. The missing D2 piece was a trend metric visible in the deterministic
+  bench report and CI summary.
+- A tiny git-history fixture keeps this lane local-first and deterministic:
+  unrelated files co-change three times, then the bench asserts both
+  `queryCoChanges` and `analyzeDiff` surface the expected heuristic partner.
+- Trace-ingest promotion stays as the next D2 slice because it exercises a write
+  surface and promotion counters, so it should remain separate from this
+  read-only co-change fixture.

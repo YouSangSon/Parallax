@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -12,6 +13,7 @@ import {
   indexProject,
   initProject,
   initWorkspace,
+  queryCoChanges,
   resolveCrossRepoContracts
 } from '../src/index.js';
 import { searchContextForRepo } from '../src/mcp.js';
@@ -29,9 +31,10 @@ import { BUILD_SYSTEM_PACKAGE_ADAPTER_ID } from '../src/adapters/build-system-pa
 import { CONFIG_INFRA_SEMANTIC_ADAPTER_ID } from '../src/adapters/config-infra.js';
 
 const fixtureId = 'phase6b-multilanguage-v0';
-const schemaVersion = 5;
+const schemaVersion = 6;
 const crossRepoContractFixtureId = 'cross-repo-contract-impact-v0';
 const contractDiffQualityFixtureId = 'contract-diff-quality-v0';
+const coChangeQualityFixtureId = 'co-change-quality-v0';
 const defaultOutputPath = '.parallax/bench/impact-bench-report.json';
 const regexAdapterId = MULTI_LANG_REGEX_ADAPTER_ID;
 const retrievalFixtureId = 'search-context-retrieval-v0';
@@ -40,7 +43,7 @@ const semanticModelA = 'bench-semantic-model-a';
 const semanticModelB = 'bench-semantic-model-b';
 
 export type ImpactBenchReport = {
-  schemaVersion: 2 | 3 | 4 | 5;
+  schemaVersion: 2 | 3 | 4 | 5 | 6;
   fixtureId: typeof fixtureId;
   summary: {
     passed: boolean;
@@ -68,6 +71,7 @@ export type ImpactBenchReport = {
   };
   crossRepoContracts: CrossRepoContractBench;
   contractDiffQuality: ContractDiffQualityBench;
+  coChangeQuality: CoChangeQualityBench;
   retrieval: RetrievalBenchReport;
   outputPath: string;
 };
@@ -231,6 +235,24 @@ type ContractDiffQualityExpectedChange = {
   kind: string;
   classification: string;
   schemaPath?: string;
+};
+
+type CoChangeQualityBench = {
+  fixtureId: typeof coChangeQualityFixtureId;
+  summary: {
+    passed: boolean;
+    score: number;
+    expectedPartners: number;
+    matchedPartners: number;
+    expectedAffectedFiles: number;
+    matchedAffectedFiles: number;
+  };
+  expectedPartners: string[];
+  matchedPartners: string[];
+  missingPartners: string[];
+  expectedAffectedFiles: string[];
+  matchedAffectedFiles: string[];
+  missingAffectedFiles: string[];
 };
 
 type ContractDiffQualityCaseSpec = {
@@ -483,6 +505,7 @@ export async function runImpactBench(options: RunImpactBenchOptions = {}): Promi
     };
     const score = weightedScore(scores);
     const contractDiffQuality = await runContractDiffQualityBench();
+    const coChangeQuality = await runCoChangeQualityBench();
     const passed =
       relationRecall >= 0.95 &&
       relationPrecision >= 0.95 &&
@@ -496,6 +519,7 @@ export async function runImpactBench(options: RunImpactBenchOptions = {}): Promi
       retrieval.semanticModels?.summary.passed === true &&
       crossRepoContracts.summary.passed === true &&
       contractDiffQuality.summary.passed === true &&
+      coChangeQuality.summary.passed === true &&
       score >= 0.9;
 
     const report: ImpactBenchReport = {
@@ -519,6 +543,7 @@ export async function runImpactBench(options: RunImpactBenchOptions = {}): Promi
       },
       crossRepoContracts,
       contractDiffQuality,
+      coChangeQuality,
       retrieval,
       outputPath: outputPathForReport
     };
@@ -804,6 +829,89 @@ async function runCrossRepoContractBench(): Promise<CrossRepoContractBench> {
   } finally {
     await rm(fixtureRoot, { recursive: true, force: true });
   }
+}
+
+async function runCoChangeQualityBench(): Promise<CoChangeQualityBench> {
+  const fixtureRoot = await mkdtemp(path.join(tmpdir(), 'impact-bench-co-change-'));
+  try {
+    await writeCoChangeBenchGitHistory(fixtureRoot);
+    await initProject({ repoRoot: fixtureRoot });
+    await indexProject({ repoRoot: fixtureRoot });
+
+    const changedFile = 'src/alpha.ts';
+    const expectedPartners = ['src/beta.ts'];
+    const coChanges = queryCoChanges(fixtureRoot, changedFile);
+    const report = await analyzeDiff({
+      repoRoot: fixtureRoot,
+      changedFiles: [changedFile],
+      persistReport: false,
+      readOnly: true
+    });
+
+    const matchedPartners = expectedPartners
+      .filter((expectedPath) =>
+        coChanges.partners.some((partner) =>
+          partner.path === expectedPath &&
+          partner.coChangeCount === 3 &&
+          partner.couplingScore === 1 &&
+          partner.confidence === 'heuristic'
+        )
+      )
+      .sort();
+    const expectedAffectedFiles = ['src/beta.ts'];
+    const matchedAffectedFiles = expectedAffectedFiles
+      .filter((expectedPath) =>
+        report.affectedFiles.some((file) =>
+          file.path === expectedPath && file.confidence === 'heuristic'
+        )
+      )
+      .sort();
+    const matched = matchedPartners.length + matchedAffectedFiles.length;
+    const expected = expectedPartners.length + expectedAffectedFiles.length;
+    const score = ratio(matched, expected);
+
+    return {
+      fixtureId: coChangeQualityFixtureId,
+      summary: {
+        passed: matched === expected,
+        score,
+        expectedPartners: expectedPartners.length,
+        matchedPartners: matchedPartners.length,
+        expectedAffectedFiles: expectedAffectedFiles.length,
+        matchedAffectedFiles: matchedAffectedFiles.length
+      },
+      expectedPartners,
+      matchedPartners,
+      missingPartners: expectedPartners.filter((expectedPath) => !matchedPartners.includes(expectedPath)),
+      expectedAffectedFiles,
+      matchedAffectedFiles,
+      missingAffectedFiles: expectedAffectedFiles.filter((expectedPath) =>
+        !matchedAffectedFiles.includes(expectedPath)
+      )
+    };
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+}
+
+async function writeCoChangeBenchGitHistory(repoRoot: string): Promise<void> {
+  git(repoRoot, ['init']);
+  git(repoRoot, ['config', 'user.email', 'test@example.com']);
+  git(repoRoot, ['config', 'user.name', 'Test']);
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  for (let round = 1; round <= 3; round++) {
+    await writeFile(path.join(repoRoot, 'src/alpha.ts'), `export const alpha = ${round};\n`, 'utf8');
+    await writeFile(path.join(repoRoot, 'src/beta.ts'), `export const beta = ${round};\n`, 'utf8');
+    git(repoRoot, ['add', '-A']);
+    git(repoRoot, ['commit', '-m', `round ${round}`]);
+  }
+}
+
+function git(repoRoot: string, args: readonly string[]): void {
+  execFileSync('git', [...args], {
+    cwd: repoRoot,
+    stdio: ['ignore', 'ignore', 'ignore']
+  });
 }
 
 async function runContractDiffQualityBench(): Promise<ContractDiffQualityBench> {

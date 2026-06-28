@@ -11,14 +11,18 @@ import {
   writeBenchSummary
 } from '../bench/impact-bench-report.js';
 
-type BenchReportOverrides = Omit<Partial<ImpactBenchReport>, 'crossRepoContracts' | 'contractDiffQuality'> & {
+type BenchReportOverrides = Omit<
+  Partial<ImpactBenchReport>,
+  'crossRepoContracts' | 'contractDiffQuality' | 'coChangeQuality'
+> & {
   crossRepoContracts?: ImpactBenchReport['crossRepoContracts'] | undefined;
   contractDiffQuality?: ImpactBenchReport['contractDiffQuality'] | undefined;
+  coChangeQuality?: ImpactBenchReport['coChangeQuality'] | undefined;
 };
 
 function makeReport(overrides: BenchReportOverrides = {}): ImpactBenchReport {
   const report: ImpactBenchReport = {
-    schemaVersion: 5,
+    schemaVersion: 6,
     fixtureId: 'phase6b-multilanguage-v0',
     summary: {
       passed: true,
@@ -104,6 +108,23 @@ function makeReport(overrides: BenchReportOverrides = {}): ImpactBenchReport {
         }
       ],
       missingChanges: []
+    },
+    coChangeQuality: {
+      fixtureId: 'co-change-quality-v0',
+      summary: {
+        passed: true,
+        score: 1,
+        expectedPartners: 1,
+        matchedPartners: 1,
+        expectedAffectedFiles: 1,
+        matchedAffectedFiles: 1
+      },
+      expectedPartners: ['src/beta.ts'],
+      matchedPartners: ['src/beta.ts'],
+      missingPartners: [],
+      expectedAffectedFiles: ['src/beta.ts'],
+      matchedAffectedFiles: ['src/beta.ts'],
+      missingAffectedFiles: []
     },
     retrieval: {
       fixtureId: 'search-context-retrieval-v0',
@@ -214,6 +235,13 @@ function makeReport(overrides: BenchReportOverrides = {}): ImpactBenchReport {
   } else {
     merged.contractDiffQuality = report.contractDiffQuality;
   }
+  if ('coChangeQuality' in overrides) {
+    merged.coChangeQuality = (overrides.coChangeQuality === undefined
+      ? undefined
+      : { ...report.coChangeQuality, ...overrides.coChangeQuality }) as ImpactBenchReport['coChangeQuality'];
+  } else {
+    merged.coChangeQuality = report.coChangeQuality;
+  }
   return merged;
 }
 
@@ -230,12 +258,17 @@ test('bench report summary renders current metrics without a baseline', () => {
   assert.match(markdown, /\| Contract-diff quality \| 1\.0000 \| n\/a \|/);
   assert.match(markdown, /\| Contract-diff cases \| 3\/3 \| n\/a \|/);
   assert.match(markdown, /\| Contract-diff changes \| 3\/3 \| n\/a \|/);
+  assert.match(markdown, /\| Co-change quality \| 1\.0000 \| n\/a \|/);
+  assert.match(markdown, /\| Co-change partners \| 1\/1 \| n\/a \|/);
+  assert.match(markdown, /\| Co-change affected files \| 1\/1 \| n\/a \|/);
   assert.match(markdown, /\| Semantic recall@1 \| 1\.0000 \| n\/a \|/);
   assert.match(markdown, /\| Semantic model isolation \| 1\.0000 \| n\/a \|/);
   assert.match(markdown, /\| `evidence-fts-policy` \| 1\.0000 \| 1\.0000 \| 966 \| no \|/);
   assert.match(markdown, /\| `bench-semantic-model-a` \| 1\.0000 \| yes \| `bench:model-a-policy` \|/);
   assert.match(markdown, /### Missing cross-repo consumers\n\nNone\./);
   assert.match(markdown, /### Missing contract-diff changes\n\nNone\./);
+  assert.match(markdown, /### Missing co-change partners\n\nNone\./);
+  assert.match(markdown, /### Missing co-change affected files\n\nNone\./);
   assert.match(markdown, /### Missing relations\n\nNone\./);
   assert.match(markdown, /### Unexpected relations\n\nNone\./);
 });
@@ -325,6 +358,21 @@ test('bench report summary renders metric and count deltas against a baseline', 
         'changed-response-property-type: changed_response_property_type|breaking|responses.200.body.properties.name'
       ]
     },
+    coChangeQuality: {
+      ...makeReport().coChangeQuality,
+      summary: {
+        passed: false,
+        score: 0,
+        expectedPartners: 1,
+        matchedPartners: 0,
+        expectedAffectedFiles: 1,
+        matchedAffectedFiles: 0
+      },
+      matchedPartners: [],
+      missingPartners: ['src/beta.ts'],
+      matchedAffectedFiles: [],
+      missingAffectedFiles: ['src/beta.ts']
+    },
     retrieval: {
       ...makeReport().retrieval,
       summary: {
@@ -360,6 +408,9 @@ test('bench report summary renders metric and count deltas against a baseline', 
   assert.match(markdown, /\| Contract-diff quality \| 1\.0000 \| \+0\.6667 \|/);
   assert.match(markdown, /\| Contract-diff cases \| 3\/3 \| \+2 \|/);
   assert.match(markdown, /\| Contract-diff changes \| 3\/3 \| \+2 \|/);
+  assert.match(markdown, /\| Co-change quality \| 1\.0000 \| \+1\.0000 \|/);
+  assert.match(markdown, /\| Co-change partners \| 1\/1 \| \+1 \|/);
+  assert.match(markdown, /\| Co-change affected files \| 1\/1 \| \+1 \|/);
   assert.match(markdown, /\| Retrieval recall@5 \| 1\.0000 \| \+0\.5000 \|/);
   assert.match(markdown, /\| Semantic recall@1 \| 1\.0000 \| \+0\.5000 \|/);
   assert.match(markdown, /\| Semantic model isolation \| 1\.0000 \| \+0\.5000 \|/);
@@ -386,6 +437,7 @@ test('bench report summary accepts a schema v2 baseline without semantic metrics
   const {
     crossRepoContracts: _crossRepoContracts,
     contractDiffQuality: _contractDiffQuality,
+    coChangeQuality: _coChangeQuality,
     ...baseline
   } = makeReport({
     schemaVersion: 2
@@ -438,6 +490,24 @@ test('bench report summary skips contract-diff rows for a schema v4 current repo
   assert.doesNotMatch(markdown, /### Missing contract-diff changes/);
 });
 
+test('bench report summary skips co-change rows for a schema v5 current report without coChangeQuality', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'parallax-bench-report-current-v5-'));
+  const reportPath = path.join(root, 'current-v5.json');
+  const current = makeReport({
+    schemaVersion: 5,
+    coChangeQuality: undefined
+  });
+  await writeFile(reportPath, JSON.stringify(current, null, 2));
+
+  const markdown = await generateBenchSummaryMarkdown({ reportPath });
+
+  assert.doesNotMatch(markdown, /\| Co-change quality \|/);
+  assert.doesNotMatch(markdown, /\| Co-change partners \|/);
+  assert.doesNotMatch(markdown, /\| Co-change affected files \|/);
+  assert.doesNotMatch(markdown, /### Missing co-change partners/);
+  assert.doesNotMatch(markdown, /### Missing co-change affected files/);
+});
+
 test('loadBenchReport rejects a schema v4 current report without crossRepoContracts', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'parallax-bench-report-invalid-v4-'));
   const reportPath = path.join(root, 'current-v4.json');
@@ -465,6 +535,21 @@ test('loadBenchReport rejects a schema v5 current report without contractDiffQua
   await assert.rejects(
     () => generateBenchSummaryMarkdown({ reportPath }),
     /invalid bench report .*contractDiffQuality/
+  );
+});
+
+test('loadBenchReport rejects a schema v6 current report without coChangeQuality', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'parallax-bench-report-invalid-v6-'));
+  const reportPath = path.join(root, 'current-v6.json');
+  const invalid = makeReport({
+    schemaVersion: 6,
+    coChangeQuality: undefined
+  });
+  await writeFile(reportPath, JSON.stringify(invalid, null, 2));
+
+  await assert.rejects(
+    () => generateBenchSummaryMarkdown({ reportPath }),
+    /invalid bench report .*coChangeQuality/
   );
 });
 

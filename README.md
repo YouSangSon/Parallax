@@ -268,7 +268,7 @@ Key scripts:
 | `npm run build` | Compile TypeScript to `dist/` |
 | `npm run check` | Typecheck without emit |
 | `npm test` | Run the Node test runner suite via `tsx` |
-| `npm run bench` | Deterministic bench over multi-language, Spring Boot, contract, and package-manifest fixtures |
+| `npm run bench` | Deterministic bench over multi-language, Spring Boot, contract, co-change, and package-manifest fixtures |
 | `npm run docs:lint` | Check tracked and untracked Markdown for forbidden content, trilingual parity, same-language links, and missing local `.md` targets |
 | `npm run verify` | Run the full source-checkout release gate |
 | `npm run test:mcp` | Verify MCP impact/context/memory/telemetry/path validation |

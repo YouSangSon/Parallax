@@ -26,7 +26,8 @@ test('ImpactBench runner writes deterministic report shape', async () => {
     assert.equal(serializedReport.includes(tmpdir()), false);
     assert.equal(serializedReport.includes('impact-bench-fixture-'), false);
     assert.equal(serializedReport.includes('impact-bench-cross-repo-'), false);
-    assert.equal(report.schemaVersion, 5);
+    assert.equal(serializedReport.includes('impact-bench-co-change-'), false);
+    assert.equal(report.schemaVersion, 6);
     assert.equal(report.fixtureId, 'phase6b-multilanguage-v0');
     assert.equal(report.outputPath, '.parallax/bench/impact-bench-report.json');
     assert.equal(report.summary.passed, true);
@@ -95,6 +96,19 @@ test('ImpactBench runner writes deterministic report shape', async () => {
         'changed-response-property-type'
       ]
     );
+    assert.equal(report.coChangeQuality.fixtureId, 'co-change-quality-v0');
+    assert.equal(report.coChangeQuality.summary.passed, true);
+    assert.equal(report.coChangeQuality.summary.score, 1);
+    assert.equal(report.coChangeQuality.summary.expectedPartners, 1);
+    assert.equal(report.coChangeQuality.summary.matchedPartners, 1);
+    assert.equal(report.coChangeQuality.summary.expectedAffectedFiles, 1);
+    assert.equal(report.coChangeQuality.summary.matchedAffectedFiles, 1);
+    assert.deepEqual(report.coChangeQuality.expectedPartners, ['src/beta.ts']);
+    assert.deepEqual(report.coChangeQuality.matchedPartners, ['src/beta.ts']);
+    assert.deepEqual(report.coChangeQuality.missingPartners, []);
+    assert.deepEqual(report.coChangeQuality.expectedAffectedFiles, ['src/beta.ts']);
+    assert.deepEqual(report.coChangeQuality.matchedAffectedFiles, ['src/beta.ts']);
+    assert.deepEqual(report.coChangeQuality.missingAffectedFiles, []);
     assert.ok(report.retrieval.budgets.brief.maxReturnedBytes <= 5_000);
     assert.equal(report.retrieval.budgets.brief.budgetExceededCount, 0);
     assert.ok(

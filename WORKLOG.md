@@ -400,3 +400,31 @@
   - `npm test`
   - `npm audit --audit-level=high`
   - `npm run test:dogfood`
+- Refreshed web/GitHub signals for the remaining D2 metric work.
+  - `gh issue list` still shows only issue #3 open; `gh pr list` still shows
+    Dependabot PRs #23-#31.
+  - Code Maat confirms the VCS-mining lane is still active, and
+    `optave/ops-codegraph-tool` explicitly positions git diff impact with
+    co-change analysis as an adjacent code-intelligence capability.
+  - The smallest useful D2 slice is therefore a read-only co-change trend
+    metric before the write-surface trace promotion metric.
+- Shipped D2 co-change quality trend metric.
+  - `bench/impact-bench.ts` now emits `coChangeQuality` over a tiny git-history
+    fixture where unrelated `alpha.ts` and `beta.ts` co-change three times.
+  - The lane checks both `queryCoChanges` and `analyzeDiff` for the expected
+    heuristic partner and gates `summary.passed`.
+  - `bench/impact-bench-report.ts` now renders co-change quality and matched
+    partner/affected-file deltas in Markdown and GitHub Step Summary output.
+  - Backlog now narrows D2 to the trace-ingest promotion trend metric.
+- D2 co-change quality verification:
+  - `npm run check`
+  - `node --import tsx --test tests/impact-bench-report.test.ts`
+  - `node --import tsx --test tests/impact-bench.test.ts`
+  - `npm run docs:lint`
+  - `git diff --check`
+  - `npm run bench`
+  - `npm run bench:report`
+  - `npm run build`
+  - `npm test`
+  - `npm audit --audit-level=high`
+  - `npm run test:dogfood`

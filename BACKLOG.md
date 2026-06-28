@@ -4,7 +4,7 @@ Canonical detailed backlog: `IMPROVEMENT_OPPORTUNITIES.md`.
 
 ## Now
 
-1. D2 co-change and trace-ingest trend metrics.
+1. D2 trace-ingest promotion trend metric.
 
 ## Later
 
@@ -23,3 +23,4 @@ Canonical detailed backlog: `IMPROVEMENT_OPPORTUNITIES.md`.
 8. D9 affected verification planner from external affected-target research.
 9. S4 measured perf baseline limits.
 10. D2 contract-diff quality trend metric.
+11. D2 co-change quality trend metric.

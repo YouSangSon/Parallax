@@ -790,3 +790,44 @@ Why:
   registered in the catalog.
 - Automatic `package.json` / `pnpm-workspace.yaml` discovery remains the next
   W3 slice; this change only makes explicit package-directory entries useful.
+
+## 2026-06-28: Discover npm/pnpm Workspace Packages From Manifests Only
+
+Decision: add `parallax workspace discover-packages` as an explicit catalog
+sync command for npm/pnpm monorepos. It reads `package.json` `workspaces` /
+`workspaces.packages` and `pnpm-workspace.yaml` `packages`, expands direct
+paths plus common workspace glob features (`*`, `**`, leading `!` excludes, and
+simple brace groups), and writes discovered package directories as workspace
+members. It does not execute npm, pnpm, Nx, Turbo, installs, daemons, caches, or
+network calls.
+
+Sources:
+- npm workspaces:
+  <https://docs.npmjs.com/cli/v11/using-npm/workspaces/>
+- npm `package.json` workspaces field:
+  <https://docs.npmjs.com/cli/v9/configuring-npm/package-json/>
+- pnpm `pnpm-workspace.yaml`:
+  <https://pnpm.io/pnpm-workspace_yaml>
+- Nx affected project graph:
+  <https://nx.dev/docs/features/ci-features/affected>
+- Turborepo filtering and affected tasks:
+  <https://turborepo.dev/docs/reference/run>
+- GitHub repo search refreshed 2026-06-28 found active semantic-code-graph /
+  repo-map / impact-analysis MCP projects such as `khalomsky/syke`,
+  `Ataraxy-Labs/sem`, `raymondchins/agentmap`, `Congmoow/RepoMapper`, and
+  `iamsaquib8/tessera`.
+- Parallax open issue queue refreshed via `gh issue list` on 2026-06-28: #3 is
+  still the only open issue.
+- Parallax open PR queue refreshed via `gh pr list` on 2026-06-28: #23-#31
+  remain Dependabot PRs.
+
+Why:
+- npm and pnpm define workspace membership in local manifests, so Parallax can
+  make monorepo package members addressable without package-manager execution.
+- Root workspace packages are not cataloged by default when subpackages are
+  found because a root member plus package members would duplicate same-monorepo
+  provider/consumer links.
+- Catalog entries outside the current repo root are preserved, so discovery can
+  refine one monorepo while keeping explicitly registered sibling repos.
+- Nx/Turbo remain follow-on parse-only metadata sources; their task execution,
+  cache behavior, and daemons are outside Parallax's local-first catalog sync.

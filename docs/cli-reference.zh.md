@@ -93,6 +93,7 @@ parallax pr triage --base origin/main --head HEAD --fail-on proven
 | :--- | :--- |
 | `parallax workspace init [--name <name>] [--service <service>] [--force]` | 为该 repo 创建或重建 workspace catalog |
 | `parallax workspace add-repo <path> [--name <name>] [--service <service>] [--remote <url>]` | 将另一个本地 repo 注册进 workspace catalog |
+| `parallax workspace discover-packages [--name <name>] [--json]` | 发现 npm/pnpm workspace package，并同步到 workspace catalog |
 | `parallax workspace list [--name <name>] [--json]` | 列出 workspace 及其成员 repo |
 | `parallax workspace resolve-contracts [--name <name>] [--json]` | 解析 cross-repo 的 provider/consumer contract link |
 | `parallax workspace contract-diff --contract <path> [--name <name>] [--provider <service>] [--provider-path <path>] [--json]` | 将 contract 文件与已索引的 workspace baseline 做 diff |
@@ -103,6 +104,8 @@ parallax pr triage --base origin/main --head HEAD --fail-on proven
 `workspace verify`、`workspace consumers` 和 `workspace providers` 只读取已持久化的 link。它们不会运行 resolution 或 contract diff。使用 `workspace resolve-contracts` 刷新 `CONSUMES_HTTP_ENDPOINT` link，使用 `workspace contract-diff` 刷新 `BREAKS_COMPATIBILITY_WITH` link。
 
 `workspace add-repo` 以 repo 路径作为 positional 参数。cross-repo 范围仅限用户显式注册的本地 repo——无 clone 或网络访问。catalog entry 也可以指向同一 monorepo 内已经索引过的 package 目录；`resolve-contracts` 会读取最近的上级 Parallax 数据库，并将 path 限定在该 member 内。
+
+`workspace discover-packages` 只读取本地 manifest：`package.json` 的 `workspaces` 数组 / `workspaces.packages`，以及 `pnpm-workspace.yaml` 的 `packages`。它支持 direct path、`*`、`**`、前导 `!` exclude，以及简单的 `{apps,packages}` brace group，然后把发现的 package 目录作为 member repo 写入 `.parallax/workspace.json`。如果发现 package member，会用这些 package entry 替换 root repo entry，以避免同一 monorepo link 重复；当前 repo root 之外的 catalog entry 会保留。它不会执行 npm、pnpm、Nx、Turbo、install、daemon、cache 或网络调用。
 
 ## Diagnostics
 

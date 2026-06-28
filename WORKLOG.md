@@ -723,3 +723,41 @@
   - Bench result: `summary.passed=true`, score `0.9987`, and all quality lanes
     passed (`crossRepoContracts`, `contractDiffQuality`, `coChangeQuality`,
     `tracePromotionQuality`).
+- Refreshed web/GitHub research for W3 discovery.
+  - Official npm and pnpm docs confirm package membership is local manifest
+    data (`package.json` workspaces and `pnpm-workspace.yaml` packages).
+  - Nx affected and Turborepo affected/filter docs reconfirm that large
+    monorepo workflows operate on package/project graphs plus Git changes, but
+    their task execution and caches should remain outside Parallax discovery.
+  - GitHub repo search surfaced more 2026 local code-graph / repo-map / impact
+    MCP projects (`syke`, `sem`, `agentmap`, `RepoMapper`, `tessera`), but no
+    higher-priority pivot than Parallax's contract-aware impact lane.
+  - `gh issue list` still shows only issue #3 open; `gh pr list` still shows
+    Dependabot PRs #23-#31.
+- Shipped W3 deterministic npm/pnpm workspace package discovery.
+  - `src/workspace.ts` adds `discoverWorkspacePackages`, reading local
+    `package.json` `workspaces` / `workspaces.packages` and
+    `pnpm-workspace.yaml` `packages` without running package-manager CLIs.
+  - Discovery expands direct paths, `*`, `**`, leading `!` excludes, and simple
+    brace groups, then writes package directories as catalog members while
+    preserving catalog entries outside the current repo root.
+  - When package members are found, the root repo entry is replaced by package
+    entries to avoid duplicate same-monorepo links.
+  - `src/cli.ts` adds `parallax workspace discover-packages [--name <name>]
+    [--json]`.
+  - `tests/workspace.test.ts` covers npm workspace discovery, pnpm include /
+    exclude discovery, DB sync, root replacement, and external repo
+    preservation.
+- W3 discovery verification so far:
+  - `npm run check`
+  - `node --import tsx --test tests/workspace.test.ts`
+  - `npm run docs:lint`
+  - `git diff --check`
+  - `npm run verify`
+  - Full verify result: lint, schema check, install smoke/build, 671 unit
+    tests, dogfood, bench, and `npm audit --audit-level=high` all passed.
+  - Bench result: `summary.passed=true`, score `0.9987`, and all quality lanes
+    passed (`crossRepoContracts`, `contractDiffQuality`, `coChangeQuality`,
+    `tracePromotionQuality`).
+  - Process check: no Parallax dev server, UI server, test runner, Playwright,
+    or bench process remained.

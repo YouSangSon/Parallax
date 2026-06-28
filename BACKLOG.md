@@ -4,7 +4,7 @@ Canonical detailed backlog: `IMPROVEMENT_OPPORTUNITIES.md`.
 
 ## Now
 
-1. W3 deterministic npm/pnpm workspace package discovery.
+1. W3 parse-only Nx/Turbo workspace metadata hints.
 
 ## Later
 
@@ -13,23 +13,24 @@ Canonical detailed backlog: `IMPROVEMENT_OPPORTUNITIES.md`.
 
 ## Done
 
-1. W3 explicit package-directory workspace members share the root index in cross-repo resolution.
-2. M9 repo-map hardening / dogfood.
-3. D8 dependency PR dogfood lane.
-4. D7 SARIF breadth.
-5. D1 official PR action wrapper.
-6. D6 pre-commit / pre-push impact-gate installer.
-7. D4 deep-linkable UI/export.
-8. M10 SCIP bridge: JSON import, CLI-backed binary ingest, and JSON export.
-9. D9 affected verification planner from external affected-target research.
-10. S4 measured perf baseline limits.
-11. D2 contract-diff quality trend metric.
-12. D2 co-change quality trend metric.
-13. D2 trace-ingest promotion trend metric.
-14. W4 OpenAPI response enum-removal compatibility detection.
-15. W4 OpenAPI response format-change compatibility detection.
-16. W4 OpenAPI response nullable-addition compatibility detection.
-17. W4 OpenAPI request enum-value removal compatibility detection.
-18. W4 OpenAPI request format-addition/change compatibility detection.
-19. W4 OpenAPI response optional-property removal contract-diff visibility.
-20. W5 JSON Schema contract-kind first slice.
+1. W3 deterministic npm/pnpm workspace package discovery.
+2. W3 explicit package-directory workspace members share the root index in cross-repo resolution.
+3. M9 repo-map hardening / dogfood.
+4. D8 dependency PR dogfood lane.
+5. D7 SARIF breadth.
+6. D1 official PR action wrapper.
+7. D6 pre-commit / pre-push impact-gate installer.
+8. D4 deep-linkable UI/export.
+9. M10 SCIP bridge: JSON import, CLI-backed binary ingest, and JSON export.
+10. D9 affected verification planner from external affected-target research.
+11. S4 measured perf baseline limits.
+12. D2 contract-diff quality trend metric.
+13. D2 co-change quality trend metric.
+14. D2 trace-ingest promotion trend metric.
+15. W4 OpenAPI response enum-removal compatibility detection.
+16. W4 OpenAPI response format-change compatibility detection.
+17. W4 OpenAPI response nullable-addition compatibility detection.
+18. W4 OpenAPI request enum-value removal compatibility detection.
+19. W4 OpenAPI request format-addition/change compatibility detection.
+20. W4 OpenAPI response optional-property removal contract-diff visibility.
+21. W5 JSON Schema contract-kind first slice.

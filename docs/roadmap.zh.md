@@ -36,7 +36,8 @@ cross-repo impact 还处于 v0 状态。仅在用户注册的 local repo 之间�
 
 - [ ] 将 OpenAPI / GraphQL / Protobuf / AsyncAPI 的 contract diff 稳定到 *nested schema* 粒度
 - [ ] 让 generated-client / event topology resolver 超越 heuristic
-- [ ] 让 workspace catalog 把 monorepo 内部的 sub-package 当作 first-class 来识别
+- [x] 让 workspace catalog 把 monorepo 内部的 npm/pnpm sub-package 当作 first-class package member 来识别
+- [ ] 在 package-member model 稳定后加入 parse-only Nx/Turbo project metadata
 - [x] 在 primary analyze report、graph export、MCP payload 和 UI workbench 中呈现已持久化的 cross-repo breaking contract link
 - [x] 让 cross-repo link 可双向查询，并验证 malformed、stale 或 orphan workspace row
 

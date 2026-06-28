@@ -198,6 +198,24 @@ async function main(): Promise<void> {
       console.log(JSON.stringify(result, null, 2));
       return;
     }
+    if (subcommand === 'discover-packages') {
+      const { discoverWorkspacePackages } = await import('./index.js');
+      const workspaceName = parseOptionalWorkspaceArg(workspaceArgs, '--name');
+      const result = discoverWorkspacePackages({
+        repoRoot,
+        ...(workspaceName !== undefined ? { workspaceName } : {})
+      });
+      if (workspaceArgs.includes('--json')) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.log(`Workspace ${result.workspace.name} package discovery: ${result.packages.length} package(s)`);
+        console.log(`Sources: ${result.sources.join(', ') || '(none)'}`);
+        for (const member of result.packages) {
+          console.log(`  ${member.relativePath} (${member.serviceName})`);
+        }
+      }
+      return;
+    }
     if (subcommand === 'list') {
       const { listWorkspaces } = await import('./index.js');
       const name = parseOptionalWorkspaceArg(workspaceArgs, '--name');
@@ -345,7 +363,7 @@ async function main(): Promise<void> {
       }
       return;
     }
-    throw new Error('workspace requires init, add-repo, list, resolve-contracts, contract-diff, verify, consumers, or providers');
+    throw new Error('workspace requires init, add-repo, discover-packages, list, resolve-contracts, contract-diff, verify, consumers, or providers');
   }
 
   if (command === 'analyze') {
@@ -992,6 +1010,7 @@ Commands:
   ${PACKAGE_NAME} scip export [--file <index.scip.json>]
   ${PACKAGE_NAME} workspace init [--name <name>] [--service <service>] [--force]
   ${PACKAGE_NAME} workspace add-repo <path> [--name <name>] [--service <service>] [--remote <url>]
+  ${PACKAGE_NAME} workspace discover-packages [--name <name>] [--json]
   ${PACKAGE_NAME} workspace list [--name <name>] [--json]
   ${PACKAGE_NAME} workspace resolve-contracts [--name <name>] [--json]
   ${PACKAGE_NAME} workspace contract-diff --contract <path> [--name <name>]

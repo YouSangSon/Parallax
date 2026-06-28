@@ -36,7 +36,8 @@ cross-repo impact가 v0 상태. 사용자가 등록한 local repo 사이에서�
 
 - [ ] OpenAPI / GraphQL / Protobuf / AsyncAPI contract diff를 *nested schema* 단위까지 안정화
 - [ ] generated-client / event topology resolver를 heuristic 너머로
-- [ ] workspace catalog가 monorepo 내부 sub-package를 first-class로 인식
+- [x] workspace catalog가 monorepo 내부 npm/pnpm sub-package를 first-class package member로 인식
+- [ ] package-member model이 안정된 뒤 parse-only Nx/Turbo project metadata 추가
 - [x] 저장된 cross-repo breaking contract link를 primary analyze report, graph export, MCP payload, UI workbench에 표면화
 - [x] cross-repo link를 양방향으로 query할 수 있고 malformed, stale, orphan workspace row를 검증
 

@@ -93,6 +93,7 @@ parallax pr triage --base origin/main --head HEAD --fail-on proven
 | :--- | :--- |
 | `parallax workspace init [--name <name>] [--service <service>] [--force]` | 이 repo의 workspace catalog를 생성 또는 재생성 |
 | `parallax workspace add-repo <path> [--name <name>] [--service <service>] [--remote <url>]` | 다른 로컬 repo를 workspace catalog에 등록 |
+| `parallax workspace discover-packages [--name <name>] [--json]` | npm/pnpm workspace package를 찾아 workspace catalog에 동기화 |
 | `parallax workspace list [--name <name>] [--json]` | workspace와 멤버 repo를 나열 |
 | `parallax workspace resolve-contracts [--name <name>] [--json]` | cross-repo provider/consumer contract link를 해석 |
 | `parallax workspace contract-diff --contract <path> [--name <name>] [--provider <service>] [--provider-path <path>] [--json]` | contract 파일을 인덱싱된 workspace baseline과 diff |
@@ -103,6 +104,8 @@ parallax pr triage --base origin/main --head HEAD --fail-on proven
 `workspace verify`, `workspace consumers`, `workspace providers`는 저장된 link만 읽는다. resolution이나 contract diff를 실행하지 않는다. `CONSUMES_HTTP_ENDPOINT` link를 갱신하려면 `workspace resolve-contracts`를 사용하고, `BREAKS_COMPATIBILITY_WITH` link를 갱신하려면 `workspace contract-diff`를 사용한다.
 
 `workspace add-repo`는 repo 경로를 positional 인자로 받는다. cross-repo 범위는 사용자가 명시적으로 등록한 로컬 repo로 한정된다 — clone이나 네트워크 접근 없음. catalog entry는 같은 monorepo 안에서 이미 인덱싱된 package directory를 가리킬 수도 있으며, `resolve-contracts`는 가장 가까운 상위 Parallax DB를 읽고 path를 해당 member 기준으로 제한한다.
+
+`workspace discover-packages`는 로컬 manifest만 읽는다: `package.json`의 `workspaces` 배열 / `workspaces.packages`, 그리고 `pnpm-workspace.yaml`의 `packages`. direct path, `*`, `**`, 선행 `!` exclude, 단순 `{apps,packages}` brace group을 지원하고, 발견한 package directory를 `.parallax/workspace.json`에 member repo로 기록한다. package member가 발견되면 같은 monorepo link 중복을 피하기 위해 root repo entry를 package entry들로 대체하며, 현재 repo root 밖의 catalog entry는 보존한다. npm, pnpm, Nx, Turbo, install, daemon, cache, network call은 실행하지 않는다.
 
 ## Diagnostics
 

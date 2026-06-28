@@ -93,6 +93,7 @@ The `remember`/`recall` value passed via `--value` is parsed as JSON when possib
 | :--- | :--- |
 | `parallax workspace init [--name <name>] [--service <service>] [--force]` | Create or re-create the workspace catalog for this repo |
 | `parallax workspace add-repo <path> [--name <name>] [--service <service>] [--remote <url>]` | Register another local repo into the workspace catalog |
+| `parallax workspace discover-packages [--name <name>] [--json]` | Discover npm/pnpm workspace packages and sync them into the workspace catalog |
 | `parallax workspace list [--name <name>] [--json]` | List workspaces and their member repos |
 | `parallax workspace resolve-contracts [--name <name>] [--json]` | Resolve cross-repo provider/consumer contract links |
 | `parallax workspace contract-diff --contract <path> [--name <name>] [--provider <service>] [--provider-path <path>] [--json]` | Diff a contract file against the indexed workspace baseline |
@@ -103,6 +104,8 @@ The `remember`/`recall` value passed via `--value` is parsed as JSON when possib
 `workspace verify`, `workspace consumers`, and `workspace providers` read persisted links only. They do not run resolution or contract diff. Use `workspace resolve-contracts` to refresh `CONSUMES_HTTP_ENDPOINT` links and `workspace contract-diff` to refresh `BREAKS_COMPATIBILITY_WITH` links.
 
 `workspace add-repo` takes the repo path as a positional argument. Cross-repo coverage is limited to local repos the user explicitly registers — no clone or network access. A catalog entry may also point at an already indexed package directory inside the same monorepo; `resolve-contracts` reads the nearest parent Parallax database and scopes paths to that member.
+
+`workspace discover-packages` reads only local manifests: `package.json` `workspaces` arrays / `workspaces.packages` and `pnpm-workspace.yaml` `packages`. It supports direct paths, `*`, `**`, leading `!` excludes, and simple `{apps,packages}` brace groups, then writes the discovered package directories into `.parallax/workspace.json` as member repos. When package members are found, the root repo entry is replaced by those package entries to avoid duplicate same-monorepo links; catalog entries outside the current repo root are preserved. It does not run npm, pnpm, Nx, Turbo, installs, daemons, caches, or network calls.
 
 ## Diagnostics
 

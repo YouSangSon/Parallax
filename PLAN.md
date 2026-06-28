@@ -6,7 +6,16 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Active Loop
 
-- Next loop: start W3 deterministic npm/pnpm workspace package discovery.
+- Next loop: evaluate W3 parse-only Nx/Turbo workspace metadata hints.
+- Completed slice: W3 deterministic npm/pnpm workspace package discovery now
+  adds `parallax workspace discover-packages`, which reads local
+  `package.json` `workspaces` / `workspaces.packages` and
+  `pnpm-workspace.yaml` `packages`, expands direct paths plus `*`, `**`,
+  leading `!` excludes, and simple brace groups, then syncs discovered package
+  directories into `.parallax/workspace.json` without npm/pnpm/Nx/Turbo
+  execution. When packages are found, the root entry is replaced by package
+  entries to avoid duplicate same-monorepo links; entries outside the current
+  repo root are preserved.
 - Completed slice: W3 explicit package-directory workspace members now share
   the nearest parent Parallax index during `workspace resolve-contracts`.
   Provider contracts and consumer files are filtered to the member package
@@ -143,7 +152,7 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Next
 
-1. Add deterministic npm/pnpm workspace discovery, then consider parse-only
-   Nx/Turbo metadata after the member model is stable.
+1. Consider parse-only Nx/Turbo metadata after the npm/pnpm package-member
+   model is stable.
 2. Keep W5 Avro and residual S1 scan-cost work behind W3 unless new evidence
    displaces the sequence.

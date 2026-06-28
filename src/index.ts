@@ -94,6 +94,7 @@ export type {
 } from './git_hooks.js';
 export {
   addWorkspaceRepo,
+  discoverWorkspacePackages,
   initWorkspace,
   listWorkspaces,
   loadWorkspaceCatalog,
@@ -102,6 +103,9 @@ export {
 } from './workspace.js';
 export type {
   AddWorkspaceRepoOptions,
+  DiscoveredWorkspacePackage,
+  DiscoverWorkspacePackagesOptions,
+  DiscoverWorkspacePackagesResult,
   InitWorkspaceOptions,
   InitWorkspaceResult,
   ListWorkspacesOptions,

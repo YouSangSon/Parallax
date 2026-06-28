@@ -93,12 +93,12 @@ contract fidelity and W3 package modeling.
 | :-- | :-- | :-- | :-- |
 | W1 | ✅ **shipped** — W1 shipped: primary `analyzeDiff` reports now include persisted workspace `BREAKS_COMPATIBILITY_WITH` consumers as `crossRepoImpacts`, affected external entities, relation-bearing evidence, graph edges, and UI cross-repo lane entries. | M | HIGH |
 | W2 | ✅ **shipped** — cross-repo link consistency now has a shared read model plus `parallax workspace verify`, flagging malformed provenance, stale workspace membership, and orphan `BREAKS_COMPATIBILITY_WITH` rows without duplicate inverse storage. | M | HIGH |
-| W3 | **Monorepo sub-packages as first-class catalog members** — first slice shipped: explicit package-directory catalog members can share the nearest parent Parallax index, provider/consumer paths are scoped to the package, and persisted consumer/provider queries stay member-aware. Remaining: parse `package.json` workspaces / `pnpm-workspace.yaml` / `nx`/`turbo` (deterministic, no install) into addressable units instead of requiring explicit package entries. | L | HIGH |
+| W3 | ✅ **npm/pnpm slices shipped; Nx/Turbo parse-only metadata remains** — explicit package-directory catalog members can share the nearest parent Parallax index, provider/consumer paths are scoped to the package, and persisted consumer/provider queries stay member-aware. `parallax workspace discover-packages` now parses `package.json` workspaces and `pnpm-workspace.yaml` package globs into package directory catalog members without installs or package-manager execution. Remaining: parse Nx/Turbo project metadata as hints once the member model is stable. | L | HIGH |
 | W4 | ✅ **shipped** — richer OpenAPI contract property signatures: response enum-value removal, response format changes, response nullable additions, request enum-value removal, request format additions/changes, and response optional-property removals are now captured via richer property signatures, compat schemaVersion 5 where needed, provenance on breaking changes, non-breaking optional-removal visibility, and `contractDiffQuality` bench cases. | M | MED-HIGH |
 | W5 | ✅ **JSON Schema first slice shipped; Avro follow-on remains** — `*.schema.json` and contract-located `schema.json` files now persist as `json-schema` contracts, reuse the OpenAPI object-schema signature for root object comparisons, declare a synthetic `SCHEMA #` endpoint, and classify required removal, optional removal, property type changes, and nullable additions. Avro remains a mechanical follow-on. | M (Avro remaining) | MED |
 | W6 | ✅ **shipped** — agents can query provider consumers/providers through read-only MCP tools and preview cross-repo resolution without mutating `cross_repo_links`; CLI persistence remains the explicit write workflow. | S | MED |
 
-**Sequencing remaining work:** W3 (biggest scope, monorepo users) → W5 Avro follow-on. W1/W2/W4/W5 JSON Schema/W6 are already shipped.
+**Sequencing remaining work:** W3 parse-only Nx/Turbo metadata → W5 Avro follow-on. W1/W2/W3 npm/pnpm/W4/W5 JSON Schema/W6 are already shipped.
 
 ---
 
@@ -207,11 +207,15 @@ whole repo roots.
 - pnpm workspace manifest: <https://pnpm.io/pnpm-workspace_yaml>
 - Nx affected commands: <https://nx.dev/docs/features/ci-features/affected>
 - Turborepo filters: <https://turbo.build/repo/docs/crafting-your-repository/running-tasks>
-- GitHub semantic-code-graph search examples:
+- GitHub semantic-code-graph / repo-map search examples:
   <https://github.com/VirtusLab/scg-cli>,
   <https://github.com/LordCasser/atlas>,
   <https://github.com/suatkocar/codegraph>,
-  <https://github.com/iamsaquib8/tessera>
+  <https://github.com/iamsaquib8/tessera>,
+  <https://github.com/khalomsky/syke>,
+  <https://github.com/Ataraxy-Labs/sem>,
+  <https://github.com/raymondchins/agentmap>,
+  <https://github.com/Congmoow/RepoMapper>
 - Parallax open issue queue refreshed 2026-06-28:
   <https://github.com/YouSangSon/Parallax/issues/3>
 - Parallax open PR queue refreshed 2026-06-28:
@@ -219,19 +223,18 @@ whole repo roots.
 
 ### What the search implies
 
-1. **W3 should start with package identity, not task execution.** npm and pnpm
-   expose deterministic workspace membership through manifest fields/globs, so
-   Parallax can discover addressable package units without `npm install`,
+1. ✅ **W3 npm/pnpm package discovery is now covered.** npm and pnpm expose
+   deterministic workspace membership through manifest fields/globs, and
+   Parallax now discovers addressable package units without `npm install`,
    `pnpm install`, or tool daemons.
 2. **Affected-task tools validate the package/project graph shape.** Nx
    computes affected projects from Git changes plus the project graph, and
    Turborepo filters by package, directory, dependents/dependencies, and Git
    ranges. Parallax already has change and relation graphs; the missing piece is
    mapping files/contracts to a package-scoped workspace member.
-3. **Implementation should preserve the local-first boundary.** Parse
-   `package.json` workspaces and `pnpm-workspace.yaml` first. Treat Nx/Turbo as
-   metadata sources only when their config is parseable; do not execute
-   external CLIs, use remote caches, or depend on daemons.
+3. **Remaining monorepo work should preserve the local-first boundary.** Treat
+   Nx/Turbo as metadata sources only when their config is parseable; do not
+   execute external CLIs, use remote caches, or depend on daemons.
 4. **The resolver needs member identity, not just repo identity.** Current
    cross-repo resolution skips when `repoPath` is equal, and
    `workspace_repos` is unique on `(workspace_id, local_path)`. Same-monorepo

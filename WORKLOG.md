@@ -874,3 +874,34 @@
     tests, dogfood, bench, and `npm audit --audit-level=high` all passed.
   - Perf smoke result for scale 10:
     `10 70 36.4 52.4 7.7 5.7 9 275 7003 3635 5244 772 569`.
+- Refreshed S1 scan/read research on 2026-06-29.
+  - Git status and `ls-files` remain the right local primitives for dirty,
+    tracked, ignored, and untracked path state, but they do not prove adapter
+    content-read safety by themselves.
+  - Nx and Turborepo affected docs again support the same sequence: establish
+    the changed set first, then reduce work.
+  - GitHub repo search for incremental code-indexing / semantic graph projects
+    did not surface a lighter dependency or safer shortcut than measuring
+    Parallax's own scan phase before changing adapter contracts.
+  - `gh issue list` still shows only issue #3 open; `gh pr list` still shows
+    Dependabot PRs #23-#31.
+- Shipped S1 scan-phase perf measurement.
+  - `IndexOptions.perfObserver` can now receive the internal `scan` phase time;
+    the normal `parallax index` result JSON is unchanged.
+  - `bench:perf` reports `full_scan_ms`, `noop_scan_ms`, and `edit_scan_ms`
+    next to the existing total index timings, so residual scan/read work is
+    measurable before any cached-content shortcut is attempted.
+  - `docs/verification*.md` documents the new scan columns and notes that the
+    historical 1k/2k baseline predates them.
+- S1 scan-phase perf verification:
+  - `npm run check`
+  - `node --import tsx --test tests/synthetic-repo.test.ts`
+  - `npm run docs:lint`
+  - `git diff --check`
+  - `npm run bench:perf -- --scales 10`
+  - `npm run verify`
+  - Focused synthetic/perf formatter tests passed 4/4.
+  - Full verify result: lint, schema check, install smoke/build, 678 unit
+    tests, dogfood, bench, and `npm audit --audit-level=high` all passed.
+  - Perf smoke result for scale 10:
+    `10 78 15.1 40.7 2.7 38.0 2.4 7.3 6.0 9 289 7836 4066 3795 725 600`.

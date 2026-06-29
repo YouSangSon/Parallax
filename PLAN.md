@@ -11,6 +11,11 @@ Source of truth for the active improvement loop. Detailed backlog lives in
   now shipped; deeper JSON Schema enum/format policy and Avro named-type /
   schema-registry compatibility remain follow-ons rather than the next default
   loop.
+- Completed slice: S1 `bench:perf` now reports actual indexer scan phase
+  timings for full, no-op incremental, and edited-file incremental phases. This
+  keeps risky content-read skipping out of the runtime path until the adapter
+  content contract is explicit, while making the remaining scan/read cost
+  measurable.
 - Completed slice: S1 dirty/non-git no-changed-file reruns now skip adapter
   startup after the existing scan proves `delta.changed=[]`. The run still
   records fresh git dirty metadata and carries prior graph/coverage rows
@@ -175,7 +180,7 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Next
 
-1. Evaluate S1 residual changed-file scan-cost reduction with an
-   adapter-contract design.
+1. Evaluate S1 residual changed-file scan/read reduction using the new
+   scan-phase measurements and an adapter content-contract design.
 2. Keep deeper JSON Schema / Avro compatibility semantics behind S1 unless new
    evidence displaces the sequence.

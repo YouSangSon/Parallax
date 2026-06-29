@@ -24,8 +24,11 @@ import { editSyntheticChangedFile, generateSyntheticRepo } from './synthetic-rep
 export type PerfRow = {
   files: number;
   fullIndexMs: number;
+  fullScanMs: number;
   noopIncrementalMs: number;
+  noopScanMs: number;
   editIncrementalMs: number;
+  editScanMs: number;
   analyzeNoPersistMs: number;
   analyzePersistMs: number;
   affected: number;
@@ -60,6 +63,19 @@ async function timed<T>(fn: () => Promise<T>): Promise<Timed<T>> {
   return { value, ms: performance.now() - start };
 }
 
+async function timedIndex(repoRoot: string): Promise<Timed<IndexResult> & { scanMs: number }> {
+  let scanMs = 0;
+  const timedResult = await timed(() =>
+    indexProject({
+      repoRoot,
+      perfObserver: (phase, ms) => {
+        if (phase === 'scan') scanMs += ms;
+      }
+    })
+  );
+  return { ...timedResult, scanMs };
+}
+
 function assertIncremental(result: IndexResult, label: string): void {
   if (result.mode !== 'incremental') {
     throw new Error(`${label} reindex expected mode === 'incremental', got ${result.mode}`);
@@ -73,18 +89,18 @@ async function measure(files: number): Promise<PerfRow> {
     await initProject({ repoRoot: root });
     let observedPeakRssMb = rssMb();
 
-    const fullIndex = await timed(() => indexProject({ repoRoot: root }));
+    const fullIndex = await timedIndex(root);
     observedPeakRssMb = Math.max(observedPeakRssMb, rssMb());
     if (fullIndex.value.mode !== 'full') {
       throw new Error(`initial index expected mode === 'full', got ${fullIndex.value.mode}`);
     }
 
-    const noopIncremental = await timed(() => indexProject({ repoRoot: root }));
+    const noopIncremental = await timedIndex(root);
     observedPeakRssMb = Math.max(observedPeakRssMb, rssMb());
     assertIncremental(noopIncremental.value, 'no-op');
 
     await editSyntheticChangedFile(root, info);
-    const editIncremental = await timed(() => indexProject({ repoRoot: root }));
+    const editIncremental = await timedIndex(root);
     observedPeakRssMb = Math.max(observedPeakRssMb, rssMb());
     assertIncremental(editIncremental.value, 'single-file edit');
 
@@ -100,8 +116,11 @@ async function measure(files: number): Promise<PerfRow> {
     return {
       files,
       fullIndexMs: fullIndex.ms,
+      fullScanMs: fullIndex.scanMs,
       noopIncrementalMs: noopIncremental.ms,
+      noopScanMs: noopIncremental.scanMs,
       editIncrementalMs: editIncremental.ms,
+      editScanMs: editIncremental.scanMs,
       analyzeNoPersistMs: analyzeNoPersist.ms,
       analyzePersistMs: analyzePersist.ms,
       affected: analyzePersist.value.affectedFiles.length,
@@ -125,8 +144,11 @@ export function formatPerfTable(rows: readonly PerfRow[]): string {
     [
       'files',
       'full_index_ms',
+      'full_scan_ms',
       'noop_incremental_ms',
+      'noop_scan_ms',
       'edit_incremental_ms',
+      'edit_scan_ms',
       'analyze_no_persist_ms',
       'analyze_persist_ms',
       'affected',
@@ -144,8 +166,11 @@ export function formatPerfTable(rows: readonly PerfRow[]): string {
       [
         row.files,
         row.fullIndexMs.toFixed(0),
+        row.fullScanMs.toFixed(1),
         row.noopIncrementalMs.toFixed(1),
+        row.noopScanMs.toFixed(1),
         row.editIncrementalMs.toFixed(1),
+        row.editScanMs.toFixed(1),
         row.analyzeNoPersistMs.toFixed(1),
         row.analyzePersistMs.toFixed(1),
         row.affected,

@@ -11,6 +11,7 @@ export type InitResult = {
 export type IndexOptions = {
   repoRoot: string;
   maxFileBytes?: number;
+  perfObserver?: (phase: 'scan', ms: number) => void;
 };
 
 export type IndexResult = {

@@ -4,7 +4,8 @@ Canonical detailed backlog: `IMPROVEMENT_OPPORTUNITIES.md`.
 
 ## Now
 
-1. S1 residual changed-file scan-cost reduction after an adapter-contract design.
+1. S1 residual changed-file scan/read reduction using the new scan-phase perf
+   measurements and an adapter content-contract design.
 
 ## Later
 
@@ -36,3 +37,4 @@ Canonical detailed backlog: `IMPROVEMENT_OPPORTUNITIES.md`.
 22. W5 JSON Schema contract-kind first slice.
 23. W5 Avro contract-kind first slice.
 24. S1 dirty/non-git no-changed-file adapter startup skip.
+25. S1 `bench:perf` scan-phase timing split.

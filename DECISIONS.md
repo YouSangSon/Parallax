@@ -953,3 +953,35 @@ Why:
 - Actual scan/read reduction for changed-file runs still needs the deferred
   adapter-contract design because adapters consume the full `indexedFiles`
   context for manifest/path-alias/cross-file resolution.
+
+## 2026-06-29: Measure Index Scan Phase Before Skipping Reads
+
+Decision: add a bench-only index perf observer that records the actual scanner
+phase inside `indexProject`, and have `bench:perf` report `full_scan_ms`,
+`noop_scan_ms`, and `edit_scan_ms` alongside the existing total phase timings.
+Do not skip unchanged file reads yet.
+
+Sources:
+- Git status porcelain documentation:
+  <https://git-scm.com/docs/git-status>
+- Git ls-files documentation:
+  <https://git-scm.com/docs/git-ls-files>
+- Nx affected documentation:
+  <https://nx.dev/docs/features/ci-features/affected>
+- Turborepo affected-task documentation:
+  <https://turborepo.com/docs/crafting-your-repository/constructing-ci#using---affected>
+- Parallax open issue queue refreshed via `gh issue list` on 2026-06-29: #3 is
+  still the only open issue.
+- Parallax open PR queue refreshed via `gh pr list` on 2026-06-29: #23-#31
+  remain Dependabot PRs.
+
+Why:
+- Git can prove tracked and dirty path state, but Parallax still needs an
+  adapter-level content contract before it can safely replace unchanged
+  `ScannedFile.content` with cached metadata.
+- The TypeScript/JavaScript adapter can inspect target-file content while
+  extracting a changed file, so blindly avoiding unchanged reads would risk
+  stale call/type evidence.
+- A bench-only observer avoids changing `parallax index` JSON output or runtime
+  behavior while making the remaining S1 scan/read cost visible enough to guide
+  the next slice.

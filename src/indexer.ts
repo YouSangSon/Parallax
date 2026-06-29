@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { closeSync, openSync, readFileSync, readdirSync, readSync, statSync } from 'node:fs';
 import path from 'node:path';
+import { performance } from 'node:perf_hooks';
 
 import { AdapterRegistry } from './adapters/registry.js';
 import { BuildSystemPackageAdapter } from './adapters/build-system-package.js';
@@ -621,7 +622,9 @@ async function indexProjectInternal(
   );
 
   try {
-    const scan = scanFiles(repoRoot, options.maxFileBytes ?? defaultMaxFileBytes);
+    const scan = timeIndexPhase(options, 'scan', () =>
+      scanFiles(repoRoot, options.maxFileBytes ?? defaultMaxFileBytes)
+    );
     const files = scan.files;
     const classified = registry.classify(files);
     const skippedCoverage = scan.skipped.map((file) => ({
@@ -778,6 +781,16 @@ async function indexProjectInternal(
     );
     db.close();
     throw error;
+  }
+}
+
+function timeIndexPhase<T>(options: IndexOptions, phase: 'scan', fn: () => T): T {
+  if (!options.perfObserver) return fn();
+  const start = performance.now();
+  try {
+    return fn();
+  } finally {
+    options.perfObserver(phase, performance.now() - start);
   }
 }
 

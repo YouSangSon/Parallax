@@ -18,7 +18,7 @@ Every command below is an `npm run` script defined in `package.json`.
 | `npm run build` | `tsc -p tsconfig.json`, compiles to `dist/` | Before publishing or smoke-testing the CLI |
 | `npm run bench` | Runs `bench/impact-bench.ts`; exits non-zero on accuracy regression | After engine/adapter changes |
 | `npm run bench:report` | Renders the latest bench JSON as Markdown, optionally comparing it with a baseline report | After `npm run bench`, or in CI summaries |
-| `npm run bench:perf` | Runs `bench/impact-perf.ts`; times full index, no-op incremental index, edited-file incremental index, analyze phases, and observed peak RSS on a synthetic repo (non-deterministic, not in `verify`) | When working on indexing/traversal performance |
+| `npm run bench:perf` | Runs `bench/impact-perf.ts`; times full index, no-op incremental index, edited-file incremental index, their scan phases, analyze phases, and observed peak RSS on a synthetic repo (non-deterministic, not in `verify`) | When working on indexing/traversal performance |
 | `npm run test:dogfood` | Indexes Parallax on its own source and asserts the internal graph survives | After engine changes (indexer/adapters/analyzer/store/graph) |
 | `npm run test:mcp` | Runs `tests/mcp.test.ts` (impact / context / memory / telemetry / path validation) | After MCP surface changes |
 | `npm run test:ui` | Runs `tests/ui.test.ts` (UI snapshot, server, JSON resource endpoints) | After UI changes |
@@ -68,7 +68,7 @@ Run `npm run bench` after any change that touches relation extraction, ranking, 
 
 ## The performance bench
 
-`bench/impact-perf.ts` (run via `npm run bench:perf`) measures full index, no-op incremental index, edited-file incremental index, and analyze cost on a **deterministic synthetic repo** (`bench/synthetic-repo.ts`) at increasing scales — a hub of modules where changing the leaf ripples to every importer, stressing the analyzer's reverse-dependency traversal. It is intentionally **separate from the accuracy bench and `npm run verify`**: timing and peak RSS are non-deterministic, so they must never reach the byte-identical `impact-bench-report.json`. Use it to capture a baseline or to check a suspected regression while working on the indexer or analyzer; in CI it can gate with a generous `--max-ms-per-kfile` ceiling over the worst index phase.
+`bench/impact-perf.ts` (run via `npm run bench:perf`) measures full index, no-op incremental index, edited-file incremental index, their scan phases, and analyze cost on a **deterministic synthetic repo** (`bench/synthetic-repo.ts`) at increasing scales — a hub of modules where changing the leaf ripples to every importer, stressing the analyzer's reverse-dependency traversal. It is intentionally **separate from the accuracy bench and `npm run verify`**: timing and peak RSS are non-deterministic, so they must never reach the byte-identical `impact-bench-report.json`. Use it to capture a baseline or to check a suspected regression while working on the indexer or analyzer; in CI it can gate with a generous `--max-ms-per-kfile` ceiling over the worst index phase.
 
 ```bash
 npm run bench:perf -- --scales 1000,10000        # custom scales
@@ -83,11 +83,13 @@ npm run bench:perf -- --scales 10000,50000
 
 Record the command, commit, Node version, OS / hardware class, and the full output table. Treat `--max-ms-per-kfile` as a local or CI smoke ceiling only after you have a project baseline; do not wire exact timing or RSS into `npm run verify`.
 
-The output table separates `full_index_ms`, `noop_incremental_ms`, `edit_incremental_ms`, `analyze_no_persist_ms`, `analyze_persist_ms`, `observed_peak_rss_mb`, and matching `/kfile` timing columns. Peak RSS is sampled at phase boundaries with Node's built-in RSS reading, so it is a practical trend signal, not an exact allocator trace. The synthetic generator and table formatter are guarded by `tests/synthetic-repo.test.ts` in the normal verify gate, even though the timing run is not.
+The output table separates `full_index_ms`, `full_scan_ms`, `noop_incremental_ms`, `noop_scan_ms`, `edit_incremental_ms`, `edit_scan_ms`, `analyze_no_persist_ms`, `analyze_persist_ms`, `observed_peak_rss_mb`, and matching `/kfile` timing columns for the total phases. Peak RSS is sampled at phase boundaries with Node's built-in RSS reading, so it is a practical trend signal, not an exact allocator trace. The synthetic generator and table formatter are guarded by `tests/synthetic-repo.test.ts` in the normal verify gate, even though the timing run is not.
 
 ### Current local baseline
 
 Captured on 2026-06-28 from commit `f8f6060` on macOS Darwin 24.6.0, Apple M1 Max, 10 CPU cores, 32 GiB RAM, Node `v24.14.0`, npm `11.9.0`.
+
+This historical table predates the scan phase columns; rerun the command on a current checkout when comparing S1 scan/read work.
 
 Command:
 

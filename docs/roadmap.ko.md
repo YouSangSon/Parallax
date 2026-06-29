@@ -114,7 +114,7 @@ MCP는 read-only로 안정화됐다. 다음은 agent 사용성을 깊게 보는 
   - 현재 co-change gate: bench에는 `src/alpha.ts`와 `src/beta.ts`가 반복해서 함께 바뀌는 작은 git-history fixture가 포함되며, CI summary가 partner와 affected-file delta를 추적할 수 있도록 `coChangeQuality`로 보고된다.
   - 현재 trace-promotion gate: bench가 runtime에서 관측된 `src/beta.ts -> src/alpha.ts` edge를 ingest하고 `tracePromotionQuality`로 보고하므로, CI summary가 promotion과 proven-impact delta를 추적할 수 있다.
 - [x] full index, no-op incremental index, edited-file incremental index, analyze phase를 분리해 보여주는 별도 scale/perf bench
-  - 현재 도구: `npm run bench:perf`가 synthetic-repo generator 위에서 이 단계들과 `observed_peak_rss_mb`를 측정하며, timing/RSS를 byte-for-byte CI 계약으로 만들지 않기 위해 `npm run verify` 밖에서 유지된다. 표준 large-repo baseline command는 `npm run bench:perf -- --scales 10000,50000`이며, `docs/verification.ko.md`의 현재 local baseline은 green 10k/50k claim 대신 1k/2k row와 10k timeout limit를 기록한다.
+  - 현재 도구: `npm run bench:perf`가 synthetic-repo generator 위에서 이 단계들, 각 scan timing, `observed_peak_rss_mb`를 측정하며, timing/RSS를 byte-for-byte CI 계약으로 만들지 않기 위해 `npm run verify` 밖에서 유지된다. 표준 large-repo baseline command는 `npm run bench:perf -- --scales 10000,50000`이며, `docs/verification.ko.md`의 현재 local baseline은 green 10k/50k claim 대신 1k/2k row와 10k timeout limit를 기록한다.
 - [x] embedding 모델 / LLM provider 교차 시 recall 품질 회귀 detection
   - 현재 gate: deterministic bench가 모델별 recall@1과 cross-model isolation을 확인하는 semantic model matrix를 포함한다. live provider 호출에 의존하지 않고 embedding 모델 namespace 회귀를 잡는 offline gate이며, LLM provider의 네트워크 품질 평가는 CI 밖에 두고 provider contract는 offline test가 계속 검증한다.
 - [x] CI에서 매 PR마다 bench delta를 자동 리포트

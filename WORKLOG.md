@@ -761,3 +761,39 @@
     `tracePromotionQuality`).
   - Process check: no Parallax dev server, UI server, test runner, Playwright,
     or bench process remained.
+- Refreshed W3 Nx/Turbo web/GitHub research on 2026-06-29.
+  - Context7 and official Nx docs confirm project metadata can live in
+    `project.json` or the `nx` property of `package.json`, and affected
+    workflows operate on the project graph plus Git changes.
+  - Context7 and official Turborepo docs confirm package membership comes from
+    package-manager workspace manifests, while `turbo.json` is task/caching
+    configuration and filter behavior.
+  - `gh issue list` still shows only issue #3 open.
+  - `gh pr list` still shows Dependabot PRs #23-#31.
+  - GitHub repo search still shows active local semantic-code-graph / MCP
+    projects, but no higher-priority pivot than Parallax's contract-aware
+    impact lane.
+- Shipped W3 parse-only Nx project config discovery.
+  - `src/workspace.ts` now reads `nx.json` as the guard for Nx config discovery.
+  - `workspace discover-packages` scans `project.json` directories and
+    `package.json` files with an `nx` project config, then syncs them as
+    package/project workspace members without executing Nx or Turbo.
+  - Package-manager workspace members keep precedence for duplicate directories.
+  - Turborepo did not receive a separate parser because package membership is
+    already covered through package-manager workspace manifests and `turbo.json`
+    is task metadata, not catalog membership.
+  - `tests/workspace.test.ts` covers CLI discovery of a `project.json` Nx app
+    and a `package.json` `nx` library.
+  - Updated README, CLI reference, roadmap, backlog, plan, improvement
+    opportunities, and decisions docs.
+- W3 Nx discovery verification:
+  - `npm run check`
+  - `node --import tsx --test tests/workspace.test.ts`
+  - `npm run docs:lint`
+  - `git diff --check`
+  - `npm run verify`
+  - Full verify result: lint, schema check, install smoke/build, 672 unit
+    tests, dogfood, bench, and `npm audit --audit-level=high` all passed.
+  - Bench result: `summary.passed=true`, score `0.9987`, and all quality lanes
+    passed (`crossRepoContracts`, `contractDiffQuality`, `coChangeQuality`,
+    `tracePromotionQuality`).

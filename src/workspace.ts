@@ -196,7 +196,7 @@ export function discoverWorkspacePackages(options: DiscoverWorkspacePackagesOpti
   }
 
   const workspaceDefinitions = readWorkspacePackageDefinitions(repoRoot);
-  const discovered = discoverWorkspacePackageMembers(repoRoot, workspaceDefinitions.patterns);
+  const discovered = discoverWorkspacePackageMembers(repoRoot, workspaceDefinitions);
   if (discovered.length > 0) {
     const baseDir = path.dirname(catalogPath);
     const existingByPath = new Map<string, WorkspaceCatalogRepo>();
@@ -521,6 +521,7 @@ function readWorkspaceRepos(db: ReturnType<typeof openDatabase>, workspaceId: nu
 type WorkspacePackageDefinitions = {
   sources: string[];
   patterns: string[];
+  includeNxProjects: boolean;
 };
 
 type DiscoveredWorkspacePackageMember = DiscoveredWorkspacePackage;
@@ -554,7 +555,14 @@ function readWorkspacePackageDefinitions(repoRoot: string): WorkspacePackageDefi
     }
   }
 
-  return { sources, patterns };
+  const nxJsonPath = path.join(repoRoot, 'nx.json');
+  const includeNxProjects = existsSync(nxJsonPath);
+  if (includeNxProjects) {
+    parseJsonObject(nxJsonPath, 'nx.json');
+    sources.push('nx.json');
+  }
+
+  return { sources, patterns, includeNxProjects };
 }
 
 function workspacePatternsFromPackageJson(raw: unknown): string[] {
@@ -575,6 +583,24 @@ function workspacePatternsFromPackageJson(raw: unknown): string[] {
 }
 
 function discoverWorkspacePackageMembers(
+  repoRoot: string,
+  definitions: WorkspacePackageDefinitions
+): DiscoveredWorkspacePackageMember[] {
+  const members = new Map<string, DiscoveredWorkspacePackageMember>();
+  for (const member of discoverPackageManifestMembers(repoRoot, definitions.patterns)) {
+    members.set(member.localPath, member);
+  }
+  if (definitions.includeNxProjects) {
+    for (const member of discoverNxProjectMembers(repoRoot)) {
+      if (!members.has(member.localPath)) {
+        members.set(member.localPath, member);
+      }
+    }
+  }
+  return [...members.values()].sort((left, right) => left.relativePath.localeCompare(right.relativePath));
+}
+
+function discoverPackageManifestMembers(
   repoRoot: string,
   patterns: readonly string[]
 ): DiscoveredWorkspacePackageMember[] {
@@ -605,6 +631,26 @@ function discoverWorkspacePackageMembers(
   return members;
 }
 
+function discoverNxProjectMembers(repoRoot: string): DiscoveredWorkspacePackageMember[] {
+  const candidates = scanNxProjectConfigDirs(repoRoot);
+  const members = candidates
+    .filter((candidate) => candidate.relativePath !== '.')
+    .map((candidate) => {
+      const manifest = parseJsonObject(candidate.manifestPath, candidate.relativeManifestPath);
+      const configuredName = typeof manifest.name === 'string' && manifest.name.trim() !== ''
+        ? manifest.name.trim()
+        : undefined;
+      return {
+        localPath: candidate.localPath,
+        relativePath: candidate.relativePath,
+        manifestPath: candidate.relativeManifestPath,
+        serviceName: configuredName ?? path.basename(candidate.localPath)
+      };
+    });
+  members.sort((left, right) => left.relativePath.localeCompare(right.relativePath));
+  return members;
+}
+
 type PackageManifestCandidate = {
   localPath: string;
   relativePath: string;
@@ -624,6 +670,54 @@ function scanPackageManifestDirs(repoRoot: string): PackageManifestCandidate[] {
         manifestPath,
         relativeManifestPath: relativePath === '.' ? 'package.json' : `${relativePath}/package.json`
       });
+    }
+
+    let entries: Dirent<string>[];
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
+      if (IGNORED_DISCOVERY_DIRS.has(entry.name)) continue;
+      visit(path.join(dir, entry.name));
+    }
+  };
+  visit(repoRoot);
+  return candidates.sort((left, right) => left.relativePath.localeCompare(right.relativePath));
+}
+
+function scanNxProjectConfigDirs(repoRoot: string): PackageManifestCandidate[] {
+  const candidates: PackageManifestCandidate[] = [];
+  const visit = (dir: string): void => {
+    const relativePath = toPortableRelativePath(repoRoot, dir);
+    const projectJsonPath = path.join(dir, 'project.json');
+    if (existsSync(projectJsonPath)) {
+      candidates.push({
+        localPath: realpathSync(dir),
+        relativePath,
+        manifestPath: projectJsonPath,
+        relativeManifestPath: relativePath === '.' ? 'project.json' : `${relativePath}/project.json`
+      });
+    } else {
+      const packageJsonPath = path.join(dir, 'package.json');
+      if (existsSync(packageJsonPath)) {
+        let packageJson: Record<string, unknown> | undefined;
+        try {
+          packageJson = parseJsonObject(packageJsonPath, relativePath === '.' ? 'package.json' : `${relativePath}/package.json`);
+        } catch {
+          packageJson = undefined;
+        }
+        if (packageJson !== undefined && isRecord(packageJson.nx)) {
+          candidates.push({
+            localPath: realpathSync(dir),
+            relativePath,
+            manifestPath: packageJsonPath,
+            relativeManifestPath: relativePath === '.' ? 'package.json' : `${relativePath}/package.json`
+          });
+        }
+      }
     }
 
     let entries: Dirent<string>[];

@@ -86,19 +86,19 @@ and analyzer traversal is N+1 per frontier node.
 ## 4. Workspace, contracts & cross-repo
 
 A cross-repo workspace catalog, provider↔consumer resolver, and OpenAPI/GraphQL/Protobuf/AsyncAPI
-breaking-change diff exist. W1/W2/W4/W6 are shipped; remaining work focuses on W5
-contract fidelity and W3 package modeling.
+breaking-change diff exist. W1/W2/W3/W4/W6 are shipped; remaining work focuses on W5
+contract fidelity.
 
 | # | Opportunity | Effort | Value |
 | :-- | :-- | :-- | :-- |
 | W1 | ✅ **shipped** — W1 shipped: primary `analyzeDiff` reports now include persisted workspace `BREAKS_COMPATIBILITY_WITH` consumers as `crossRepoImpacts`, affected external entities, relation-bearing evidence, graph edges, and UI cross-repo lane entries. | M | HIGH |
 | W2 | ✅ **shipped** — cross-repo link consistency now has a shared read model plus `parallax workspace verify`, flagging malformed provenance, stale workspace membership, and orphan `BREAKS_COMPATIBILITY_WITH` rows without duplicate inverse storage. | M | HIGH |
-| W3 | ✅ **npm/pnpm slices shipped; Nx/Turbo parse-only metadata remains** — explicit package-directory catalog members can share the nearest parent Parallax index, provider/consumer paths are scoped to the package, and persisted consumer/provider queries stay member-aware. `parallax workspace discover-packages` now parses `package.json` workspaces and `pnpm-workspace.yaml` package globs into package directory catalog members without installs or package-manager execution. Remaining: parse Nx/Turbo project metadata as hints once the member model is stable. | L | HIGH |
+| W3 | ✅ **shipped** — explicit package-directory catalog members can share the nearest parent Parallax index, provider/consumer paths are scoped to the package, and persisted consumer/provider queries stay member-aware. `parallax workspace discover-packages` now parses `package.json` workspaces, `pnpm-workspace.yaml` package globs, and Nx `project.json` / `package.json` `nx` project config into package/project directory catalog members without installs or package-manager/Nx/Turbo execution. Turborepo package membership remains covered through package-manager workspace manifests; `turbo.json` task config is not treated as a catalog source. | L | HIGH |
 | W4 | ✅ **shipped** — richer OpenAPI contract property signatures: response enum-value removal, response format changes, response nullable additions, request enum-value removal, request format additions/changes, and response optional-property removals are now captured via richer property signatures, compat schemaVersion 5 where needed, provenance on breaking changes, non-breaking optional-removal visibility, and `contractDiffQuality` bench cases. | M | MED-HIGH |
 | W5 | ✅ **JSON Schema first slice shipped; Avro follow-on remains** — `*.schema.json` and contract-located `schema.json` files now persist as `json-schema` contracts, reuse the OpenAPI object-schema signature for root object comparisons, declare a synthetic `SCHEMA #` endpoint, and classify required removal, optional removal, property type changes, and nullable additions. Avro remains a mechanical follow-on. | M (Avro remaining) | MED |
 | W6 | ✅ **shipped** — agents can query provider consumers/providers through read-only MCP tools and preview cross-repo resolution without mutating `cross_repo_links`; CLI persistence remains the explicit write workflow. | S | MED |
 
-**Sequencing remaining work:** W3 parse-only Nx/Turbo metadata → W5 Avro follow-on. W1/W2/W3 npm/pnpm/W4/W5 JSON Schema/W6 are already shipped.
+**Sequencing remaining work:** W5 Avro follow-on → residual S1 scan-cost work after a measured adapter-contract design. W1/W2/W3/W4/W5 JSON Schema/W6 are already shipped.
 
 ---
 
@@ -245,6 +245,50 @@ whole repo roots.
    several small/local code graph + MCP projects, but Parallax's differentiated
    lane is contract-aware impact, CI/SARIF/repo-map integration, and read-only
    agent workflows. W3 makes that lane work for a common repo topology.
+
+## Monorepo / workspace refresh (2026-06-29)
+
+The latest official-doc and GitHub pass closes the useful W3 catalog slice.
+Nx has parseable project config (`project.json` and `package.json` `nx`
+configuration) that can identify package/project member directories without
+running Nx. Turborepo package membership is still defined through the package
+manager workspace manifests; `turbo.json` describes task behavior, not an
+additional catalog membership source.
+
+### Sources checked
+
+- Nx project configuration:
+  <https://nx.dev/docs/reference/project-configuration>
+- Nx affected / project graph behavior:
+  <https://nx.dev/docs/features/ci-features/affected>
+- Turborepo repository structure / workspace packages:
+  <https://turborepo.dev/docs/crafting-your-repository/structuring-a-repository>
+- Turborepo run filtering:
+  <https://turborepo.dev/docs/reference/run>
+- Parallax open issue queue refreshed 2026-06-29:
+  <https://github.com/YouSangSon/Parallax/issues/3>
+- Parallax open PR queue refreshed 2026-06-29:
+  <https://github.com/YouSangSon/Parallax/pulls?q=is%3Apr+is%3Aopen+dependabot>
+- GitHub semantic-code-graph / MCP search examples refreshed 2026-06-29:
+  <https://github.com/VirtusLab/scg-cli>,
+  <https://github.com/LordCasser/atlas>,
+  <https://github.com/suatkocar/codegraph>,
+  <https://github.com/iamsaquib8/tessera>
+
+### What changed
+
+1. ✅ **W3 Nx project config discovery is covered.** `workspace
+   discover-packages` now reads `nx.json` and, when present, discovers
+   `project.json` directories plus `package.json` files with an `nx` project
+   config as package/project catalog members.
+2. ✅ **No Turbo-specific catalog parser is justified yet.** Turborepo package
+   membership comes from npm/pnpm/Yarn/Bun workspace manifests, while
+   `turbo.json` is task/caching/filter configuration. Parallax already covers
+   the relevant package membership path through package-manager manifests and
+   should not treat task config as workspace catalog state.
+3. **Next highest-value backlog returns to contract-kind fidelity.** With W3
+   member modeling/discovery covered, W5 Avro is the next focused follow-on
+   after the shipped JSON Schema slice.
 
 ## Larger-bet reassessment (2026-06-21)
 

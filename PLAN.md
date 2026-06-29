@@ -6,7 +6,16 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Active Loop
 
-- Next loop: evaluate W3 parse-only Nx/Turbo workspace metadata hints.
+- Next loop: evaluate W5 Avro contract-kind follow-on after the shipped JSON
+  Schema first slice.
+- Completed slice: W3 parse-only Nx project config discovery now extends
+  `parallax workspace discover-packages` to read `nx.json` and, when present,
+  discover Nx `project.json` directories plus `package.json` files with an
+  `nx` project config as workspace catalog members. It still does not execute
+  Nx, Turbo, package managers, installs, daemons, caches, or network calls.
+  Turborepo package membership remains covered through package-manager
+  workspace manifests, while `turbo.json` task config is not treated as a
+  catalog source.
 - Completed slice: W3 deterministic npm/pnpm workspace package discovery now
   adds `parallax workspace discover-packages`, which reads local
   `package.json` `workspaces` / `workspaces.packages` and
@@ -152,7 +161,6 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Next
 
-1. Consider parse-only Nx/Turbo metadata after the npm/pnpm package-member
-   model is stable.
-2. Keep W5 Avro and residual S1 scan-cost work behind W3 unless new evidence
-   displaces the sequence.
+1. Evaluate W5 Avro contract-kind follow-on after the JSON Schema first slice.
+2. Keep residual S1 scan-cost work behind W5 unless new evidence displaces the
+   sequence.

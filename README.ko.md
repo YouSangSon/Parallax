@@ -169,7 +169,7 @@ UI 다음에 MCP와 CI guardrail까지 이어지는 튜토리얼은 [`docs/getti
 
 | 기능 | 설명 |
 | :--- | :--- |
-| **Workspace catalog** | `.parallax/workspace.json`에 사용자가 허용한 local repo, 명시적 package directory, 또는 발견된 npm/pnpm workspace package만 등록. clone/network 없음 |
+| **Workspace catalog** | `.parallax/workspace.json`에 사용자가 허용한 local repo, 명시적 package directory, 발견된 npm/pnpm workspace package, 또는 Nx project config만 등록. clone/network 없음 |
 | **Cross-repo resolver** | 등록된 repo 사이의 provider endpoint ↔ consumer file link를 저장 |
 | **Contract diff** | OpenAPI, GraphQL, Protobuf, AsyncAPI surface diff를 `breaking` / `non-breaking` / `unknown`으로 분류하고, OpenAPI response optional property removal, response nullable addition, response format/enum change, request format addition/change, request enum-value removal도 감지 |
 | **Consumer impact** | breaking removed endpoint/operation, required field removal, type/nullable/format/enum change, required request field 추가, request format addition/change, request enum-value removal 등을 known consumer와 연결 |

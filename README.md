@@ -169,7 +169,7 @@ For a worked tutorial that continues from the UI into MCP and CI guardrails, see
 
 | Feature | Description |
 | :--- | :--- |
-| **Workspace catalog** | Registers only the local repos, explicit package directories, or discovered npm/pnpm workspace packages a user has allowed in `.parallax/workspace.json`. No clone/network |
+| **Workspace catalog** | Registers only the local repos, explicit package directories, discovered npm/pnpm workspace packages, or Nx project configs a user has allowed in `.parallax/workspace.json`. No clone/network |
 | **Cross-repo resolver** | Stores provider endpoint ↔ consumer file links between registered repos |
 | **Contract diff** | Classifies OpenAPI, GraphQL, Protobuf, and AsyncAPI surface diffs as `breaking` / `non-breaking` / `unknown`, including OpenAPI response optional property removals, response nullable additions, response format/enum changes, request format additions/changes, and request enum-value removals |
 | **Consumer impact** | Links breaking removed endpoints/operations, required field removals, type/nullable/format/enum changes, added required request fields, request format additions/changes, and request enum-value removals to known consumers |

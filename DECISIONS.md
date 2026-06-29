@@ -831,3 +831,44 @@ Why:
   refine one monorepo while keeping explicitly registered sibling repos.
 - Nx/Turbo remain follow-on parse-only metadata sources; their task execution,
   cache behavior, and daemons are outside Parallax's local-first catalog sync.
+
+## 2026-06-29: Discover Nx Project Configs Without Running Nx
+
+Decision: extend `parallax workspace discover-packages` so an Nx workspace can
+add package/project catalog members from local config only. When `nx.json` is
+present, discovery scans for `project.json` directories and `package.json`
+files with an `nx` project config, then writes those directories as workspace
+members. Package-manager workspace matches still take precedence for duplicate
+directories. Turborepo does not get a separate catalog parser in this slice
+because its package membership is defined by package-manager workspaces, while
+`turbo.json` describes tasks/caching/filter behavior rather than member
+directories.
+
+Sources:
+- Nx project configuration:
+  <https://nx.dev/docs/reference/project-configuration>
+- Nx affected / project graph behavior:
+  <https://nx.dev/docs/features/ci-features/affected>
+- Turborepo repository structure / workspace packages:
+  <https://turborepo.dev/docs/crafting-your-repository/structuring-a-repository>
+- Turborepo run filtering:
+  <https://turborepo.dev/docs/reference/run>
+- Parallax open issue queue refreshed via `gh issue list` on 2026-06-29: #3 is
+  still the only open issue.
+- Parallax open PR queue refreshed via `gh pr list` on 2026-06-29: #23-#31
+  remain Dependabot PRs.
+- GitHub repo search refreshed 2026-06-29 still shows active local semantic
+  code graph / MCP projects such as `VirtusLab/scg-cli`, `LordCasser/atlas`,
+  `suatkocar/codegraph`, and `iamsaquib8/tessera`, but no higher-priority pivot
+  than Parallax's contract-aware impact lane.
+
+Why:
+- Nx `project.json` and `package.json` `nx` config are local, deterministic
+  project-boundary hints, so they fit Parallax's local-first workspace catalog.
+- Running `nx`, reading Nx daemons/caches, or deriving task graphs would cross
+  the current catalog-sync boundary and add nondeterministic surface area.
+- Turborepo already relies on package-manager workspace membership for package
+  discovery, which the npm/pnpm slice covers; parsing `turbo.json` would add
+  task metadata but not safer catalog membership.
+- With W3 member modeling/discovery covered, the next highest-value backlog
+  item returns to W5 Avro contract-kind fidelity.

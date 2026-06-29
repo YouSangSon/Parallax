@@ -169,7 +169,7 @@ importer 会用 SCIP 的 definition/reference edge 增强最新完成的 Paralla
 
 | 功能 | 说明 |
 | :--- | :--- |
-| **工作区目录** | 仅在 `.parallax/workspace.json` 中登记用户允许的本地仓库、显式 package 目录，或已发现的 npm/pnpm workspace package。无 clone/网络 |
+| **工作区目录** | 仅在 `.parallax/workspace.json` 中登记用户允许的本地仓库、显式 package 目录、已发现的 npm/pnpm workspace package，或 Nx project config。无 clone/网络 |
 | **跨仓库解析器** | 在已登记的仓库之间存储 provider endpoint ↔ consumer 文件链接 |
 | **契约 diff** | 将 OpenAPI、GraphQL、Protobuf、AsyncAPI 的表层 diff 归类为 `breaking` / `non-breaking` / `unknown`，并检测 OpenAPI response optional property removal、response nullable addition、response format/enum change、request format addition/change 与 request enum-value removal |
 | **消费方影响** | 将 breaking endpoint/operation 删除、required 字段删除、类型/nullable/format/enum 变更、新增必填请求字段、request format addition/change、request enum-value removal 等与已知 consumer 关联 |

@@ -36,8 +36,8 @@ Cross-repo impact is at a v0 state. It works only among the local repos the user
 
 - [ ] Stabilize OpenAPI / GraphQL / Protobuf / AsyncAPI contract diff down to the *nested schema* level
 - [ ] Take the generated-client / event topology resolver beyond heuristics
-- [x] Have the workspace catalog recognize npm/pnpm sub-packages inside a monorepo as first-class package members
-- [ ] Add parse-only Nx/Turbo project metadata once the package-member model is stable
+- [x] Have the workspace catalog recognize npm/pnpm sub-packages and Nx project configs inside a monorepo as first-class package/project members
+- [ ] Revisit additional Nx inferred-project or Turborepo task metadata only if a parseable source adds catalog value beyond package-manager workspace manifests
 - [x] Surface persisted cross-repo breaking contract links in primary analyze reports, graph exports, MCP payloads, and the UI workbench
 - [x] Keep cross-repo links queryable in both directions and verify malformed, stale, or orphan workspace rows
 

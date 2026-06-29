@@ -2032,6 +2032,7 @@ function contractKindForPath(relativePath: string): string | undefined {
   if (withoutExtension.includes('swagger')) return 'openapi';
   if (withoutExtension.includes('openapi')) return 'openapi';
   if (isJsonSchemaContractPath(relativePath)) return 'json-schema';
+  if (basename.toLowerCase().endsWith('.avsc')) return 'avro';
   return undefined;
 }
 

@@ -84,16 +84,17 @@ test('ImpactBench runner writes deterministic report shape', async () => {
     assert.equal(report.contractDiffQuality.fixtureId, 'contract-diff-quality-v0');
     assert.equal(report.contractDiffQuality.summary.passed, true);
     assert.equal(report.contractDiffQuality.summary.score, 1);
-    assert.equal(report.contractDiffQuality.summary.expectedCases, 10);
-    assert.equal(report.contractDiffQuality.summary.matchedCases, 10);
-    assert.equal(report.contractDiffQuality.summary.expectedChanges, 10);
-    assert.equal(report.contractDiffQuality.summary.matchedChanges, 10);
+    assert.equal(report.contractDiffQuality.summary.expectedCases, 11);
+    assert.equal(report.contractDiffQuality.summary.matchedCases, 11);
+    assert.equal(report.contractDiffQuality.summary.expectedChanges, 11);
+    assert.equal(report.contractDiffQuality.summary.matchedChanges, 11);
     assert.deepEqual(report.contractDiffQuality.missingChanges, []);
     assert.deepEqual(
       report.contractDiffQuality.cases.map((item) => item.id),
       [
         'removed-response-required-property',
         'json-schema-required-property-removal',
+        'avro-required-field-removal',
         'removed-response-optional-property',
         'added-request-required-property',
         'removed-request-enum-value',

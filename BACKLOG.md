@@ -4,11 +4,11 @@ Canonical detailed backlog: `IMPROVEMENT_OPPORTUNITIES.md`.
 
 ## Now
 
-1. W5 Avro contract-kind follow-on after the shipped JSON Schema first slice.
+1. S1 residual dirty/non-git scan-cost reduction after a measured adapter-contract design.
 
 ## Later
 
-1. S1 residual dirty/non-git scan-cost reduction after a measured adapter-contract design.
+1. JSON Schema / Avro deeper contract semantics: JSON Schema enum/format policy, Avro nested/named type resolution, aliases, promotions, and schema-registry integration.
 
 ## Done
 
@@ -34,3 +34,4 @@ Canonical detailed backlog: `IMPROVEMENT_OPPORTUNITIES.md`.
 20. W4 OpenAPI request format-addition/change compatibility detection.
 21. W4 OpenAPI response optional-property removal contract-diff visibility.
 22. W5 JSON Schema contract-kind first slice.
+23. W5 Avro contract-kind first slice.

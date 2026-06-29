@@ -872,3 +872,47 @@ Why:
   task metadata but not safer catalog membership.
 - With W3 member modeling/discovery covered, the next highest-value backlog
   item returns to W5 Avro contract-kind fidelity.
+
+## 2026-06-29: Add Avro Contract Kind As A Top-Level Record First Slice
+
+Decision: add an `avro` contract kind for local `.avsc` files, but keep the
+first slice dependency-free and deterministic. Parse JSON Avro schemas with
+`JSON.parse`, require a top-level `record`, persist a root record compatibility
+signature, and compare that record as produced data with the same object-schema
+diff policy used by the JSON Schema first slice. Do not add a schema registry
+client, a full Avro resolver, or a third-party compatibility dependency yet.
+
+Sources:
+- Apache Avro 1.12.0 specification:
+  <https://avro.apache.org/docs/1.12.0/specification/>
+- Apache Avro specification source:
+  <https://github.com/apache/avro/blob/main/doc/content/en/docs/1.12.0/Specification/_index.md>
+- GitHub repo search refreshed 2026-06-29 found Avro compatibility libraries
+  such as `ExpediaGroup/avro-compatibility` and
+  `petermyers/avro-compatibility`, but no clear lightweight dependency that
+  displaces Parallax's local-first first slice.
+- Parallax open issue queue refreshed via `gh issue list` on 2026-06-29: #3 is
+  still the only open issue.
+- Parallax open PR queue refreshed via `gh pr list` on 2026-06-29: #23-#31
+  remain Dependabot PRs.
+
+Why:
+- Avro schema files are JSON documents, and the official schema model defines
+  records with named fields, primitive types, complex/named types, unions, and
+  default values. That gives Parallax enough deterministic local structure to
+  model the top-level produced record without a registry.
+- For produced data, removing a previously required Avro field is breaking for
+  consumers. A field with an Avro default can be treated as optional in this
+  first slice, so removing it is surfaced as non-breaking visibility rather
+  than a breaking consumer link.
+- Type changes and newly nullable unions are classified as breaking, matching
+  the existing produced-object stance used for OpenAPI response bodies and the
+  JSON Schema first slice.
+- Full Avro compatibility requires schema resolution across named types,
+  aliases, defaults, enum symbol rules, type promotions, nested records, and
+  possibly registry compatibility modes. Those rules are valuable, but they are
+  a separate compatibility-policy slice rather than a prerequisite for making
+  `.avsc` files visible to Parallax users.
+- The deterministic `contractDiffQuality` bench now includes an Avro
+  required-field removal case, raising the gate from 10 to 11 contract-diff
+  cases.

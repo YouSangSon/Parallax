@@ -1,4 +1,5 @@
 import type { AsyncApiCompatibilitySignature } from '../asyncapi_compat.js';
+import type { AvroCompatibilitySignature } from '../avro_compat.js';
 import type { GraphqlCompatibilitySignature } from '../graphql_compat.js';
 import type { JsonSchemaCompatibilitySignature } from '../json_schema_compat.js';
 import type { OpenApiCompatibilitySignature } from '../openapi_compat.js';
@@ -60,5 +61,6 @@ export type CurrentContractParse = {
   graphqlCompatibility?: GraphqlCompatibilitySignature;
   asyncApiCompatibility?: AsyncApiCompatibilitySignature;
   jsonSchemaCompatibility?: JsonSchemaCompatibilitySignature;
+  avroCompatibility?: AvroCompatibilitySignature;
   warning?: string;
 };

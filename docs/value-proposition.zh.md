@@ -127,7 +127,7 @@ Parallax 用一个 SQLite 文件 + sqlite-vec 扩展就表达出同样的本质�
 - 通过 semantic adapter 索引 TypeScript/JavaScript、Markdown 工作产物、config/infra 文件、package manifest，以及宽覆盖的 multi-language source file。
 - 生成带 evidence、confidence label、adapter insight、coverage warning 和 verification action 的 bounded “changed files → affected files” report。
 - 为用户登记的 local repository 跟踪 workspace catalog，并解析 local cross-repo contract link。
-- 分类 OpenAPI、GraphQL、Protobuf 和 AsyncAPI contract diff，并在已知 link 时报告受影响的 local consumer。
+- 分类 OpenAPI、GraphQL、Protobuf、AsyncAPI、JSON Schema 和 Avro contract diff，并在已知 link 时报告受影响的 local consumer。
 - 将 AI 决策与观察保存为 content-addressable fact，并提供 time travel、branch fork/merge、explicit supersession、semantic recall、profile、trace、reflection 和 branch GC。
 - 在 storage、embedding 和 LLM reflection 前对 secret-like 字符串做 redaction。
 - 通过 CLI、MCP stdio 和 local UI workbench 暴露同一个本地数据库。

@@ -453,6 +453,19 @@ test('indexProject persists OpenAPI contracts and analyzeDiff reaches implementi
     }, null, 2)}\n`
   );
   await writeFile(
+    path.join(repoRoot, 'contracts/user.avsc'),
+    `${JSON.stringify({
+      type: 'record',
+      name: 'UserEvent',
+      namespace: 'example.events',
+      fields: [
+        { name: 'id', type: 'string' },
+        { name: 'name', type: 'string' },
+        { name: 'status', type: ['null', 'string'], default: null }
+      ]
+    }, null, 2)}\n`
+  );
+  await writeFile(
     path.join(repoRoot, 'src/main/java/com/example/UserController.java'),
     [
       'package com.example;',
@@ -663,6 +676,77 @@ test('indexProject persists OpenAPI contracts and analyzeDiff reaches implementi
       {
         id: 'endpoint:json-schema:SCHEMA #',
         display_name: 'SCHEMA #'
+      }
+    ]);
+
+    const avroContract = db
+      .prepare(
+        `SELECT c.kind, c.service_name, v.schema_version, v.compatibility_json
+         FROM contracts c
+         INNER JOIN contract_versions v ON v.contract_id = c.id
+         WHERE c.id = ?`
+      )
+      .get('file:contracts/user.avsc') as
+      | {
+          kind: string;
+          service_name: string | null;
+          schema_version: string | null;
+          compatibility_json: string;
+        }
+      | undefined;
+    assert.ok(avroContract, 'expected Avro contract baseline row');
+    assert.equal(avroContract.kind, 'avro');
+    assert.equal(avroContract.service_name, null);
+    assert.equal(avroContract.schema_version, null);
+    const avroCompatibility = JSON.parse(avroContract.compatibility_json) as {
+      schemaVersion?: number;
+      analyzer?: string;
+      contractKind?: string;
+      schemas?: Array<{
+        id?: string;
+        path: string;
+        body: {
+          required?: string[];
+          properties?: Record<string, { type?: string }>;
+        };
+      }>;
+    };
+    assert.equal(avroCompatibility.schemaVersion, 1);
+    assert.equal(avroCompatibility.analyzer, 'avro-compat-v0');
+    assert.equal(avroCompatibility.contractKind, 'avro');
+    assert.deepEqual(avroCompatibility.schemas, [
+      {
+        id: 'example.events.UserEvent',
+        path: '#',
+        body: {
+          required: ['id', 'name'],
+          properties: {
+            id: { type: 'string' },
+            name: { type: 'string' },
+            status: { type: 'null|string' }
+          }
+        }
+      }
+    ]);
+
+    const avroEndpoints = db
+      .prepare(
+        `SELECT e.id, e.display_name
+         FROM relations r
+         INNER JOIN entities e ON e.id = r.target_entity_id
+         WHERE r.index_run_id = ?
+           AND r.kind = ?
+           AND r.source_entity_id = ?
+           AND e.kind = ?`
+      )
+      .all(index.indexRunId, 'DECLARES', 'file:contracts/user.avsc', 'endpoint') as Array<{
+      id: string;
+      display_name: string;
+    }>;
+    assert.deepEqual(avroEndpoints.map((row) => ({ id: row.id, display_name: row.display_name })), [
+      {
+        id: 'endpoint:avro:AVRO #',
+        display_name: 'AVRO #'
       }
     ]);
 

@@ -83,23 +83,33 @@ export function parseCurrentJsonSchemaContract(content: string): CurrentContract
   };
 }
 
-function classifyProducedSchemaChanges(
+export function classifyProducedSchemaChanges(
   previousBody: OpenApiObjectSchemaSignature,
   currentBody: OpenApiObjectSchemaSignature,
-  schemaPath: string
+  schemaPath: string,
+  context: ProducedSchemaDiffContext = {
+    contractLabel: 'JSON Schema',
+    syntheticMethod: JSON_SCHEMA_SYNTHETIC_METHOD
+  }
 ): ContractDiffChange[] {
   return [
-    ...classifyRequiredPropertyRemovals(previousBody, currentBody, schemaPath),
-    ...classifyOptionalPropertyRemovals(previousBody, currentBody, schemaPath),
-    ...classifyPropertyTypeChanges(previousBody, currentBody, schemaPath),
-    ...classifyNullableAdditions(previousBody, currentBody, schemaPath)
+    ...classifyRequiredPropertyRemovals(previousBody, currentBody, schemaPath, context),
+    ...classifyOptionalPropertyRemovals(previousBody, currentBody, schemaPath, context),
+    ...classifyPropertyTypeChanges(previousBody, currentBody, schemaPath, context),
+    ...classifyNullableAdditions(previousBody, currentBody, schemaPath, context)
   ];
 }
+
+type ProducedSchemaDiffContext = {
+  contractLabel: string;
+  syntheticMethod: string;
+};
 
 function classifyRequiredPropertyRemovals(
   previousBody: OpenApiObjectSchemaSignature,
   currentBody: OpenApiObjectSchemaSignature,
-  schemaPath: string
+  schemaPath: string,
+  context: ProducedSchemaDiffContext
 ): ContractDiffChange[] {
   const currentRequired = new Set(currentBody.required);
   return previousBody.required.flatMap((propertyName): ContractDiffChange[] =>
@@ -108,8 +118,8 @@ function classifyRequiredPropertyRemovals(
       : [{
           kind: 'removed_response_required_property',
           classification: 'breaking',
-          reason: 'JSON Schema required property removed from current contract',
-          httpMethod: JSON_SCHEMA_SYNTHETIC_METHOD,
+          reason: `${context.contractLabel} required property removed from current contract`,
+          httpMethod: context.syntheticMethod,
           routePath: schemaPath,
           statusCode: 'schema',
           propertyName,
@@ -121,7 +131,8 @@ function classifyRequiredPropertyRemovals(
 function classifyOptionalPropertyRemovals(
   previousBody: OpenApiObjectSchemaSignature,
   currentBody: OpenApiObjectSchemaSignature,
-  schemaPath: string
+  schemaPath: string,
+  context: ProducedSchemaDiffContext
 ): ContractDiffChange[] {
   const previousRequired = new Set(previousBody.required);
   const currentProperties = new Set(Object.keys(currentBody.properties));
@@ -131,8 +142,8 @@ function classifyOptionalPropertyRemovals(
       : [{
           kind: 'removed_response_optional_property',
           classification: 'non-breaking',
-          reason: 'JSON Schema optional property removed from current contract',
-          httpMethod: JSON_SCHEMA_SYNTHETIC_METHOD,
+          reason: `${context.contractLabel} optional property removed from current contract`,
+          httpMethod: context.syntheticMethod,
           routePath: schemaPath,
           statusCode: 'schema',
           propertyName,
@@ -144,7 +155,8 @@ function classifyOptionalPropertyRemovals(
 function classifyPropertyTypeChanges(
   previousBody: OpenApiObjectSchemaSignature,
   currentBody: OpenApiObjectSchemaSignature,
-  schemaPath: string
+  schemaPath: string,
+  context: ProducedSchemaDiffContext
 ): ContractDiffChange[] {
   return Object.entries(previousBody.properties).flatMap(([propertyName, previousProperty]): ContractDiffChange[] => {
     const currentProperty = currentBody.properties[propertyName];
@@ -153,8 +165,8 @@ function classifyPropertyTypeChanges(
     return [{
       kind: 'changed_response_property_type',
       classification: 'breaking',
-      reason: 'JSON Schema property type changed in current contract',
-      httpMethod: JSON_SCHEMA_SYNTHETIC_METHOD,
+      reason: `${context.contractLabel} property type changed in current contract`,
+      httpMethod: context.syntheticMethod,
       routePath: schemaPath,
       statusCode: 'schema',
       propertyName,
@@ -168,7 +180,8 @@ function classifyPropertyTypeChanges(
 function classifyNullableAdditions(
   previousBody: OpenApiObjectSchemaSignature,
   currentBody: OpenApiObjectSchemaSignature,
-  schemaPath: string
+  schemaPath: string,
+  context: ProducedSchemaDiffContext
 ): ContractDiffChange[] {
   return Object.entries(previousBody.properties).flatMap(([propertyName, previousProperty]): ContractDiffChange[] => {
     const currentProperty = currentBody.properties[propertyName];
@@ -178,8 +191,8 @@ function classifyNullableAdditions(
     return [{
       kind: 'added_response_property_nullable',
       classification: 'breaking',
-      reason: 'JSON Schema property now allows null in current contract',
-      httpMethod: JSON_SCHEMA_SYNTHETIC_METHOD,
+      reason: `${context.contractLabel} property now allows null in current contract`,
+      httpMethod: context.syntheticMethod,
       routePath: schemaPath,
       statusCode: 'schema',
       propertyName,

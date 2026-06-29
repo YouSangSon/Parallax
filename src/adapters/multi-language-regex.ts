@@ -6,6 +6,7 @@ import {
   extractAsyncApiYamlCompatibility,
   type AsyncApiOperationSignature
 } from '../asyncapi_compat.js';
+import { extractAvroCompatibility } from '../avro_compat.js';
 import { markdownEntityKindForPath } from '../artifacts.js';
 import { isJsonSchemaContractPath } from '../entity_classification.js';
 import { extractGraphqlCompatibility, stripGraphqlComments } from '../graphql_compat.js';
@@ -25,7 +26,7 @@ import type {
 } from './types.js';
 
 export const MULTI_LANG_REGEX_ADAPTER_ID = 'multi-language-regex-mvp';
-export const MULTI_LANG_REGEX_ADAPTER_VERSION = '37';
+export const MULTI_LANG_REGEX_ADAPTER_VERSION = '38';
 export const TS_JS_SEMANTIC_ADAPTER_ID = 'typescript-javascript-semantic-v0';
 export const JVM_SPRING_SEMANTIC_ADAPTER_ID = 'jvm-spring-semantic-v0';
 export const PYTHON_SEMANTIC_ADAPTER_ID = 'python-semantic-v0';
@@ -579,6 +580,8 @@ async function* extractContractEndpointEvents(
           ? extractAsyncApiEndpoints(file)
           : contractKind === 'json-schema'
             ? extractJsonSchemaEndpoints(file)
+            : contractKind === 'avro'
+              ? extractAvroEndpoints(file)
             : extractOpenApiEndpoints(file);
 
   for (const endpoint of endpoints) {
@@ -643,6 +646,9 @@ function contractMetadataForFile(file: ScannedFile): Readonly<Record<string, unk
   if (file.language === 'json' && contractKindForPath(file.relativePath) === 'json-schema') {
     return jsonSchemaJsonMetadata(file.content);
   }
+  if (file.language === 'json' && contractKindForPath(file.relativePath) === 'avro') {
+    return avroJsonMetadata(file.content);
+  }
   if (file.language === 'json') return openApiJsonMetadata(file.content, contractKindForPath(file.relativePath));
   return openApiYamlMetadata(file.content, contractKindForPath(file.relativePath));
 }
@@ -652,6 +658,7 @@ function contractKindForPath(relativePath: string): string {
   const withoutExtension = basename.replace(/\.[^.]+$/, '').toLowerCase();
   if (withoutExtension.includes('asyncapi')) return 'asyncapi';
   if (isJsonSchemaContractPath(relativePath)) return 'json-schema';
+  if (basename.toLowerCase().endsWith('.avsc')) return 'avro';
   return 'openapi';
 }
 
@@ -664,6 +671,13 @@ function jsonSchemaJsonMetadata(content: string): Readonly<Record<string, unknow
     // Keep contract kind metadata even when the current JSON is invalid.
   }
   const compatibility = extractJsonSchemaCompatibility(content);
+  if (compatibility !== undefined) metadata.compatibility = compatibility;
+  return metadata;
+}
+
+function avroJsonMetadata(content: string): Readonly<Record<string, unknown>> {
+  const metadata: Record<string, unknown> = { contractKind: 'avro' };
+  const compatibility = extractAvroCompatibility(content);
   if (compatibility !== undefined) metadata.compatibility = compatibility;
   return metadata;
 }
@@ -798,6 +812,21 @@ function extractJsonSchemaEndpoints(file: ScannedFile): ContractEndpoint[] {
     languageId: 'json-schema',
     metadata: {
       contractKind: 'json-schema',
+      path: schema.path,
+      ...(schema.id !== undefined ? { schemaId: schema.id } : {})
+    },
+    evidence: evidenceLineAt(file.content, 0)
+  }));
+}
+
+function extractAvroEndpoints(file: ScannedFile): ContractEndpoint[] {
+  const compatibility = extractAvroCompatibility(file.content);
+  if (compatibility === undefined) return [];
+  return compatibility.schemas.map((schema) => ({
+    displayName: `AVRO ${schema.path}`,
+    languageId: 'avro',
+    metadata: {
+      contractKind: 'avro',
       path: schema.path,
       ...(schema.id !== undefined ? { schemaId: schema.id } : {})
     },
@@ -5814,6 +5843,7 @@ function isContractLikeFile(relativePath: string, languageId: string): boolean {
     withoutExtension.includes('openapi') ||
     withoutExtension.includes('swagger') ||
     withoutExtension.includes('asyncapi') ||
+    basename.toLowerCase().endsWith('.avsc') ||
     isJsonSchemaContractPath(relativePath)
   );
 }

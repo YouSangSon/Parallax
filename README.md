@@ -171,7 +171,7 @@ For a worked tutorial that continues from the UI into MCP and CI guardrails, see
 | :--- | :--- |
 | **Workspace catalog** | Registers only the local repos, explicit package directories, discovered npm/pnpm workspace packages, or Nx project configs a user has allowed in `.parallax/workspace.json`. No clone/network |
 | **Cross-repo resolver** | Stores provider endpoint ↔ consumer file links between registered repos |
-| **Contract diff** | Classifies OpenAPI, GraphQL, Protobuf, and AsyncAPI surface diffs as `breaking` / `non-breaking` / `unknown`, including OpenAPI response optional property removals, response nullable additions, response format/enum changes, request format additions/changes, and request enum-value removals |
+| **Contract diff** | Classifies OpenAPI, GraphQL, Protobuf, AsyncAPI, JSON Schema, and Avro surface diffs as `breaking` / `non-breaking` / `unknown`, including OpenAPI response optional property removals, response nullable additions, response format/enum changes, request format additions/changes, request enum-value removals, JSON Schema root-object changes, and Avro top-level record field changes |
 | **Consumer impact** | Links breaking removed endpoints/operations, required field removals, type/nullable/format/enum changes, added required request fields, request format additions/changes, and request enum-value removals to known consumers |
 | **Event topology hint** | Provides AsyncAPI producer/consumer direction and breaking provenance as a compact payload |
 
@@ -231,7 +231,7 @@ parallax mcp serve
 | `parallax_analyze_diff` | Takes changed files and returns an impact report |
 | `parallax_context_for_change` | Returns a budget-fit context pack for a change |
 | `parallax_search_context` | Searches the latest index by keyword/path/symbol/relation/evidence |
-| `parallax_contract_diff` | Compares an OpenAPI contract against the indexed workspace baseline |
+| `parallax_contract_diff` | Compares a supported contract against the indexed workspace baseline |
 | `parallax_remember` / `parallax_recall` | Write/read agent memory facts |
 | `parallax_profile` / `parallax_trace` | Query an entity profile and its reasoning chain |
 
@@ -308,7 +308,7 @@ The detailed backlog is tracked against [`docs/roadmap.md`](docs/roadmap.md).
 | Area | State |
 | :--- | :--- |
 | **Full semantic analysis** | Not type-aware analysis for every language; check each adapter's confidence and known-gap |
-| **Contract depth** | Full generated-client usage graphs at GraphQL/Protobuf/AsyncAPI parser/LSP level are future work |
+| **Contract depth** | Full generated-client usage graphs at GraphQL/Protobuf/AsyncAPI parser/LSP level and full Avro named-type/schema-registry resolution are future work |
 | **Package resolution** | npm `package-lock.json` transitive dependencies are indexed; other lockfile ecosystems, semver impact, and execution-based resolvers are future work |
 | **Graph DB** | Out of the default product scope; can be extended as an optional projection from SQLite if needed |
 | **External writes** | Obsidian/GitHub/Jira write sync is not yet exposed on the MCP surface |

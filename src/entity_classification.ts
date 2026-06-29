@@ -32,6 +32,7 @@ const languageByExtension = new Map<string, string>([
   ['.yaml', 'yaml'],
   ['.yml', 'yaml'],
   ['.json', 'json'],
+  ['.avsc', 'json'],
   ['.toml', 'toml'],
   ['.properties', 'properties'],
   ['.tf', 'terraform'],
@@ -105,6 +106,7 @@ export function isObviousContractPath(relativePath: string): boolean {
     withoutExtension.includes('openapi') ||
     withoutExtension.includes('swagger') ||
     withoutExtension.includes('asyncapi') ||
+    basename.toLowerCase().endsWith('.avsc') ||
     isJsonSchemaContractPath(relativePath)
   );
 }

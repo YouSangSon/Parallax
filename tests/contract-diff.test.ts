@@ -671,6 +671,38 @@ async function writeJsonSchemaContract(
   );
 }
 
+async function writeAvroContract(
+  repoRoot: string,
+  options: {
+    includeName?: boolean;
+    nameType?: unknown;
+    nameDefault?: unknown;
+    includeStatus?: boolean;
+  } = {}
+): Promise<void> {
+  await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
+  const fields: Array<Record<string, unknown>> = [
+    { name: 'id', type: 'string' }
+  ];
+  if (options.includeName !== false) {
+    const nameField: Record<string, unknown> = { name: 'name', type: options.nameType ?? 'string' };
+    if (Object.prototype.hasOwnProperty.call(options, 'nameDefault')) nameField.default = options.nameDefault;
+    fields.push(nameField);
+  }
+  if (options.includeStatus !== false) {
+    fields.push({ name: 'status', type: ['null', 'string'], default: null });
+  }
+  await writeFile(
+    path.join(repoRoot, 'contracts/user.avsc'),
+    `${JSON.stringify({
+      type: 'record',
+      name: 'UserEvent',
+      namespace: 'example.events',
+      fields
+    }, null, 2)}\n`
+  );
+}
+
 async function writeOpenApiJsonChainedRefContract(repoRoot: string, userIdType: 'string' | 'integer'): Promise<void> {
   await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
   await writeFile(
@@ -1723,6 +1755,26 @@ function downgradeJsonSchemaCompatibilityBaseline(repoRoot: string, schemaVersio
   }
 }
 
+function downgradeAvroCompatibilityBaseline(repoRoot: string, schemaVersion: number): void {
+  const db = new DatabaseSync(databasePath(repoRoot));
+  try {
+    const row = db
+      .prepare(
+        `SELECT id, compatibility_json
+         FROM contract_versions
+         WHERE contract_id = ?`
+      )
+      .get('file:contracts/user.avsc') as { id: string; compatibility_json: string } | undefined;
+    assert.ok(row, 'expected Avro contract version row');
+    const compatibility = JSON.parse(row.compatibility_json) as { schemaVersion?: number };
+    compatibility.schemaVersion = schemaVersion;
+    db.prepare('UPDATE contract_versions SET compatibility_json = ? WHERE id = ?')
+      .run(JSON.stringify(compatibility), row.id);
+  } finally {
+    db.close();
+  }
+}
+
 async function setupWorkspaceWithResolvedContract(): Promise<{
   consumerRoot: string;
   providerRoot: string;
@@ -2107,6 +2159,19 @@ async function setupWorkspaceWithJsonSchemaContract(): Promise<{
   await initProject({ repoRoot: providerRoot });
   await indexProject({ repoRoot: providerRoot });
   initWorkspace({ repoRoot: providerRoot, name: 'platform', serviceName: 'users-schema' });
+
+  return { providerRoot };
+}
+
+async function setupWorkspaceWithAvroContract(options: Parameters<typeof writeAvroContract>[1] = {}): Promise<{
+  providerRoot: string;
+}> {
+  const providerRoot = await makeRepo('parallax-diff-avro-provider-');
+  await writeAvroContract(providerRoot, options);
+
+  await initProject({ repoRoot: providerRoot });
+  await indexProject({ repoRoot: providerRoot });
+  initWorkspace({ repoRoot: providerRoot, name: 'platform', serviceName: 'users-avro' });
 
   return { providerRoot };
 }
@@ -3872,6 +3937,154 @@ test('analyzeContractDiff warns when indexed JSON Schema compatibility baseline 
   assert.ok(
     result.warnings.some((warning) =>
       warning.includes('indexed JSON Schema compatibility baseline uses schemaVersion 0') &&
+      warning.includes('reindex provider contract')
+    ),
+    `expected stale compatibility warning, got ${JSON.stringify(result.warnings)}`
+  );
+});
+
+test('analyzeContractDiff classifies Avro required field removals as breaking', async () => {
+  const { providerRoot } = await setupWorkspaceWithAvroContract();
+  await writeAvroContract(providerRoot, { includeName: false });
+
+  const result = analyzeContractDiff({
+    repoRoot: providerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-avro',
+    contractPath: 'contracts/user.avsc'
+  });
+
+  assert.equal(result.contract.kind, 'avro');
+  assert.equal(result.summary.classification, 'breaking');
+  assert.equal(result.summary.breakingChangeCount, 1);
+  assert.equal(result.summary.impactedConsumerCount, 0);
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'removed_response_required_property',
+      classification: 'breaking',
+      reason: 'Avro schema required property removed from current contract',
+      httpMethod: 'AVRO',
+      routePath: '#',
+      statusCode: 'schema',
+      propertyName: 'name',
+      schemaPath: '#.required.name'
+    }
+  ]);
+});
+
+test('analyzeContractDiff classifies Avro defaulted field removals as non-breaking', async () => {
+  const { providerRoot } = await setupWorkspaceWithAvroContract({ nameDefault: '' });
+  await writeAvroContract(providerRoot, { includeName: false });
+
+  const result = analyzeContractDiff({
+    repoRoot: providerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-avro',
+    contractPath: 'contracts/user.avsc'
+  });
+
+  assert.equal(result.summary.classification, 'non-breaking');
+  assert.equal(result.summary.breakingChangeCount, 0);
+  assert.equal(result.summary.nonBreakingChangeCount, 1);
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'removed_response_optional_property',
+      classification: 'non-breaking',
+      reason: 'Avro schema optional property removed from current contract',
+      httpMethod: 'AVRO',
+      routePath: '#',
+      statusCode: 'schema',
+      propertyName: 'name',
+      schemaPath: '#.properties.name'
+    }
+  ]);
+});
+
+test('analyzeContractDiff classifies Avro field type changes as breaking', async () => {
+  const { providerRoot } = await setupWorkspaceWithAvroContract();
+  await writeAvroContract(providerRoot, { nameType: 'int' });
+
+  const result = analyzeContractDiff({
+    repoRoot: providerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-avro',
+    contractPath: 'contracts/user.avsc'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.equal(result.summary.breakingChangeCount, 1);
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'changed_response_property_type',
+      classification: 'breaking',
+      reason: 'Avro schema property type changed in current contract',
+      httpMethod: 'AVRO',
+      routePath: '#',
+      statusCode: 'schema',
+      propertyName: 'name',
+      schemaPath: '#.properties.name',
+      previousSchemaType: 'string',
+      currentSchemaType: 'int'
+    }
+  ]);
+});
+
+test('analyzeContractDiff classifies Avro nullable additions as breaking without duplicate type changes', async () => {
+  const { providerRoot } = await setupWorkspaceWithAvroContract();
+  await writeAvroContract(providerRoot, { nameType: ['null', 'string'] });
+
+  const result = analyzeContractDiff({
+    repoRoot: providerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-avro',
+    contractPath: 'contracts/user.avsc'
+  });
+
+  assert.equal(result.summary.classification, 'breaking');
+  assert.equal(result.summary.breakingChangeCount, 1);
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'added_response_property_nullable',
+      classification: 'breaking',
+      reason: 'Avro schema property now allows null in current contract',
+      httpMethod: 'AVRO',
+      routePath: '#',
+      statusCode: 'schema',
+      propertyName: 'name',
+      schemaPath: '#.properties.name.type',
+      previousNullable: false,
+      currentNullable: true
+    }
+  ]);
+});
+
+test('analyzeContractDiff warns when indexed Avro compatibility baseline is stale', async () => {
+  const { providerRoot } = await setupWorkspaceWithAvroContract();
+  downgradeAvroCompatibilityBaseline(providerRoot, 0);
+  await writeAvroContract(providerRoot, { nameType: 'int' });
+
+  const result = analyzeContractDiff({
+    repoRoot: providerRoot,
+    workspaceName: 'platform',
+    providerServiceName: 'users-avro',
+    contractPath: 'contracts/user.avsc'
+  });
+
+  assert.equal(result.summary.classification, 'unknown');
+  assert.equal(
+    result.changes.some((change) => change.kind === 'changed_response_property_type'),
+    false
+  );
+  assert.deepEqual(result.changes, [
+    {
+      kind: 'changed_contract_without_endpoint_delta',
+      classification: 'unknown',
+      reason: 'contract content changed but endpoint surface is unchanged in the v0 analyzer'
+    }
+  ]);
+  assert.ok(
+    result.warnings.some((warning) =>
+      warning.includes('indexed Avro compatibility baseline uses schemaVersion 0') &&
       warning.includes('reindex provider contract')
     ),
     `expected stale compatibility warning, got ${JSON.stringify(result.warnings)}`

@@ -127,7 +127,7 @@ Parallax는 SQLite 한 파일 + sqlite-vec 확장으로 같은 본질을 표현.
 - TypeScript/JavaScript, Markdown 작업 산출물, config/infra 파일, package manifest, 넓은 multi-language source file을 semantic adapter로 인덱싱한다.
 - Evidence, confidence label, adapter insight, coverage warning, verification action이 붙은 bounded "changed files → affected files" report를 만든다.
 - 사용자가 등록한 local repository에 대해 workspace catalog와 local cross-repo contract link를 해석한다.
-- OpenAPI, GraphQL, Protobuf, AsyncAPI contract diff를 분류하고, link가 알려진 local consumer impact를 보고한다.
+- OpenAPI, GraphQL, Protobuf, AsyncAPI, JSON Schema, Avro contract diff를 분류하고, link가 알려진 local consumer impact를 보고한다.
 - AI 결정과 관찰을 content-addressable fact로 저장하고, time travel, branch fork/merge, explicit supersession, semantic recall, profile, trace, reflection, branch GC를 제공한다.
 - Secret-like 문자열을 storage, embedding, LLM reflection 전에 redaction한다.
 - 같은 로컬 데이터베이스를 CLI, MCP stdio, local UI workbench로 노출한다.

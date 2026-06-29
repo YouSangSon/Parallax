@@ -797,3 +797,46 @@
   - Bench result: `summary.passed=true`, score `0.9987`, and all quality lanes
     passed (`crossRepoContracts`, `contractDiffQuality`, `coChangeQuality`,
     `tracePromotionQuality`).
+- Refreshed W5 Avro web/GitHub research on 2026-06-29.
+  - Apache Avro 1.12.0 docs confirm schemas are JSON/IDL, records have named
+    fields, unions are arrays, and fields can carry defaults.
+  - GitHub repo search surfaced Avro compatibility libraries such as
+    `ExpediaGroup/avro-compatibility` and `petermyers/avro-compatibility`, but
+    no dependency that is preferable to a dependency-free local first slice for
+    Parallax.
+  - Broader GitHub code search shows schema-registry compatibility is common in
+    Kafka-oriented stacks, so registry modes should remain a follow-on rather
+    than a default local contract requirement.
+  - `gh issue list` still shows only issue #3 open; `gh pr list` still shows
+    Dependabot PRs #23-#31.
+- Shipped W5 Avro contract-kind first slice.
+  - `.avsc` files now classify as contract files and persist with
+    `contractKind: avro`.
+  - `src/avro_compat.ts` extracts top-level record signatures: schema full
+    name, root path `#`, required fields, field types, and nullable union
+    shapes.
+  - `analyzeContractDiff` now parses current Avro contracts, compares them
+    against indexed Avro compatibility baselines, warns on stale Avro baseline
+    schema versions, and emits Avro-labelled changes through the produced
+    object-schema classifier.
+  - The scanner/indexer emits a synthetic `AVRO #` endpoint and records Avro
+    compatibility metadata for `.avsc` files.
+  - Added regression coverage for Avro required field removal, defaulted field
+    removal, type changes, nullable additions, stale baselines, entity
+    classification, contract persistence, and bench quality counts.
+  - The deterministic `contractDiffQuality` bench now includes
+    `avro-required-field-removal`, raising expected/matched cases and changes
+    from 10 to 11.
+- W5 Avro verification:
+  - `npm run check`
+  - `node --import tsx --test tests/entity_classification.test.ts tests/parallax.test.ts tests/contract-diff.test.ts tests/impact-bench.test.ts`
+  - `npm run docs:lint`
+  - `git diff --check`
+  - `npm run bench`
+  - `npm run verify`
+  - Focused tests passed 196/196.
+  - Full verify result: lint, schema check, install smoke/build, 677 unit
+    tests, dogfood, bench, and `npm audit --audit-level=high` all passed.
+  - Bench result: `summary.passed=true`, score `0.9987`,
+    `contractDiffQuality` `expectedCases=11`, `matchedCases=11`,
+    `expectedChanges=11`, `matchedChanges=11`, and `missingChanges=[]`.

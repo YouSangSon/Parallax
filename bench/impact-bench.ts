@@ -290,6 +290,12 @@ type ContractDiffQualityCaseSpec =
       contractKind: 'json-schema';
       current: ContractDiffBenchJsonSchemaOptions;
       expectedChanges: ContractDiffQualityExpectedChange[];
+    }
+  | {
+      id: string;
+      contractKind: 'avro';
+      current: ContractDiffBenchAvroOptions;
+      expectedChanges: ContractDiffQualityExpectedChange[];
     };
 
 type ContractDiffBenchOpenApiOptions = {
@@ -306,6 +312,10 @@ type ContractDiffBenchOpenApiOptions = {
 
 type ContractDiffBenchJsonSchemaOptions = {
   required?: string[];
+};
+
+type ContractDiffBenchAvroOptions = {
+  includeName?: boolean;
 };
 
 const retrievalQueries: readonly RetrievalQuerySpec[] = [
@@ -352,6 +362,18 @@ const contractDiffQualityCases: readonly ContractDiffQualityCaseSpec[] = [
     id: 'json-schema-required-property-removal',
     contractKind: 'json-schema',
     current: { required: ['id'] },
+    expectedChanges: [
+      {
+        kind: 'removed_response_required_property',
+        classification: 'breaking',
+        schemaPath: '#.required.name'
+      }
+    ]
+  },
+  {
+    id: 'avro-required-field-removal',
+    contractKind: 'avro',
+    current: { includeName: false },
     expectedChanges: [
       {
         kind: 'removed_response_required_property',
@@ -1109,6 +1131,7 @@ async function runContractDiffQualityBench(): Promise<ContractDiffQualityBench> 
     await writeFile(path.join(providerRoot, 'README.md'), 'provider\n', 'utf8');
     await writeContractDiffBenchOpenApiJsonContract(providerRoot);
     await writeContractDiffBenchJsonSchemaContract(providerRoot);
+    await writeContractDiffBenchAvroContract(providerRoot);
 
     await initProject({ repoRoot: providerRoot });
     await indexProject({ repoRoot: providerRoot });
@@ -1118,9 +1141,13 @@ async function runContractDiffQualityBench(): Promise<ContractDiffQualityBench> 
     for (const spec of contractDiffQualityCases) {
       const contractPath = spec.contractKind === 'json-schema'
         ? 'contracts/user.schema.json'
-        : 'contracts/openapi.json';
+        : spec.contractKind === 'avro'
+          ? 'contracts/user.avsc'
+          : 'contracts/openapi.json';
       if (spec.contractKind === 'json-schema') {
         await writeContractDiffBenchJsonSchemaContract(providerRoot, spec.current);
+      } else if (spec.contractKind === 'avro') {
+        await writeContractDiffBenchAvroContract(providerRoot, spec.current);
       } else {
         await writeContractDiffBenchOpenApiJsonContract(providerRoot, spec.current);
       }
@@ -1274,6 +1301,29 @@ async function writeContractDiffBenchJsonSchemaContract(
   await writeFile(
     path.join(repoRoot, 'contracts/user.schema.json'),
     `${JSON.stringify(contract, null, 2)}\n`,
+    'utf8'
+  );
+}
+
+async function writeContractDiffBenchAvroContract(
+  repoRoot: string,
+  options: ContractDiffBenchAvroOptions = {}
+): Promise<void> {
+  await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
+  const fields: Array<Record<string, unknown>> = [
+    { name: 'id', type: 'string' }
+  ];
+  if (options.includeName !== false) {
+    fields.push({ name: 'name', type: 'string' });
+  }
+  await writeFile(
+    path.join(repoRoot, 'contracts/user.avsc'),
+    `${JSON.stringify({
+      type: 'record',
+      name: 'UserEvent',
+      namespace: 'example.events',
+      fields
+    }, null, 2)}\n`,
     'utf8'
   );
 }

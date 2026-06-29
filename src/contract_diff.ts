@@ -8,6 +8,11 @@ import {
   parseCurrentAsyncApiContract
 } from './contract_diff/asyncapi.js';
 import {
+  classifyAvroCompatibilityChanges,
+  parseAvroCompatibility,
+  parseCurrentAvroContract
+} from './contract_diff/avro.js';
+import {
   classifyGraphqlCompatibilityChanges,
   parseCurrentGraphqlContract,
   parseGraphqlCompatibility
@@ -426,6 +431,11 @@ function classifyChanges(
     if (previousCompatibility !== undefined && current.jsonSchemaCompatibility !== undefined) {
       changes.push(...classifyJsonSchemaCompatibilityChanges(previousCompatibility, current.jsonSchemaCompatibility));
     }
+  } else if (provider.contract.kind === 'avro') {
+    const previousCompatibility = parseAvroCompatibility(provider.contract.compatibility_json, warnings);
+    if (previousCompatibility !== undefined && current.avroCompatibility !== undefined) {
+      changes.push(...classifyAvroCompatibilityChanges(previousCompatibility, current.avroCompatibility));
+    }
   } else {
     const previousCompatibility = parseOpenApiCompatibility(provider.contract.compatibility_json, warnings);
     if (previousCompatibility !== undefined && current.compatibility !== undefined) {
@@ -658,6 +668,7 @@ function parseCurrentContractByKind(content: string, contractPath: string, contr
   }
   if (contractKind === 'asyncapi' || isAsyncApiContractPath(contractPath)) return parseCurrentAsyncApiContract(content, contractPath);
   if (contractKind === 'json-schema') return parseCurrentJsonSchemaContract(content);
+  if (contractKind === 'avro' || lowerPath.endsWith('.avsc')) return parseCurrentAvroContract(content);
   return parseCurrentOpenApiContract(content, contractPath);
 }
 
@@ -737,13 +748,15 @@ function currentEndpointId(contractPath: string, endpoint: ContractEndpoint): st
     ? 'asyncapi'
     : isJsonSchemaContractPath(contractPath)
       ? 'json-schema'
-    : lowerPath.endsWith('.proto')
-    ? 'protobuf'
-    : lowerPath.endsWith('.graphql') || lowerPath.endsWith('.gql')
-      ? 'graphql'
-      : lowerPath.endsWith('.json')
-        ? 'json'
-        : 'yaml';
+      : lowerPath.endsWith('.avsc')
+        ? 'avro'
+        : lowerPath.endsWith('.proto')
+          ? 'protobuf'
+          : lowerPath.endsWith('.graphql') || lowerPath.endsWith('.gql')
+            ? 'graphql'
+            : lowerPath.endsWith('.json')
+              ? 'json'
+              : 'yaml';
   if (languageId === 'protobuf' && endpoint.httpMethod === 'RPC') {
     return `endpoint:protobuf:${endpoint.routePath.replace('/', '.')}`;
   }
@@ -756,6 +769,9 @@ function currentEndpointId(contractPath: string, endpoint: ContractEndpoint): st
   if (languageId === 'json-schema' && endpoint.httpMethod === 'SCHEMA') {
     return `endpoint:json-schema:${endpoint.routePath}`;
   }
+  if (languageId === 'avro' && endpoint.httpMethod === 'AVRO') {
+    return `endpoint:avro:${endpoint.routePath}`;
+  }
   return `endpoint:${languageId}:${endpointKey(endpoint.httpMethod, endpoint.routePath)}`;
 }
 
@@ -764,6 +780,7 @@ function endpointDisplayForContractKind(kind: string, displayName: string): { me
   if (kind === 'graphql') return parseGraphqlEndpointDisplay(displayName);
   if (kind === 'asyncapi') return parseAsyncApiEndpointDisplay(displayName);
   if (kind === 'json-schema') return parseJsonSchemaEndpointDisplay(displayName);
+  if (kind === 'avro') return parseAvroEndpointDisplay(displayName);
   return parseHttpEndpointDisplay(displayName);
 }
 
@@ -795,6 +812,12 @@ function parseJsonSchemaEndpointDisplay(displayName: string): { method: string; 
   const match = /^SCHEMA\s+(.+)$/i.exec(displayName.trim());
   if (!match) return undefined;
   return { method: 'SCHEMA', path: match[1]! };
+}
+
+function parseAvroEndpointDisplay(displayName: string): { method: string; path: string } | undefined {
+  const match = /^AVRO\s+(.+)$/i.exec(displayName.trim());
+  if (!match) return undefined;
+  return { method: 'AVRO', path: match[1]! };
 }
 
 function isAsyncApiContractPath(contractPath: string): boolean {

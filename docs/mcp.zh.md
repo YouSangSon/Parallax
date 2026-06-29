@@ -38,7 +38,7 @@ Parallax 遵循不变量 **I-8**（见 [invariants.zh.md](invariants.zh.md)）�
 | `parallax_context_for_change` | 为变更文件返回一个按 budget（`brief`/`standard`/`deep`）裁剪的 context pack——排序后的 impact path、evidence 引用、git co-change 提示与 resource link | 否 |
 | `parallax_search_context` | 按 keyword、path、symbol、relation provenance 或 evidence snippet 搜索最新 index 并返回排序后的 entity context | 否 |
 | `parallax_repo_map` | 返回 read-only token-budgeted repo map/context card，包含 changed root、affected file、test/docs/config/work artifact、evidence ref、verification action、ranked verification plan、resource link、confidence、provenance、known gap 与 omitted count | 是 |
-| `parallax_contract_diff` | 将当前 OpenAPI contract 文件与已索引的 workspace baseline 比较，返回紧凑的 breaking-change impact | 否 |
+| `parallax_contract_diff` | 将当前受支持的 contract 文件与已索引的 workspace baseline 比较，返回紧凑的 breaking-change impact | 否 |
 | `parallax_cross_repo_consumers` | 从已同步的 workspace DB view 查询某个 provider service/contract/route 的 consumer | 是 |
 | `parallax_cross_repo_providers` | 从已同步的 workspace DB view 查询某个 consumer service/file 使用的 provider | 是 |
 | `parallax_resolve_cross_repo_contracts` | 基于已同步的 workspace DB view 预览 cross-repo provider/consumer contract link，且不修改 `cross_repo_links` | 是 |

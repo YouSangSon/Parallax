@@ -15,6 +15,7 @@ test('languageIdForPath recognizes file names and extensions used by scanners', 
   assert.equal(languageIdForPath('Makefile'), 'makefile');
   assert.equal(languageIdForPath('CODEOWNERS'), 'policy');
   assert.equal(languageIdForPath('package.json'), 'json');
+  assert.equal(languageIdForPath('contracts/user.avsc'), 'json');
   assert.equal(languageIdForPath('pnpm-workspace.yaml'), 'yaml');
   assert.equal(languageIdForPath('pom.xml'), 'xml');
   assert.equal(languageIdForPath('build.gradle.kts'), 'gradle');
@@ -42,6 +43,7 @@ test('entityKindForPath centralizes policy, workflow, config, resource, and cont
     ['contracts/openapi.yaml', 'contract'],
     ['contracts/asyncapi.json', 'contract'],
     ['contracts/user.schema.json', 'contract'],
+    ['contracts/user.avsc', 'contract'],
     ['contracts/schema.json', 'contract'],
     ['config/schema.json', 'config'],
     ['contracts/service.proto', 'contract'],
@@ -69,6 +71,7 @@ test('build manifest and obvious contract predicates expose reusable policy', ()
   assert.equal(isObviousContractPath('contracts/openapi.yaml'), true);
   assert.equal(isObviousContractPath('contracts/swagger.json'), true);
   assert.equal(isObviousContractPath('contracts/user.schema.json'), true);
+  assert.equal(isObviousContractPath('contracts/user.avsc'), true);
   assert.equal(isObviousContractPath('contracts/schema.json'), true);
   assert.equal(isObviousContractPath('config/schema.json'), false);
   assert.equal(isObviousContractPath('contracts/schema-notes.json'), false);

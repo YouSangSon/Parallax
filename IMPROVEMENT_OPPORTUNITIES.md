@@ -85,9 +85,9 @@ and analyzer traversal is N+1 per frontier node.
 
 ## 4. Workspace, contracts & cross-repo
 
-A cross-repo workspace catalog, provider↔consumer resolver, and OpenAPI/GraphQL/Protobuf/AsyncAPI
-breaking-change diff exist. W1/W2/W3/W4/W6 are shipped; remaining work focuses on W5
-contract fidelity.
+A cross-repo workspace catalog, provider↔consumer resolver, and OpenAPI/GraphQL/Protobuf/AsyncAPI/JSON Schema/Avro
+breaking-change diff exist. W1/W2/W3/W4/W5/W6 first slices are shipped; deeper
+contract fidelity remains follow-on work.
 
 | # | Opportunity | Effort | Value |
 | :-- | :-- | :-- | :-- |
@@ -95,10 +95,10 @@ contract fidelity.
 | W2 | ✅ **shipped** — cross-repo link consistency now has a shared read model plus `parallax workspace verify`, flagging malformed provenance, stale workspace membership, and orphan `BREAKS_COMPATIBILITY_WITH` rows without duplicate inverse storage. | M | HIGH |
 | W3 | ✅ **shipped** — explicit package-directory catalog members can share the nearest parent Parallax index, provider/consumer paths are scoped to the package, and persisted consumer/provider queries stay member-aware. `parallax workspace discover-packages` now parses `package.json` workspaces, `pnpm-workspace.yaml` package globs, and Nx `project.json` / `package.json` `nx` project config into package/project directory catalog members without installs or package-manager/Nx/Turbo execution. Turborepo package membership remains covered through package-manager workspace manifests; `turbo.json` task config is not treated as a catalog source. | L | HIGH |
 | W4 | ✅ **shipped** — richer OpenAPI contract property signatures: response enum-value removal, response format changes, response nullable additions, request enum-value removal, request format additions/changes, and response optional-property removals are now captured via richer property signatures, compat schemaVersion 5 where needed, provenance on breaking changes, non-breaking optional-removal visibility, and `contractDiffQuality` bench cases. | M | MED-HIGH |
-| W5 | ✅ **JSON Schema first slice shipped; Avro follow-on remains** — `*.schema.json` and contract-located `schema.json` files now persist as `json-schema` contracts, reuse the OpenAPI object-schema signature for root object comparisons, declare a synthetic `SCHEMA #` endpoint, and classify required removal, optional removal, property type changes, and nullable additions. Avro remains a mechanical follow-on. | M (Avro remaining) | MED |
+| W5 | ✅ **first slices shipped** — `*.schema.json` / contract-located `schema.json` files persist as `json-schema` contracts, `.avsc` files persist as `avro` contracts, both reuse the produced object-schema comparison lane, and both declare synthetic root endpoints (`SCHEMA #` / `AVRO #`). JSON Schema covers root-object required removal, optional removal, property type changes, and nullable additions; Avro covers top-level record required/defaulted field removals, field type changes, and nullable additions. Follow-ons: JSON Schema enum/format policy plus full Avro nested/named type resolution, aliases, promotions, and schema-registry integration. | M | MED |
 | W6 | ✅ **shipped** — agents can query provider consumers/providers through read-only MCP tools and preview cross-repo resolution without mutating `cross_repo_links`; CLI persistence remains the explicit write workflow. | S | MED |
 
-**Sequencing remaining work:** W5 Avro follow-on → residual S1 scan-cost work after a measured adapter-contract design. W1/W2/W3/W4/W5 JSON Schema/W6 are already shipped.
+**Sequencing remaining work:** residual S1 scan-cost work after a measured adapter-contract design → deeper JSON Schema / Avro compatibility semantics. W1/W2/W3/W4/W5/W6 first slices are already shipped.
 
 ---
 
@@ -120,7 +120,7 @@ also remain thinly bench-covered.
 | D8 | ✅ **shipped** — local dependency/PR dogfood lane exists as `parallax pr triage`. It accepts `--changed` or `--base/--head`, persists the impact report, writes SARIF (default `.parallax/pr-triage.sarif`), applies `--fail-on`, and prints a dependency-focused repo map without calling GitHub or changing remote state. The open Dependabot queue was refreshed on 2026-06-27 (#23-#31) as the first real dogfood target. | S | MED-HIGH |
 | D9 | ✅ **shipped** — affected verification planner: `parallax repo-map` / MCP `parallax_repo_map` now include `verificationPlan`, grouping existing `ImpactReport.actions` by nearest `package.json` package root and runner into ranked, copy-pasteable commands with covered changed / affected / target paths, confidence, source actions, and omitted counts. It stays deterministic and does not execute Nx, Bazel, or other external build tools. | M | HIGH |
 
-**Sequencing:** continue with W3 monorepo package modeling and only return to the residual S1 dirty/non-git scan-cost work with a measured adapter-contract design. The D2 trend metrics, `--fail-on` primitive, broad SARIF projection, repo-map, affected verification planner, local PR triage wrapper, official PR action wrapper, local Git hook installer, shareable UI/export surface, M10 SCIP bridge, and W5 JSON Schema first slice are landed.
+**Sequencing:** return to the residual S1 dirty/non-git scan-cost work with a measured adapter-contract design. The D2 trend metrics, `--fail-on` primitive, broad SARIF projection, repo-map, affected verification planner, local PR triage wrapper, official PR action wrapper, local Git hook installer, shareable UI/export surface, M10 SCIP bridge, W3 monorepo package discovery, and W5 JSON Schema / Avro first slices are landed.
 
 ---
 
@@ -286,9 +286,10 @@ additional catalog membership source.
    `turbo.json` is task/caching/filter configuration. Parallax already covers
    the relevant package membership path through package-manager manifests and
    should not treat task config as workspace catalog state.
-3. **Next highest-value backlog returns to contract-kind fidelity.** With W3
-   member modeling/discovery covered, W5 Avro is the next focused follow-on
-   after the shipped JSON Schema slice.
+3. ✅ **W5 Avro first slice is covered.** `.avsc` files now participate in
+   contract indexing and top-level record compatibility diffs. The next
+   highest-value default returns to residual S1 scan-cost reduction, while
+   deeper JSON Schema / Avro compatibility semantics stay as follow-ons.
 
 ## Larger-bet reassessment (2026-06-21)
 

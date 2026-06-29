@@ -6,8 +6,18 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Active Loop
 
-- Next loop: evaluate W5 Avro contract-kind follow-on after the shipped JSON
-  Schema first slice.
+- Next loop: return to S1 residual dirty/non-git scan-cost reduction with a
+  measured adapter-contract design. W5 JSON Schema and Avro first slices are
+  now shipped; deeper JSON Schema enum/format policy and Avro named-type /
+  schema-registry compatibility remain follow-ons rather than the next default
+  loop.
+- Completed slice: W5 Avro contract-kind first slice now recognizes `.avsc`
+  files as `avro` contracts, persists root record compatibility signatures,
+  declares a synthetic `AVRO #` endpoint, and classifies top-level record
+  required field removals, defaulted field removals, field type changes, and
+  nullable additions through the same produced-object diff policy used by the
+  JSON Schema first slice. The deterministic `contractDiffQuality` bench now
+  has 11/11 cases including Avro required-field removal.
 - Completed slice: W3 parse-only Nx project config discovery now extends
   `parallax workspace discover-packages` to read `nx.json` and, when present,
   discover Nx `project.json` directories plus `package.json` files with an
@@ -43,8 +53,7 @@ Source of truth for the active improvement loop. Detailed backlog lives in
   synthetic `SCHEMA #` endpoint, and classifies root-object required removal,
   optional removal, property type changes, and nullable additions through
   `analyzeContractDiff`. The deterministic `contractDiffQuality` bench now has
-  10/10 cases including JSON Schema required-property removal. Avro remains a
-  lower-priority W5 follow-on.
+  JSON Schema required-property removal coverage.
 - Completed slice: W4 OpenAPI response optional property removals now surface
   through contract diff as `removed_response_optional_property` non-breaking
   changes. Required response removals still drive breaking consumer links, but
@@ -161,6 +170,7 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Next
 
-1. Evaluate W5 Avro contract-kind follow-on after the JSON Schema first slice.
-2. Keep residual S1 scan-cost work behind W5 unless new evidence displaces the
-   sequence.
+1. Evaluate S1 residual dirty/non-git scan-cost reduction with a measured
+   adapter-contract design.
+2. Keep deeper JSON Schema / Avro compatibility semantics behind S1 unless new
+   evidence displaces the sequence.

@@ -6,11 +6,17 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Active Loop
 
-- Next loop: return to S1 residual dirty/non-git scan-cost reduction with a
-  measured adapter-contract design. W5 JSON Schema and Avro first slices are
-  now shipped; deeper JSON Schema enum/format policy and Avro named-type /
-  schema-registry compatibility remain follow-ons rather than the next default
-  loop.
+- Next loop: use the new S1 `fileContentScope` contract to evaluate a measured
+  changed-file scan/read reduction for `target-only` adapters, starting with
+  config/infra, while keeping `full-index` adapters on the conservative path.
+  W5 JSON Schema and Avro first slices are now shipped; deeper JSON Schema
+  enum/format policy and Avro named-type / schema-registry compatibility
+  remain follow-ons rather than the next default loop.
+- Completed slice: S1 adapter file-content scope is now explicit through
+  `SemanticAdapter.fileContentScope` and `registry.manifest()`. The default is
+  conservative `full-index`; config/infra declares `target-only` because it
+  uses indexed files only as path context, while build-system/package and
+  TypeScript/JavaScript coverage remain `full-index`.
 - Completed slice: S1 `bench:perf` now reports actual indexer scan phase
   timings for full, no-op incremental, and edited-file incremental phases. This
   keeps risky content-read skipping out of the runtime path until the adapter

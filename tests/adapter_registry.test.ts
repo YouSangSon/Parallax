@@ -15,6 +15,7 @@ import {
   MULTI_LANG_REGEX_ADAPTER_VERSION,
   TS_JS_SEMANTIC_ADAPTER_ID
 } from '../src/adapters/multi-language-regex.js';
+import { CONFIG_INFRA_SEMANTIC_ADAPTER_ID } from '../src/adapters/config-infra.js';
 import { createDefaultRegistry } from '../src/indexer.js';
 import type { ScannedFile } from '../src/types.js';
 
@@ -24,6 +25,7 @@ type AdapterOptions = {
   readonly confidence?: SemanticAdapter['confidence'];
   readonly knownGaps?: readonly string[];
   readonly selectionMode?: SemanticAdapter['selectionMode'];
+  readonly fileContentScope?: SemanticAdapter['fileContentScope'];
 };
 
 function makeAdapter(id: string, supportedLang: string, options: AdapterOptions = {}): SemanticAdapter {
@@ -34,6 +36,7 @@ function makeAdapter(id: string, supportedLang: string, options: AdapterOptions 
     ...(options.confidence !== undefined ? { confidence: options.confidence } : {}),
     ...(options.knownGaps !== undefined ? { knownGaps: options.knownGaps } : {}),
     ...(options.selectionMode !== undefined ? { selectionMode: options.selectionMode } : {}),
+    ...(options.fileContentScope !== undefined ? { fileContentScope: options.fileContentScope } : {}),
     supports: (file) => file.language === supportedLang,
     start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
       async *process(_file: ScannedFile): AsyncIterable<IndexEvent> {
@@ -141,7 +144,8 @@ test('manifest returns adapter defaults, metadata, order, and immutable snapshot
       capabilities: ['imports'],
       confidence: 'unknown',
       knownGaps: [],
-      selectionMode: 'targeted'
+      selectionMode: 'targeted',
+      fileContentScope: 'full-index'
     },
     {
       order: 1,
@@ -150,7 +154,8 @@ test('manifest returns adapter defaults, metadata, order, and immutable snapshot
       capabilities: ['calls', 'symbols'],
       confidence: 'heuristic',
       knownGaps: ['does not resolve dynamic imports'],
-      selectionMode: 'catch-all'
+      selectionMode: 'catch-all',
+      fileContentScope: 'full-index'
     }
   ]);
 
@@ -170,8 +175,23 @@ test('manifest returns adapter defaults, metadata, order, and immutable snapshot
     capabilities: ['imports'],
     confidence: 'unknown',
     knownGaps: [],
-    selectionMode: 'targeted'
+    selectionMode: 'targeted',
+    fileContentScope: 'full-index'
   });
+});
+
+test('manifest exposes file content scope contract', () => {
+  const registry = new AdapterRegistry();
+  registry.register(makeAdapter('targeted', 'typescript', { fileContentScope: 'target-only' }));
+  registry.register(makeAdapter('fallback', 'python', { selectionMode: 'catch-all' }));
+
+  assert.deepStrictEqual(
+    registry.manifest().map((entry) => [entry.id, entry.fileContentScope]),
+    [
+      ['targeted', 'target-only'],
+      ['fallback', 'full-index']
+    ]
+  );
 });
 
 test('default registry keeps the catch-all adapter registered last', () => {
@@ -187,8 +207,18 @@ test('default registry keeps the catch-all adapter registered last', () => {
       'fallback extraction is broad but shallow and should be treated as coverage guidance, not semantic proof',
       'language-specific parser adapters should replace this path for high-risk changes'
     ],
-    selectionMode: 'catch-all'
+    selectionMode: 'catch-all',
+    fileContentScope: 'full-index'
   });
+});
+
+test('default registry publishes built-in file content scopes', () => {
+  const manifest = createDefaultRegistry().manifest();
+  const contentScopeById = new Map(manifest.map((entry) => [entry.id, entry.fileContentScope]));
+
+  assert.strictEqual(contentScopeById.get(CONFIG_INFRA_SEMANTIC_ADAPTER_ID), 'target-only');
+  assert.strictEqual(contentScopeById.get(TS_JS_SEMANTIC_ADAPTER_ID), 'full-index');
+  assert.strictEqual(contentScopeById.get(MULTI_LANG_REGEX_ADAPTER_ID), 'full-index');
 });
 
 test('default registry rejects adapters after its production catch-all', () => {

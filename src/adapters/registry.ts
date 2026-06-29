@@ -1,10 +1,20 @@
 import type { ScannedFile } from '../types.js';
-import type { AdapterManifestEntry, AdapterSelectionMode, SemanticAdapter } from './types.js';
+import type {
+  AdapterFileContentScope,
+  AdapterManifestEntry,
+  AdapterSelectionMode,
+  SemanticAdapter
+} from './types.js';
 
 const defaultSelectionMode: AdapterSelectionMode = 'targeted';
+const defaultFileContentScope: AdapterFileContentScope = 'full-index';
 
 function selectionModeFor(adapter: Pick<SemanticAdapter, 'selectionMode'>): AdapterSelectionMode {
   return adapter.selectionMode ?? defaultSelectionMode;
+}
+
+function fileContentScopeFor(adapter: Pick<SemanticAdapter, 'fileContentScope'>): AdapterFileContentScope {
+  return adapter.fileContentScope ?? defaultFileContentScope;
 }
 
 function manifestEntryFor(adapter: SemanticAdapter, order: number): AdapterManifestEntry {
@@ -15,7 +25,8 @@ function manifestEntryFor(adapter: SemanticAdapter, order: number): AdapterManif
     capabilities: Object.freeze([...adapter.capabilities]),
     confidence: adapter.confidence ?? 'unknown',
     knownGaps: Object.freeze([...(adapter.knownGaps ?? [])]),
-    selectionMode: selectionModeFor(adapter)
+    selectionMode: selectionModeFor(adapter),
+    fileContentScope: fileContentScopeFor(adapter)
   };
   return Object.freeze(entry);
 }

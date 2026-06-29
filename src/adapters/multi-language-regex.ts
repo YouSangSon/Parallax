@@ -198,6 +198,7 @@ abstract class RegexBackedSemanticAdapter implements SemanticAdapter {
   readonly version = MULTI_LANG_REGEX_ADAPTER_VERSION;
   readonly capabilities = capabilities;
   readonly confidence = 'heuristic';
+  readonly fileContentScope = 'full-index';
   readonly knownGaps = [
     'regex/lightweight parser extraction can miss dynamic references, generated code, and complex call graphs',
     'source spans are partial outside the parser-backed TypeScript/JavaScript lanes'
@@ -285,6 +286,7 @@ export class MultiLanguageRegexAdapter implements SemanticAdapter {
   readonly capabilities = capabilities;
   readonly confidence = 'heuristic';
   readonly selectionMode = 'catch-all';
+  readonly fileContentScope = 'full-index';
   readonly knownGaps = [
     'fallback extraction is broad but shallow and should be treated as coverage guidance, not semantic proof',
     'language-specific parser adapters should replace this path for high-risk changes'

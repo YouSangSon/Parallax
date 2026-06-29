@@ -985,3 +985,45 @@ Why:
 - A bench-only observer avoids changing `parallax index` JSON output or runtime
   behavior while making the remaining S1 scan/read cost visible enough to guide
   the next slice.
+
+## 2026-06-29: Declare Adapter File Content Scope Before Skipping Reads
+
+Decision: add `SemanticAdapter.fileContentScope` and expose it through
+`registry.manifest()`. Keep the source-compatible default conservative as
+`full-index`, meaning the adapter may inspect content from any indexed file
+during startup or processing. Mark only config/infra as `target-only` because
+it reads the current `process(file)` content and uses indexed files only as a
+path set. Keep build-system/package, TypeScript/JavaScript, and broad regex
+coverage as `full-index`.
+
+Sources:
+- Git status porcelain documentation:
+  <https://git-scm.com/docs/git-status>
+- Git ls-files documentation:
+  <https://git-scm.com/docs/git-ls-files>
+- Nx affected documentation:
+  <https://nx.dev/docs/features/ci-features/affected>
+- Turborepo affected-task documentation:
+  <https://turborepo.com/docs/crafting-your-repository/constructing-ci#using---affected>
+- Parallax open issue queue refreshed via `gh issue list` on 2026-06-29: #3 is
+  still the only open issue.
+- Parallax open PR queue refreshed via `gh pr list` on 2026-06-29: #23-#31
+  remain Dependabot PRs.
+- GitHub repo search refreshed on 2026-06-29 for incremental code-indexing and
+  semantic graph projects did not surface a safer lightweight dependency or
+  reusable shortcut than making Parallax's adapter contract explicit.
+
+Why:
+- Git can help prove which paths changed, and affected-style systems operate
+  after a changed set exists, but neither proves whether an adapter can safely
+  avoid reading unchanged file content.
+- The current TypeScript/JavaScript and regex-backed adapters build import
+  resolvers and target-file maps from all indexed files; package extraction
+  builds lockfile/package catalogs from adapter-owned file content. Those remain
+  unsafe for target-only read shortcuts.
+- Config/infra extraction only needs the indexed path set plus the current file
+  content, so it can safely advertise a narrower content scope before any
+  runtime optimization consumes that metadata.
+- Publishing the scope in the immutable registry manifest gives tests and
+  reviewers a concrete contract to inspect before S1 changes the scanner/read
+  path.

@@ -905,3 +905,39 @@
     tests, dogfood, bench, and `npm audit --audit-level=high` all passed.
   - Perf smoke result for scale 10:
     `10 78 15.1 40.7 2.7 38.0 2.4 7.3 6.0 9 289 7836 4066 3795 725 600`.
+- Refreshed S1 adapter-contract research on 2026-06-29.
+  - Git status and `ls-files` still prove path state but not whether unchanged
+    file content can be omitted safely.
+  - Nx and Turborepo affected docs keep reinforcing the safe sequence:
+    establish the changed set, then reduce downstream work.
+  - GitHub repo search did not surface a safer lightweight incremental semantic
+    graph dependency or shortcut than making Parallax's own adapter content
+    contract explicit.
+  - `gh issue list` still shows only issue #3 open; `gh pr list` still shows
+    Dependabot PRs #23-#31.
+- Shipped S1 adapter file content scope contract.
+  - `SemanticAdapter.fileContentScope` and `AdapterManifestEntry.fileContentScope`
+    now expose whether an adapter may inspect content from the full index
+    (`full-index`) or only the current `process(file)` input (`target-only`).
+  - The registry manifest defaults omitted values to conservative
+    `full-index`, preserving source compatibility for custom adapters.
+  - Config/infra declares `target-only` because it uses indexed files as a path
+    set and reads content only from the current file.
+  - Build-system/package, TypeScript/JavaScript, and broad regex coverage
+    declare `full-index` because they build package/lockfile catalogs, import
+    resolvers, or cross-file target maps from indexed content.
+  - `docs/extending-adapters*.md` documents the contract, manifest field, and
+    adapter checklist in English, Korean, and Chinese.
+- S1 adapter content-scope verification:
+  - `npm run check`
+  - `node --import tsx --test tests/adapter_registry.test.ts tests/config-infra-adapter.test.ts tests/parallax.test.ts --test-name-pattern "manifest|config|indexedFiles"`
+  - `npm run docs:lint`
+  - `git diff --check`
+  - `npm run bench:perf -- --scales 10`
+  - `npm run verify`
+  - Focused tests passed 117/117.
+  - Full verify result: lint, schema check, install smoke/build, 680 unit
+    tests, dogfood, bench, and `npm audit --audit-level=high` all passed.
+  - Bench result: `summary.passed=true`, score `0.9987`.
+  - Perf smoke result for scale 10:
+    `10 367 50.4 165.2 3.5 145.9 13.9 13.1 51.0 9 275 36650 16516 14593 1306 5096`.

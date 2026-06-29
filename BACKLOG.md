@@ -4,8 +4,8 @@ Canonical detailed backlog: `IMPROVEMENT_OPPORTUNITIES.md`.
 
 ## Now
 
-1. S1 residual changed-file scan/read reduction using the new scan-phase perf
-   measurements and an adapter content-contract design.
+1. S1 measured changed-file scan/read reduction using `fileContentScope` for
+   `target-only` adapters while keeping `full-index` adapters conservative.
 
 ## Later
 
@@ -38,3 +38,4 @@ Canonical detailed backlog: `IMPROVEMENT_OPPORTUNITIES.md`.
 23. W5 Avro contract-kind first slice.
 24. S1 dirty/non-git no-changed-file adapter startup skip.
 25. S1 `bench:perf` scan-phase timing split.
+26. S1 adapter file content scope contract.

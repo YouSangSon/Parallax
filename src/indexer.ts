@@ -817,6 +817,13 @@ async function collectAdapterEvents(input: {
       completedFilePathsByAdapterId.set(adapter.id, new Set<string>());
       continue;
     }
+    if (input.isIncremental && adapterFiles.every((file) => !input.changedSet.has(file.relativePath))) {
+      updateAdapterRun(input.db, adapterRunId, 'completed');
+      const completedFilePaths = new Set(adapterFiles.map((file) => file.relativePath));
+      completedFilePathsByAdapterId.set(adapter.id, completedFilePaths);
+      completedAdapterRuns.push({ adapterId: adapter.id, adapterRunId });
+      continue;
+    }
     const ctx: ExtractCtx = {
       repoRoot: input.repoRoot,
       indexRunId: input.indexRunId,

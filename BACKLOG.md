@@ -4,7 +4,7 @@ Canonical detailed backlog: `IMPROVEMENT_OPPORTUNITIES.md`.
 
 ## Now
 
-1. S1 residual dirty/non-git scan-cost reduction after a measured adapter-contract design.
+1. S1 residual changed-file scan-cost reduction after an adapter-contract design.
 
 ## Later
 
@@ -35,3 +35,4 @@ Canonical detailed backlog: `IMPROVEMENT_OPPORTUNITIES.md`.
 21. W4 OpenAPI response optional-property removal contract-diff visibility.
 22. W5 JSON Schema contract-kind first slice.
 23. W5 Avro contract-kind first slice.
+24. S1 dirty/non-git no-changed-file adapter startup skip.

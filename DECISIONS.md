@@ -916,3 +916,40 @@ Why:
 - The deterministic `contractDiffQuality` bench now includes an Avro
   required-field removal case, raising the gate from 10 to 11 contract-diff
   cases.
+
+## 2026-06-29: Skip Adapter Startup On Dirty No-Changed Incremental Runs
+
+Decision: for S1, keep the scan/read loop intact but skip adapter `start()` when
+an incremental run proves that none of an adapter's indexed files changed. The
+run still creates a new `index_runs` row, records current git dirty metadata,
+marks the adapter run completed, and uses the existing carry-forward path for
+graph, evidence, and indexed coverage rows.
+
+Sources:
+- Git status porcelain documentation:
+  <https://git-scm.com/docs/git-status>
+- Git ls-files documentation:
+  <https://git-scm.com/docs/git-ls-files>
+- Nx affected documentation:
+  <https://nx.dev/docs/features/ci-features/affected>
+- Turborepo affected-task documentation:
+  <https://turborepo.com/docs/crafting-your-repository/constructing-ci#using---affected>
+- Parallax open issue queue refreshed via `gh issue list` on 2026-06-29: #3 is
+  still the only open issue.
+- Parallax open PR queue refreshed via `gh pr list` on 2026-06-29: #23-#31
+  remain Dependabot PRs.
+
+Why:
+- The existing clean same-HEAD fast path is already the safest zero-scan case.
+  Dirty and non-git runs still need the scanner to prove the indexed file set
+  and content hashes before Parallax can reuse anything.
+- Once `computeIndexDelta` returns incremental with no changed files for a given
+  adapter, starting that adapter cannot add new changed-file events; the prior
+  completed graph is the evidence source and `carryForwardUnchanged` already
+  moves it into the new cohort.
+- This is the smallest safe S1 follow-up: it removes unnecessary adapter
+  startup and per-file skip loops for dirty/no-op reruns without inventing a
+  file manifest cache or changing adapter contracts.
+- Actual scan/read reduction for changed-file runs still needs the deferred
+  adapter-contract design because adapters consume the full `indexedFiles`
+  context for manifest/path-alias/cross-file resolution.

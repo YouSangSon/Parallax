@@ -11,6 +11,11 @@ Source of truth for the active improvement loop. Detailed backlog lives in
   now shipped; deeper JSON Schema enum/format policy and Avro named-type /
   schema-registry compatibility remain follow-ons rather than the next default
   loop.
+- Completed slice: S1 dirty/non-git no-changed-file reruns now skip adapter
+  startup after the existing scan proves `delta.changed=[]`. The run still
+  records fresh git dirty metadata and carries prior graph/coverage rows
+  forward into the new cohort; actual scan/read reduction remains behind the
+  adapter-contract design.
 - Completed slice: W5 Avro contract-kind first slice now recognizes `.avsc`
   files as `avro` contracts, persists root record compatibility signatures,
   declares a synthetic `AVRO #` endpoint, and classifies top-level record
@@ -170,7 +175,7 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Next
 
-1. Evaluate S1 residual dirty/non-git scan-cost reduction with a measured
+1. Evaluate S1 residual changed-file scan-cost reduction with an
    adapter-contract design.
 2. Keep deeper JSON Schema / Avro compatibility semantics behind S1 unless new
    evidence displaces the sequence.

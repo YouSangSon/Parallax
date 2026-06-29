@@ -840,3 +840,37 @@
   - Bench result: `summary.passed=true`, score `0.9987`,
     `contractDiffQuality` `expectedCases=11`, `matchedCases=11`,
     `expectedChanges=11`, `matchedChanges=11`, and `missingChanges=[]`.
+- Refreshed S1 scan-cost research on 2026-06-29.
+  - Git docs confirm porcelain status and `ls-files` remain the right local
+    primitives for proving dirty/tracked/ignored file state without network.
+  - Nx and Turborepo affected docs again support doing less work only after a
+    changed-file set is known.
+  - GitHub repo search for incremental code-indexing projects did not surface a
+    better lightweight dependency or pattern than Parallax's existing
+    content-hash delta plus carry-forward model.
+  - `gh issue list` still shows only issue #3 open; `gh pr list` still shows
+    Dependabot PRs #23-#31.
+- Shipped S1 dirty/non-git no-changed-file adapter startup skip.
+  - `collectAdapterEvents` now marks an adapter run completed without calling
+    `start()` when the run is incremental and every file owned by that adapter
+    is unchanged.
+  - This preserves the existing scanner, current git dirty metadata, and
+    carry-forward semantics; it only removes unnecessary adapter startup and
+    per-file skip loops after `delta.changed=[]` is already proven.
+  - `tests/parallax.test.ts` covers a dirty rerun caused by an unindexed file:
+    the rerun creates a new dirty index row, stays incremental, and does not
+    call adapter `start()` again.
+- S1 dirty/no-changed adapter-startup verification:
+  - `npm run check`
+  - `node --import tsx --test tests/parallax.test.ts --test-name-pattern "same-HEAD|dirty rerun|git snapshot|git-ignored|resource skips|incremental"`
+  - `node --import tsx --test tests/index-delta.test.ts tests/incremental-index-oracle.test.ts`
+  - `npm run docs:lint`
+  - `git diff --check`
+  - `npm run bench:perf -- --scales 10`
+  - `npm run verify`
+  - Focused Parallax subset passed 104/104; index-delta/oracle tests passed
+    9/9.
+  - Full verify result: lint, schema check, install smoke/build, 678 unit
+    tests, dogfood, bench, and `npm audit --audit-level=high` all passed.
+  - Perf smoke result for scale 10:
+    `10 70 36.4 52.4 7.7 5.7 9 275 7003 3635 5244 772 569`.

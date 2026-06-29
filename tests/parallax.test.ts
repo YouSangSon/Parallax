@@ -4459,6 +4459,52 @@ test('indexProject reuses a clean same-HEAD git index without scanning again', a
   }
 });
 
+test('indexProject skips adapter startup when an incremental dirty rerun has no indexed file changes', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-dirty-noop-index-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const value = 1;\n');
+  initGitRepo(repoRoot);
+  await initProject({ repoRoot });
+
+  let startCalls = 0;
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'dirty-noop-test-adapter',
+    version: '1',
+    capabilities: ['references'],
+    supports: (file) => file.language === 'typescript',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => {
+      startCalls++;
+      return {
+        async *process(_file: ScannedFile): AsyncIterable<IndexEvent> {}
+      };
+    }
+  });
+
+  const first = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+  await writeFile(path.join(repoRoot, 'scratch.txt'), 'not indexed, but keeps git dirty\n');
+  const second = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+
+  assert.equal(first.mode, 'full');
+  assert.equal(second.mode, 'incremental');
+  assert.notEqual(second.indexRunId, first.indexRunId);
+  assert.equal(startCalls, 1);
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const run = db
+      .prepare('SELECT git_is_dirty FROM index_runs WHERE id = ?')
+      .get(second.indexRunId) as { git_is_dirty: number };
+    assert.equal(run.git_is_dirty, 1);
+    const adapterRun = db
+      .prepare('SELECT status FROM adapter_runs WHERE index_run_id = ? AND adapter_id = ?')
+      .get(second.indexRunId, 'dirty-noop-test-adapter') as { status: string };
+    assert.equal(adapterRun.status, 'completed');
+  } finally {
+    db.close();
+  }
+});
+
 test('indexProject scans again when git-ignored files were indexed under the same HEAD', async () => {
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-git-noop-ignored-file-'));
   await mkdir(path.join(repoRoot, 'src'), { recursive: true });

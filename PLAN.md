@@ -6,19 +6,27 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Active Loop
 
-- Next loop: use the new S1 `fileContentScope` contract to evaluate a measured
-  changed-file scan/read reduction for `target-only` adapters, starting with
-  config/infra, while keeping `full-index` adapters on the conservative path.
-  W5 JSON Schema and Avro first slices are now shipped; deeper JSON Schema
-  enum/format policy and Avro named-type / schema-registry compatibility
-  remain follow-ons rather than the next default loop.
+- In progress: fix the confirmed S1 invalidation defect before optimizing reads.
+  When indexed content changes, promote the effective run to the existing full
+  extraction path. The `tsconfig.json` alias oracle and a target-only adapter's
+  foreign-source event oracle must both drop stale output; zero-change behavior
+  must remain intact.
+- Deferred S1 slice: define and enforce emitted-row ownership separately from
+  `fileContentScope`, then add deterministic body/byte read counts. Until that
+  contract exists, every changed-body run stays conservative.
+- Gate after S1: fix the five evidence-backed UI interaction/accessibility
+  defects recorded in `GATES.md`; a passing string/API-only `test:ui` run does
+  not close that browser-behavior gate.
+- W5 JSON Schema and Avro first slices are now shipped; deeper JSON Schema
+  enum/format policy and Avro named-type / schema-registry compatibility remain
+  follow-ons rather than the next default loop.
 - Completed slice: S1 adapter file-content scope is now explicit through
   `SemanticAdapter.fileContentScope` and `registry.manifest()`. The default is
   conservative `full-index`; config/infra declares `target-only` because it
   uses indexed files only as path context, while build-system/package and
   TypeScript/JavaScript coverage remain `full-index`.
 - Completed slice: S1 `bench:perf` now reports actual indexer scan phase
-  timings for full, no-op incremental, and edited-file incremental phases. This
+  timings for full, no-op incremental, and edited-file reindex phases. This
   keeps risky content-read skipping out of the runtime path until the adapter
   content contract is explicit, while making the remaining scan/read cost
   measurable.
@@ -186,7 +194,7 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Next
 
-1. Evaluate S1 residual changed-file scan/read reduction using the new
-   scan-phase measurements and an adapter content-contract design.
-2. Keep deeper JSON Schema / Avro compatibility semantics behind S1 unless new
+1. Close the S1 changed-content invalidation gate and record complete verification evidence.
+2. Define emitted-row ownership before revisiting selective reads.
+3. Keep deeper JSON Schema / Avro compatibility semantics behind S1 unless new
    evidence displaces the sequence.

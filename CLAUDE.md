@@ -1,14 +1,17 @@
 # Claude Handoff Entry Point
 
-When opening this repository in Claude Code, start by reading:
+When opening this repository in Claude Code, start with the tracked control files:
 
 ```bash
-sed -n '1,260p' .superpowers/sdd/CLAUDE_HANDOFF.md
+sed -n '1,120p' goal.md
+sed -n '1,120p' PLAN.md
+sed -n '1,180p' GATES.md
+sed -n '1,160p' CONTEXT.md
 ```
 
-That file is the current local handoff for the active goal and includes the latest
-commit, verification evidence, completed slices, review history, and next-slice
-constraints.
+The ignored `.superpowers/sdd/CLAUDE_HANDOFF.md` is supplementary historical
+context. Use it only after comparing its recorded SHA with `HEAD`; it is not the
+active source of truth.
 
 ## Active Goal
 
@@ -27,9 +30,8 @@ Continue this goal until the broad objective is genuinely complete:
 
 ## Operating Rules
 
-- Follow the current gate in `.superpowers/sdd/CLAUDE_HANDOFF.md`. If that
-  handoff says the design/spec is approved and an implementation plan exists,
-  continue from the named plan instead of restarting discovery.
+- Follow the active gate in `GATES.md` and sequence in `PLAN.md`. Use a local
+  handoff only when its recorded SHA matches the current checkout.
 - Preserve user changes. Do not reset, checkout, or remove files unless the user
   explicitly asks.
 - Keep finished slices verified and push only when the user has approved that

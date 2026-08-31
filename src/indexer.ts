@@ -649,11 +649,9 @@ async function indexProjectInternal(
       unsupportedFiles
     );
 
-    // Incremental delta: compare the current indexed-file set + extractor version
-    // against the prior completed run. When nothing but file bodies changed (same
-    // path set, same extractor) the unchanged files' graph rows are carried
-    // forward and only the changed files are re-extracted; otherwise a full
-    // reindex. `priorRun` is null on the first index → full.
+    // First classify the content/path delta. Changed bodies are then promoted to
+    // full extraction because content scope does not prove emitted-row ownership;
+    // only a zero-change cohort is safe to carry forward today.
     const priorRun = loadPriorCompletedRun(db, repoId);
     const delta: IndexDelta = computeIndexDelta({
       prior: priorRun?.files ?? null,
@@ -662,8 +660,18 @@ async function indexProjectInternal(
         files: new Map(indexedFiles.map((file) => [file.relativePath, file.hash]))
       }
     });
-    const isIncremental = delta.mode === 'incremental';
-    const changedSet = new Set(delta.changed);
+    const effectiveDelta: IndexDelta =
+      delta.mode === 'incremental' && delta.changed.length > 0
+        ? {
+            ...delta,
+            mode: 'full',
+            reason: 'changed indexed content requires full extraction',
+            unchanged: [],
+            changed: []
+          }
+        : delta;
+    const isIncremental = effectiveDelta.mode === 'incremental';
+    const changedSet = new Set(effectiveDelta.changed);
 
     const adapterRunIds = new Map<SemanticAdapter, number>();
     const insertAdapterRun = db.prepare(`
@@ -763,7 +771,7 @@ async function indexProjectInternal(
       fileAdapterByPath,
       collected,
       priorRun,
-      delta,
+      delta: effectiveDelta,
       mainBranch,
       memoryTxId,
       memoryTs,
@@ -1367,11 +1375,12 @@ function languageIdsForSkippedAndUnsupported(
 }
 
 function extractorVersionFor(adapters: readonly SemanticAdapter[]): string {
+  const semanticsRevision = 's1-changed-content-full-v1';
   if (adapters.length === 1) {
     const adapter = adapters[0]!;
-    return `${adapter.id}-${adapter.version}`;
+    return `${adapter.id}-${adapter.version}-${semanticsRevision}`;
   }
-  return adapters.map((adapter) => `${adapter.id}-${adapter.version}`).join(',');
+  return `${adapters.map((adapter) => `${adapter.id}-${adapter.version}`).join(',')}-${semanticsRevision}`;
 }
 
 // Load the prior completed run's per-file content hashes + extractor version so

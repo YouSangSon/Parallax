@@ -71,10 +71,10 @@ and analyzer traversal is N+1 per frontier node.
 
 | # | Opportunity | Effort | Value |
 | :-- | :-- | :-- | :-- |
-| S1 | **Incremental indexing follow-through (content-hash-gated)** — the core arc is partially shipped: content-hash/extractor-version delta classification, unchanged-file carry-forward into the new `index_run_id`, saved/exported artifact immutability, crash-atomic graph/current-state commits, and `bench:perf` slices for full/no-op incremental/edited-file incremental/analyze phases are all in place. Follow-through slices ✅: incremental runs now replay file-level persistence only for changed files plus contract files, bulk-load file ids once, carry `files.index_run_id` forward in SQL, canonicalize unchanged file `entity_versions`, carry unchanged indexed coverage rows forward, reuse a clean same-HEAD default git index without rescanning or creating a redundant run when all indexed/coverage paths are tracked, no git-ignored scanner targets exist, and files fit default resource limits, skip adapter startup on dirty/non-git no-changed-file reruns after scan proves `delta.changed=[]`, report actual scan phase timings in `bench:perf` for full/no-op/edit index phases, and publish an explicit `fileContentScope` adapter contract. Still open: consume `target-only` scope for measured changed-file scan/read reduction without introducing stale ignored-file/resource-limit semantics or stale `full-index` adapter content. | L | HIGH |
+| S1 | **Incremental indexing follow-through (content-hash-gated)** — the core arc is partially shipped: content-hash/extractor-version delta classification, unchanged-file carry-forward into the new `index_run_id`, saved/exported artifact immutability, crash-atomic graph/current-state commits, and `bench:perf` slices for full/no-op incremental/edited-file reindex/analyze phases are all in place. Follow-through slices ✅: incremental runs now replay file-level persistence only for changed files plus contract files, bulk-load file ids once, carry `files.index_run_id` forward in SQL, canonicalize unchanged file `entity_versions`, carry unchanged indexed coverage rows forward, reuse a clean same-HEAD default git index without rescanning or creating a redundant run when all indexed/coverage paths are tracked, no git-ignored scanner targets exist, and files fit default resource limits, skip adapter startup on dirty/non-git no-changed-file reruns after scan proves `delta.changed=[]`, report actual scan phase timings in `bench:perf` for full/no-op/edit index phases, and publish an explicit `fileContentScope` adapter contract. Active correction: any changed indexed body must use full extraction because `full-index` startup context can invalidate unchanged owned files and `target-only` content scope does not constrain emitted-row ownership. Before selective reads return, define and enforce a separate output-ownership contract. | L | HIGH |
 | S2 | ✅ **shipped** — write-mode SQLite pragmas are in place, and indexing now commits the graph/current-state cohort in one explicit transaction after adapter extraction finishes. A child-process crash regression proves partial files/relations/evidence/transactions from a crashed run do not become current. | S | HIGH |
 | S3 | ⛔ **deprioritized — premise refuted by measurement.** The idea was to batch the per-node traversal query (`loadCanonicalImpactRows`) to cut round-trips. Built and verified byte-identical, then `bench:perf` showed it **flat** (2k files: 7545→7475 ms) even on a 200-node frontier: **in-process SQLite has no per-query latency, so N+1 query *count* is ~free** — and local-first is an invariant, so it can never matter. Reverted as premature optimization (KISS/YAGNI). The traversal-semantics characterization test (`tests/analyzer-traversal-batch.test.ts`) was kept as a guard for any future change. | M | ~~HIGH~~ LOW |
-| S4 | ✅ **shipped** — large-repo perf benchmark + documented limits: deterministic synthetic-repo generator (`bench/synthetic-repo.ts`, guarded by `tests/synthetic-repo.test.ts`) + `npm run bench:perf` (`bench/impact-perf.ts`) now report full initial index, no-op incremental index, edited-file incremental index, analyze-without-persist, analyze-with-persist, and observed peak RSS at scale, isolated from the determinism-locked accuracy bench, with an optional `--max-ms-per-kfile` CI gate. `docs/verification*.md` publishes the current local baseline table for 1k/2k and the measured 10k/50k limit: a 10k full-phase run did not emit a table within about 20 minutes on the baseline host, so 50k was not started. Deterministic `verify` continues to avoid exact timing assertions. | M | MED-HIGH |
+| S4 | ✅ **shipped** — large-repo perf benchmark + documented limits: deterministic synthetic-repo generator (`bench/synthetic-repo.ts`, guarded by `tests/synthetic-repo.test.ts`) + `npm run bench:perf` (`bench/impact-perf.ts`) now report full initial index, no-op incremental index, edited-file reindex, analyze-without-persist, analyze-with-persist, and observed peak RSS at scale, isolated from the determinism-locked accuracy bench, with an optional `--max-ms-per-kfile` CI gate. `docs/verification*.md` publishes the current local baseline table for 1k/2k and the measured 10k/50k limit: a 10k full-phase run did not emit a table within about 20 minutes on the baseline host, so 50k was not started. Deterministic `verify` continues to avoid exact timing assertions. | M | MED-HIGH |
 | S7 | ✅ **shipped** — saved report graph exports now treat persisted report JSON as the immutable graph snapshot source. Canonical graph rows remain only a legacy fallback when a persisted report lacks relation-bearing evidence, so later index cohorts, carry-forward, retention, repair, or canonical row mutation do not rewrite modern saved artifacts. | M | HIGH |
 | S5 | **Retention / prune superseded index runs (+ VACUUM)** — every run inserts a new cohort; nothing prunes old ones, so the DB grows by a full snapshot per run. Add deterministic retention (keep last N completed) inside a transaction + optional VACUUM. | M | MED |
 | S6 | **Committable / shareable index artifact** — define export/import of a compacted single-cohort DB + a `{extractor_version, git_commit_sha, content_hash set}` manifest; on import warn when hashes diverge from the working tree. "Index once in CI, everyone consumes." Depends on S5. | M | MED |
@@ -309,7 +309,7 @@ Reassessed order across the four L bets:
    land invisibly. Two evidence-based refinements after re-checking the code:
    - **S4 (perf bench) is shipped as a measurement guardrail.**
      `bench:perf` now measures full initial index, no-op incremental index,
-     edited-file incremental index, analyze-without-persist, and
+     edited-file reindex, analyze-without-persist, and
      analyze-with-persist phases over a deterministic synthetic repo. Caveat:
      timing/peak-RSS are **inherently non-deterministic**, so S4 remains separate
      from `ImpactBenchReport` (its `tests/impact-bench.test.ts` asserts a
@@ -381,19 +381,23 @@ graph rows into the new `index_run_id` cohort, re-extract only changed files.
 - Non-determinism lives on `index_runs`/`adapter_runs` timestamps, **not** on the
   graph rows dogfood/bench compare.
 
-**Resolution probe (decisive).** Cross-file edges proved to be **file-level,
-path-resolved, source-attributed**: renaming a target file's exported symbol
-(content-only change, path unchanged) left an importer's edges byte-identical for
-both a `const` import (`DEPENDS_ON`) and a function call
-(`CALLS [call:foo:3:10]` → `file:leaf.ts`). So an unchanged file's edges depend
-on its own content + the **existence (path)** of its targets, not their content.
+**Resolution probe (superseded 2026-08-31).** The original probe changed a target
+symbol but did not exercise adapter startup context. A stronger oracle changed
+only `tsconfig.json` path aliases and disproved the conclusion: the incremental
+graph retained `src/app.ts -> src/session.ts`, while a fresh index produced
+`src/app.ts -> other/session.ts`. A second custom-adapter oracle showed that
+`target-only` constrains reads, not row ownership: processing changed `a.ts` may
+legitimately emit a relation sourced from unchanged `b.ts`.
 
-**Chosen architecture — conservative, provably byte-identical:**
-- **Re-extraction closure = changed files only** (no reverse-dependency closure),
-  **gated** on: `extractor_version` unchanged **and** the file path set unchanged
-  (no adds/deletes/renames). Either condition failing → **full reindex** (safe
-  fallback). This captures the dominant loop (editing existing files) and
-  sidesteps the whole cross-file-resolution hazard class.
+**Revised architecture — conservative, provably byte-identical:**
+- Any changed indexed body promotes the effective run to the existing full
+  extraction/persistence path.
+- No-change incremental runs still skip adapter startup and carry the complete
+  prior cohort forward.
+- The indexer orchestration semantics are part of `extractor_version`, forcing a
+  one-time rebuild instead of reusing a pre-fix completed cohort.
+- Changed-only extraction remains deferred until emitted-row ownership is a
+  separate, enforced contract with its own persistence oracle.
 - **Carry-forward mechanism:** `INSERT … SELECT` re-stamping the prior cohort's
   rows with the new `index_run_id` for unchanged files (slice 2). Targets the
   measured cost (skip re-parsing), simpler than an event cache.
@@ -406,7 +410,9 @@ on its own content + the **existence (path)** of its targets, not their content.
 **Slice plan:** (1) ✅ pure `computeIndexDelta` classifier + oracle scaffold (this
 arc-opening). (2) ✅ **SHIPPED** — carry-forward wired into the write path behind
 the delta. (3) ✅ **SHIPPED** — perf bench reports full vs no-op incremental vs
-edited-file incremental timings, plus analyze no-persist vs persisted timings.
+edited-file reindex timings, plus analyze no-persist vs persisted timings.
+(4) **ACTIVE CORRECTION** — changed-body runs use full extraction; alias-context
+and foreign-source-row oracles must both equal the safe final graph.
 
 **Slice 2 as shipped (2026-06-21).** `IndexResult.mode` (`'full'|'incremental'`);
 `indexProjectInternal` computes the delta, skips re-extraction of unchanged files,
@@ -428,3 +434,7 @@ synthetic files and *bounded* by the SQLite restamp's index-maintenance cost on
 all-files file loop for unchanged files (opens the coverage/`entity_versions`
 write surface — deferred), and lighten the restamp by dropping run-id from the
 relations indexes (trades against traversal speed).
+
+The historical edited-file speedup above applies only to the superseded
+changed-only policy. Under the corrected policy, full-index synthetic edits take
+the full path by design; only zero-change cohorts remain incremental.

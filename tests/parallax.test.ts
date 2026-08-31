@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -3979,7 +3979,7 @@ test('exportImpactGraph renders report graph from SQLite relations without graph
   assert.doesNotMatch(dotGraph.rendered, /sk-test-secret/);
 });
 
-test('exportImpactGraph keeps a saved report graph stable after incremental reindex', async () => {
+test('exportImpactGraph keeps a saved report graph stable after reindex', async () => {
   const repoRoot = await makeFixtureRepo();
   await initProject({ repoRoot });
   await indexProject({ repoRoot });
@@ -4006,7 +4006,7 @@ test('exportImpactGraph keeps a saved report graph stable after incremental rein
     ].join('\n')
   );
   const reindex = await indexProject({ repoRoot });
-  assert.equal(reindex.mode, 'incremental');
+  assert.equal(reindex.mode, 'full');
 
   const after = await exportImpactGraph({ repoRoot, reportId: report.id, format: 'json' });
   const afterParsed = JSON.parse(after.rendered) as {
@@ -4505,38 +4505,140 @@ test('indexProject skips adapter startup when an incremental dirty rerun has no 
   }
 });
 
-test('indexProject scans again when git-ignored files were indexed under the same HEAD', async () => {
-  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-git-noop-ignored-file-'));
-  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
-  await writeFile(path.join(repoRoot, '.gitignore'), 'src/generated.ts\n');
-  await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const value = 1;\n');
-  await writeFile(path.join(repoRoot, 'src/generated.ts'), 'export const generated = 1;\n');
-  initGitRepo(repoRoot);
-  await initProject({ repoRoot });
+test('target-only content scope alone does not permit changed-only carry-forward', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-target-only-index-'));
+  try {
+    await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+    await writeFile(path.join(repoRoot, 'src/a.ts'), 'emit\n');
+    await writeFile(path.join(repoRoot, 'src/b.ts'), 'export const b = 1;\n');
+    await writeFile(path.join(repoRoot, 'src/external.ts'), 'export const external = 1;\n');
+    await initProject({ repoRoot });
 
-  let startCalls = 0;
-  const registry = new AdapterRegistry();
-  registry.register({
-    id: 'ignored-file-fast-path-test-adapter',
-    version: '1',
-    capabilities: ['references'],
-    supports: (file) => file.language === 'typescript',
-    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => {
-      startCalls++;
-      return {
-        async *process(_file: ScannedFile): AsyncIterable<IndexEvent> {}
-      };
+    const registry = new AdapterRegistry();
+    registry.register({
+      id: 'target-only-test-adapter',
+      version: '1',
+      capabilities: ['references'],
+      fileContentScope: 'target-only',
+      supports: (file) => file.language === 'typescript',
+      start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+        async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
+          if (file.relativePath === 'src/a.ts' && file.content.includes('emit')) {
+            yield {
+              kind: 'relation',
+              relation: {
+                source: { kind: 'file', path: 'src/b.ts' },
+                target: { kind: 'file', path: 'src/external.ts' },
+                kind: 'DEPENDS_ON',
+                evidence: [{ file: file.relativePath, confidence: 'heuristic' }]
+              }
+            };
+          }
+        }
+      })
+    });
+
+    const first = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+    await writeFile(path.join(repoRoot, 'src/a.ts'), 'no relation\n');
+    const second = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+
+    assert.equal(first.mode, 'full');
+    assert.equal(second.mode, 'full');
+    const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+    try {
+      const relationCount = db
+        .prepare(
+          `SELECT count(*) AS count FROM relations
+           WHERE index_run_id = ? AND source_entity_id = 'file:src/b.ts'
+             AND target_entity_id = 'file:src/external.ts' AND kind = 'DEPENDS_ON'`
+        )
+        .get(second.indexRunId) as { count: number };
+      assert.equal(relationCount.count, 0, 'the vanished foreign-source event must not carry forward');
+    } finally {
+      db.close();
     }
-  });
+  } finally {
+    await rm(repoRoot, { recursive: true, force: true });
+  }
+});
 
-  const first = await indexProjectWithRegistryForTest({ repoRoot }, registry);
-  await writeFile(path.join(repoRoot, 'src/generated.ts'), 'export const generated = 2;\n');
-  const second = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+test('indexer semantics revision forces one rebuild of a pre-fix completed cohort', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-indexer-semantics-'));
+  try {
+    await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+    await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const value = 1;\n');
+    await initProject({ repoRoot });
 
-  assert.equal(first.filesIndexed, 2);
-  assert.equal(second.mode, 'incremental');
-  assert.notEqual(second.indexRunId, first.indexRunId);
-  assert.equal(startCalls, 2);
+    let startCalls = 0;
+    const adapterId = 'semantics-revision-test-adapter';
+    const registry = new AdapterRegistry();
+    registry.register({
+      id: adapterId,
+      version: '1',
+      capabilities: ['references'],
+      supports: (file) => file.language === 'typescript',
+      start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => {
+        startCalls++;
+        return { async *process(_file: ScannedFile): AsyncIterable<IndexEvent> {} };
+      }
+    });
+
+    const first = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+    const db = new DatabaseSync(databasePath(repoRoot));
+    try {
+      db.prepare('UPDATE index_runs SET extractor_version = ? WHERE id = ?').run(
+        `${adapterId}-1`,
+        first.indexRunId
+      );
+    } finally {
+      db.close();
+    }
+    const second = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+
+    assert.equal(first.mode, 'full');
+    assert.equal(second.mode, 'full');
+    assert.equal(startCalls, 2);
+  } finally {
+    await rm(repoRoot, { recursive: true, force: true });
+  }
+});
+
+test('indexProject fully re-extracts when ignored indexed content changes', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-git-noop-ignored-file-'));
+  try {
+    await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+    await writeFile(path.join(repoRoot, '.gitignore'), 'src/generated.ts\n');
+    await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const value = 1;\n');
+    await writeFile(path.join(repoRoot, 'src/generated.ts'), 'export const generated = 1;\n');
+    initGitRepo(repoRoot);
+    await initProject({ repoRoot });
+
+    let startCalls = 0;
+    const registry = new AdapterRegistry();
+    registry.register({
+      id: 'ignored-file-fast-path-test-adapter',
+      version: '1',
+      capabilities: ['references'],
+      supports: (file) => file.language === 'typescript',
+      start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => {
+        startCalls++;
+        return {
+          async *process(_file: ScannedFile): AsyncIterable<IndexEvent> {}
+        };
+      }
+    });
+
+    const first = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+    await writeFile(path.join(repoRoot, 'src/generated.ts'), 'export const generated = 2;\n');
+    const second = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+
+    assert.equal(first.filesIndexed, 2);
+    assert.equal(second.mode, 'full');
+    assert.notEqual(second.indexRunId, first.indexRunId);
+    assert.equal(startCalls, 2);
+  } finally {
+    await rm(repoRoot, { recursive: true, force: true });
+  }
 });
 
 test('indexProject scans again when a new git-ignored scan target appears under the same HEAD', async () => {

@@ -1027,3 +1027,30 @@ Why:
 - Publishing the scope in the immutable registry manifest gives tests and
   reviewers a concrete contract to inspect before S1 changes the scanner/read
   path.
+
+## 2026-08-31: Changed Indexed Content Forces Full Extraction
+
+Decision: any changed indexed body promotes the effective run to the existing
+full extraction and persistence path. Only a zero-change cohort may use current
+incremental carry-forward and skip adapter startup. Include an indexer
+orchestration revision in `extractor_version` so pre-fix completed cohorts are
+rebuilt once.
+
+Sources:
+- Parallax adapter content-scope contract and exact incremental-vs-full oracles.
+- Git status porcelain documentation:
+  <https://git-scm.com/docs/git-status>
+- clangd indexing design:
+  <https://clangd.llvm.org/design/indexing.html>
+
+Why:
+- A `tsconfig.json`-only path-alias edit reproduced stale output: the old
+  incremental graph resolved `src/app.ts` to `src/session.ts`, while a fresh
+  full index resolved it to `other/session.ts`.
+- `target-only` constrains content reads, not emitted-row ownership. A compliant
+  adapter processing changed `a.ts` may emit a relation sourced from unchanged
+  `b.ts`; source-path carry-forward would preserve that row after it vanished.
+- Reusing the existing full path is smaller and safer than adding an unmeasured
+  cross-adapter dependency or row-ownership model. Narrower invalidation remains
+  deferred until an explicit ownership contract and deterministic measurements
+  justify the complexity.

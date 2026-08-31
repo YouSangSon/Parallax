@@ -40,7 +40,7 @@ test('formatPerfTable renders index, scan, analyze, peak RSS, affected, and per-
       fullScanMs: 120.5,
       noopIncrementalMs: 20,
       noopScanMs: 11.25,
-      editIncrementalMs: 35,
+      editReindexMs: 35,
       editScanMs: 12.75,
       analyzeNoPersistMs: 12.5,
       analyzePersistMs: 15.5,
@@ -52,7 +52,7 @@ test('formatPerfTable renders index, scan, analyze, peak RSS, affected, and per-
   assert.equal(
     output,
     [
-      'files\tfull_index_ms\tfull_scan_ms\tnoop_incremental_ms\tnoop_scan_ms\tedit_incremental_ms\tedit_scan_ms\tanalyze_no_persist_ms\tanalyze_persist_ms\taffected\tobserved_peak_rss_mb\tfull_index_ms/kfile\tnoop_incremental_ms/kfile\tedit_incremental_ms/kfile\tanalyze_no_persist_ms/kfile\tanalyze_persist_ms/kfile',
+      'files\tfull_index_ms\tfull_scan_ms\tnoop_incremental_ms\tnoop_scan_ms\tedit_reindex_ms\tedit_scan_ms\tanalyze_no_persist_ms\tanalyze_persist_ms\taffected\tobserved_peak_rss_mb\tfull_index_ms/kfile\tnoop_incremental_ms/kfile\tedit_reindex_ms/kfile\tanalyze_no_persist_ms/kfile\tanalyze_persist_ms/kfile',
       '200\t1000\t120.5\t20.0\t11.3\t35.0\t12.8\t12.5\t15.5\t199\t128\t5000\t100\t175\t63\t78'
     ].join('\n')
   );

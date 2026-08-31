@@ -4,8 +4,10 @@ Canonical detailed backlog: `IMPROVEMENT_OPPORTUNITIES.md`.
 
 ## Now
 
-1. S1 measured changed-file scan/read reduction using `fileContentScope` for
-   `target-only` adapters while keeping `full-index` adapters conservative.
+1. Close the S1 changed-content invalidation gate: no adapter output derived
+   from an earlier body may survive a changed-body rerun.
+2. Before revisiting selective reads, define and enforce emitted-row ownership
+   separately from `fileContentScope`.
 
 ## Later
 

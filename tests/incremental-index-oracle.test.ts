@@ -151,28 +151,25 @@ test('a full reindex is byte-identical across runs (modulo run id) — the S1 or
   }
 });
 
-// The S1 oracle proper: editing one file's body (the path set and extractor
-// unchanged) must take the incremental carry-forward path, and the resulting
-// graph must be byte-identical to a single full reindex of the same end state.
-// This catches the primary carry-forward bug (an unchanged file's rows left in
-// the old run cohort, hence invisible) and any edge type that turns out to be
-// target-content-dependent.
+// The S1 oracle proper: a changed full-index adapter input must use full
+// extraction, and the resulting graph must be byte-identical to a single full
+// reindex of the same end state.
 const EDITED_LEAF = 'export function foo() {\n  return 2;\n}\n';
 
-test('an incremental reindex (edit one file body, stable path set) is byte-identical to a full reindex of the end state — the S1 oracle', async () => {
+test('a changed full-index file is fully re-extracted and byte-identical to a fresh index', async () => {
   const incrementalRoot = mkdtempSync(path.join(tmpdir(), 'parallax-oracle-incr-'));
   const fullRoot = mkdtempSync(path.join(tmpdir(), 'parallax-oracle-full-'));
   try {
-    // Incremental repo: full index, then edit leaf.ts body only and re-index.
+    // Existing repo: full index, then edit leaf.ts body only and re-index.
     writeChain(incrementalRoot);
     await initProject({ repoRoot: incrementalRoot });
     await indexProject({ repoRoot: incrementalRoot });
     writeFileSync(path.join(incrementalRoot, 'src/leaf.ts'), EDITED_LEAF);
-    const incremental = await indexProject({ repoRoot: incrementalRoot });
+    const rerun = await indexProject({ repoRoot: incrementalRoot });
     assert.equal(
-      incremental.mode,
-      'incremental',
-      'editing one file body with a stable path set must take the incremental path'
+      rerun.mode,
+      'full',
+      'editing a full-index file must promote the rerun to full extraction'
     );
     const incrementalSnapshot = snapshotGraph(incrementalRoot);
 
@@ -197,34 +194,26 @@ test('an incremental reindex (edit one file body, stable path set) is byte-ident
   }
 });
 
-// The discriminating oracle: editing leaf.ts (no outgoing relations) never makes
-// the `NOT IN (changed)` exclusion exclude anything, so it does not exercise the
-// risky path. Editing a.ts — which HAS outgoing CALLS+DEPENDS_ON — does: its old
-// rows must be excluded from carry-forward and re-derived by extraction, and the
-// dropped call must be stranded on the prior run, not carried forward. The test
-// also chains two incremental hops (the second carries forward from a run that
-// was itself incremental) to pin the "every completed run holds the full graph"
-// invariant.
+// A changed file with outgoing rows exercises the stale-row risk directly. Two
+// consecutive edits pin that every promoted run reconstructs the complete graph.
 const A_DROP_CALL = "import { foo } from './leaf.js';\nexport function bar() {\n  return 0;\n}\n";
 const AA_EDIT = "import { bar } from './a.js';\nexport function baz() {\n  return bar() + 1;\n}\n";
 
-test('an incremental reindex re-derives a changed file (dropping a relation) and chains hops — byte-identical to full', async () => {
+test('consecutive full-index edits drop vanished relations and remain byte-identical to fresh', async () => {
   const incrementalRoot = mkdtempSync(path.join(tmpdir(), 'parallax-oracle-drop-incr-'));
   const fullRoot = mkdtempSync(path.join(tmpdir(), 'parallax-oracle-drop-full-'));
   try {
-    // Incremental: full, then edit a.ts (drops its CALLS to foo, keeps the
-    // import) → hop 1; then edit aa.ts → hop 2 (carry-forward from an incremental
-    // run). a.ts and aa.ts each have outgoing relations, so their rows are the
-    // ones the exclusion must drop and re-extraction must re-derive.
+    // Full, then edit a.ts (drops its CALLS to foo, keeps the import), then edit
+    // aa.ts. Both reruns must reconstruct all full-index output.
     writeChain(incrementalRoot);
     await initProject({ repoRoot: incrementalRoot });
     await indexProject({ repoRoot: incrementalRoot });
     writeFileSync(path.join(incrementalRoot, 'src/a.ts'), A_DROP_CALL);
     const hop1 = await indexProject({ repoRoot: incrementalRoot });
-    assert.equal(hop1.mode, 'incremental', 'editing a.ts (stable path set) must be incremental');
+    assert.equal(hop1.mode, 'full', 'editing a full-index file must force full extraction');
     writeFileSync(path.join(incrementalRoot, 'src/aa.ts'), AA_EDIT);
     const hop2 = await indexProject({ repoRoot: incrementalRoot });
-    assert.equal(hop2.mode, 'incremental', 'a second edit must also be incremental (chained hop)');
+    assert.equal(hop2.mode, 'full', 'a second full-index edit must also force full extraction');
     const incrementalSnapshot = snapshotGraph(incrementalRoot);
 
     // Full reindex of the same end state.
@@ -244,6 +233,48 @@ test('an incremental reindex re-derives a changed file (dropping a relation) and
       'the dropped CALLS from a.ts must not survive in the new run cohort'
     );
     assert.deepEqual(incrementalSnapshot, fullSnapshot);
+  } finally {
+    rmSync(incrementalRoot, { recursive: true, force: true });
+    rmSync(fullRoot, { recursive: true, force: true });
+  }
+});
+
+function writeAliasProject(root: string, target: 'src' | 'other'): void {
+  mkdirSync(path.join(root, 'src'), { recursive: true });
+  mkdirSync(path.join(root, 'other'), { recursive: true });
+  writeFileSync(
+    path.join(root, 'tsconfig.json'),
+    JSON.stringify({ compilerOptions: { baseUrl: '.', paths: { '@app/*': [`${target}/*`] } } })
+  );
+  writeFileSync(path.join(root, 'src/app.ts'), "import { session } from '@app/session';\nsession();\n");
+  writeFileSync(path.join(root, 'src/session.ts'), 'export function session() { return "src"; }\n');
+  writeFileSync(path.join(root, 'other/session.ts'), 'export function session() { return "other"; }\n');
+}
+
+test('changing full-index context forces a full extraction and matches a fresh index', async () => {
+  const incrementalRoot = mkdtempSync(path.join(tmpdir(), 'parallax-oracle-context-incr-'));
+  const fullRoot = mkdtempSync(path.join(tmpdir(), 'parallax-oracle-context-full-'));
+  try {
+    writeAliasProject(incrementalRoot, 'src');
+    await initProject({ repoRoot: incrementalRoot });
+    await indexProject({ repoRoot: incrementalRoot });
+    writeAliasProject(incrementalRoot, 'other');
+    const rerun = await indexProject({ repoRoot: incrementalRoot });
+
+    writeAliasProject(fullRoot, 'other');
+    await initProject({ repoRoot: fullRoot });
+    await indexProject({ repoRoot: fullRoot });
+
+    const incrementalSnapshot = snapshotGraph(incrementalRoot);
+    const fullSnapshot = snapshotGraph(fullRoot);
+    assert.ok(
+      incrementalSnapshot.edges.some(
+        (row) => row.source_path === 'src/app.ts' && row.target_path_resolved === 'other/session.ts'
+      ),
+      'the final alias must resolve src/app.ts to other/session.ts'
+    );
+    assert.deepEqual(incrementalSnapshot, fullSnapshot);
+    assert.equal(rerun.mode, 'full', 'full-index adapter context invalidates changed-only extraction');
   } finally {
     rmSync(incrementalRoot, { recursive: true, force: true });
     rmSync(fullRoot, { recursive: true, force: true });

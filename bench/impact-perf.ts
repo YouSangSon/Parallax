@@ -1,8 +1,9 @@
 #!/usr/bin/env tsx
 /**
- * S4 performance bench — measures full index, incremental index, and analyze
- * costs plus observed peak RSS on a deterministic synthetic repo at increasing
- * scales. This is intentionally NOT part of `npm run verify`: timing and peak RSS are
+ * S4 performance bench — measures initial index, no-op incremental index,
+ * changed-file reindex, and analyze costs plus observed peak RSS on a
+ * deterministic synthetic repo at increasing scales. This is intentionally NOT
+ * part of `npm run verify`: timing and peak RSS are
  * non-deterministic, so they must not reach the byte-identical
  * `ImpactBenchReport`. Run it on demand to capture a baseline or, in CI, with a
  * generous `--max-ms-per-kfile` ceiling.
@@ -27,7 +28,7 @@ export type PerfRow = {
   fullScanMs: number;
   noopIncrementalMs: number;
   noopScanMs: number;
-  editIncrementalMs: number;
+  editReindexMs: number;
   editScanMs: number;
   analyzeNoPersistMs: number;
   analyzePersistMs: number;
@@ -100,9 +101,11 @@ async function measure(files: number): Promise<PerfRow> {
     assertIncremental(noopIncremental.value, 'no-op');
 
     await editSyntheticChangedFile(root, info);
-    const editIncremental = await timedIndex(root);
+    const editReindex = await timedIndex(root);
     observedPeakRssMb = Math.max(observedPeakRssMb, rssMb());
-    assertIncremental(editIncremental.value, 'single-file edit');
+    if (editReindex.value.mode !== 'full') {
+      throw new Error(`single-file edit expected mode === 'full', got ${editReindex.value.mode}`);
+    }
 
     const analyzeNoPersist = await timed(() =>
       analyzeDiff({ repoRoot: root, changedFiles: [info.changedFile], persistReport: false })
@@ -119,8 +122,8 @@ async function measure(files: number): Promise<PerfRow> {
       fullScanMs: fullIndex.scanMs,
       noopIncrementalMs: noopIncremental.ms,
       noopScanMs: noopIncremental.scanMs,
-      editIncrementalMs: editIncremental.ms,
-      editScanMs: editIncremental.scanMs,
+      editReindexMs: editReindex.ms,
+      editScanMs: editReindex.scanMs,
       analyzeNoPersistMs: analyzeNoPersist.ms,
       analyzePersistMs: analyzePersist.ms,
       affected: analyzePersist.value.affectedFiles.length,
@@ -147,7 +150,7 @@ export function formatPerfTable(rows: readonly PerfRow[]): string {
       'full_scan_ms',
       'noop_incremental_ms',
       'noop_scan_ms',
-      'edit_incremental_ms',
+      'edit_reindex_ms',
       'edit_scan_ms',
       'analyze_no_persist_ms',
       'analyze_persist_ms',
@@ -155,7 +158,7 @@ export function formatPerfTable(rows: readonly PerfRow[]): string {
       'observed_peak_rss_mb',
       'full_index_ms/kfile',
       'noop_incremental_ms/kfile',
-      'edit_incremental_ms/kfile',
+      'edit_reindex_ms/kfile',
       'analyze_no_persist_ms/kfile',
       'analyze_persist_ms/kfile'
     ].join('\t')
@@ -169,7 +172,7 @@ export function formatPerfTable(rows: readonly PerfRow[]): string {
         row.fullScanMs.toFixed(1),
         row.noopIncrementalMs.toFixed(1),
         row.noopScanMs.toFixed(1),
-        row.editIncrementalMs.toFixed(1),
+        row.editReindexMs.toFixed(1),
         row.editScanMs.toFixed(1),
         row.analyzeNoPersistMs.toFixed(1),
         row.analyzePersistMs.toFixed(1),
@@ -177,7 +180,7 @@ export function formatPerfTable(rows: readonly PerfRow[]): string {
         row.observedPeakRssMb.toFixed(0),
         msPerKfile(row.fullIndexMs, row.files).toFixed(0),
         msPerKfile(row.noopIncrementalMs, row.files).toFixed(0),
-        msPerKfile(row.editIncrementalMs, row.files).toFixed(0),
+        msPerKfile(row.editReindexMs, row.files).toFixed(0),
         msPerKfile(row.analyzeNoPersistMs, row.files).toFixed(0),
         msPerKfile(row.analyzePersistMs, row.files).toFixed(0)
       ].join('\t')
@@ -206,7 +209,7 @@ async function main(): Promise<void> {
       worstIndexPerK,
       msPerKfile(row.fullIndexMs, row.files),
       msPerKfile(row.noopIncrementalMs, row.files),
-      msPerKfile(row.editIncrementalMs, row.files)
+      msPerKfile(row.editReindexMs, row.files)
     );
   }
 

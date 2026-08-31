@@ -113,7 +113,7 @@ MCP 已稳定为 read-only。接下来是深入审视 agent 可用性的阶段�
   - 当前 contract-diff gate：bench 包含 removed response required property、removed response optional property、added request required property、request enum-value removal、request format addition、response property type change、response nullable addition、response format change、response enum-value removal 的 paired OpenAPI v1/v2 quality case，以及 JSON Schema root-object 和 Avro top-level record required-property removal case，并通过 `contractDiffQuality` 报告，方便 CI summary 跟踪 delta。
   - 当前 co-change gate：bench 包含一个小型 git-history fixture，其中 `src/alpha.ts` 与 `src/beta.ts` 反复共同变更，并通过 `coChangeQuality` 报告，方便 CI summary 跟踪 partner 与 affected-file delta。
   - 当前 trace-promotion gate：bench 会 ingest 一个运行时观测到的 `src/beta.ts -> src/alpha.ts` edge，并通过 `tracePromotionQuality` 报告，方便 CI summary 跟踪 promotion 与 proven-impact delta。
-- [x] 独立的 scale/perf bench，可分别报告 full index、no-op incremental index、edited-file incremental index 与 analyze phases，而不把精确耗时伪装成确定性契约
+- [x] 独立的 scale/perf bench，可分别报告 full index、no-op incremental index、edited-file reindex 与 analyze phases，而不把精确耗时伪装成确定性契约
   - 当前工具：`npm run bench:perf` 在 synthetic-repo generator 上测量这些阶段、各 scan timing 和 `observed_peak_rss_mb`，并保持在 `npm run verify` 之外，因此 timing/RSS 是建议性的，而不是逐字节 CI 合同。标准 large-repo baseline command 是 `npm run bench:perf -- --scales 10000,50000`；`docs/verification.zh.md` 的当前 local baseline 记录了 1k/2k row 和 10k timeout limit，而不是 green 10k/50k claim。
 - [x] 在 embedding 模型 / LLM provider 交叉时对 recall 质量的回归 detection
   - 当前 gate：deterministic bench 现在包含 semantic model matrix，检查每个模型的 recall@1 与 cross-model isolation。它是一个不依赖 live provider 调用的 offline gate，用来捕捉 embedding 模型 namespace 回归；LLM provider 的网络质量评估仍放在 CI 之外，而 provider contract 继续由 offline test 覆盖。
@@ -126,6 +126,8 @@ MCP 已稳定为 read-only。接下来是深入审视 agent 可用性的阶段�
 
 ## 如果只挑下一个切片
 
-在 `tests/` 与 `bench/` 中已有的 fixture 之上，按 core engine 来看 ROI 最高的仍然是把**准确度 (1)** 的第一项 —— *parser-backed TS/JS span* —— 收尾。因为其他所有轴都依赖 evidence span 的精度。
-
-如果目标是 GitHub 与 agent workflow 中的 adoption，则继续推进 **Agent surface (4)** lane：official GitHub Action + SARIF/code-scanning export、Copilot 安装指引，并在 dependency/PR triage workflow 中 dogfood 已 shipped 的 token-budgeted repo map/context card。这样现有 impact engine 才会出现在 reviewer 与 coding agent 实际工作的地方。
+实时执行顺序由 `PLAN.md` 管理。当前 gate 是 S1 增量正确性：让
+`fileContentScope` 真正参与执行，避免 full-index context 变化后继续
+carry-forward 旧 row。只有该 oracle 变绿后，才测量仅含 target-only adapter
+的仓库中的 selective read。上面的准确度和 agent-surface 项目仍是后续主题，
+不与当前执行指令竞争。

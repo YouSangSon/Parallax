@@ -113,7 +113,7 @@ Without regression signals, there is no guarantee that every change works.
   - Current contract-diff gate: the bench includes paired OpenAPI v1/v2 quality cases for removed response required properties, removed response optional properties, added request required properties, request enum-value removals, request format additions, response property type changes, response nullable additions, response format changes, and response enum-value removals, plus JSON Schema root-object and Avro top-level record required-property removal cases, reported as `contractDiffQuality` so CI summaries can track deltas.
   - Current co-change gate: the bench includes a tiny git-history fixture where `src/alpha.ts` and `src/beta.ts` repeatedly change together, reported as `coChangeQuality` so CI summaries can track partner and affected-file deltas.
   - Current trace-promotion gate: the bench ingests a runtime-observed `src/beta.ts -> src/alpha.ts` edge and reports `tracePromotionQuality`, so CI summaries can track promotion and proven-impact deltas.
-- [x] A separate scale/perf bench that reports full index, no-op incremental index, edited-file incremental index, and analyze phases without pretending exact timings are deterministic
+- [x] A separate scale/perf bench that reports full index, no-op incremental index, edited-file reindex, and analyze phases without pretending exact timings are deterministic
   - Current tool: `npm run bench:perf` measures those phases, their scan timings, and `observed_peak_rss_mb` on the synthetic-repo generator outside `npm run verify`, so timing and RSS remain advisory rather than a byte-for-byte CI contract. The standard large-repo baseline command is `npm run bench:perf -- --scales 10000,50000`; the current local baseline in `docs/verification.md` records 1k/2k rows and a 10k timeout limit instead of a green 10k/50k claim.
 - [x] Recall quality regression detection when crossing embedding models / LLM providers
   - Current gate: the deterministic bench now includes a semantic model matrix with per-model recall@1 and cross-model isolation checks. It is deliberately offline and catches embedding model namespace regressions without depending on live provider calls; LLM provider network quality remains outside CI, while provider contracts stay covered by offline tests.
@@ -126,6 +126,8 @@ Without regression signals, there is no guarantee that every change works.
 
 ## If we had to pick just the next slice
 
-On top of the fixtures already present in `tests/` and `bench/`, the core-engine slice with the highest ROI is still the first item of **Accuracy (1)** — *parser-backed TS/JS span*. Every other axis depends on the precision of the evidence span.
-
-If the goal is adoption in GitHub and agent workflows, continue the **Agent surface (4)** lane: Copilot install guidance, broader SARIF coverage, and dogfooding the shipped token-budgeted repo map/context card in dependency and PR triage workflows. That makes the existing impact engine visible where reviewers and coding agents already work.
+`PLAN.md` is the live queue. Its current gate is S1 incremental correctness:
+consume `fileContentScope` so changed full-index context cannot leave stale
+carried rows. Only after that oracle is green should S1 measure selective reads
+for target-only-only repositories. The accuracy and agent-surface items above
+remain thematic follow-ons, not competing live instructions.

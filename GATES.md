@@ -20,7 +20,7 @@ Evidence is current only when the command and result are recorded in this file. 
 - [x] Final-tree `npm run verify` passes after the CodeQL corrective slice:
   lint/schema drift, install smoke, 697/697 tests, dogfood 2/2, deterministic
   bench 78/78 at score 0.9987, and the dependency audit gate all completed.
-- [x] `git diff --check` passes; final intended-file review remains before checkpointing.
+- [x] `git diff --check` and the final intended-file review passed before checkpointing.
 - [x] No owned Parallax test process remains. The final run's 650 recent
   `parallax-*` fixture directories were moved recoverably to
   `~/.Trash/Parallax-Codex-20260831-codeql-tests.qvAnPM`; no recent match remains.
@@ -70,8 +70,9 @@ conservative full-read/full-extraction path.
   inputs no longer claim repository containment they cannot atomically enforce.
 - [x] Independent review's P1 snapshot race and P2 input-path/documentation
   findings are corrected; final diff inspection reports no remaining P0-P2.
-- [ ] Push the correction and require every PR check, including the distinct
-  GitHub Advanced Security CodeQL result, to pass before merge.
+- [x] Correction commit `eb21527` was pushed. CodeQL, gitleaks, dependency
+  audit, JavaScript/TypeScript analysis, and the 6m28s Release gate all passed;
+  PR #35 then squash-merged to `main` as `4f289a6`.
 
 ## Audited UI Gate
 

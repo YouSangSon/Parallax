@@ -131,7 +131,7 @@ parallax scip import --file index.scip.json
 parallax scip export --file index.scip.json
 ```
 
-The importer augments the latest completed Parallax index run with SCIP-derived definition/reference edges. Binary `index.scip` import uses the official `scip` CLI on `PATH`; JSON import and JSON export do not require the CLI at runtime.
+The importer augments the latest completed Parallax index run with SCIP-derived definition/reference edges. Binary `index.scip` import uses the official `scip` CLI on `PATH`; JSON import and JSON export do not require the CLI at runtime. The explicitly selected `--file` may be any trusted local file. To preserve existing indexed file metadata and avoid live document-path races, document bodies come only from SCIP `Document.text` or the run's recorded clean Git commit. Textless documents already present in the latest index still import with symbol-only evidence; unverifiable textless, unindexed documents are skipped with a warning.
 
 For a worked tutorial that continues from the UI into MCP and CI guardrails, see [`docs/getting-started.md`](docs/getting-started.md).
 

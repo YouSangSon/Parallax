@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import { analyzeDiff } from './analyzer.js';
 import { buildContextPack, selectCoChangePartners } from './context_pack.js';
+import { isTestPath } from './entity_classification.js';
 import { searchContext } from './mcp_search.js';
 import { normalizeRepoRoot } from './security.js';
 import type {
@@ -538,10 +539,6 @@ function overallConfidence(values: Confidence[]): Confidence {
   if (values.includes('heuristic')) return 'heuristic';
   if (values.includes('inferred')) return 'inferred';
   return values.length > 0 ? 'proven' : 'unknown';
-}
-
-function isTestPath(filePath: string): boolean {
-  return /(^|\/)(tests?|__tests__)\/|(\.|-)(test|spec)\.[^.]+$/.test(filePath);
 }
 
 function isDocPath(filePath: string): boolean {

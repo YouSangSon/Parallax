@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { performance } from 'node:perf_hooks';
 import { test } from 'node:test';
 
 import {
@@ -29,9 +30,17 @@ test('isTestPath covers supported source test naming conventions', () => {
   assert.equal(isTestPath('src/__tests__/app.ts'), true);
   assert.equal(isTestPath('src/test/AppTest.java'), true);
   assert.equal(isTestPath('test_service.py'), true);
+  assert.equal(isTestPath('service_test.py'), true);
   assert.equal(isTestPath('service_test.go'), true);
   assert.equal(isTestPath('parser_spec.rs'), true);
   assert.equal(isTestPath('src/app.ts'), false);
+});
+
+test('isTestPath rejects a long non-test Python basename without polynomial backtracking', () => {
+  const startedAt = performance.now();
+  assert.equal(isTestPath(`${'a'.repeat(40_000)}.py`), false);
+  const elapsedMs = performance.now() - startedAt;
+  assert.ok(elapsedMs < 1_000, `classification took ${elapsedMs.toFixed(1)}ms`);
 });
 
 test('entityKindForPath centralizes policy, workflow, config, resource, and contract classification', () => {

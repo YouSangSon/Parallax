@@ -14,8 +14,11 @@ Source of truth for the active improvement loop. Detailed backlog lives in
   cleanup passed. The same tree includes the bounded UI interaction /
   accessibility fixes and a fail-closed, expiring exception for the four
   currently unfixable high-severity findings in the locked Transformers tree.
-- In progress: checkpoint the reviewed tree, publish the authorized PR to
-  `main`, observe its checks, and merge only when the remote gate is green.
+- In progress: PR #35 is open against `main`. Its first CodeQL result exposed
+  four high-severity findings; the corrected local slice removes both regex
+  hazards, binds SCIP import to a write-locked immutable source snapshot, and
+  upgrades the redacted evidence ID hash. Focused gates pass; run the canonical
+  final-tree gate, push, and require every remote check before merge.
 - Deferred S1 slice: define and enforce emitted-row ownership separately from
   `fileContentScope`, then add deterministic body/byte read counts. Until that
   contract exists, every changed-body run stays conservative.
@@ -196,7 +199,8 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 - Completed loop: M9 repo-map hardening now carries omitted query-match counts
   and human CLI output exposes query matches, resource URIs, coverage, and
   provenance.
-- Push policy: local commits only until the user explicitly approves push.
+- Push policy: the user explicitly approved pushing this branch, opening PR #35,
+  and merging it into `main` after all local and remote gates pass.
 
 ## Next
 

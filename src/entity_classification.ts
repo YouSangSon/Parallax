@@ -76,7 +76,7 @@ export function isTestPath(relativePath: string): boolean {
     /(^|\/)(tests?|__tests__)\/|(^|\/)src\/test\//.test(relativePath) ||
     /(\.|-)(test|spec)\.[cm]?[tj]sx?$/.test(basename) ||
     /(?:Test|Tests|Spec)\.(?:java|kt)$/.test(basename) ||
-    /(?:^test_.*|.*_test)\.py$/.test(basename) ||
+    (basename.endsWith('.py') && (basename.startsWith('test_') || basename.endsWith('_test.py'))) ||
     /_test\.go$/.test(basename) ||
     /(?:_test|_spec)\.rs$/.test(basename)
   );

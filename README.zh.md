@@ -131,7 +131,7 @@ parallax scip import --file index.scip.json
 parallax scip export --file index.scip.json
 ```
 
-importer 会用 SCIP 的 definition/reference edge 增强最新完成的 Parallax index run。二进制 `index.scip` 导入会调用 `PATH` 中的官方 `scip` CLI；JSON 导入和 JSON 导出在运行时不需要 CLI。
+importer 会用 SCIP 的 definition/reference edge 增强最新完成的 Parallax index run。二进制 `index.scip` 导入会调用 `PATH` 中的官方 `scip` CLI；JSON 导入和 JSON 导出在运行时不需要 CLI。显式选择的 `--file` 可以是任意可信的本地文件。为了保留已有 indexed file metadata 并避免 live document-path race，document body 只来自 SCIP `Document.text` 或该 run 记录的 clean Git commit。最新 index 中已有的 textless document 仍会以 symbol-only evidence 导入；无法验证的 textless、unindexed document 会被跳过并给出警告。
 
 如果你想从 UI 继续走到 MCP 与 CI guardrail，可直接看 [`docs/getting-started.zh.md`](docs/getting-started.zh.md)。
 

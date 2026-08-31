@@ -70,7 +70,7 @@ async function makeRepoMapFixture(options: { extraPrivateRoutes?: number } = {})
     ].join('\n')
   );
   await writeFile(
-    path.join(repoRoot, 'README.md'),
+    path.join(repoRoot, 'README.test.md'),
     'Call `validateSession` before rendering private routes.\n'
   );
   await writeFile(
@@ -131,7 +131,8 @@ test('buildRepoMap ranks changed roots and context sections into a token-estimat
     assert.deepEqual(map.changedFiles, ['src/auth/session.ts']);
     assert.ok(map.affectedFiles.some((item) => item.path === 'src/routes/private.ts'));
     assert.ok(map.tests.some((item) => item.path === 'tests/session.test.ts'));
-    assert.ok(map.docs.some((item) => item.path === 'README.md'));
+    assert.ok(map.docs.some((item) => item.path === 'README.test.md'));
+    assert.equal(map.tests.some((item) => item.path === 'README.test.md'), false);
     assert.ok(map.config.some((item) => item.path === '.github/workflows/ci.yml'));
     assert.ok(map.workArtifacts.some((item) => item.path === 'policies/security-auth.md'));
     assert.ok(map.evidenceRefs.length > 0);

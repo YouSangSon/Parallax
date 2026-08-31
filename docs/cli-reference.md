@@ -17,7 +17,7 @@ Most machine-oriented commands can print JSON through command-specific flags. `a
 | `parallax reindex-vec [--model <hf-model>]` | Rebuild the sqlite-vec ANN index; `--model` selects the embedding model |
 | `parallax reembed [--model <hf-model>] [--all]` | Recompute fact embeddings; `--all` re-embeds every fact, otherwise only missing ones |
 
-`scip import` requires an existing completed Parallax index. Run `parallax scip import --file index.scip` to import a binary SCIP index through the official `scip` CLI on `PATH`, or import pre-rendered JSON with `parallax scip import --file index.scip.json` after `scip print --json index.scip > index.scip.json`. `scip export` emits SCIP-compatible JSON from the latest completed index; writing binary `.scip` protobuf files is intentionally left out until users need it.
+`scip import` requires an existing completed Parallax index. Run `parallax scip import --file index.scip` to import a binary SCIP index through the official `scip` CLI on `PATH`, or import pre-rendered JSON with `parallax scip import --file index.scip.json` after `scip print --json index.scip > index.scip.json`. The explicitly selected `--file` may be any trusted local file. Import never re-reads live document paths: it uses SCIP `Document.text`, the recorded clean Git commit, or metadata already in the latest index; unverifiable textless, unindexed documents are skipped with a warning. `scip export` emits SCIP-compatible JSON from the latest completed index; writing binary `.scip` protobuf files is intentionally left out until users need it.
 
 ## Analysis
 

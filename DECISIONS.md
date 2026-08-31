@@ -226,6 +226,34 @@ Why:
 - A true peak sampler would add process orchestration and nondeterministic noise
   before there is a concrete memory regression to chase.
 
+## 2026-08-31: SCIP Import Uses Immutable Source Snapshots
+
+Decision: never re-read a SCIP document from its live working-tree path while
+augmenting a completed Parallax index. Prefer embedded SCIP `Document.text`;
+otherwise reuse existing indexed file metadata, then use a blob from the clean
+Git commit recorded on the index run for an unindexed document. Skip a textless,
+unindexed document when no immutable source exists.
+
+Sources:
+- SCIP `Document.text` and canonical relative-path contract:
+  <https://github.com/scip-code/scip/blob/main/scip.proto>
+- Immutable Git object reads: <https://git-scm.com/docs/git-cat-file>
+
+Why:
+- A completed index run is a snapshot. Replacing its file hashes with later
+  worktree bytes corrupts that boundary even without a malicious race.
+- The importer takes the SQLite write lock before selecting that run, so a
+  concurrent index cannot change the snapshot halfway through augmentation.
+- Path validation followed by a separate read cannot atomically protect every
+  ancestor component with Node's portable filesystem API.
+- `--file` is an explicit, trusted local input and may be outside the repository;
+  it is not a SCIP document path or an implicit filesystem discovery surface.
+- Metadata-only import still preserves definitions, references, spans, and the
+  indexed file hash; its evidence snippet falls back honestly to the SCIP
+  symbol when no immutable body is available.
+- Embedded text and clean Git blobs preserve unsupported-language import without
+  adding a source-content table, native helper, or runtime dependency.
+
 ## 2026-06-28: Document Perf Baseline Command, Not A New Flag
 
 Decision: use the existing `npm run bench:perf -- --scales 10000,50000`

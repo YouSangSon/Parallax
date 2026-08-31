@@ -17,13 +17,13 @@ Evidence is current only when the command and result are recorded in this file. 
 - [x] Focused delta, registry, oracle, perf-formatting tests pass (26/26), and
   bounded `bench:perf -- --scales 200` reports `edit_reindex_ms=383.0` with
   `edit_scan_ms=17.6` as advisory evidence.
-- [x] Final-tree `npm run verify` passes: lint/schema drift, install smoke,
-  686/686 tests, dogfood 2/2, deterministic bench 78/78 at score 0.9987, and
-  the dependency audit gate all completed successfully.
+- [x] Final-tree `npm run verify` passes after the CodeQL corrective slice:
+  lint/schema drift, install smoke, 697/697 tests, dogfood 2/2, deterministic
+  bench 78/78 at score 0.9987, and the dependency audit gate all completed.
 - [x] `git diff --check` passes; final intended-file review remains before checkpointing.
-- [x] No owned Parallax UI/test/browser process remains. All 3,939 recent
-  `parallax-*` test directories were moved recoverably to
-  `~/.Trash/Parallax-Codex-20260831-final-tests.mRZBfq`; no recent match remains.
+- [x] No owned Parallax test process remains. The final run's 650 recent
+  `parallax-*` fixture directories were moved recoverably to
+  `~/.Trash/Parallax-Codex-20260831-codeql-tests.qvAnPM`; no recent match remains.
 
 ## Deferred S1 Read-Reduction Gate
 
@@ -53,8 +53,25 @@ conservative full-read/full-extraction path.
 - [x] Forced package overrides were rejected: the reachable Transformers /
   ONNX path has no compatible upstream fix to smoke-test, so the exception is a
   time-bounded risk acceptance rather than remediation.
-- [x] The canonical final-tree `npm run verify` reached and passed this gate
-  with the explicit temporary-exception warning.
+- [x] The final current-tree `npm run verify` reached this gate and accepted
+  only the pinned, expiring exception; focused security remains 9/9.
+
+## PR Code Scanning Gate
+
+- [x] PR #35's first GitHub Advanced Security result reported four new high
+  alerts: polynomial Python test-name regex, duplicated/mis-anchored repo-map
+  test regex, SCIP source-read TOCTOU, and SHA-1 over redacted evidence input.
+- [x] Focused local correction passes 24/24 plus security 9/9, typecheck,
+  docs lint, and `git diff --check`. The two regexes now use linear shared
+  classification; SCIP document bodies come only from embedded text or an
+  immutable clean Git blob, while existing indexed metadata remains unchanged;
+  evidence IDs use SHA-256. A two-process regression proves SCIP takes its
+  SQLite snapshot lock before Git blob reads, and explicit trusted `--file`
+  inputs no longer claim repository containment they cannot atomically enforce.
+- [x] Independent review's P1 snapshot race and P2 input-path/documentation
+  findings are corrected; final diff inspection reports no remaining P0-P2.
+- [ ] Push the correction and require every PR check, including the distinct
+  GitHub Advanced Security CodeQL result, to pass before merge.
 
 ## Audited UI Gate
 

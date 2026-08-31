@@ -1,12 +1,12 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync, realpathSync, statSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { entityKindForPath, languageIdForPath } from './entity_classification.js';
 import { contentHash, ensureRepo, getRepoId, latestCompletedIndexRun, openDatabase, type Db } from './store.js';
-import { normalizeRepoRoot, redactSecrets, resolveInsideRoot } from './security.js';
+import { normalizeRepoRoot, redactSecrets } from './security.js';
 import type { EntityKind } from './types.js';
 
 const SCIP_IMPORT_ADAPTER_ID = 'scip-import';
@@ -90,10 +90,16 @@ type ExportDocumentBucket = {
 type ScipDocument = {
   path: string;
   language: string;
-  content: string;
+  content?: string;
   hash: string;
+  existingFileId?: number;
   occurrences: Record<string, unknown>[];
   symbols: Record<string, unknown>[];
+};
+
+type ScipImportSnapshot = {
+  commitSha?: string;
+  files: Map<string, { id: number; language: string; hash: string }>;
 };
 
 type ScipDefinition = {
@@ -123,7 +129,7 @@ type PreparedScipStatements = {
   deletePriorRelations: Statement;
   deletePriorCoverage: Statement;
   deletePriorSymbols: Statement;
-  upsertFile: Statement;
+  insertFile: Statement;
   selectFile: Statement;
   upsertEntity: Statement;
   insertEntityVersion: Statement;
@@ -138,21 +144,28 @@ export function importScipJson(options: ScipImportOptions): ScipImportResult {
   const inputPath = resolveScipInputPath(repoRoot, options.file);
   const parsed = parseScipInputFile(inputPath);
   const documentsInput = arrayField(parsed, 'documents');
-  const warnings: string[] = [];
-  const documents = loadScipDocuments(repoRoot, documentsInput, warnings);
-  const definitions = collectDefinitions(documents);
-  const references = collectReferences(documents, definitions);
-  const skippedReferences = references.skipped;
-
   const db = openDatabase(repoRoot);
-  const repoId = ensureRepo(db, repoRoot);
-  const indexRunId = latestCompletedIndexRun(db, repoId);
-  const stmts = prepareScipStatements(db);
-  let adapterRunId = 0;
-
-  db.exec('BEGIN IMMEDIATE');
+  let transactionStarted = false;
   try {
-    adapterRunId = upsertScipAdapterRun(stmts, indexRunId, languageIdsForDocuments(documents));
+    // ponytail: serialize the snapshot read and augmentation with index writers;
+    // revalidate/retry instead if long imports measurably block indexing.
+    db.exec('BEGIN IMMEDIATE');
+    transactionStarted = true;
+    const repoId = ensureRepo(db, repoRoot);
+    const indexRunId = latestCompletedIndexRun(db, repoId);
+    const warnings: string[] = [];
+    const documents = loadScipDocuments(
+      repoRoot,
+      documentsInput,
+      loadScipImportSnapshot(db, repoId, indexRunId),
+      warnings
+    );
+    const definitions = collectDefinitions(documents);
+    const references = collectReferences(documents, definitions);
+    const skippedReferences = references.skipped;
+    const stmts = prepareScipStatements(db);
+
+    const adapterRunId = upsertScipAdapterRun(stmts, indexRunId, languageIdsForDocuments(documents));
     cleanupPriorScipImport(stmts, indexRunId, adapterRunId);
 
     const fileIds = new Map<string, number>();
@@ -185,6 +198,7 @@ export function importScipJson(options: ScipImportOptions): ScipImportResult {
     }
 
     db.exec('COMMIT');
+    transactionStarted = false;
     return {
       indexRunId,
       adapterRunId,
@@ -197,7 +211,7 @@ export function importScipJson(options: ScipImportOptions): ScipImportResult {
       warnings: [...new Set(warnings)].sort()
     };
   } catch (error) {
-    db.exec('ROLLBACK');
+    if (transactionStarted) db.exec('ROLLBACK');
     throw error;
   } finally {
     db.close();
@@ -507,9 +521,43 @@ function scipKindFor(kind: string): string | undefined {
   return undefined;
 }
 
+function loadScipImportSnapshot(
+  db: Db,
+  repoId: number,
+  indexRunId: number
+): ScipImportSnapshot {
+  const run = db.prepare(`
+    SELECT git_commit_sha, git_is_dirty
+    FROM index_runs
+    WHERE id = ? AND repo_id = ?
+  `).get(indexRunId, repoId) as { git_commit_sha: string | null; git_is_dirty: number };
+  const rows = db.prepare(`
+    SELECT id, path, language, content_hash
+    FROM files
+    WHERE repo_id = ? AND index_run_id = ?
+  `).all(repoId, indexRunId) as Array<{
+    id: number;
+    path: string;
+    language: string;
+    content_hash: string;
+  }>;
+  const commitSha = run.git_is_dirty === 0 && /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/i.test(run.git_commit_sha ?? '')
+    ? run.git_commit_sha!
+    : undefined;
+  return {
+    ...(commitSha ? { commitSha } : {}),
+    files: new Map(rows.map((row) => [row.path, {
+      id: row.id,
+      language: row.language,
+      hash: row.content_hash
+    }]))
+  };
+}
+
 function loadScipDocuments(
   repoRoot: string,
   input: unknown[],
+  snapshot: ScipImportSnapshot,
   warnings: string[]
 ): ScipDocument[] {
   const documents: ScipDocument[] = [];
@@ -530,34 +578,67 @@ function loadScipDocuments(
       warnings.push(`SCIP document skipped at index ${index}: ${errorMessage(error)}`);
       continue;
     }
-    let absolutePath: string;
-    try {
-      absolutePath = resolveInsideRoot(repoRoot, relativePath);
-      if (!statSync(absolutePath).isFile()) {
-        warnings.push(`SCIP document skipped: ${relativePath} is not a regular file`);
+    const indexed = snapshot.files.get(relativePath);
+    const hasText = Object.prototype.hasOwnProperty.call(raw, 'text');
+    let content: string | undefined;
+    if (hasText) {
+      if (typeof raw.text !== 'string') {
+        warnings.push(`SCIP document skipped: ${relativePath}: text must be a string`);
         continue;
       }
-    } catch (error) {
-      warnings.push(`SCIP document skipped: ${relativePath}: ${errorMessage(error)}`);
+      content = raw.text;
+    } else if (!indexed && snapshot.commitSha) {
+      content = readScipGitBlob(repoRoot, snapshot.commitSha, relativePath);
+      if (content === undefined) {
+        warnings.push(`SCIP document skipped: ${relativePath}: content unavailable at indexed Git commit`);
+        continue;
+      }
+    } else if (!indexed) {
+      warnings.push(`SCIP document skipped: ${relativePath}: content unavailable without embedded text or clean indexed Git commit`);
       continue;
     }
-
-    const content = readFileSync(absolutePath, 'utf8');
+    const hash = content === undefined
+      ? indexed!.hash
+      : createHash('sha256').update(content).digest('hex');
+    if (indexed && hash !== indexed.hash) {
+      warnings.push(`SCIP document skipped: ${relativePath}: embedded text hash mismatch with indexed file`);
+      continue;
+    }
     const language = firstNonEmpty(
       stringField(raw, 'language'),
+      indexed?.language,
       languageIdForPath(relativePath),
       'unknown'
     );
     documents.push({
       path: relativePath,
       language,
-      content,
-      hash: createHash('sha256').update(content).digest('hex'),
+      ...(content !== undefined ? { content } : {}),
+      hash,
+      ...(indexed ? { existingFileId: indexed.id } : {}),
       occurrences: arrayField(raw, 'occurrences').filter(isRecord),
       symbols: arrayField(raw, 'symbols').filter(isRecord)
     });
   }
   return documents.sort((left, right) => left.path.localeCompare(right.path));
+}
+
+function readScipGitBlob(repoRoot: string, commitSha: string, relativePath: string): string | undefined {
+  // ponytail: one git process per textless unindexed document; batch cat-file if import throughput matters.
+  try {
+    return execFileSync(
+      'git',
+      ['--no-replace-objects', 'cat-file', 'blob', `${commitSha}:${relativePath}`],
+      {
+        cwd: repoRoot,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+        maxBuffer: 128 * 1024 * 1024
+      }
+    );
+  } catch {
+    return undefined;
+  }
 }
 
 function collectDefinitions(documents: readonly ScipDocument[]): Map<string, ScipDefinition> {
@@ -654,13 +735,9 @@ function prepareScipStatements(db: Db): PreparedScipStatements {
     deletePriorRelations: db.prepare('DELETE FROM relations WHERE adapter_run_id = ?'),
     deletePriorCoverage: db.prepare('DELETE FROM index_coverage WHERE index_run_id = ? AND adapter_id = ?'),
     deletePriorSymbols: db.prepare("DELETE FROM symbols WHERE index_run_id = ? AND semantic_id LIKE '%#scip:%'"),
-    upsertFile: db.prepare(`
+    insertFile: db.prepare(`
       INSERT INTO files (repo_id, path, language, content_hash, index_run_id)
       VALUES (?, ?, ?, ?, ?)
-      ON CONFLICT(repo_id, path) DO UPDATE SET
-        language = excluded.language,
-        content_hash = excluded.content_hash,
-        index_run_id = excluded.index_run_id
     `),
     selectFile: db.prepare('SELECT id FROM files WHERE repo_id = ? AND path = ?'),
     upsertEntity: db.prepare(`
@@ -752,22 +829,26 @@ function persistScipFile(
     fileIds: Map<string, number>;
   }
 ): void {
-  input.stmts.upsertFile.run(input.repoId, document.path, document.language, document.hash, input.indexRunId);
-  const fileRow = input.stmts.selectFile.get(input.repoId, document.path) as { id: number } | undefined;
-  if (!fileRow) throw new Error(`SCIP import failed to persist file row: ${document.path}`);
-  input.fileIds.set(document.path, fileRow.id);
+  let fileId = document.existingFileId;
+  if (fileId === undefined) {
+    input.stmts.insertFile.run(input.repoId, document.path, document.language, document.hash, input.indexRunId);
+    const fileRow = input.stmts.selectFile.get(input.repoId, document.path) as { id: number } | undefined;
+    if (!fileRow) throw new Error(`SCIP import failed to persist file row: ${document.path}`);
+    fileId = fileRow.id;
+    persistEntity({
+      id: fileEntityId(document.path),
+      repoId: input.repoId,
+      kind: entityKindForPath(document.path) ?? 'file',
+      path: document.path,
+      symbol: null,
+      language: document.language,
+      displayName: document.path,
+      contentHash: contentHash('file', document.path, document.language, document.hash),
+      location: { kind: 'file', path: document.path, languageId: document.language }
+    }, input);
+  }
+  input.fileIds.set(document.path, fileId);
   input.stmts.insertCoverage.run(input.indexRunId, SCIP_IMPORT_ADAPTER_ID, document.path, document.language);
-  persistEntity({
-    id: fileEntityId(document.path),
-    repoId: input.repoId,
-    kind: entityKindForPath(document.path) ?? 'file',
-    path: document.path,
-    symbol: null,
-    language: document.language,
-    displayName: document.path,
-    contentHash: contentHash('file', document.path, document.language, document.hash),
-    location: { kind: 'file', path: document.path, languageId: document.language }
-  }, input);
 }
 
 function persistScipSymbol(
@@ -872,8 +953,9 @@ function persistEntity(
 
 function normalizeScipRelativePath(rawPath: string): string {
   if (!rawPath || rawPath.includes('\0')) throw new Error('invalid relativePath');
+  if (/[\\\r\n]/.test(rawPath)) throw new Error(`relativePath must be canonical: ${rawPath}`);
   if (path.isAbsolute(rawPath)) throw new Error(`relativePath must not be absolute: ${rawPath}`);
-  const normalized = rawPath.split(path.sep).join('/');
+  const normalized = rawPath;
   const parts = normalized.split('/');
   if (
     normalized !== path.posix.normalize(normalized)
@@ -886,16 +968,7 @@ function normalizeScipRelativePath(rawPath: string): string {
 
 function resolveScipInputPath(repoRoot: string, inputPath: string): string {
   if (!inputPath || inputPath.includes('\0')) throw new Error('invalid path');
-  const rootReal = normalizeRepoRoot(repoRoot);
-  const candidate = path.isAbsolute(inputPath)
-    ? inputPath
-    : path.resolve(rootReal, inputPath);
-  const resolved = realpathSync(candidate);
-  const relative = path.relative(rootReal, resolved);
-  if (relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))) {
-    return resolved;
-  }
-  throw new Error(`path resolves outside repo root: ${inputPath}`);
+  return path.isAbsolute(inputPath) ? inputPath : path.resolve(repoRoot, inputPath);
 }
 
 function occurrenceRange(occurrence: Record<string, unknown>): {
@@ -988,7 +1061,7 @@ function relationEvidenceId(
   reference: ScipReference,
   snippet: string
 ): string {
-  return createHash('sha1')
+  return createHash('sha256')
     .update(JSON.stringify([
       relationIdValue,
       reference.sourcePath,

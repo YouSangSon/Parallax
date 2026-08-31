@@ -17,7 +17,7 @@
 | `parallax reindex-vec [--model <hf-model>]` | sqlite-vec ANN 인덱스를 재구축; `--model`은 embedding 모델을 선택 |
 | `parallax reembed [--model <hf-model>] [--all]` | fact embedding을 재계산; `--all`은 모든 fact를 재임베딩, 아니면 누락분만 |
 
-`scip import`는 완료된 Parallax index가 이미 있어야 한다. `parallax scip import --file index.scip`은 `PATH`의 공식 `scip` CLI를 통해 binary SCIP index를 가져오고, `scip print --json index.scip > index.scip.json`으로 미리 만든 JSON은 `parallax scip import --file index.scip.json`으로 가져온다. `scip export`는 최신 완료 index에서 SCIP 호환 JSON을 만든다. binary `.scip` protobuf 작성은 실제 수요가 생길 때까지 의도적으로 제외한다.
+`scip import`는 완료된 Parallax index가 이미 있어야 한다. `parallax scip import --file index.scip`은 `PATH`의 공식 `scip` CLI를 통해 binary SCIP index를 가져오고, `scip print --json index.scip > index.scip.json`으로 미리 만든 JSON은 `parallax scip import --file index.scip.json`으로 가져온다. 명시적으로 선택한 `--file`에는 신뢰하는 로컬 파일을 지정할 수 있다. Import는 live document path를 다시 읽지 않고 SCIP `Document.text`, 기록된 clean Git commit, 또는 최신 index의 기존 metadata만 사용한다. 검증할 수 없는 textless·unindexed document는 경고와 함께 건너뛴다. `scip export`는 최신 완료 index에서 SCIP 호환 JSON을 만든다. binary `.scip` protobuf 작성은 실제 수요가 생길 때까지 의도적으로 제외한다.
 
 ## Analysis
 

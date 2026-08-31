@@ -17,7 +17,7 @@
 | `parallax reindex-vec [--model <hf-model>]` | 重建 sqlite-vec ANN 索引；`--model` 选择 embedding 模型 |
 | `parallax reembed [--model <hf-model>] [--all]` | 重新计算 fact embedding；`--all` 重嵌入所有 fact，否则仅缺失部分 |
 
-`scip import` 需要已有完成的 Parallax index。`parallax scip import --file index.scip` 会通过 `PATH` 中的官方 `scip` CLI 导入 binary SCIP index；也可以先运行 `scip print --json index.scip > index.scip.json`，再用 `parallax scip import --file index.scip.json` 导入预生成 JSON。`scip export` 会从最新完成的 index 生成 SCIP 兼容 JSON。binary `.scip` protobuf 写出会等到用户确实需要时再做。
+`scip import` 需要已有完成的 Parallax index。`parallax scip import --file index.scip` 会通过 `PATH` 中的官方 `scip` CLI 导入 binary SCIP index；也可以先运行 `scip print --json index.scip > index.scip.json`，再用 `parallax scip import --file index.scip.json` 导入预生成 JSON。显式选择的 `--file` 可以是任意可信的本地文件。Import 不会重新读取 live document path，只使用 SCIP `Document.text`、已记录的 clean Git commit 或最新 index 中已有的 metadata；无法验证的 textless、unindexed document 会被跳过并给出警告。`scip export` 会从最新完成的 index 生成 SCIP 兼容 JSON。binary `.scip` protobuf 写出会等到用户确实需要时再做。
 
 ## Analysis
 

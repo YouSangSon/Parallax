@@ -4,13 +4,16 @@
 
 ## Current State
 
-- Branch: `codex/parallax-correctness-security-ui`; this loop started from local
-  `main` at `b804d72`, 40 commits ahead of the recorded `origin/main`.
+- Branch: `codex/parallax-correctness-security-ui`; fetched `origin/main` is
+  pinned at `d847ca91770891fe5b4af5ff26c146bbd4a075dd` and is an ancestor of the
+  branch; it was 42 commits ahead before the current corrective checkpoint.
 - Worktree was clean at loop start. The user authorized pushing this branch,
   opening a PR to `main`, and merging after all local and PR gates pass;
   deployment, publishing, credentials, and live-money actions remain out of scope.
-- Current loop: close verification and cleanup for the corrected S1, dependency
-  audit, and UI checkpoint, then land it through the authorized PR.
+- Current loop: PR #35 is open and mergeable. The four new CodeQL findings are
+  corrected locally, including SCIP snapshot serialization and honest explicit
+  input-file handling. The canonical gate and owned cleanup pass; checkpoint,
+  push, require all remote checks, then merge through the authorized PR.
 - Confirmed defect: changing only `tsconfig.json` can leave an unchanged TypeScript
   file's alias-resolved edge stale because full-index adapter context was not
   invalidated.

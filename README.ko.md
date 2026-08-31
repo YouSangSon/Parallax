@@ -131,7 +131,7 @@ parallax scip import --file index.scip.json
 parallax scip export --file index.scip.json
 ```
 
-importer는 최신 완료 Parallax index run에 SCIP 기반 definition/reference edge를 추가한다. 바이너리 `index.scip` import는 `PATH`의 공식 `scip` CLI를 사용하고, JSON import/export는 실행 시점에 CLI가 필요 없다.
+importer는 최신 완료 Parallax index run에 SCIP 기반 definition/reference edge를 추가한다. 바이너리 `index.scip` import는 `PATH`의 공식 `scip` CLI를 사용하고, JSON import/export는 실행 시점에 CLI가 필요 없다. 명시적으로 선택한 `--file`에는 신뢰하는 로컬 파일을 지정할 수 있다. 기존 indexed file metadata를 보존하고 live document-path race를 피하기 위해 document body는 SCIP `Document.text` 또는 해당 run에 기록된 clean Git commit에서만 읽는다. 최신 index에 이미 있는 textless document는 symbol-only evidence로 import하며, 검증할 수 없는 textless·unindexed document는 경고와 함께 건너뛴다.
 
 UI 다음에 MCP와 CI guardrail까지 이어지는 튜토리얼은 [`docs/getting-started.ko.md`](docs/getting-started.ko.md)를 참고하자.
 

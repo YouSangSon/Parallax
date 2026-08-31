@@ -126,8 +126,8 @@ MCP 已稳定为 read-only。接下来是深入审视 agent 可用性的阶段�
 
 ## 如果只挑下一个切片
 
-实时执行顺序由 `PLAN.md` 管理。当前 gate 是 S1 增量正确性：让
-`fileContentScope` 真正参与执行，避免 full-index context 变化后继续
-carry-forward 旧 row。只有该 oracle 变绿后，才测量仅含 target-only adapter
-的仓库中的 selective read。上面的准确度和 agent-surface 项目仍是后续主题，
-不与当前执行指令竞争。
+实时执行顺序由 `PLAN.md` 管理。先在期限前移除或替换临时
+dependency-audit 例外。下一个 S1 切片必须在 `fileContentScope` 之外单独定义
+并强制 emitted-row ownership；在该 contract 与 deterministic read count 完成前，
+changed body 继续使用 full extraction。上面的准确度和 agent-surface 项目仍是
+后续主题，不与当前执行指令竞争。

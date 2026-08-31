@@ -67,7 +67,7 @@ test('package exports only the public module entrypoint and metadata', async () 
   assert.equal(packageJson.scripts?.prepack, 'npm run build');
   assert.equal(
     packageJson.scripts?.verify,
-    'npm run lint && npm run test:install-smoke && npm test && npm run test:dogfood && npm run bench && npm audit --audit-level=high'
+    'npm run lint && npm run test:install-smoke && npm test && npm run test:dogfood && npm run bench && npm run audit:dependencies'
   );
   assert.equal(packageJson.scripts?.['bench:report'], 'tsx bench/impact-bench-report.ts');
   assert.equal(

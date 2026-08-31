@@ -40,8 +40,12 @@ npm test
 npm run test:security
 npm run test:mcp
 npm run test:install-smoke
-npm audit --audit-level=high
+npm run audit:dependencies
 ```
+
+Dependency audit gate 只允许命令所显示的、pin 住的临时例外。Pin 住的
+high/critical finding 或 count、lockfile version/edge、network/command result
+或到期时间只要变化，就会 fail closed。
 
 即使只改了文档，也请至少运行以下命令。
 

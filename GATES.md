@@ -17,12 +17,13 @@ Evidence is current only when the command and result are recorded in this file. 
 - [x] Focused delta, registry, oracle, perf-formatting tests pass (26/26), and
   bounded `bench:perf -- --scales 200` reports `edit_reindex_ms=383.0` with
   `edit_scan_ms=17.6` as advisory evidence.
-- [ ] `npm run verify` passes from the final tree. Its lint, install smoke,
-  683-test unit suite, dogfood (2/2), and deterministic bench stages passed;
-  the final dependency audit remains open while the exact upstream-only
-  exception gate is implemented and re-run.
+- [x] Final-tree `npm run verify` passes: lint/schema drift, install smoke,
+  686/686 tests, dogfood 2/2, deterministic bench 78/78 at score 0.9987, and
+  the dependency audit gate all completed successfully.
 - [x] `git diff --check` passes; final intended-file review remains before checkpointing.
-- [ ] Owned temporary directories and background processes are absent after verification.
+- [x] No owned Parallax UI/test/browser process remains. All 3,939 recent
+  `parallax-*` test directories were moved recoverably to
+  `~/.Trash/Parallax-Codex-20260831-final-tests.mRZBfq`; no recent match remains.
 
 ## Deferred S1 Read-Reduction Gate
 
@@ -38,6 +39,34 @@ conservative full-read/full-extraction path.
 - [x] `docs/CODEX-NAVIGATION-GUIDE.md` exists and matches current ownership/navigation.
 - [x] `npm run docs:lint` passes.
 
-## Next Audited UI Gate
+## Dependency Audit Gate
 
-After S1 closes, address the audited UI defects as one bounded accessibility/interaction loop: invalid nested controls, focus contrast, reduced motion, URL history restoration, and false-success PNG export on empty maps. Existing `npm run test:ui` passing is not evidence for those browser interactions.
+- [x] `npm audit fix` refreshed only lockfile-resolved transitive packages and
+  removed all six fixable high-severity findings.
+- [x] `npm run audit:dependencies` accepts only the exact four remaining
+  high-severity nodes/advisories plus their locked versions/edges, expires at
+  `2026-10-01T00:00:00Z`, and fails closed on drift, malformed/failed audit
+  execution, or expiry. Low/moderate findings remain outside the high-severity
+  threshold instead of being silently promoted into release failures.
+- [x] `npm run test:security` passes 9/9, including threshold, drift, expiry,
+  command/JSON failure, and secret-safe diagnostic regressions.
+- [x] Forced package overrides were rejected: the reachable Transformers /
+  ONNX path has no compatible upstream fix to smoke-test, so the exception is a
+  time-bounded risk acceptance rather than remediation.
+- [x] The canonical final-tree `npm run verify` reached and passed this gate
+  with the explicit temporary-exception warning.
+
+## Audited UI Gate
+
+- [x] Native selection buttons are siblings of source/copy controls; rendered
+  impact and delta rows contain no nested interactive elements.
+- [x] Light-surface selected focus uses `#18735f` (measured 5.29:1 against the
+  selected background), while dark controls use the inverse ink token.
+- [x] Reduced-motion CSS and scroll behavior are explicit; `popstate` restores
+  filter, preset, and path while discrete selection uses browser history.
+- [x] PNG export requires a rendered impact path and reports failure for an
+  empty map instead of a false `Exported` state.
+- [x] `npm run test:ui` passes 12/12. A live Playwright CLI pass exercised
+  filtering, native keyboard selection, push/Back restoration, reduced motion,
+  focus contrast, valid PNG download, and empty-map failure. Browser fixtures,
+  downloads, and processes were cleaned after the pass.

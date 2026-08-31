@@ -4,8 +4,8 @@ Canonical detailed backlog: `IMPROVEMENT_OPPORTUNITIES.md`.
 
 ## Now
 
-1. Close the S1 changed-content invalidation gate: no adapter output derived
-   from an earlier body may survive a changed-body rerun.
+1. Remove or replace the temporary dependency-audit exception before
+   2026-10-01T00:00:00Z.
 2. Before revisiting selective reads, define and enforce emitted-row ownership
    separately from `fileContentScope`.
 
@@ -41,3 +41,5 @@ Canonical detailed backlog: `IMPROVEMENT_OPPORTUNITIES.md`.
 24. S1 dirty/non-git no-changed-file adapter startup skip.
 25. S1 `bench:perf` scan-phase timing split.
 26. S1 adapter file content scope contract.
+27. S1 changed-content full-extraction correction with exact fresh-index oracles.
+28. UI native-control, focus-contrast, reduced-motion, history, and PNG failure hardening.

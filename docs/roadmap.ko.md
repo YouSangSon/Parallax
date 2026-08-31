@@ -126,8 +126,8 @@ MCP는 read-only로 안정화됐다. 다음은 agent 사용성을 깊게 보는 
 
 ## 다음 한 슬라이스만 고른다면
 
-실시간 작업 순서는 `PLAN.md`가 관리한다. 현재 gate는 S1 증분 정확성이다.
-`fileContentScope`를 실제 실행에 반영해 full-index context 변경이 오래된 row를
-carry-forward하지 못하게 해야 한다. 이 oracle이 green이 된 뒤에만
-target-only-only 저장소의 selective read를 측정한다. 위 정확도와 agent-surface
-항목은 후속 주제이며 현재 실행 지시와 경쟁하지 않는다.
+실시간 작업 순서는 `PLAN.md`가 관리한다. 먼저 임시 dependency-audit 예외를
+기한 전에 제거하거나 대체한다. 다음 S1 slice는 `fileContentScope`와 별도로
+emitted-row ownership을 정의하고 강제해야 한다. 그 contract와 deterministic
+read count가 생기기 전까지 changed body는 full extraction을 유지한다. 위 정확도와
+agent-surface 항목은 후속 주제이며 현재 실행 지시와 경쟁하지 않는다.

@@ -12,20 +12,31 @@ Every command below is an `npm run` script defined in `package.json`.
 | :--- | :--- | :--- |
 | `npm test` | Runs the Node test runner over `tests/**/*.test.ts` via `tsx --test` | After any change; the default fast suite |
 | `npm run check` | `tsc --noEmit` typecheck, no output emitted | Before commit; catches type regressions |
+| `npm run audit:dependencies` | Runs the fail-closed high-severity dependency audit gate | Before commit / PR and in CI |
 | `npm run lint` | `check` + `docs:lint` together | Before commit / PR; the full static gate |
 | `npm run docs:lint` | Runs `scripts/docs-lint.js` over tracked and untracked Markdown, including local `.md` link targets | After editing any doc |
 | `npm run verify` | Runs the canonical source-checkout release gate: lint, install smoke, fast tests, dogfood, bench, and high-level audit | Before release and in CI |
 | `npm run build` | `tsc -p tsconfig.json`, compiles to `dist/` | Before publishing or smoke-testing the CLI |
 | `npm run bench` | Runs `bench/impact-bench.ts`; exits non-zero on accuracy regression | After engine/adapter changes |
 | `npm run bench:report` | Renders the latest bench JSON as Markdown, optionally comparing it with a baseline report | After `npm run bench`, or in CI summaries |
-| `npm run bench:perf` | Runs `bench/impact-perf.ts`; times full index, no-op incremental index, edited-file incremental index, their scan phases, analyze phases, and observed peak RSS on a synthetic repo (non-deterministic, not in `verify`) | When working on indexing/traversal performance |
+| `npm run bench:perf` | Runs `bench/impact-perf.ts`; times full index, no-op incremental index, edited-file reindex, their scan phases, analyze phases, and observed peak RSS on a synthetic repo (non-deterministic, not in `verify`) | When working on indexing/traversal performance |
 | `npm run test:dogfood` | Indexes Parallax on its own source and asserts the internal graph survives | After engine changes (indexer/adapters/analyzer/store/graph) |
 | `npm run test:mcp` | Runs `tests/mcp.test.ts` (impact / context / memory / telemetry / path validation) | After MCP surface changes |
 | `npm run test:ui` | Runs `tests/ui.test.ts` (UI snapshot, server, JSON resource endpoints) | After UI changes |
-| `npm run test:security` | Runs `tests/security.test.ts` (path containment + redaction) | After store / path / redaction changes |
+| `npm run test:security` | Runs `tests/security.test.ts` (path containment, redaction, dependency audit gate) | After store / path / redaction / audit-gate changes |
 | `npm run test:install-smoke` | `npm run build` then `node dist/src/cli.js --help` | Before release, to confirm the packaged CLI launches |
 
-`test:fixtures` is an alias for `npm test`, and `test:benchmark` is an alias for `npm run bench`. `npm run verify` includes `npm audit --audit-level=high`, so its final audit stage depends on npm registry and network availability.
+`test:fixtures` is an alias for `npm test`, and `test:benchmark` is an alias for `npm run bench`. `npm run verify` includes `npm run audit:dependencies`, so its final audit stage depends on npm registry and network availability.
+
+The dependency gate passes a clean audit. Until the end of 2026-09-30 UTC, it
+also accepts only the exact pinned `@huggingface/transformers` dependency tree
+reported by `GHSA-xcpc-8h2w-3j85` and `GHSA-f88m-g3jw-g9cj`, with a prominent
+warning. It fails closed on expiry, command/network or JSON errors, and any
+change to the pinned high/critical finding/advisory fields and counts, package
+paths, severities, nodes, versions, or dependency edges. Low/moderate-only
+reports remain below this gate's threshold. Failure output excludes raw
+npm content; rerun
+`npm audit --audit-level=high --json` locally when raw diagnostics are needed.
 
 ## The dogfood guard — the real safety net
 
@@ -44,6 +55,22 @@ The assertions use **floors, not exact counts**, so legitimate refactors do not 
 The default suite globs `tests/**/*.test.ts`. The guard is named `tests/dogfood.integration.ts` — it does **not** match `*.test.ts`, so the glob skips it by design (it is also slow, since it re-indexes the whole source tree). `npm run test:dogfood` and CI run it by naming the file directly.
 
 **The lesson:** a green `npm test` is necessary but not sufficient. Any change to the engine — indexer, adapters, analyzer, store, graph, or cross-repo — must be dogfood-verified, because the unit suite can stay green while the real graph is broken.
+
+## Incremental correctness gate
+
+`IndexResult.mode = 'incremental'` currently means no indexed body changed. Any
+changed indexed body reports `mode = 'full'` and uses full extraction. The
+`fileContentScope` contract alone cannot authorize changed-only extraction: it
+constrains reads, not ownership of emitted rows.
+
+The regression oracle is `tests/incremental-index-oracle.test.ts`. It includes a
+`tsconfig.json`-only path-alias edit and requires the rerun graph to equal a fresh
+index of the same final tree. The component tests also cover a target-only
+adapter that emits a foreign-source relation and later removes it.
+
+```bash
+node --import tsx --test tests/incremental-index-oracle.test.ts
+```
 
 ## The accuracy bench
 
@@ -68,7 +95,7 @@ Run `npm run bench` after any change that touches relation extraction, ranking, 
 
 ## The performance bench
 
-`bench/impact-perf.ts` (run via `npm run bench:perf`) measures full index, no-op incremental index, edited-file incremental index, their scan phases, and analyze cost on a **deterministic synthetic repo** (`bench/synthetic-repo.ts`) at increasing scales — a hub of modules where changing the leaf ripples to every importer, stressing the analyzer's reverse-dependency traversal. It is intentionally **separate from the accuracy bench and `npm run verify`**: timing and peak RSS are non-deterministic, so they must never reach the byte-identical `impact-bench-report.json`. Use it to capture a baseline or to check a suspected regression while working on the indexer or analyzer; in CI it can gate with a generous `--max-ms-per-kfile` ceiling over the worst index phase.
+`bench/impact-perf.ts` (run via `npm run bench:perf`) measures full index, no-op incremental index, edited-file reindex, their scan phases, and analyze cost on a **deterministic synthetic repo** (`bench/synthetic-repo.ts`) at increasing scales — a hub of modules where changing the leaf ripples to every importer, stressing the analyzer's reverse-dependency traversal. It is intentionally **separate from the accuracy bench and `npm run verify`**: timing and peak RSS are non-deterministic, so they must never reach the byte-identical `impact-bench-report.json`. Use it to capture a baseline or to check a suspected regression while working on the indexer or analyzer; in CI it can gate with a generous `--max-ms-per-kfile` ceiling over the worst index phase.
 
 ```bash
 npm run bench:perf -- --scales 1000,10000        # custom scales
@@ -83,13 +110,15 @@ npm run bench:perf -- --scales 10000,50000
 
 Record the command, commit, Node version, OS / hardware class, and the full output table. Treat `--max-ms-per-kfile` as a local or CI smoke ceiling only after you have a project baseline; do not wire exact timing or RSS into `npm run verify`.
 
-The output table separates `full_index_ms`, `full_scan_ms`, `noop_incremental_ms`, `noop_scan_ms`, `edit_incremental_ms`, `edit_scan_ms`, `analyze_no_persist_ms`, `analyze_persist_ms`, `observed_peak_rss_mb`, and matching `/kfile` timing columns for the total phases. Peak RSS is sampled at phase boundaries with Node's built-in RSS reading, so it is a practical trend signal, not an exact allocator trace. The synthetic generator and table formatter are guarded by `tests/synthetic-repo.test.ts` in the normal verify gate, even though the timing run is not.
+The output table separates `full_index_ms`, `full_scan_ms`, `noop_incremental_ms`, `noop_scan_ms`, `edit_reindex_ms`, `edit_scan_ms`, `analyze_no_persist_ms`, `analyze_persist_ms`, `observed_peak_rss_mb`, and matching `/kfile` timing columns for the total phases. Peak RSS is sampled at phase boundaries with Node's built-in RSS reading, so it is a practical trend signal, not an exact allocator trace. The synthetic generator and table formatter are guarded by `tests/synthetic-repo.test.ts` in the normal verify gate, even though the timing run is not.
 
 ### Current local baseline
 
 Captured on 2026-06-28 from commit `f8f6060` on macOS Darwin 24.6.0, Apple M1 Max, 10 CPU cores, 32 GiB RAM, Node `v24.14.0`, npm `11.9.0`.
 
-This historical table predates the scan phase columns; rerun the command on a current checkout when comparing S1 scan/read work.
+This historical table predates the scan phase columns and preserves its original
+`edit_incremental_ms` label. Current output calls that changed-body phase
+`edit_reindex_ms`; rerun the command on a current checkout for comparisons.
 
 Command:
 

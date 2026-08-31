@@ -6,17 +6,23 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Active Loop
 
-- In progress: fix the confirmed S1 invalidation defect before optimizing reads.
-  When indexed content changes, promote the effective run to the existing full
-  extraction path. The `tsconfig.json` alias oracle and a target-only adapter's
-  foreign-source event oracle must both drop stale output; zero-change behavior
-  must remain intact.
+- Completed checkpoint: S1 changed-content correctness now promotes every
+  changed-body run to full extraction. Exact fresh-index oracles cover both
+  `tsconfig.json` alias invalidation and a target-only adapter's foreign-source
+  output; zero-change runs still skip adapter startup (`22f2414`).
+- Completed checkpoint: the canonical final-tree gate and owned-resource
+  cleanup passed. The same tree includes the bounded UI interaction /
+  accessibility fixes and a fail-closed, expiring exception for the four
+  currently unfixable high-severity findings in the locked Transformers tree.
+- In progress: checkpoint the reviewed tree, publish the authorized PR to
+  `main`, observe its checks, and merge only when the remote gate is green.
 - Deferred S1 slice: define and enforce emitted-row ownership separately from
   `fileContentScope`, then add deterministic body/byte read counts. Until that
   contract exists, every changed-body run stays conservative.
-- Gate after S1: fix the five evidence-backed UI interaction/accessibility
-  defects recorded in `GATES.md`; a passing string/API-only `test:ui` run does
-  not close that browser-behavior gate.
+- Completed implementation: the five evidence-backed UI defects in `GATES.md`
+  are fixed with native sibling controls, contrast-safe focus, reduced-motion
+  behavior, history restoration, and fail-closed empty-map PNG export. Static
+  tests and a live browser pass cover their distinct boundaries.
 - W5 JSON Schema and Avro first slices are now shipped; deeper JSON Schema
   enum/format policy and Avro named-type / schema-registry compatibility remain
   follow-ons rather than the next default loop.
@@ -194,7 +200,9 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Next
 
-1. Close the S1 changed-content invalidation gate and record complete verification evidence.
-2. Define emitted-row ownership before revisiting selective reads.
+1. Remove or replace the temporary dependency-audit exception before
+   2026-10-01T00:00:00Z; do not renew it silently.
+2. Define emitted-row ownership before revisiting selective reads, then add
+   deterministic file/byte read counts before making a performance claim.
 3. Keep deeper JSON Schema / Avro compatibility semantics behind S1 unless new
    evidence displaces the sequence.

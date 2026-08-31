@@ -4,9 +4,13 @@
 
 ## Current State
 
-- Branch: `main`; this loop started from local `b804d72`, 40 commits ahead of the locally recorded `origin/main`.
-- Worktree was clean at loop start. External push, merge, publish, and deployment remain out of scope.
-- Current loop: repair S1 incremental invalidation before attempting content-read reduction.
+- Branch: `codex/parallax-correctness-security-ui`; this loop started from local
+  `main` at `b804d72`, 40 commits ahead of the recorded `origin/main`.
+- Worktree was clean at loop start. The user authorized pushing this branch,
+  opening a PR to `main`, and merging after all local and PR gates pass;
+  deployment, publishing, credentials, and live-money actions remain out of scope.
+- Current loop: close verification and cleanup for the corrected S1, dependency
+  audit, and UI checkpoint, then land it through the authorized PR.
 - Confirmed defect: changing only `tsconfig.json` can leave an unchanged TypeScript
   file's alias-resolved edge stale because full-index adapter context was not
   invalidated.
@@ -14,7 +18,7 @@
   path. `target-only` constrains reads but not emitted-row ownership, so it is not
   sufficient to authorize changed-only carry-forward.
 - The local `.superpowers/sdd/CLAUDE_HANDOFF.md` predates the current head and is historical until refreshed.
-- UI audit follow-ons are recorded in `PLAN.md`; they do not displace the current S1 gate.
+- The bounded UI audit corrections are implemented and recorded in `GATES.md`.
 
 ## Load Order
 

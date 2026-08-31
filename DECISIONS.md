@@ -1054,3 +1054,46 @@ Why:
   cross-adapter dependency or row-ownership model. Narrower invalidation remains
   deferred until an explicit ownership contract and deterministic measurements
   justify the complexity.
+
+## 2026-08-31: Time-Box The Unfixable High-Severity Dependency Findings
+
+Decision: keep the compatible lockfile refresh that removes the fixable audit
+findings, then gate the four remaining high-severity nodes with a stdlib-only,
+exact-match exception that expires at `2026-10-01T00:00:00Z`. Compare only the
+high/critical threshold; low/moderate findings remain visible to npm but do not
+silently become release blockers. Never print raw audit output from the gate.
+
+Sources:
+- npm audit threshold semantics:
+  <https://docs.npmjs.com/cli/v8/commands/npm-audit/#description>
+- adm-zip advisory: <https://github.com/advisories/GHSA-xcpc-8h2w-3j85>
+- sharp advisory: <https://github.com/advisories/GHSA-f88m-g3jw-g9cj>
+
+Why:
+- `npm audit fix` removed six high-severity findings without changing direct
+  dependency ranges; the remaining graph is
+  `@huggingface/transformers -> onnxruntime-node -> adm-zip` plus `sharp`.
+- Transformers text embeddings reach the ONNX runtime, and `sharp` is eagerly
+  loaded by the same package. Treating the findings as unreachable would be an
+  unsupported security claim.
+- Upstream exposes no compatible fixed versions in the locked dependency
+  contract. Forced overrides without a real-model compatibility smoke would
+  replace a known advisory with unmeasured runtime risk.
+- Exact findings, paths, versions, edges, threshold counts, command status, and
+  expiry make this an explicit temporary risk acceptance, not remediation.
+
+## 2026-08-31: Keep UI Interaction Native And History-Aware
+
+Decision: use sibling native buttons for selectable rows, browser history for
+discrete path/preset choices, `replaceState` for filter typing, CSS media queries
+for reduced motion, and a rendered-path precondition for PNG export. Do not add
+a router, component framework, or browser-test dependency for this correction.
+
+Why:
+- Native controls remove nested-interactive markup and supply keyboard behavior
+  without custom role/key emulation.
+- Push versus replace preserves useful Back/Forward semantics without growing
+  history on every filter keystroke.
+- The existing server-rendered workbench and browser APIs already cover the
+  required behavior; static regressions plus a live Playwright pass provide the
+  bounded check without another production dependency.

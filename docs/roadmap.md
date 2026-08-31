@@ -126,8 +126,9 @@ Without regression signals, there is no guarantee that every change works.
 
 ## If we had to pick just the next slice
 
-`PLAN.md` is the live queue. Its current gate is S1 incremental correctness:
-consume `fileContentScope` so changed full-index context cannot leave stale
-carried rows. Only after that oracle is green should S1 measure selective reads
-for target-only-only repositories. The accuracy and agent-surface items above
-remain thematic follow-ons, not competing live instructions.
+`PLAN.md` is the live queue. Remove or replace the temporary dependency-audit
+exception before its deadline. The next S1 slice must define and enforce
+emitted-row ownership separately from `fileContentScope`; changed bodies remain
+on full extraction until that contract and deterministic read counts exist. The
+accuracy and agent-surface items above remain thematic follow-ons, not competing
+live instructions.

@@ -163,7 +163,7 @@ CI 先运行 `npm ci`，然后运行 aggregate gate `npm run verify`。在 sourc
 | 失败 command | 常见含义 | 第一修复 |
 | :--- | :--- | :--- |
 | `npm run verify` | 某个 release sub-gate 失败 | 在本地重新运行，然后跳到下面第一个失败 subcommand 对应的条目。 |
-| `npm audit --audit-level=high` | 当前 lockfile 受 dependency advisory 影响 | 运行 `npm audit fix`，审查 lockfile，再重新运行测试。 |
+| `npm run audit:dependencies` | Audit command 失败、pin 住的 finding/lock subset 变化或例外过期 | 在本地运行 `npm audit --audit-level=high --json` 查看 raw 诊断；修复/更新 dependency 后重新运行 gate。 |
 | `npm run lint` | Typecheck 或 docs lint 失败 | 本地运行命令，先修复第一个报告文件。 |
 | `npm run build` | TypeScript compile output 失败 | 运行 `npm run check`，修复 type 或 module error。 |
 | `npm test` | 快速 unit/integration suite 失败 | 在本地复现指定 test file。 |

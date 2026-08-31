@@ -70,7 +70,7 @@ export const UI_STYLES_MAIN = `    :root {
       max-width: min(360px, 100%);
     }
     .toolbar input:focus, .toolbar select:focus {
-      outline: 2px solid #9ed3c4;
+      outline: 2px solid var(--green);
       outline-offset: 2px;
     }
     .export-controls {
@@ -97,7 +97,7 @@ export const UI_STYLES_MAIN = `    :root {
       background: rgba(158, 211, 196, 0.16);
     }
     .toolbar-action:focus-visible {
-      outline: 2px solid #9ed3c4;
+      outline: 2px solid var(--ink-inverse);
       outline-offset: 2px;
     }
     .toolbar-action[data-state="copied"] {
@@ -138,7 +138,7 @@ export const UI_STYLES_MAIN = `    :root {
       background: rgba(248, 244, 232, 0.1);
     }
     .lang-link:focus-visible {
-      outline: 2px solid #9ed3c4;
+      outline: 2px solid var(--ink-inverse);
       outline-offset: 2px;
     }
     .lang-link.active {
@@ -457,8 +457,20 @@ export const UI_STYLES_MAIN = `    :root {
       background: #f4fbf7;
       box-shadow: inset 3px 0 0 var(--green), 0 0 0 2px rgba(115, 194, 172, 0.18);
     }
-    .delta-preset:focus-visible {
-      outline: 2px solid #73c2ac;
+    .delta-preset-select {
+      min-width: 0;
+      display: grid;
+      gap: 3px;
+      border: 0;
+      padding: 0;
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+    .delta-preset-select:focus-visible {
+      outline: 2px solid var(--green);
       outline-offset: 2px;
     }
     .delta-lanes {
@@ -526,12 +538,23 @@ export const UI_STYLES_MAIN = `    :root {
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
       font-size: 12px;
     }
-    .delta-paths li > span {
+    .delta-path-select {
+      min-width: 0;
+      display: grid;
+      gap: 5px;
+      border: 0;
+      padding: 0;
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+    .delta-path-select > span {
       min-width: 0;
       overflow-wrap: anywhere;
     }
-    .delta-paths li > small {
-      grid-column: 1;
+    .delta-path-select > small {
       color: var(--muted);
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       font-size: 11px;
@@ -673,7 +696,7 @@ export const UI_STYLES_MAIN = `    :root {
       background: #e2f2eb;
     }
     .copy-command:focus-visible {
-      outline: 2px solid #73c2ac;
+      outline: 2px solid var(--green);
       outline-offset: 2px;
     }
     .copy-command[data-state="copied"] {
@@ -695,6 +718,14 @@ export const UI_STYLES_MAIN = `    :root {
       min-width: 0;
       display: grid;
       gap: 5px;
+    }
+    .impact-path-main.selectable-impact {
+      border: 0;
+      padding: 0;
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      text-align: left;
     }
     .impact-path-meta {
       display: flex;
@@ -785,7 +816,7 @@ export const UI_STYLES_MAIN = `    :root {
       border-color: var(--teal);
     }
     .source-link:focus-visible {
-      outline: 2px solid #73c2ac;
+      outline: 2px solid var(--green);
       outline-offset: 2px;
     }
     pre {
@@ -1045,7 +1076,7 @@ export const UI_STYLES_MAIN = `    :root {
       transition: background-color 120ms ease-out, box-shadow 120ms ease-out;
     }
     .selectable-impact:focus-visible {
-      outline: 2px solid #73c2ac;
+      outline: 2px solid var(--green);
       outline-offset: -2px;
     }
     .selected-impact {
@@ -1055,6 +1086,9 @@ export const UI_STYLES_MAIN = `    :root {
     .related-evidence {
       background: #f4fbf7 !important;
       box-shadow: inset 3px 0 0 #73b29e;
+    }
+    .impact-route-card.selectable-impact:not(.selected-impact):focus-visible {
+      outline-color: var(--ink-inverse);
     }
     .map-panel {
       min-height: 0;
@@ -1928,6 +1962,14 @@ export const UI_STYLES_MAIN = `    :root {
       .confidence-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .trust-signals { grid-template-columns: 1fr; }
       .delta-metrics, .delta-lanes, .delta-presets { grid-template-columns: 1fr; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+      }
     }`;
 
 export const UI_STYLES_SOURCE_VIEWER = `    :root {

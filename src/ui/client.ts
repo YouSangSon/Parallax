@@ -8,10 +8,6 @@ export const UI_CLIENT_JS = `    const snapshot = JSON.parse(document.getElement
     const evidenceItems = snapshot.selectedReport?.evidence || [];
     const actionItems = snapshot.selectedReport?.actions || [];
     const input = document.getElementById('filterInput');
-    const initialUrl = new URL(window.location.href);
-    const initialFilter = initialUrl.searchParams.get('filter') || '';
-    const initialImpactPathParam = initialUrl.searchParams.get('path') || '';
-    const initialPresetParam = initialUrl.searchParams.get('preset') || '';
     function uiMessage(key, fallback) {
       return typeof uiMessages[key] === 'string' ? uiMessages[key] : fallback;
     }
@@ -25,7 +21,7 @@ export const UI_CLIENT_JS = `    const snapshot = JSON.parse(document.getElement
         preset: current.searchParams.get('preset') || document.body.dataset.selectedPolicyPreset || ''
       };
     }
-    function replaceWorkbenchState(updates) {
+    function writeWorkbenchState(updates, options = {}) {
       if (!window.history?.replaceState) return;
       const nextUrl = new URL(window.location.href);
       nextUrl.pathname = '/';
@@ -37,7 +33,11 @@ export const UI_CLIENT_JS = `    const snapshot = JSON.parse(document.getElement
         }
       }
       const search = nextUrl.searchParams.toString();
-      window.history.replaceState(null, '', nextUrl.pathname + (search ? '?' + search : ''));
+      const nextLocation = nextUrl.pathname + (search ? '?' + search : '');
+      if (nextLocation !== window.location.pathname + window.location.search) {
+        if (options.replace) window.history.replaceState(null, '', nextLocation);
+        else window.history.pushState(null, '', nextLocation);
+      }
       refreshLanguageLinks();
     }
     function refreshLanguageLinks() {
@@ -165,7 +165,7 @@ export const UI_CLIENT_JS = `    const snapshot = JSON.parse(document.getElement
     }
     async function exportPng() {
       const svg = document.querySelector('.impact-svg');
-      if (!svg) return;
+      if (!svg || !svg.querySelector('[data-impact-path]')) throw new Error('no impact map to export');
       const xml = svgXmlForExport(svg);
       const width = Number(svg.getAttribute('width')) || 760;
       const height = Number(svg.getAttribute('height')) || 420;
@@ -401,23 +401,24 @@ export const UI_CLIENT_JS = `    const snapshot = JSON.parse(document.getElement
         row.classList.toggle('related-evidence', isRelatedEvidence);
       }
       if (options.scroll) {
-        document.querySelector('.evidence-row.related-evidence, .impact-row.selected-impact')?.scrollIntoView({
+        document.querySelector('.evidence-row.related-evidence, .impact-path-main.selected-impact')?.scrollIntoView({
           block: 'nearest',
-          behavior: 'smooth'
+          behavior: scrollBehavior()
         });
       }
-      if (options.updateUrl !== false) replaceWorkbenchState({ path });
+      if (options.updateUrl !== false) writeWorkbenchState({ path });
     }
     for (const element of document.querySelectorAll('.selectable-impact[data-impact-path]')) {
       element.addEventListener('click', () => selectImpact(element.getAttribute('data-impact-path'), { scroll: true }));
+      if (element.tagName === 'BUTTON') continue;
       element.addEventListener('keydown', (event) => {
         if (event.key !== 'Enter' && event.key !== ' ') return;
         event.preventDefault();
         selectImpact(element.getAttribute('data-impact-path'), { scroll: true });
       });
     }
-    for (const element of document.querySelectorAll('.selectable-impact a, .selectable-impact button')) {
-      element.addEventListener('click', (event) => event.stopPropagation());
+    function scrollBehavior() {
+      return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
     }
     function applyFilter(queryText) {
       const query = String(queryText || '').trim().toLowerCase();
@@ -429,7 +430,7 @@ export const UI_CLIENT_JS = `    const snapshot = JSON.parse(document.getElement
     input?.addEventListener('input', () => {
       const query = input.value.trim();
       applyFilter(query);
-      replaceWorkbenchState({ filter: query });
+      writeWorkbenchState({ filter: query }, { replace: true });
     });
     document.getElementById('reportSelect')?.addEventListener('change', (event) => {
       const value = event.target.value;
@@ -509,33 +510,34 @@ export const UI_CLIENT_JS = `    const snapshot = JSON.parse(document.getElement
     function selectPreset(preset, options = {}) {
       if (!preset) return;
       document.body.dataset.selectedPolicyPreset = preset;
-      for (const row of document.querySelectorAll('.delta-preset[data-policy-preset]')) {
-        row.classList.toggle('selected-preset', row.getAttribute('data-policy-preset') === preset);
+      for (const row of document.querySelectorAll('.delta-preset')) {
+        row.classList.toggle('selected-preset', row.querySelector('[data-policy-preset]')?.getAttribute('data-policy-preset') === preset);
       }
-      if (options.updateUrl !== false) replaceWorkbenchState({ preset });
+      if (options.updateUrl !== false) writeWorkbenchState({ preset });
     }
-    for (const row of document.querySelectorAll('.delta-preset[data-policy-preset]')) {
-      row.addEventListener('click', (event) => {
-        if (event.target?.closest?.('button')) return;
-        selectPreset(row.getAttribute('data-policy-preset') || '');
-      });
-      row.addEventListener('keydown', (event) => {
-        if (event.key !== 'Enter' && event.key !== ' ') return;
-        event.preventDefault();
-        selectPreset(row.getAttribute('data-policy-preset') || '');
-      });
+    for (const button of document.querySelectorAll('.delta-preset-select[data-policy-preset]')) {
+      button.addEventListener('click', () => selectPreset(button.getAttribute('data-policy-preset') || ''));
     }
     wireToolbarButton('copyLinkButton', () => copyText(window.location.href));
     wireToolbarButton('exportJsonButton', exportJson, uiMessage('exportDone', 'Exported'));
     wireToolbarButton('exportCsvButton', exportCsv, uiMessage('exportDone', 'Exported'));
     wireToolbarButton('exportPngButton', exportPng, uiMessage('exportDone', 'Exported'));
-    refreshLanguageLinks();
-    if (input && initialFilter) {
-      input.value = initialFilter;
-      applyFilter(initialFilter);
+    function restoreWorkbenchState() {
+      const current = new URL(window.location.href);
+      const filter = current.searchParams.get('filter') || '';
+      const preset = current.searchParams.get('preset') || '';
+      const path = current.searchParams.get('path') || '';
+      if (input) input.value = filter;
+      applyFilter(filter);
+      if (preset) {
+        selectPreset(preset, { updateUrl: false });
+      } else {
+        delete document.body.dataset.selectedPolicyPreset;
+        for (const row of document.querySelectorAll('.delta-preset')) row.classList.remove('selected-preset');
+      }
+      const selectedPath = affectedFiles.some((item) => item.path === path) ? path : initialImpactPath();
+      if (selectedPath) selectImpact(selectedPath, { updateUrl: false });
+      refreshLanguageLinks();
     }
-    if (initialPresetParam) selectPreset(initialPresetParam, { updateUrl: false });
-    const firstImpactPath = affectedFiles.some((item) => item.path === initialImpactPathParam)
-      ? initialImpactPathParam
-      : initialImpactPath();
-    if (firstImpactPath) selectImpact(firstImpactPath);`;
+    window.addEventListener('popstate', restoreWorkbenchState);
+    restoreWorkbenchState();`;

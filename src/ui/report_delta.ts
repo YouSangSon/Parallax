@@ -60,11 +60,13 @@ export function renderReportDeltaPanel(
   const addedRows = renderDeltaPathRows(comparison.addedAffectedFiles ?? comparison.addedAffectedPaths, 'added', m, sourceContext);
   const removedRows = renderDeltaPathRows(comparison.removedAffectedFiles ?? comparison.removedAffectedPaths, 'removed', m, sourceContext);
   const presetRows = comparison.policyPresets.map((preset) => `
-    <li class="delta-preset delta-preset-${escapeHtml(preset.summary)}" tabindex="0" role="button" data-policy-preset="${escapeHtml(preset.id)}">
-      <strong>${escapeHtml(preset.label)}</strong>
-      <span>${escapeHtml(preset.summary)}</span>
-      <b>${escapeHtml(formatSignedDelta(preset.reviewLoadDelta))}</b>
-      <small>+${escapeHtml(String(preset.widenThreshold))}/-${escapeHtml(String(preset.narrowThreshold))} · ${escapeHtml(policyWeightsLabel(preset.weights))}</small>
+    <li class="delta-preset delta-preset-${escapeHtml(preset.summary)}">
+      <button class="delta-preset-select" type="button" data-policy-preset="${escapeHtml(preset.id)}">
+        <strong>${escapeHtml(preset.label)}</strong>
+        <span>${escapeHtml(preset.summary)}</span>
+        <b>${escapeHtml(formatSignedDelta(preset.reviewLoadDelta))}</b>
+        <small>+${escapeHtml(String(preset.widenThreshold))}/-${escapeHtml(String(preset.narrowThreshold))} · ${escapeHtml(policyWeightsLabel(preset.weights))}</small>
+      </button>
       <button class="copy-command" type="button" ${copyCommandAttribute(reportDeltaPolicyConfigPatch(preset))} aria-label="${escapeHtml(`${m.ariaCopyConfigPrefix} ${preset.label}`)}">${escapeHtml(m.copyConfig)}</button>
     </li>
   `).join('');
@@ -159,9 +161,11 @@ function renderDeltaPathRows(
       : `<a class="source-link" href="${escapeHtml(sourceHref(pathValue, 1, sourceContext))}" target="_blank" rel="noreferrer">${escapeHtml(m.source)}</a>`;
     if (mode === 'added') {
       return `
-        <li class="delta-path-row selectable-impact" tabindex="0" role="button" data-impact-path="${escapeHtml(pathValue)}" data-filter-text="${escapeHtml(`added impact ${pathValue}`)}">
-          <span>${escapeHtml(pathValue)}</span>
-          <small>${escapeHtml(m.inspectImpact)}</small>
+        <li class="delta-path-row" data-filter-text="${escapeHtml(`added impact ${pathValue}`)}">
+          <button class="delta-path-select selectable-impact" type="button" data-impact-path="${escapeHtml(pathValue)}" data-filter-text="${escapeHtml(`added impact ${pathValue}`)}">
+            <span>${escapeHtml(pathValue)}</span>
+            <small>${escapeHtml(m.inspectImpact)}</small>
+          </button>
           ${sourceLink}
         </li>
       `;

@@ -41,8 +41,12 @@ npm test
 npm run test:security
 npm run test:mcp
 npm run test:install-smoke
-npm audit --audit-level=high
+npm run audit:dependencies
 ```
+
+The dependency audit gate accepts only the pinned, temporary exception printed
+by the command. It fails closed if the pinned high/critical findings or counts,
+lockfile versions or edges, network/command result, or expiry changes.
 
 Even for documentation-only changes, please run at least the following.
 

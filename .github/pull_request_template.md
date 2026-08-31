@@ -16,7 +16,7 @@ If the full gate was not run, list the scoped commands you ran and why:
 - [ ] `npm run test:mcp`
 - [ ] `npm run test:ui`
 - [ ] `npm run test:install-smoke`
-- [ ] `npm audit --audit-level=high`
+- [ ] `npm run audit:dependencies`
 
 ## Safety
 

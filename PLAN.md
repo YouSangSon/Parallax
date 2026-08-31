@@ -14,11 +14,11 @@ Source of truth for the active improvement loop. Detailed backlog lives in
   cleanup passed. The same tree includes the bounded UI interaction /
   accessibility fixes and a fail-closed, expiring exception for the four
   currently unfixable high-severity findings in the locked Transformers tree.
-- In progress: PR #35 is open against `main`. Its first CodeQL result exposed
-  four high-severity findings; the corrected local slice removes both regex
-  hazards, binds SCIP import to a write-locked immutable source snapshot, and
-  upgrades the redacted evidence ID hash. Focused gates pass; run the canonical
-  final-tree gate, push, and require every remote check before merge.
+- Completed landing: PR #35's first CodeQL result exposed four high-severity
+  findings. The corrected slice removes both regex hazards, binds SCIP import
+  to a write-locked immutable source snapshot, and upgrades the redacted
+  evidence ID hash. Every local and remote gate passed before the PR
+  squash-merged to `main` as `4f289a6`.
 - Deferred S1 slice: define and enforce emitted-row ownership separately from
   `fileContentScope`, then add deterministic body/byte read counts. Until that
   contract exists, every changed-body run stays conservative.

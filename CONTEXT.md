@@ -4,16 +4,16 @@
 
 ## Current State
 
-- Branch: `codex/parallax-correctness-security-ui`; fetched `origin/main` is
-  pinned at `d847ca91770891fe5b4af5ff26c146bbd4a075dd` and is an ancestor of the
-  branch; it was 42 commits ahead before the current corrective checkpoint.
+- Landing state: PR #35 squash-merged the verified tree to `main` as
+  `4f289a6e9e145efa2814dd7f3eb68e4e30a0bef3`. Its tree exactly matched the
+  tested branch head `eb21527c1f84e0119dbc804be82e22bc77472c57` after fetch.
 - Worktree was clean at loop start. The user authorized pushing this branch,
   opening a PR to `main`, and merging after all local and PR gates pass;
   deployment, publishing, credentials, and live-money actions remain out of scope.
-- Current loop: PR #35 is open and mergeable. The four new CodeQL findings are
-  corrected locally, including SCIP snapshot serialization and honest explicit
-  input-file handling. The canonical gate and owned cleanup pass; checkpoint,
-  push, require all remote checks, then merge through the authorized PR.
+- Current loop: complete. The four new CodeQL findings were corrected,
+  including SCIP snapshot serialization and honest explicit input-file
+  handling; canonical local verification, owned cleanup, all five remote
+  checks, and the authorized merge passed.
 - Confirmed defect: changing only `tsconfig.json` can leave an unchanged TypeScript
   file's alias-resolved edge stale because full-index adapter context was not
   invalidated.

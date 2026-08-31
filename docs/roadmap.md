@@ -36,7 +36,8 @@ Cross-repo impact is at a v0 state. It works only among the local repos the user
 
 - [ ] Stabilize OpenAPI / GraphQL / Protobuf / AsyncAPI contract diff down to the *nested schema* level
 - [ ] Take the generated-client / event topology resolver beyond heuristics
-- [ ] Have the workspace catalog recognize sub-packages inside a monorepo as first-class
+- [x] Have the workspace catalog recognize npm/pnpm sub-packages and Nx project configs inside a monorepo as first-class package/project members
+- [ ] Revisit additional Nx inferred-project or Turborepo task metadata only if a parseable source adds catalog value beyond package-manager workspace manifests
 - [x] Surface persisted cross-repo breaking contract links in primary analyze reports, graph exports, MCP payloads, and the UI workbench
 - [x] Keep cross-repo links queryable in both directions and verify malformed, stale, or orphan workspace rows
 
@@ -58,8 +59,16 @@ MCP has stabilized as read-only. Next is the stage of looking deeply at agent us
 
 - [x] GitHub-native agent package: generate Copilot repository instructions, MCP setup snippets, and a least-privilege "run Parallax first" workflow for PR work
 - [x] SARIF / code-scanning export for affected-file impact findings, plus a composite GitHub Action that generates the SARIF file for explicit upload
-- [ ] Broaden SARIF coverage to contract breaks, adapter known-gap notes, coverage gaps, and recommended verification actions
-- [ ] Token-budgeted repo map / context card that ranks the files, symbols, contracts, tests, evidence, provenance, and known-gap notes an agent should inspect next
+- [x] PR action wrapper runs `init` → `index` → `pr triage`, supports changed-file or base/head diff discovery, writes SARIF, and appends a step summary while leaving SARIF upload explicit
+- [x] Emit cross-repo contract-break warnings as SARIF results anchored to provider contracts
+- [x] Emit index coverage-gap warnings as SARIF results anchored to changed files
+- [x] Emit recommended verification actions as SARIF note results
+- [x] Emit adapter known-gap notes as SARIF note results anchored to changed files
+- [x] Token-budgeted repo map / context card exposed as `parallax repo-map` and MCP `parallax_repo_map`, ranking changed roots, affected files, tests/docs/config/work artifacts, evidence refs, verification actions, resources, confidence, provenance, known gaps, and omitted counts
+- [x] Dependency/PR triage dogfood lane: `parallax pr triage` wraps local diff analysis, SARIF output, `--fail-on`, and repo-map context without GitHub writes
+- [x] Local Git hook installer: `parallax install-hook` writes managed `pre-commit` / `pre-push` impact gates, respects `core.hooksPath`, and skips existing non-Parallax hooks unless forced
+- [x] Deep-linkable UI/export: workbench URLs preserve selected impact path, filter text, and report-delta policy preset; toolbar exports JSON, affected-path CSV, and PNG/SVG impact maps
+- [x] SCIP import/export: `parallax scip import --file <index.scip or index.scip.json>` augments the latest completed index with SCIP definition/reference edges, and `parallax scip export --file <index.scip.json>` emits SCIP-compatible JSON
 - [ ] Validate the budget tuning (brief/standard/deep) of `context_for_change` with usage telemetry
 - [ ] A harness to measure the hit/miss of context pack results
 - [ ] Consider introducing a write surface separated into its own permission model (compliant with [invariants.md](invariants.md) I-8)
@@ -101,8 +110,11 @@ Without regression signals, there is no guarantee that every change works.
 - [x] A deterministic bench harness based on multi-language fixtures
   - Current gate: `bench/impact-bench.ts` builds a fixed TypeScript/JavaScript, JVM/Spring Boot, Python, Go, Rust, OpenAPI, and build-manifest fixture; scores relation recall/precision, affected-file recall, evidence/span coverage, adapter attribution, context-pack readiness, and retrieval quality; and is run by `npm run bench`, `npm test`, and the CI `npm run verify` gate.
   - Current cross-repo gate: the bench includes a two-repo contract-impact fixture that verifies W1 primary cross-repo consumer impact and report graph edges remain visible.
-- [x] A separate scale/perf bench that reports full index, no-op incremental index, edited-file incremental index, and analyze phases without pretending exact timings are deterministic
-  - Current tool: `npm run bench:perf` measures those phases on the synthetic-repo generator outside `npm run verify`, so timing remains advisory rather than a byte-for-byte CI contract.
+  - Current contract-diff gate: the bench includes paired OpenAPI v1/v2 quality cases for removed response required properties, removed response optional properties, added request required properties, request enum-value removals, request format additions, response property type changes, response nullable additions, response format changes, and response enum-value removals, plus JSON Schema root-object and Avro top-level record required-property removal cases, reported as `contractDiffQuality` so CI summaries can track deltas.
+  - Current co-change gate: the bench includes a tiny git-history fixture where `src/alpha.ts` and `src/beta.ts` repeatedly change together, reported as `coChangeQuality` so CI summaries can track partner and affected-file deltas.
+  - Current trace-promotion gate: the bench ingests a runtime-observed `src/beta.ts -> src/alpha.ts` edge and reports `tracePromotionQuality`, so CI summaries can track promotion and proven-impact deltas.
+- [x] A separate scale/perf bench that reports full index, no-op incremental index, edited-file reindex, and analyze phases without pretending exact timings are deterministic
+  - Current tool: `npm run bench:perf` measures those phases, their scan timings, and `observed_peak_rss_mb` on the synthetic-repo generator outside `npm run verify`, so timing and RSS remain advisory rather than a byte-for-byte CI contract. The standard large-repo baseline command is `npm run bench:perf -- --scales 10000,50000`; the current local baseline in `docs/verification.md` records 1k/2k rows and a 10k timeout limit instead of a green 10k/50k claim.
 - [x] Recall quality regression detection when crossing embedding models / LLM providers
   - Current gate: the deterministic bench now includes a semantic model matrix with per-model recall@1 and cross-model isolation checks. It is deliberately offline and catches embedding model namespace regressions without depending on live provider calls; LLM provider network quality remains outside CI, while provider contracts stay covered by offline tests.
 - [x] Automatically report the bench delta on every PR in CI
@@ -114,6 +126,9 @@ Without regression signals, there is no guarantee that every change works.
 
 ## If we had to pick just the next slice
 
-On top of the fixtures already present in `tests/` and `bench/`, the core-engine slice with the highest ROI is still the first item of **Accuracy (1)** — *parser-backed TS/JS span*. Every other axis depends on the precision of the evidence span.
-
-If the goal is adoption in GitHub and agent workflows, continue the **Agent surface (4)** lane: Copilot install guidance, broader SARIF coverage, and a token-budgeted repo map/context card that preserves confidence, provenance, and known-gap disclosure. That makes the existing impact engine visible where reviewers and coding agents already work.
+`PLAN.md` is the live queue. Remove or replace the temporary dependency-audit
+exception before its deadline. The next S1 slice must define and enforce
+emitted-row ownership separately from `fileContentScope`; changed bodies remain
+on full extraction until that contract and deterministic read counts exist. The
+accuracy and agent-surface items above remain thematic follow-ons, not competing
+live instructions.

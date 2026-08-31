@@ -19,7 +19,7 @@ The same artifact is published in the npm package, so packaged consumers can val
 
 ## SARIF projection
 
-`parallax analyze --sarif-output <path>` writes SARIF 2.1.0 for GitHub Code Scanning, but SARIF is a pure projection from `ImpactReport`. It does not bump this report schema, add fields to `analyze --json`, or change the persisted report shape. Consumers that need Parallax's full data contract should keep validating `analyze --json`; consumers that need GitHub annotations should upload the SARIF file.
+`parallax analyze --sarif-output <path>` writes SARIF 2.1.0 for GitHub Code Scanning, including affected-file findings, index coverage-gap warnings, cross-repo contract-break warnings, recommended verification-action notes, and adapter known-gap notes, but SARIF is a pure projection from `ImpactReport`. It does not bump this report schema, add fields to `analyze --json`, or change the persisted report shape. Consumers that need Parallax's full data contract should keep validating `analyze --json`; consumers that need GitHub annotations should upload the SARIF file.
 
 ### `crossRepoImpacts`
 

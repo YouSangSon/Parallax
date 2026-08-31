@@ -163,7 +163,7 @@ CI는 `npm ci` 뒤에 aggregate gate인 `npm run verify`를 실행한다. Source
 | 실패 command | 보통 의미 | 첫 조치 |
 | :--- | :--- | :--- |
 | `npm run verify` | release sub-gate 중 하나가 실패함 | 로컬에서 다시 실행한 뒤, 아래의 첫 실패 subcommand 항목으로 이동한다. |
-| `npm audit --audit-level=high` | 현재 lockfile에 dependency advisory가 있음 | `npm audit fix`를 실행하고 lockfile을 검토한 뒤 테스트를 다시 실행한다. |
+| `npm run audit:dependencies` | Audit command 실패, pin된 finding/lock subset 변경 또는 예외 만료 | Raw 진단은 로컬에서 `npm audit --audit-level=high --json`으로 확인하고 dependency를 수정/갱신한 뒤 gate를 다시 실행한다. |
 | `npm run lint` | Typecheck 또는 docs lint 실패 | 로컬에서 명령을 실행하고 첫 번째 보고 파일부터 고친다. |
 | `npm run build` | TypeScript compile output 실패 | `npm run check`를 실행하고 type 또는 module error를 고친다. |
 | `npm test` | 빠른 unit/integration suite 실패 | 이름이 나온 test file을 로컬에서 재현한다. |

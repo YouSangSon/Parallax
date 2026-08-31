@@ -11,13 +11,19 @@ import {
   writeBenchSummary
 } from '../bench/impact-bench-report.js';
 
-type BenchReportOverrides = Omit<Partial<ImpactBenchReport>, 'crossRepoContracts'> & {
+type BenchReportOverrides = Omit<
+  Partial<ImpactBenchReport>,
+  'crossRepoContracts' | 'contractDiffQuality' | 'coChangeQuality' | 'tracePromotionQuality'
+> & {
   crossRepoContracts?: ImpactBenchReport['crossRepoContracts'] | undefined;
+  contractDiffQuality?: ImpactBenchReport['contractDiffQuality'] | undefined;
+  coChangeQuality?: ImpactBenchReport['coChangeQuality'] | undefined;
+  tracePromotionQuality?: ImpactBenchReport['tracePromotionQuality'] | undefined;
 };
 
 function makeReport(overrides: BenchReportOverrides = {}): ImpactBenchReport {
   const report: ImpactBenchReport = {
-    schemaVersion: 4,
+    schemaVersion: 7,
     fixtureId: 'phase6b-multilanguage-v0',
     summary: {
       passed: true,
@@ -62,6 +68,137 @@ function makeReport(overrides: BenchReportOverrides = {}): ImpactBenchReport {
         expected: 1,
         matched: 1
       }
+    },
+    contractDiffQuality: {
+      fixtureId: 'contract-diff-quality-v0',
+      summary: {
+        passed: true,
+        score: 1,
+        expectedCases: 9,
+        matchedCases: 9,
+        expectedChanges: 9,
+        matchedChanges: 9
+      },
+      cases: [
+        {
+          id: 'removed-response-required-property',
+          score: 1,
+          expectedChanges: 1,
+          matchedChanges: 1,
+          expectedChangeKeys: ['removed_response_required_property|breaking|responses.200.body.required.name'],
+          matchedChangeKeys: ['removed_response_required_property|breaking|responses.200.body.required.name'],
+          missingChangeKeys: []
+        },
+        {
+          id: 'removed-response-optional-property',
+          score: 1,
+          expectedChanges: 1,
+          matchedChanges: 1,
+          expectedChangeKeys: ['removed_response_optional_property|non-breaking|responses.200.body.properties.status'],
+          matchedChangeKeys: ['removed_response_optional_property|non-breaking|responses.200.body.properties.status'],
+          missingChangeKeys: []
+        },
+        {
+          id: 'added-request-required-property',
+          score: 1,
+          expectedChanges: 1,
+          matchedChanges: 1,
+          expectedChangeKeys: ['added_request_required_property|breaking|requestBody.required.email'],
+          matchedChangeKeys: ['added_request_required_property|breaking|requestBody.required.email'],
+          missingChangeKeys: []
+        },
+        {
+          id: 'removed-request-enum-value',
+          score: 1,
+          expectedChanges: 1,
+          matchedChanges: 1,
+          expectedChangeKeys: ['removed_request_property_enum_value|breaking|requestBody.properties.role.enum.string:"viewer"'],
+          matchedChangeKeys: ['removed_request_property_enum_value|breaking|requestBody.properties.role.enum.string:"viewer"'],
+          missingChangeKeys: []
+        },
+        {
+          id: 'added-request-format',
+          score: 1,
+          expectedChanges: 1,
+          matchedChanges: 1,
+          expectedChangeKeys: ['changed_request_property_format|breaking|requestBody.properties.email.format'],
+          matchedChangeKeys: ['changed_request_property_format|breaking|requestBody.properties.email.format'],
+          missingChangeKeys: []
+        },
+        {
+          id: 'changed-response-property-type',
+          score: 1,
+          expectedChanges: 1,
+          matchedChanges: 1,
+          expectedChangeKeys: ['changed_response_property_type|breaking|responses.200.body.properties.name'],
+          matchedChangeKeys: ['changed_response_property_type|breaking|responses.200.body.properties.name'],
+          missingChangeKeys: []
+        },
+        {
+          id: 'changed-response-property-format',
+          score: 1,
+          expectedChanges: 1,
+          matchedChanges: 1,
+          expectedChangeKeys: ['changed_response_property_format|breaking|responses.200.body.properties.id.format'],
+          matchedChangeKeys: ['changed_response_property_format|breaking|responses.200.body.properties.id.format'],
+          missingChangeKeys: []
+        },
+        {
+          id: 'added-response-property-nullable',
+          score: 1,
+          expectedChanges: 1,
+          matchedChanges: 1,
+          expectedChangeKeys: ['added_response_property_nullable|breaking|responses.200.body.properties.id.nullable'],
+          matchedChangeKeys: ['added_response_property_nullable|breaking|responses.200.body.properties.id.nullable'],
+          missingChangeKeys: []
+        },
+        {
+          id: 'removed-response-enum-value',
+          score: 1,
+          expectedChanges: 1,
+          matchedChanges: 1,
+          expectedChangeKeys: ['removed_response_property_enum_value|breaking|responses.200.body.properties.status.enum.string:"disabled"'],
+          matchedChangeKeys: ['removed_response_property_enum_value|breaking|responses.200.body.properties.status.enum.string:"disabled"'],
+          missingChangeKeys: []
+        }
+      ],
+      missingChanges: []
+    },
+    coChangeQuality: {
+      fixtureId: 'co-change-quality-v0',
+      summary: {
+        passed: true,
+        score: 1,
+        expectedPartners: 1,
+        matchedPartners: 1,
+        expectedAffectedFiles: 1,
+        matchedAffectedFiles: 1
+      },
+      expectedPartners: ['src/beta.ts'],
+      matchedPartners: ['src/beta.ts'],
+      missingPartners: [],
+      expectedAffectedFiles: ['src/beta.ts'],
+      matchedAffectedFiles: ['src/beta.ts'],
+      missingAffectedFiles: []
+    },
+    tracePromotionQuality: {
+      fixtureId: 'trace-promotion-quality-v0',
+      summary: {
+        passed: true,
+        score: 1,
+        expectedPromotions: 1,
+        matchedPromotions: 1,
+        expectedProvenAffectedFiles: 1,
+        matchedProvenAffectedFiles: 1,
+        unmatchedEdges: 0
+      },
+      expectedPromotedEdges: ['src/beta.ts->src/alpha.ts'],
+      matchedPromotedEdges: ['src/beta.ts->src/alpha.ts'],
+      missingPromotedEdges: [],
+      expectedProvenAffectedFiles: ['src/beta.ts'],
+      matchedProvenAffectedFiles: ['src/beta.ts'],
+      missingProvenAffectedFiles: [],
+      unmatchedEdges: []
     },
     retrieval: {
       fixtureId: 'search-context-retrieval-v0',
@@ -165,6 +302,27 @@ function makeReport(overrides: BenchReportOverrides = {}): ImpactBenchReport {
   } else {
     merged.crossRepoContracts = report.crossRepoContracts;
   }
+  if ('contractDiffQuality' in overrides) {
+    merged.contractDiffQuality = (overrides.contractDiffQuality === undefined
+      ? undefined
+      : { ...report.contractDiffQuality, ...overrides.contractDiffQuality }) as ImpactBenchReport['contractDiffQuality'];
+  } else {
+    merged.contractDiffQuality = report.contractDiffQuality;
+  }
+  if ('coChangeQuality' in overrides) {
+    merged.coChangeQuality = (overrides.coChangeQuality === undefined
+      ? undefined
+      : { ...report.coChangeQuality, ...overrides.coChangeQuality }) as ImpactBenchReport['coChangeQuality'];
+  } else {
+    merged.coChangeQuality = report.coChangeQuality;
+  }
+  if ('tracePromotionQuality' in overrides) {
+    merged.tracePromotionQuality = (overrides.tracePromotionQuality === undefined
+      ? undefined
+      : { ...report.tracePromotionQuality, ...overrides.tracePromotionQuality }) as ImpactBenchReport['tracePromotionQuality'];
+  } else {
+    merged.tracePromotionQuality = report.tracePromotionQuality;
+  }
   return merged;
 }
 
@@ -178,11 +336,27 @@ test('bench report summary renders current metrics without a baseline', () => {
   assert.match(markdown, /\| Cross-repo contract impact \| 1\.0000 \| n\/a \|/);
   assert.match(markdown, /\| Cross-repo impacts \| 1\/1 \| n\/a \|/);
   assert.match(markdown, /\| Cross-repo graph edges \| 1\/1 \| n\/a \|/);
+  assert.match(markdown, /\| Contract-diff quality \| 1\.0000 \| n\/a \|/);
+  assert.match(markdown, /\| Contract-diff cases \| 9\/9 \| n\/a \|/);
+  assert.match(markdown, /\| Contract-diff changes \| 9\/9 \| n\/a \|/);
+  assert.match(markdown, /\| Co-change quality \| 1\.0000 \| n\/a \|/);
+  assert.match(markdown, /\| Co-change partners \| 1\/1 \| n\/a \|/);
+  assert.match(markdown, /\| Co-change affected files \| 1\/1 \| n\/a \|/);
+  assert.match(markdown, /\| Trace-promotion quality \| 1\.0000 \| n\/a \|/);
+  assert.match(markdown, /\| Trace promotions \| 1\/1 \| n\/a \|/);
+  assert.match(markdown, /\| Trace proven affected files \| 1\/1 \| n\/a \|/);
+  assert.match(markdown, /\| Trace unmatched edges \| 0 \| n\/a \|/);
   assert.match(markdown, /\| Semantic recall@1 \| 1\.0000 \| n\/a \|/);
   assert.match(markdown, /\| Semantic model isolation \| 1\.0000 \| n\/a \|/);
   assert.match(markdown, /\| `evidence-fts-policy` \| 1\.0000 \| 1\.0000 \| 966 \| no \|/);
   assert.match(markdown, /\| `bench-semantic-model-a` \| 1\.0000 \| yes \| `bench:model-a-policy` \|/);
   assert.match(markdown, /### Missing cross-repo consumers\n\nNone\./);
+  assert.match(markdown, /### Missing contract-diff changes\n\nNone\./);
+  assert.match(markdown, /### Missing co-change partners\n\nNone\./);
+  assert.match(markdown, /### Missing co-change affected files\n\nNone\./);
+  assert.match(markdown, /### Missing trace promotions\n\nNone\./);
+  assert.match(markdown, /### Missing trace proven affected files\n\nNone\./);
+  assert.match(markdown, /### Unmatched trace edges\n\nNone\./);
   assert.match(markdown, /### Missing relations\n\nNone\./);
   assert.match(markdown, /### Unexpected relations\n\nNone\./);
 });
@@ -228,6 +402,136 @@ test('bench report summary renders metric and count deltas against a baseline', 
         matched: 0
       }
     },
+    contractDiffQuality: {
+      ...makeReport().contractDiffQuality,
+      summary: {
+        passed: false,
+        score: 0.7778,
+        expectedCases: 9,
+        matchedCases: 7,
+        expectedChanges: 9,
+        matchedChanges: 7
+      },
+      cases: [
+        {
+          id: 'removed-response-required-property',
+          score: 1,
+          expectedChanges: 1,
+          matchedChanges: 1,
+          expectedChangeKeys: ['removed_response_required_property|breaking|responses.200.body.required.name'],
+          matchedChangeKeys: ['removed_response_required_property|breaking|responses.200.body.required.name'],
+          missingChangeKeys: []
+        },
+        {
+          id: 'removed-response-optional-property',
+          score: 1,
+          expectedChanges: 1,
+          matchedChanges: 1,
+          expectedChangeKeys: ['removed_response_optional_property|non-breaking|responses.200.body.properties.status'],
+          matchedChangeKeys: ['removed_response_optional_property|non-breaking|responses.200.body.properties.status'],
+          missingChangeKeys: []
+        },
+        {
+          id: 'added-request-required-property',
+          score: 0,
+          expectedChanges: 1,
+          matchedChanges: 0,
+          expectedChangeKeys: ['added_request_required_property|breaking|requestBody.required.email'],
+          matchedChangeKeys: [],
+          missingChangeKeys: ['added_request_required_property|breaking|requestBody.required.email']
+        },
+        {
+          id: 'removed-request-enum-value',
+          score: 1,
+          expectedChanges: 1,
+          matchedChanges: 1,
+          expectedChangeKeys: ['removed_request_property_enum_value|breaking|requestBody.properties.role.enum.string:"viewer"'],
+          matchedChangeKeys: ['removed_request_property_enum_value|breaking|requestBody.properties.role.enum.string:"viewer"'],
+          missingChangeKeys: []
+        },
+        {
+          id: 'added-request-format',
+          score: 1,
+          expectedChanges: 1,
+          matchedChanges: 1,
+          expectedChangeKeys: ['changed_request_property_format|breaking|requestBody.properties.email.format'],
+          matchedChangeKeys: ['changed_request_property_format|breaking|requestBody.properties.email.format'],
+          missingChangeKeys: []
+        },
+        {
+          id: 'changed-response-property-type',
+          score: 0,
+          expectedChanges: 1,
+          matchedChanges: 0,
+          expectedChangeKeys: ['changed_response_property_type|breaking|responses.200.body.properties.name'],
+          matchedChangeKeys: [],
+          missingChangeKeys: ['changed_response_property_type|breaking|responses.200.body.properties.name']
+        },
+        {
+          id: 'removed-response-enum-value',
+          score: 1,
+          expectedChanges: 1,
+          matchedChanges: 1,
+          expectedChangeKeys: ['removed_response_property_enum_value|breaking|responses.200.body.properties.status.enum.string:"disabled"'],
+          matchedChangeKeys: ['removed_response_property_enum_value|breaking|responses.200.body.properties.status.enum.string:"disabled"'],
+          missingChangeKeys: []
+        },
+        {
+          id: 'changed-response-property-format',
+          score: 1,
+          expectedChanges: 1,
+          matchedChanges: 1,
+          expectedChangeKeys: ['changed_response_property_format|breaking|responses.200.body.properties.id.format'],
+          matchedChangeKeys: ['changed_response_property_format|breaking|responses.200.body.properties.id.format'],
+          missingChangeKeys: []
+        },
+        {
+          id: 'added-response-property-nullable',
+          score: 1,
+          expectedChanges: 1,
+          matchedChanges: 1,
+          expectedChangeKeys: ['added_response_property_nullable|breaking|responses.200.body.properties.id.nullable'],
+          matchedChangeKeys: ['added_response_property_nullable|breaking|responses.200.body.properties.id.nullable'],
+          missingChangeKeys: []
+        }
+      ],
+      missingChanges: [
+        'added-request-required-property: added_request_required_property|breaking|requestBody.required.email',
+        'changed-response-property-type: changed_response_property_type|breaking|responses.200.body.properties.name'
+      ]
+    },
+    coChangeQuality: {
+      ...makeReport().coChangeQuality,
+      summary: {
+        passed: false,
+        score: 0,
+        expectedPartners: 1,
+        matchedPartners: 0,
+        expectedAffectedFiles: 1,
+        matchedAffectedFiles: 0
+      },
+      matchedPartners: [],
+      missingPartners: ['src/beta.ts'],
+      matchedAffectedFiles: [],
+      missingAffectedFiles: ['src/beta.ts']
+    },
+    tracePromotionQuality: {
+      ...makeReport().tracePromotionQuality,
+      summary: {
+        passed: false,
+        score: 0,
+        expectedPromotions: 1,
+        matchedPromotions: 0,
+        expectedProvenAffectedFiles: 1,
+        matchedProvenAffectedFiles: 0,
+        unmatchedEdges: 1
+      },
+      matchedPromotedEdges: [],
+      missingPromotedEdges: ['src/beta.ts->src/alpha.ts'],
+      matchedProvenAffectedFiles: [],
+      missingProvenAffectedFiles: ['src/beta.ts'],
+      unmatchedEdges: ['src/beta.ts->src/alpha.ts']
+    },
     retrieval: {
       ...makeReport().retrieval,
       summary: {
@@ -260,6 +564,16 @@ test('bench report summary renders metric and count deltas against a baseline', 
   assert.match(markdown, /\| Cross-repo contract impact \| 1\.0000 \| \+1\.0000 \|/);
   assert.match(markdown, /\| Cross-repo impacts \| 1\/1 \| \+1 \|/);
   assert.match(markdown, /\| Cross-repo graph edges \| 1\/1 \| \+1 \|/);
+  assert.match(markdown, /\| Contract-diff quality \| 1\.0000 \| \+0\.2222 \|/);
+  assert.match(markdown, /\| Contract-diff cases \| 9\/9 \| \+2 \|/);
+  assert.match(markdown, /\| Contract-diff changes \| 9\/9 \| \+2 \|/);
+  assert.match(markdown, /\| Co-change quality \| 1\.0000 \| \+1\.0000 \|/);
+  assert.match(markdown, /\| Co-change partners \| 1\/1 \| \+1 \|/);
+  assert.match(markdown, /\| Co-change affected files \| 1\/1 \| \+1 \|/);
+  assert.match(markdown, /\| Trace-promotion quality \| 1\.0000 \| \+1\.0000 \|/);
+  assert.match(markdown, /\| Trace promotions \| 1\/1 \| \+1 \|/);
+  assert.match(markdown, /\| Trace proven affected files \| 1\/1 \| \+1 \|/);
+  assert.match(markdown, /\| Trace unmatched edges \| 0 \| -1 better \|/);
   assert.match(markdown, /\| Retrieval recall@5 \| 1\.0000 \| \+0\.5000 \|/);
   assert.match(markdown, /\| Semantic recall@1 \| 1\.0000 \| \+0\.5000 \|/);
   assert.match(markdown, /\| Semantic model isolation \| 1\.0000 \| \+0\.5000 \|/);
@@ -283,7 +597,13 @@ test('bench report summary accepts a schema v2 baseline without semantic metrics
   const root = await mkdtemp(path.join(tmpdir(), 'parallax-bench-report-legacy-'));
   const reportPath = path.join(root, 'current.json');
   const baselinePath = path.join(root, 'baseline-v2.json');
-  const { crossRepoContracts: _crossRepoContracts, ...baseline } = makeReport({
+  const {
+    crossRepoContracts: _crossRepoContracts,
+    contractDiffQuality: _contractDiffQuality,
+    coChangeQuality: _coChangeQuality,
+    tracePromotionQuality: _tracePromotionQuality,
+    ...baseline
+  } = makeReport({
     schemaVersion: 2
   });
   delete baseline.retrieval.semanticModels;
@@ -317,6 +637,61 @@ test('bench report summary skips cross-repo rows for a schema v3 current report 
   assert.doesNotMatch(markdown, /### Missing cross-repo consumers/);
 });
 
+test('bench report summary skips contract-diff rows for a schema v4 current report without contractDiffQuality', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'parallax-bench-report-current-v4-'));
+  const reportPath = path.join(root, 'current-v4.json');
+  const current = makeReport({
+    schemaVersion: 4,
+    contractDiffQuality: undefined
+  });
+  await writeFile(reportPath, JSON.stringify(current, null, 2));
+
+  const markdown = await generateBenchSummaryMarkdown({ reportPath });
+
+  assert.doesNotMatch(markdown, /\| Contract-diff quality \|/);
+  assert.doesNotMatch(markdown, /\| Contract-diff cases \|/);
+  assert.doesNotMatch(markdown, /\| Contract-diff changes \|/);
+  assert.doesNotMatch(markdown, /### Missing contract-diff changes/);
+});
+
+test('bench report summary skips co-change rows for a schema v5 current report without coChangeQuality', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'parallax-bench-report-current-v5-'));
+  const reportPath = path.join(root, 'current-v5.json');
+  const current = makeReport({
+    schemaVersion: 5,
+    coChangeQuality: undefined
+  });
+  await writeFile(reportPath, JSON.stringify(current, null, 2));
+
+  const markdown = await generateBenchSummaryMarkdown({ reportPath });
+
+  assert.doesNotMatch(markdown, /\| Co-change quality \|/);
+  assert.doesNotMatch(markdown, /\| Co-change partners \|/);
+  assert.doesNotMatch(markdown, /\| Co-change affected files \|/);
+  assert.doesNotMatch(markdown, /### Missing co-change partners/);
+  assert.doesNotMatch(markdown, /### Missing co-change affected files/);
+});
+
+test('bench report summary skips trace-promotion rows for a schema v6 current report without tracePromotionQuality', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'parallax-bench-report-current-v6-'));
+  const reportPath = path.join(root, 'current-v6.json');
+  const current = makeReport({
+    schemaVersion: 6,
+    tracePromotionQuality: undefined
+  });
+  await writeFile(reportPath, JSON.stringify(current, null, 2));
+
+  const markdown = await generateBenchSummaryMarkdown({ reportPath });
+
+  assert.doesNotMatch(markdown, /\| Trace-promotion quality \|/);
+  assert.doesNotMatch(markdown, /\| Trace promotions \|/);
+  assert.doesNotMatch(markdown, /\| Trace proven affected files \|/);
+  assert.doesNotMatch(markdown, /\| Trace unmatched edges \|/);
+  assert.doesNotMatch(markdown, /### Missing trace promotions/);
+  assert.doesNotMatch(markdown, /### Missing trace proven affected files/);
+  assert.doesNotMatch(markdown, /### Unmatched trace edges/);
+});
+
 test('loadBenchReport rejects a schema v4 current report without crossRepoContracts', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'parallax-bench-report-invalid-v4-'));
   const reportPath = path.join(root, 'current-v4.json');
@@ -329,6 +704,51 @@ test('loadBenchReport rejects a schema v4 current report without crossRepoContra
   await assert.rejects(
     () => generateBenchSummaryMarkdown({ reportPath }),
     /invalid bench report .*crossRepoContracts/
+  );
+});
+
+test('loadBenchReport rejects a schema v5 current report without contractDiffQuality', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'parallax-bench-report-invalid-v5-'));
+  const reportPath = path.join(root, 'current-v5.json');
+  const invalid = makeReport({
+    schemaVersion: 5,
+    contractDiffQuality: undefined
+  });
+  await writeFile(reportPath, JSON.stringify(invalid, null, 2));
+
+  await assert.rejects(
+    () => generateBenchSummaryMarkdown({ reportPath }),
+    /invalid bench report .*contractDiffQuality/
+  );
+});
+
+test('loadBenchReport rejects a schema v6 current report without coChangeQuality', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'parallax-bench-report-invalid-v6-'));
+  const reportPath = path.join(root, 'current-v6.json');
+  const invalid = makeReport({
+    schemaVersion: 6,
+    coChangeQuality: undefined
+  });
+  await writeFile(reportPath, JSON.stringify(invalid, null, 2));
+
+  await assert.rejects(
+    () => generateBenchSummaryMarkdown({ reportPath }),
+    /invalid bench report .*coChangeQuality/
+  );
+});
+
+test('loadBenchReport rejects a schema v7 current report without tracePromotionQuality', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'parallax-bench-report-invalid-v7-'));
+  const reportPath = path.join(root, 'current-v7.json');
+  const invalid = makeReport({
+    schemaVersion: 7,
+    tracePromotionQuality: undefined
+  });
+  await writeFile(reportPath, JSON.stringify(invalid, null, 2));
+
+  await assert.rejects(
+    () => generateBenchSummaryMarkdown({ reportPath }),
+    /invalid bench report .*tracePromotionQuality/
   );
 });
 

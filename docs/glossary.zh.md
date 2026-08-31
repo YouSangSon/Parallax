@@ -31,7 +31,7 @@ Parallax 在写入 report 或 graph export 之前，会通过一个 shared path 
 支撑某条 relation 的 source span / 命令输出 / confidence 依据。即“为什么提取了这条 relation”的 audit trail。
 
 ### contract / endpoint / event
-`contracts`、`cross_repo_links` 表。把 OpenAPI / protobuf / GraphQL / AsyncAPI 建模为 entity，从而分析 *cross-repo* 影响（provider repo 的 API 变更 → consumer repo 损坏）。
+`contracts`、`cross_repo_links` 表。把 OpenAPI / protobuf / GraphQL / AsyncAPI / JSON Schema / Avro 建模为 entity，从而分析 *cross-repo* 影响（provider repo 的 API 变更 -> consumer repo 损坏）。
 
 ### workspace
 `workspaces`、`workspace_repos` —— 把多个 repo 归并为一个*产品/组织边界*的 logical 单元。在单个 repo 中无意义。

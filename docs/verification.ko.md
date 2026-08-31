@@ -12,20 +12,31 @@ Parallax는 정확성을 여러 계층으로 검증한다 — 빠른 unit suite,
 | :--- | :--- | :--- |
 | `npm test` | `tsx --test`로 `tests/**/*.test.ts`에 대해 Node test runner 실행 | 모든 변경 후. 기본 빠른 suite |
 | `npm run check` | `tsc --noEmit` typecheck, 출력 없음 | commit 전. type 회귀를 잡음 |
+| `npm run audit:dependencies` | Fail-closed high-severity dependency audit gate 실행 | commit / PR 전과 CI에서 |
 | `npm run lint` | `check` + `docs:lint`를 함께 실행 | commit / PR 전. 전체 static gate |
 | `npm run docs:lint` | tracked/untracked Markdown에 대해 `scripts/docs-lint.js` 실행, local `.md` link target 포함 | 문서를 편집한 뒤 |
 | `npm run verify` | canonical source-checkout release gate 실행: lint, install smoke, fast test, dogfood, bench, high-level audit | release 전과 CI |
 | `npm run build` | `tsc -p tsconfig.json`, `dist/`로 compile | 배포하거나 CLI를 smoke test하기 전 |
 | `npm run bench` | `bench/impact-bench.ts` 실행. accuracy 회귀 시 non-zero로 종료 | engine/adapter 변경 후 |
 | `npm run bench:report` | 최신 bench JSON을 Markdown으로 렌더링하고, 선택적으로 baseline report와 비교 | `npm run bench` 후 또는 CI summary에서 |
-| `npm run bench:perf` | `bench/impact-perf.ts` 실행; 합성 repo에서 full index, no-op incremental index, edited-file incremental index, analyze phase 시간을 측정(비결정적, `verify`에 미포함) | 인덱싱/traversal 성능 작업 시 |
+| `npm run bench:perf` | `bench/impact-perf.ts` 실행; 합성 repo에서 full index, no-op incremental index, edited-file reindex, 각 scan phase, analyze phase 시간과 observed peak RSS를 측정(비결정적, `verify`에 미포함) | 인덱싱/traversal 성능 작업 시 |
 | `npm run test:dogfood` | Parallax를 자기 source에 대해 인덱싱하고 내부 graph가 살아남는지 검증 | engine 변경 후(indexer/adapters/analyzer/store/graph) |
 | `npm run test:mcp` | `tests/mcp.test.ts` 실행(impact / context / memory / telemetry / path validation) | MCP surface 변경 후 |
 | `npm run test:ui` | `tests/ui.test.ts` 실행(UI snapshot, server, JSON resource endpoint) | UI 변경 후 |
-| `npm run test:security` | `tests/security.test.ts` 실행(path containment + redaction) | store / path / redaction 변경 후 |
+| `npm run test:security` | `tests/security.test.ts` 실행(path containment, redaction, dependency audit gate) | store / path / redaction / audit gate 변경 후 |
 | `npm run test:install-smoke` | `npm run build` 후 `node dist/src/cli.js --help` | 릴리스 전, 패키징된 CLI가 실행되는지 확인 |
 
-`test:fixtures`는 `npm test`의 alias이고, `test:benchmark`는 `npm run bench`의 alias다. `npm run verify`에는 `npm audit --audit-level=high`가 포함되므로 마지막 audit 단계는 npm registry와 network 상태에 의존한다.
+`test:fixtures`는 `npm test`의 alias이고, `test:benchmark`는 `npm run bench`의 alias다. `npm run verify`에는 `npm run audit:dependencies`가 포함되므로 마지막 audit 단계는 npm registry와 network 상태에 의존한다.
+
+Dependency gate는 clean audit를 통과시킨다. 2026-09-30 UTC가 끝날 때까지는
+`GHSA-xcpc-8h2w-3j85`와 `GHSA-f88m-g3jw-g9cj`가 보고하는 정확히 pin된
+`@huggingface/transformers` dependency tree만 눈에 띄는 경고와 함께 허용한다.
+기한 만료, command/network 또는 JSON 오류, pin된 high/critical
+finding/advisory field와 count, package path, severity, node, version,
+dependency edge의 변경은 모두 fail-closed로 거부한다. Low/moderate-only
+report는 이 gate의 threshold보다 낮다. 실패 출력에는 raw npm content를
+포함하지 않는다. Raw 진단이 필요하면 로컬에서
+`npm audit --audit-level=high --json`을 다시 실행한다.
 
 ## dogfood guard — 진짜 안전망
 
@@ -45,6 +56,22 @@ dogfood guard는 그 틈을 메운다. 각 test에서:
 
 **교훈:** green `npm test`는 필요하지만 충분하지 않다. engine에 대한 모든 변경 — indexer, adapters, analyzer, store, graph, cross-repo — 은 unit이 green인 것만으로는 안 되고 dogfood로 검증해야 한다. unit suite가 green인 동안에도 실제 graph가 망가져 있을 수 있기 때문이다.
 
+## 증분 정확성 gate
+
+현재 `IndexResult.mode = 'incremental'`은 indexed body 변경이 없다는 뜻이다.
+indexed body가 하나라도 바뀌면 `mode = 'full'`을 보고하고 전체 extraction을
+사용한다. `fileContentScope`만으로 changed-only extraction을 허용할 수는 없다.
+이 계약은 read 범위만 제한하며 emitted row의 ownership은 제한하지 않는다.
+
+회귀 oracle은 `tests/incremental-index-oracle.test.ts`다. `tsconfig.json` path
+alias만 바꾼 case를 포함하며, rerun graph가 같은 final tree의 fresh index와
+동일해야 한다. Component test는 target-only adapter가 다른 source의 relation을
+emit한 뒤 제거하는 case도 검증한다.
+
+```bash
+node --import tsx --test tests/incremental-index-oracle.test.ts
+```
+
 ## accuracy bench
 
 `bench/impact-bench.ts`는 고정된 multi-language fixture(TypeScript/JavaScript, JVM/Spring Boot, Python, Go, Rust, OpenAPI contract, build manifest)를 만들어 인덱싱하고, 그 결과 graph를 pin된 기대 relation 집합과 대조해 채점한다. pin하는 항목:
@@ -60,7 +87,7 @@ runner는 deterministic JSON 리포트를 쓰고, suite가 통과하지 못하�
 - `tests/impact-bench.test.ts`는 `npm test`의 일부로 bench를 실행하고, 리포트 형태와 pin된 기대 relation 집합, 그리고 score/recall 임계값을 검증한다.
 - `npm run bench`는 `bench/impact-bench.ts`를 직접 실행하고 recall/score 회귀 시 non-zero로 종료한다 — CI가 쓰는 형태다.
 
-Deterministic bench에는 cross-repo contract-impact lane도 포함된다. 이 lane은 two-repo workspace fixture를 만들고 `analyzeContractDiff`로 breaking contract link를 persist한 뒤, `analyzeDiff`와 report-scoped graph export가 expected `web:src/client.ts` consumer impact를 계속 노출하는지 확인한다. 이 lane은 기존 `summary.score`를 reweight하지 않고 `crossRepoContracts.summary.passed`로 `summary.passed`를 gate한다.
+Deterministic bench에는 cross-repo, contract-diff, co-change, trace-promotion lane도 포함된다. cross-repo contract-impact lane은 two-repo workspace fixture를 만들고 `analyzeContractDiff`로 breaking contract link를 persist한 뒤, `analyzeDiff`와 report-scoped graph export가 expected `web:src/client.ts` consumer impact를 계속 노출하는지 확인한다. contract-diff quality lane은 removed response required property, removed response optional property, added request required property, request enum-value removal, request format addition, response property type change, response nullable addition, response format change, response enum-value removal에 대한 paired OpenAPI v1/v2 fixture와 JSON Schema root-object 및 Avro top-level record required-property removal case를 실행하고, matched cases/changes를 `contractDiffQuality`로 보고한다. co-change quality lane은 `src/alpha.ts`와 `src/beta.ts`가 반복해서 함께 바뀌는 작은 git-history fixture를 만들고, `queryCoChanges`와 `analyzeDiff`가 `src/beta.ts`를 expected heuristic partner로 `coChangeQuality`에 함께 노출하는지 확인한다. trace-promotion lane은 runtime에서 관측된 `src/beta.ts -> src/alpha.ts` edge를 ingest한 뒤, 승격된 relation이 proven impact로 노출되는지 `tracePromotionQuality`로 확인한다. 이 lane들은 기존 `summary.score`를 reweight하지 않고 `summary.passed`를 gate한다.
 
 relation 추출, 랭킹, retrieval을 건드리는 변경 후에는 `npm run bench`를 실행하자.
 
@@ -68,14 +95,43 @@ relation 추출, 랭킹, retrieval을 건드리는 변경 후에는 `npm run ben
 
 ## performance bench
 
-`bench/impact-perf.ts`(`npm run bench:perf`로 실행)는 **결정적 합성 repo**(`bench/synthetic-repo.ts`)를 점점 큰 규모로 만들어 full index, no-op incremental index, edited-file incremental index, analyze 비용을 측정한다 — leaf를 바꾸면 모든 importer로 파급되는 module hub 구조로, analyzer의 reverse-dependency traversal을 스트레스한다. accuracy bench 및 `npm run verify`와 **의도적으로 분리**되어 있다: 시간과 peak RSS는 비결정적이라 바이트-동일한 `impact-bench-report.json`에 절대 들어가면 안 된다. baseline을 잡거나 인덱서/analyzer 작업 중 회귀가 의심될 때 사용하고, CI에서는 index phase 중 최악의 `/kfile` 비용을 넉넉한 `--max-ms-per-kfile` ceiling으로 게이트할 수 있다.
+`bench/impact-perf.ts`(`npm run bench:perf`로 실행)는 **결정적 합성 repo**(`bench/synthetic-repo.ts`)를 점점 큰 규모로 만들어 full index, no-op incremental index, edited-file reindex, 각 scan phase, analyze 비용을 측정한다 — leaf를 바꾸면 모든 importer로 파급되는 module hub 구조로, analyzer의 reverse-dependency traversal을 스트레스한다. accuracy bench 및 `npm run verify`와 **의도적으로 분리**되어 있다: 시간과 peak RSS는 비결정적이라 바이트-동일한 `impact-bench-report.json`에 절대 들어가면 안 된다. baseline을 잡거나 인덱서/analyzer 작업 중 회귀가 의심될 때 사용하고, CI에서는 index phase 중 최악의 `/kfile` 비용을 넉넉한 `--max-ms-per-kfile` ceiling으로 게이트할 수 있다.
 
 ```bash
 npm run bench:perf -- --scales 1000,10000        # 사용자 지정 규모
 npm run bench:perf -- --max-ms-per-kfile 2000    # ceiling 초과 시 실패
 ```
 
-출력 표는 `full_index_ms`, `noop_incremental_ms`, `edit_incremental_ms`, `analyze_no_persist_ms`, `analyze_persist_ms`와 대응하는 `/kfile` 열을 분리한다. 시간 측정 실행은 verify에 없지만 합성 generator와 표 formatter는 `tests/synthetic-repo.test.ts`로 정규 verify 게이트에서 가드된다.
+비교 가능한 large-repo baseline은 clean checkout에서 10k와 50k 파일 규모로 잡는다:
+
+```bash
+npm run bench:perf -- --scales 10000,50000
+```
+
+command, commit, Node version, OS / hardware class, 전체 output table을 함께 기록한다. `--max-ms-per-kfile`은 프로젝트 baseline을 잡은 뒤 local 또는 CI smoke ceiling으로만 사용하고, exact timing이나 RSS를 `npm run verify`에 넣지 않는다.
+
+출력 표는 `full_index_ms`, `full_scan_ms`, `noop_incremental_ms`, `noop_scan_ms`, `edit_reindex_ms`, `edit_scan_ms`, `analyze_no_persist_ms`, `analyze_persist_ms`, `observed_peak_rss_mb`, total phase에 대응하는 `/kfile` 시간 열을 분리한다. Peak RSS는 Node 내장 RSS reading을 phase 경계에서 샘플링하므로 실용적인 추세 신호이지 정확한 allocator trace는 아니다. 시간 측정 실행은 verify에 없지만 합성 generator와 표 formatter는 `tests/synthetic-repo.test.ts`로 정규 verify 게이트에서 가드된다.
+
+### 현재 로컬 baseline
+
+2026-06-28에 commit `f8f6060`, macOS Darwin 24.6.0, Apple M1 Max, CPU core 10개, RAM 32 GiB, Node `v24.14.0`, npm `11.9.0` 환경에서 측정했다.
+
+이 historical table은 scan phase column 추가 전 기준이며 당시의
+`edit_incremental_ms` 이름을 유지한다. Current output은 changed-body phase를
+`edit_reindex_ms`로 표시하므로 비교할 때 current checkout에서 다시 실행한다.
+
+명령:
+
+```bash
+npm run bench:perf -- --scales 1000,2000
+```
+
+| files | full_index_ms | noop_incremental_ms | edit_incremental_ms | analyze_no_persist_ms | analyze_persist_ms | affected | observed_peak_rss_mb | full_index_ms/kfile | noop_incremental_ms/kfile | edit_incremental_ms/kfile | analyze_no_persist_ms/kfile | analyze_persist_ms/kfile |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1000 | 5251 | 3655.8 | 3594.0 | 1947.0 | 1935.7 | 200 | 328 | 5251 | 3656 | 3594 | 1947 | 1936 |
+| 2000 | 17526 | 14266.0 | 14179.2 | 7688.0 | 7707.7 | 200 | 261 | 8763 | 7133 | 7090 | 3844 | 3854 |
+
+표준 large-repo 명령 `npm run bench:perf -- --scales 10000`도 시도했다. 이 호스트에서는 약 20분 안에 표를 출력하지 못해 중단했다. 10k full-phase run이 로컬 제한 안에 끝나지 않았으므로 50k run은 시작하지 않았다. analyzer/indexing 비용을 줄이거나 perf runner에 phase-split/progress mode를 추가하기 전까지, 이 baseline host에서 10k/50k full-phase `bench:perf`는 **아직 지원 가능한 기준으로 보지 않는다**.
 
 ## docs linter
 

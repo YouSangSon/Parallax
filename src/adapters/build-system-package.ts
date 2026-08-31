@@ -61,6 +61,7 @@ export class BuildSystemPackageAdapter implements SemanticAdapter {
   readonly version = BUILD_SYSTEM_PACKAGE_ADAPTER_VERSION;
   readonly capabilities = buildSystemCapabilities;
   readonly confidence = 'heuristic';
+  readonly fileContentScope = 'full-index';
   readonly knownGaps = [
     'npm package-lock, Cargo.lock, and poetry.lock transitive dependencies are indexed; other lockfile ecosystems and semver range impact are not fully resolved',
     'build scripts are not executed, so generated dependency graph edges may be absent'

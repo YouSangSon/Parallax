@@ -14,6 +14,7 @@ An adapter implements the `SemanticAdapter` interface (`src/adapters/types.ts`):
 - `confidence?` — the adapter's default confidence label (falls back to `unknown` when omitted).
 - `knownGaps?` — human-readable notes on what this adapter does *not* resolve.
 - `selectionMode?` — `targeted` by default for bounded language/file adapters, or `catch-all` for terminal fallback adapters.
+- `fileContentScope?` — `full-index` by default; set `target-only` only when the adapter needs content from the current `process(file)` input, and uses `ctx.indexedFiles` / `files` only for path-level context.
 - `supports(file)` — returns `true` if this adapter handles the file.
 - `start(ctx, files)` — returns an `AdapterRun` (or a `Promise<AdapterRun>`) for the index run.
 
@@ -28,6 +29,15 @@ The orchestrator content-hashes each `EntityDescriptor` to compute its entity id
 ## Capabilities
 
 `AdapterCapability` is one of: `imports`, `exports`, `calls`, `references`, `types`, `symbols`, `docrefs`, `tests`, `packages`. An adapter declares the subset it can extract so coverage and gaps are explicit per adapter.
+
+## File content scope
+
+`fileContentScope` makes the adapter's cross-file content contract explicit:
+
+- `full-index` — the adapter may inspect content from any scanned file through `ctx.indexedFiles`, `files`, import resolution, package/lockfile discovery, or other startup state. This is the default for source compatibility and for safety.
+- `target-only` — the adapter reads content only from the file currently passed to `process(file)`. It may still use indexed path sets for reference resolution, but it must not read another file's `content` during `start()` or while processing a target file.
+
+Use `target-only` only after checking the implementation. For example, config/infra path-reference extraction uses indexed file paths to validate references but does not read other indexed file contents. Build-system/package and TypeScript/JavaScript adapters stay `full-index` because they build lockfile/package catalogs, import resolvers, and cross-file targets from indexed content.
 
 ## Evidence and confidence (invariant I-10)
 
@@ -48,7 +58,7 @@ This makes registration order load-bearing. The default registry registers, in o
 
 The registry now makes that contract explicit. `selectionMode` is optional for source compatibility and defaults to `targeted`; adapters that intentionally serve as terminal fallback coverage set `selectionMode = 'catch-all'`. `AdapterRegistry.register()` rejects any adapter registered after an existing catch-all adapter, and the error names both the new adapter and the catch-all that blocks it. Duplicate `id` validation still runs first and keeps the existing duplicate-id error.
 
-Use `registry.manifest()` when reviewing or testing adapter registration. It returns an immutable snapshot in registration order. Each entry exposes `order`, `id`, `version`, `capabilities`, `confidence` (default `unknown`), `knownGaps` (default empty), and `selectionMode` (default `targeted`). Callers can inspect it without being able to mutate registry state.
+Use `registry.manifest()` when reviewing or testing adapter registration. It returns an immutable snapshot in registration order. Each entry exposes `order`, `id`, `version`, `capabilities`, `confidence` (default `unknown`), `knownGaps` (default empty), `selectionMode` (default `targeted`), and `fileContentScope` (default `full-index`). Callers can inspect it without being able to mutate registry state.
 
 ## Versioning and re-extraction
 
@@ -76,6 +86,7 @@ export class ExampleAdapter implements SemanticAdapter {
   readonly capabilities = capabilities;
   readonly confidence = 'heuristic';
   readonly selectionMode = 'targeted';
+  readonly fileContentScope = 'target-only';
   readonly knownGaps = ['only resolves a single literal import form'];
 
   supports(file: ScannedFile): boolean {
@@ -122,8 +133,9 @@ Before adding or changing an adapter:
 
 - Use a unique `id` and bump `version` whenever extraction output changes.
 - Prefer `selectionMode = 'targeted'` for language/file-specific adapters; reserve `catch-all` for the final fallback adapter.
+- Keep `fileContentScope = 'full-index'` unless the adapter only reads target-file content and uses indexed files as path metadata.
 - Register every targeted adapter before any catch-all adapter.
-- Check `registry.manifest()` in focused tests or review notes to confirm order, capabilities, confidence, known gaps, and selection mode.
+- Check `registry.manifest()` in focused tests or review notes to confirm order, capabilities, confidence, known gaps, selection mode, and file content scope.
 - Keep `knownGaps` current so the manifest communicates where coverage is heuristic or incomplete.
 
 ## See also

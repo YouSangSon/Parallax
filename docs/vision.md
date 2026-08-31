@@ -80,5 +80,5 @@ These items were reviewed and rejected — context is in [invariants.md](invaria
 | If you are ... | Starting point |
 |---|---|
 | An AI agent/engineer entering for the first time | [README.md](../README.md) → this file → [invariants.md](invariants.md) |
-| A contributor looking for the next task | [roadmap.md](roadmap.md) |
+| A contributor looking for the next task | [Codex navigation](CODEX-NAVIGATION-GUIDE.md) → [roadmap.md](roadmap.md) |
 | Someone confused by the terminology | [glossary.md](glossary.md) |

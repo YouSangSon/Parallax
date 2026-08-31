@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { closeSync, openSync, readFileSync, readdirSync, readSync, statSync } from 'node:fs';
 import path from 'node:path';
+import { performance } from 'node:perf_hooks';
 
 import { AdapterRegistry } from './adapters/registry.js';
 import { BuildSystemPackageAdapter } from './adapters/build-system-package.js';
@@ -15,8 +16,8 @@ import {
 } from './adapters/multi-language-regex.js';
 import { DATA_DIR } from './branding.js';
 import { computeCoChanges, readCommitHistory } from './co-change.js';
-import { entityKindForPath, languageIdForPath } from './entity_classification.js';
-import { readGitSnapshot } from './git-snapshot.js';
+import { entityKindForPath, isJsonSchemaContractPath, languageIdForPath } from './entity_classification.js';
+import { readGitSnapshot, readIgnoredGitPaths, readTrackedGitPaths } from './git-snapshot.js';
 import { computeIndexDelta, type IndexDelta, type IndexRunFiles } from './index_delta.js';
 import type {
   EntityDescriptor,
@@ -30,6 +31,7 @@ import { contentHash, ensureRepo, openDatabase, type Db } from './store.js';
 import { normalizeRepoRoot, redactSecrets, toRelativePath } from './security.js';
 import type {
   Confidence,
+  AdapterUsage,
   EntityKind,
   IndexOptions,
   IndexResult,
@@ -68,7 +70,6 @@ interface PreparedStatements {
   insertFact: Statement;
   insertFactProvenance: Statement;
   upsertFile: Statement;
-  selectFile: Statement;
   upsertEntity: Statement;
   insertEntityIfMissing: Statement;
   updateEntityFreshness: Statement;
@@ -579,6 +580,20 @@ async function indexProjectInternal(
     db.close();
     throw new Error('no adapter registered');
   }
+  const extractorVersion = extractorVersionFor(registeredAdapters);
+  const reusableCleanIndex = reuseCleanGitIndexIfUnchanged(
+    db,
+    repoId,
+    repoRoot,
+    gitSnapshot.commitSha,
+    gitSnapshot.isDirty,
+    extractorVersion,
+    options.maxFileBytes
+  );
+  if (reusableCleanIndex) {
+    db.close();
+    return reusableCleanIndex;
+  }
 
   const indexRunResult = db
     .prepare(
@@ -590,7 +605,7 @@ async function indexProjectInternal(
     .run(
       repoId,
       'running',
-      extractorVersionFor(registeredAdapters),
+      extractorVersion,
       gitSnapshot.commitSha,
       gitSnapshot.branchName,
       gitSnapshot.isDirty ? 1 : 0
@@ -607,7 +622,9 @@ async function indexProjectInternal(
   );
 
   try {
-    const scan = scanFiles(repoRoot, options.maxFileBytes ?? defaultMaxFileBytes);
+    const scan = timeIndexPhase(options, 'scan', () =>
+      scanFiles(repoRoot, options.maxFileBytes ?? defaultMaxFileBytes)
+    );
     const files = scan.files;
     const classified = registry.classify(files);
     const skippedCoverage = scan.skipped.map((file) => ({
@@ -632,21 +649,29 @@ async function indexProjectInternal(
       unsupportedFiles
     );
 
-    // Incremental delta: compare the current indexed-file set + extractor version
-    // against the prior completed run. When nothing but file bodies changed (same
-    // path set, same extractor) the unchanged files' graph rows are carried
-    // forward and only the changed files are re-extracted; otherwise a full
-    // reindex. `priorRun` is null on the first index → full.
+    // First classify the content/path delta. Changed bodies are then promoted to
+    // full extraction because content scope does not prove emitted-row ownership;
+    // only a zero-change cohort is safe to carry forward today.
     const priorRun = loadPriorCompletedRun(db, repoId);
     const delta: IndexDelta = computeIndexDelta({
       prior: priorRun?.files ?? null,
       current: {
-        extractorVersion: extractorVersionFor(registeredAdapters),
+        extractorVersion,
         files: new Map(indexedFiles.map((file) => [file.relativePath, file.hash]))
       }
     });
-    const isIncremental = delta.mode === 'incremental';
-    const changedSet = new Set(delta.changed);
+    const effectiveDelta: IndexDelta =
+      delta.mode === 'incremental' && delta.changed.length > 0
+        ? {
+            ...delta,
+            mode: 'full',
+            reason: 'changed indexed content requires full extraction',
+            unchanged: [],
+            changed: []
+          }
+        : delta;
+    const isIncremental = effectiveDelta.mode === 'incremental';
+    const changedSet = new Set(effectiveDelta.changed);
 
     const adapterRunIds = new Map<SemanticAdapter, number>();
     const insertAdapterRun = db.prepare(`
@@ -704,7 +729,10 @@ async function indexProjectInternal(
       );
     }
 
-    for (const file of indexedFiles) {
+    const indexedCoverageFiles = isIncremental
+      ? indexedFiles.filter((file) => changedSet.has(file.relativePath))
+      : indexedFiles;
+    for (const file of indexedCoverageFiles) {
       const adapter = fileAdapterByPath.get(file.relativePath);
       if (!adapter) continue;
       stmts.insertCoverage.run(
@@ -743,7 +771,7 @@ async function indexProjectInternal(
       fileAdapterByPath,
       collected,
       priorRun,
-      delta,
+      delta: effectiveDelta,
       mainBranch,
       memoryTxId,
       memoryTs,
@@ -761,6 +789,16 @@ async function indexProjectInternal(
     );
     db.close();
     throw error;
+  }
+}
+
+function timeIndexPhase<T>(options: IndexOptions, phase: 'scan', fn: () => T): T {
+  if (!options.perfObserver) return fn();
+  const start = performance.now();
+  try {
+    return fn();
+  } finally {
+    options.perfObserver(phase, performance.now() - start);
   }
 }
 
@@ -800,6 +838,13 @@ async function collectAdapterEvents(input: {
       completedFilePathsByAdapterId.set(adapter.id, new Set<string>());
       continue;
     }
+    if (input.isIncremental && adapterFiles.every((file) => !input.changedSet.has(file.relativePath))) {
+      updateAdapterRun(input.db, adapterRunId, 'completed');
+      const completedFilePaths = new Set(adapterFiles.map((file) => file.relativePath));
+      completedFilePathsByAdapterId.set(adapter.id, completedFilePaths);
+      completedAdapterRuns.push({ adapterId: adapter.id, adapterRunId });
+      continue;
+    }
     const ctx: ExtractCtx = {
       repoRoot: input.repoRoot,
       indexRunId: input.indexRunId,
@@ -812,8 +857,8 @@ async function collectAdapterEvents(input: {
       const run = await adapter.start(ctx, adapterFiles);
       try {
         for (const file of adapterFiles) {
-          // Incremental: unchanged files are carried forward during persistence,
-          // so extraction is skipped but failure coverage still treats them as done.
+          // Incremental: unchanged graph rows and indexed coverage are carried
+          // forward during successful persistence, so extraction is skipped.
           if (input.isIncremental && !input.changedSet.has(file.relativePath)) {
             completedFilePaths.add(file.relativePath);
             continue;
@@ -947,11 +992,18 @@ function persistCollectedIndexRun(input: {
         .run(input.memoryTxId, input.mainBranch.head_tx_id);
     }
 
-    for (const file of input.indexedFiles) {
+    const changedPaths = new Set(input.delta.changed);
+    const filesToReplay =
+      input.delta.mode === 'incremental'
+        ? input.indexedFiles.filter(
+            (file) =>
+              changedPaths.has(file.relativePath) ||
+              entityKindForPath(file.relativePath, file.language) === 'contract'
+          )
+        : input.indexedFiles;
+    for (const file of filesToReplay) {
       input.currentStateSnapshot.captureFile(file.relativePath);
       stmts.upsertFile.run(input.repoId, file.relativePath, file.language, file.hash, input.indexRunId);
-      const row = stmts.selectFile.get(input.repoId, file.relativePath) as { id: number };
-      persistCtx.fileIdByPath.set(file.relativePath, row.id);
       const fileEntId = fileEntityId(file.relativePath);
       const kind = entityKindForPath(file.relativePath, file.language);
       input.currentStateSnapshot.captureEntity(fileEntId);
@@ -986,6 +1038,11 @@ function persistCollectedIndexRun(input: {
         persistCtx
       );
       persistCtx.canonicalEntityIds.add(fileEntId);
+    }
+    for (const row of input.db
+      .prepare('SELECT id, path FROM files WHERE repo_id = ?')
+      .all(input.repoId) as Array<{ id: number; path: string }>) {
+      if (indexedPaths.has(row.path)) persistCtx.fileIdByPath.set(row.path, row.id);
     }
 
     for (const collectedEvent of input.collected.events) {
@@ -1318,11 +1375,12 @@ function languageIdsForSkippedAndUnsupported(
 }
 
 function extractorVersionFor(adapters: readonly SemanticAdapter[]): string {
+  const semanticsRevision = 's1-changed-content-full-v1';
   if (adapters.length === 1) {
     const adapter = adapters[0]!;
-    return `${adapter.id}-${adapter.version}`;
+    return `${adapter.id}-${adapter.version}-${semanticsRevision}`;
   }
-  return adapters.map((adapter) => `${adapter.id}-${adapter.version}`).join(',');
+  return `${adapters.map((adapter) => `${adapter.id}-${adapter.version}`).join(',')}-${semanticsRevision}`;
 }
 
 // Load the prior completed run's per-file content hashes + extractor version so
@@ -1346,15 +1404,185 @@ function loadPriorCompletedRun(db: Db, repoId: number): PriorIndexRun | null {
   return { runId: priorRun.id, files: { extractorVersion: priorRun.extractor_version, files } };
 }
 
+function reuseCleanGitIndexIfUnchanged(
+  db: Db,
+  repoId: number,
+  repoRoot: string,
+  commitSha: string | null,
+  isDirty: boolean,
+  extractorVersion: string,
+  maxFileBytes: number | undefined
+): IndexResult | null {
+  if (!commitSha || isDirty || maxFileBytes !== undefined) return null;
+  const prior = db
+    .prepare(
+      `SELECT id
+       FROM index_runs
+       WHERE repo_id = ? AND status = 'completed'
+         AND extractor_version = ?
+         AND git_commit_sha = ?
+         AND git_is_dirty = 0
+       ORDER BY id DESC
+       LIMIT 1`
+    )
+    .get(repoId, extractorVersion, commitSha) as { id: number } | undefined;
+  if (!prior) return null;
+  if (!indexRunFitsDefaultScanLimit(db, repoId, repoRoot, prior.id)) return null;
+  return loadIndexResultForRun(db, repoId, prior.id);
+}
+
+function indexRunFitsDefaultScanLimit(
+  db: Db,
+  repoId: number,
+  repoRoot: string,
+  indexRunId: number
+): boolean {
+  const trackedPaths = readTrackedGitPaths(repoRoot);
+  if (!trackedPaths) return false;
+  const ignoredPaths = readIgnoredGitPaths(repoRoot);
+  if (!ignoredPaths || [...ignoredPaths].some(isScannablePath)) return false;
+  const resourceSkip = db
+    .prepare(
+      `SELECT 1 AS one
+       FROM index_coverage
+       WHERE index_run_id = ? AND reason LIKE 'file exceeds maxFileBytes%'
+       LIMIT 1`
+    )
+    .get(indexRunId) as { one: number } | undefined;
+  if (resourceSkip) return false;
+  const files = db
+    .prepare('SELECT path FROM files WHERE repo_id = ? AND index_run_id = ?')
+    .all(repoId, indexRunId) as Array<{ path: string }>;
+  const coveragePaths = db
+    .prepare('SELECT path FROM index_coverage WHERE index_run_id = ?')
+    .all(indexRunId) as Array<{ path: string }>;
+  for (const file of files) {
+    if (!trackedPaths.has(file.path)) return false;
+    try {
+      if (statSync(path.join(repoRoot, file.path)).size > defaultMaxFileBytes) return false;
+    } catch {
+      return false;
+    }
+  }
+  return coveragePaths.every((coverage) => trackedPaths.has(pathBeforeDiagnosticMarker(coverage.path)));
+}
+
+function pathBeforeDiagnosticMarker(filePath: string): string {
+  return filePath.split('#diagnostic:')[0] ?? filePath;
+}
+
+function isScannablePath(relativePath: string): boolean {
+  if (relativePath.split('/').some((part) => ignoredDirs.has(part))) return false;
+  return languageIdForPath(relativePath) !== undefined;
+}
+
+function loadIndexResultForRun(db: Db, repoId: number, indexRunId: number): IndexResult {
+  const counts = db
+    .prepare(
+      `SELECT
+         (SELECT count(*) FROM files WHERE repo_id = ? AND index_run_id = ?) AS filesIndexed,
+         (SELECT count(*) FROM symbols WHERE index_run_id = ?) AS symbolsIndexed,
+         (SELECT count(*) FROM edges WHERE repo_id = ? AND index_run_id = ?) AS edgesIndexed,
+         (SELECT count(*) FROM entities WHERE repo_id = ? AND updated_index_run_id = ?) AS entitiesIndexed,
+         (SELECT count(*) FROM relations WHERE repo_id = ? AND index_run_id = ?) AS relationsIndexed`
+    )
+    .get(
+      repoId,
+      indexRunId,
+      indexRunId,
+      repoId,
+      indexRunId,
+      repoId,
+      indexRunId,
+      repoId,
+      indexRunId
+    ) as {
+    filesIndexed: number;
+    symbolsIndexed: number;
+    edgesIndexed: number;
+    entitiesIndexed: number;
+    relationsIndexed: number;
+  };
+  const adaptersUsed = db
+    .prepare(
+      `SELECT adapter_id, adapter_version, language_ids, confidence, known_gaps_json
+       FROM adapter_runs
+       WHERE index_run_id = ? AND adapter_id != 'co-change'
+       ORDER BY id`
+    )
+    .all(indexRunId)
+    .map((row) => {
+      const adapter = row as {
+        adapter_id: string;
+        adapter_version: string;
+        language_ids: string;
+        confidence: Confidence;
+        known_gaps_json: string;
+      };
+      return {
+        id: adapter.adapter_id,
+        version: adapter.adapter_version,
+        languageIds: parseStringArray(adapter.language_ids),
+        confidence: adapter.confidence,
+        knownGaps: parseStringArray(adapter.known_gaps_json)
+      };
+    }) as AdapterUsage[];
+  const coverageRows = db
+    .prepare(
+      `SELECT path, language_id, status, reason
+       FROM index_coverage
+       WHERE index_run_id = ?
+       ORDER BY path`
+    )
+    .all(indexRunId) as Array<{
+    path: string;
+    language_id: string | null;
+    status: 'indexed' | 'skipped';
+    reason: string;
+  }>;
+  const skipped = coverageRows
+    .filter((row) => row.status === 'skipped')
+    .map((row) => ({
+      path: row.path,
+      ...(row.language_id !== null ? { languageId: row.language_id } : {}),
+      status: row.status,
+      reason: row.reason
+    }));
+  return {
+    indexRunId,
+    mode: 'incremental',
+    filesIndexed: counts.filesIndexed,
+    symbolsIndexed: counts.symbolsIndexed,
+    edgesIndexed: counts.edgesIndexed,
+    entitiesIndexed: counts.entitiesIndexed,
+    relationsIndexed: counts.relationsIndexed,
+    adaptersUsed,
+    coverage: {
+      indexedPaths: coverageRows.filter((row) => row.status === 'indexed').length,
+      skippedPaths: skipped.length,
+      unsupportedLanguageIds: [
+        ...new Set(skipped.flatMap((row) => row.languageId === undefined ? [] : [row.languageId]))
+      ].sort(),
+      skipped
+    }
+  };
+}
+
+function parseStringArray(value: string): string[] {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
 // Carry an unchanged file's extraction-produced rows from the prior completed
-// run into the new run's cohort. The file-level rows (files, `file:` entities)
-// are already re-stamped by the main file loop, so this only moves the rows that
-// the (now-skipped) extraction would have produced: relations, their evidence,
-// scan evidence, edges, symbols, and symbol-level entities. Attribution is
-// inverted — bump everything still on the prior run EXCEPT rows owned by a
-// changed file — so the parameter list stays small (changed files are few) and a
-// changed file's vanished old rows are correctly left stranded on the prior run.
-// Wrapped in a SAVEPOINT so a mid-statement failure cannot half-move the graph.
+// run into the new run's cohort. Attribution is inverted — bump everything still
+// on the prior run EXCEPT rows owned by a changed file — so the parameter list
+// stays small (changed files are few) and a changed file's vanished old rows are
+// correctly left stranded on the prior run. Wrapped in a SAVEPOINT so a
+// mid-statement failure cannot half-move the graph.
 //
 // Known divergence (intentional): a carried relation keeps the prior run's
 // `adapter_run_id` rather than the current run's. This is invisible — nothing
@@ -1377,24 +1605,46 @@ function carryForwardUnchanged(
 
   db.exec('SAVEPOINT s1_carry_forward');
   try {
-    // Symbol-level entities of unchanged files (file entities are already on the
-    // new run via the main loop, so the prior-run filter excludes them).
+    db.prepare(
+      `UPDATE files SET index_run_id = ?
+       WHERE repo_id = ? AND index_run_id = ?
+         ${notInChanged ? `AND path NOT ${notInChanged}` : ''}`
+    ).run(newRunId, repoId, priorRunId, ...changedPaths);
+
+    db.prepare(
+      `UPDATE index_coverage SET index_run_id = ?
+       WHERE index_run_id = ? AND status = 'indexed'
+         ${notInChanged ? `AND path NOT ${notInChanged}` : ''}`
+    ).run(newRunId, priorRunId, ...changedPaths);
+
     db.prepare(
       `UPDATE entities SET updated_index_run_id = ?
        WHERE repo_id = ? AND updated_index_run_id = ?
          ${notInChanged ? `AND (path IS NULL OR path NOT ${notInChanged})` : ''}`
     ).run(newRunId, repoId, priorRunId, ...changedPaths);
 
+    // File entity versions use the same canonical shape as the full-index file
+    // loop. Changed-file events may have inserted unchanged endpoints as
+    // placeholders first, so replace those rows before copying symbol versions.
+    db.prepare(
+      `INSERT OR REPLACE INTO entity_versions (entity_id, index_run_id, content_hash, location_json, state)
+       SELECT e.id, ?, f.content_hash, json_object('path', f.path), 'active'
+       FROM files f
+       INNER JOIN entities e ON e.repo_id = f.repo_id AND e.id = ('file:' || f.path)
+       WHERE f.repo_id = ? AND f.index_run_id = ?
+         ${notInChanged ? `AND f.path NOT ${notInChanged}` : ''}`
+    ).run(newRunId, repoId, newRunId, ...changedPaths);
+
     // entity_versions is keyed by (entity_id, index_run_id) — one row per run, not
-    // re-stamped in place. Copy the prior run's rows into the new run for entities
-    // not owned by a changed file. INSERT OR IGNORE: file entities already have a
-    // new-run row from the main loop, and changed entities are re-written by
-    // extraction, so only unchanged symbol entities are actually inserted.
+    // re-stamped in place. Copy the prior run's non-file rows into the new run for
+    // entities not owned by a changed file. Changed entities are re-written by
+    // extraction, so the insert mainly preserves unchanged symbol versions.
     db.prepare(
       `INSERT OR IGNORE INTO entity_versions (entity_id, index_run_id, content_hash, location_json, state)
        SELECT ev.entity_id, ?, ev.content_hash, ev.location_json, ev.state
        FROM entity_versions ev
        WHERE ev.index_run_id = ?
+         AND ev.entity_id NOT LIKE 'file:%'
          ${
            notInChanged
              ? `AND ev.entity_id NOT IN (SELECT id FROM entities WHERE repo_id = ? AND path ${notInChanged})`
@@ -1478,7 +1728,6 @@ function prepareStatements(db: Db): PreparedStatements {
         content_hash = excluded.content_hash,
         index_run_id = excluded.index_run_id
     `),
-    selectFile: db.prepare('SELECT id FROM files WHERE repo_id = ? AND path = ?'),
     upsertEntity: db.prepare(`
       INSERT INTO entities (
         id, repo_id, kind, path, symbol, language_id, display_name, created_index_run_id, updated_index_run_id
@@ -1811,6 +2060,8 @@ function contractKindForPath(relativePath: string): string | undefined {
   if (withoutExtension.includes('asyncapi')) return 'asyncapi';
   if (withoutExtension.includes('swagger')) return 'openapi';
   if (withoutExtension.includes('openapi')) return 'openapi';
+  if (isJsonSchemaContractPath(relativePath)) return 'json-schema';
+  if (basename.toLowerCase().endsWith('.avsc')) return 'avro';
   return undefined;
 }
 

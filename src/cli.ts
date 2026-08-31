@@ -39,6 +39,25 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === 'repo-map') {
+    const { buildRepoMap } = await import('./index.js');
+    const changedFiles = parseChangedFiles(args, repoRoot, 'repo-map');
+    const query = parseOptionalValueArg(args, '--query');
+    const budgetTokens = parseIntegerArg(args, '--budget');
+    const map = await buildRepoMap({
+      repoRoot,
+      changedFiles,
+      ...(query === undefined ? {} : { query }),
+      ...(budgetTokens === undefined ? {} : { budgetTokens })
+    });
+    if (args.includes('--json')) {
+      console.log(JSON.stringify(map, null, 2));
+    } else {
+      printRepoMap(map);
+    }
+    return;
+  }
+
   if (command === 'ui') {
     const { startUiServer } = await import('./ui.js');
     const reportId = parseOptionalArg(args, '--report');
@@ -51,6 +70,53 @@ async function main(): Promise<void> {
     console.log(`${PRODUCT_NAME} UI: ${ui.url}`);
     await waitForShutdown(ui.close);
     return;
+  }
+
+  if (command === 'pr') {
+    const [subcommand, ...prArgs] = args;
+    if (subcommand === 'triage') {
+      const { analyzeDiff, buildRepoMap, impactReportToSarif } = await import('./index.js');
+      const { failsImpactGate } = await import('./confidence.js');
+      const changedFiles = parseChangedFiles(prArgs, repoRoot, 'pr triage');
+      const maxDepth = parseIntegerArg(prArgs, '--depth');
+      const maxFanout = parseIntegerArg(prArgs, '--max-fanout');
+      const failOn = parseOptionalValueArg(prArgs, '--fail-on');
+      const sarifOutput = parseOptionalValueArg(prArgs, '--sarif-output') ?? '.parallax/pr-triage.sarif';
+      const sarifCategory = parseOptionalValueArg(prArgs, '--sarif-category') ?? 'parallax-dependency-pr';
+      const query = parseOptionalValueArg(prArgs, '--query') ?? 'package dependency manifest lockfile';
+      const budgetTokens = parseIntegerArg(prArgs, '--budget');
+      const report = await analyzeDiff({
+        repoRoot,
+        changedFiles,
+        writeReport: true,
+        persistReport: true,
+        ...(maxDepth === undefined ? {} : { maxDepth }),
+        ...(maxFanout === undefined ? {} : { maxFanout })
+      });
+      const outputPath = resolve(repoRoot, sarifOutput);
+      await mkdir(dirname(outputPath), { recursive: true });
+      await writeFile(outputPath, `${JSON.stringify(impactReportToSarif(report, {
+        checkoutRoot: repoRoot,
+        category: sarifCategory
+      }), null, 2)}\n`);
+      const map = await buildRepoMap({
+        repoRoot,
+        changedFiles,
+        query,
+        ...(maxDepth === undefined ? {} : { maxDepth }),
+        ...(maxFanout === undefined ? {} : { maxFanout }),
+        ...(budgetTokens === undefined ? {} : { budgetTokens })
+      });
+      console.log('PR triage');
+      console.log(`Impact report ${report.id}`);
+      console.log(`Affected files: ${report.affectedFiles.length}`);
+      console.log(`SARIF: ${sarifOutput}`);
+      if (report.reportPath) console.log(`Report: ${report.reportPath}`);
+      printRepoMap(map);
+      process.exitCode = failsImpactGate(report.affectedFiles.map((file) => file.confidence), failOn) ? 1 : 0;
+      return;
+    }
+    throw new Error('pr requires triage');
   }
 
   if (command === 'import-session') {
@@ -68,6 +134,34 @@ async function main(): Promise<void> {
     });
     console.log(JSON.stringify(result, null, 2));
     return;
+  }
+
+  if (command === 'scip') {
+    const [subcommand, ...scipArgs] = args;
+    if (subcommand === 'import') {
+      const { importScipJson } = await import('./index.js');
+      const file = parseRequiredArg(scipArgs, '--file');
+      const result = importScipJson({ repoRoot, file });
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    if (subcommand === 'export') {
+      const { exportScipJson } = await import('./index.js');
+      const file = parseOptionalArg(scipArgs, '--file');
+      const result = exportScipJson({ repoRoot });
+      const json = `${JSON.stringify(result.index, null, 2)}\n`;
+      if (file === undefined) {
+        console.log(json.trimEnd());
+      } else {
+        const target = resolve(file);
+        await mkdir(dirname(target), { recursive: true });
+        await writeFile(target, json, 'utf8');
+        const { index, ...summary } = result;
+        console.log(JSON.stringify({ ...summary, file }, null, 2));
+      }
+      return;
+    }
+    throw new Error('scip requires import or export');
   }
 
   if (command === 'workspace') {
@@ -102,6 +196,24 @@ async function main(): Promise<void> {
         ...(remoteUrl !== undefined ? { remoteUrl } : {})
       });
       console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    if (subcommand === 'discover-packages') {
+      const { discoverWorkspacePackages } = await import('./index.js');
+      const workspaceName = parseOptionalWorkspaceArg(workspaceArgs, '--name');
+      const result = discoverWorkspacePackages({
+        repoRoot,
+        ...(workspaceName !== undefined ? { workspaceName } : {})
+      });
+      if (workspaceArgs.includes('--json')) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.log(`Workspace ${result.workspace.name} package discovery: ${result.packages.length} package(s)`);
+        console.log(`Sources: ${result.sources.join(', ') || '(none)'}`);
+        for (const member of result.packages) {
+          console.log(`  ${member.relativePath} (${member.serviceName})`);
+        }
+      }
       return;
     }
     if (subcommand === 'list') {
@@ -251,7 +363,7 @@ async function main(): Promise<void> {
       }
       return;
     }
-    throw new Error('workspace requires init, add-repo, list, resolve-contracts, contract-diff, verify, consumers, or providers');
+    throw new Error('workspace requires init, add-repo, discover-packages, list, resolve-contracts, contract-diff, verify, consumers, or providers');
   }
 
   if (command === 'analyze') {
@@ -266,7 +378,7 @@ async function main(): Promise<void> {
     const changedFiles = parseChangedFiles(args, repoRoot);
     const maxDepth = parseIntegerArg(args, '--depth');
     const maxFanout = parseIntegerArg(args, '--max-fanout');
-    const failOn = parseOptionalArg(args, '--fail-on');
+    const failOn = parseOptionalValueArg(args, '--fail-on');
     const report = await analyzeDiff({
       repoRoot,
       changedFiles,
@@ -601,6 +713,35 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === 'install-hook') {
+    const {
+      installParallaxGitHooks,
+      planParallaxGitHooks
+    } = await import('./index.js');
+    const hook = parseOptionalArg(args, '--hook') ?? 'pre-commit';
+    const failOn = parseOptionalValueArg(args, '--fail-on');
+    const commandOverride = parseOptionalArg(args, '--command');
+    const options = {
+      repoRoot,
+      hooks: parseHookNames(hook),
+      ...(failOn !== undefined ? { failOn } : {}),
+      ...(commandOverride !== undefined ? { command: commandOverride } : {}),
+      ...(args.includes('--force') ? { force: true } : {})
+    };
+    const plan = args.includes('--dry-run')
+      ? planParallaxGitHooks(options)
+      : installParallaxGitHooks(options);
+    console.log(JSON.stringify({
+      repoRoot: plan.repoRoot,
+      hooks: plan.hooks.map((planned) => ({
+        hook: planned.hook,
+        path: planned.path,
+        action: planned.action
+      }))
+    }, null, 2));
+    return;
+  }
+
   if (command === 'query') {
     const { executeGraphQuery } = await import('./index.js');
     const cypher = parsePositionals(args).join(' ') || parseOptionalArg(args, '--query');
@@ -627,7 +768,7 @@ async function main(): Promise<void> {
   throw new Error(`unknown command: ${command}`);
 }
 
-function parseChangedFiles(args: string[], repoRoot: string): string[] {
+function parseChangedFiles(args: string[], repoRoot: string, commandName = 'analyze'): string[] {
   const index = args.indexOf('--changed');
   if (index >= 0 && args[index + 1]) {
     return args[index + 1]!.split(',').map((item) => item.trim()).filter(Boolean);
@@ -642,11 +783,116 @@ function parseChangedFiles(args: string[], repoRoot: string): string[] {
       .filter(Boolean);
   }
   if (head) {
-    throw new Error('analyze --head requires --base');
+    throw new Error(`${commandName} --head requires --base`);
   }
   const positional = parsePositionals(args);
   if (positional.length > 0) return positional;
-  throw new Error('analyze requires --changed <file[,file]> or --base <ref> [--head <ref>]');
+  throw new Error(`${commandName} requires --changed <file[,file]> or --base <ref> [--head <ref>]`);
+}
+
+function printRepoMap(map: {
+  indexRunId: number;
+  budget: { estimatedTokens: number; requestedTokens: number; truncated: boolean };
+  changedFiles: string[];
+  changedRoots: string[];
+  affectedFiles: Array<{ path: string; confidence: string; reason: string }>;
+  tests: Array<{ path: string; confidence: string; reason: string }>;
+  docs: Array<{ path: string; confidence: string; reason: string }>;
+  config: Array<{ path: string; confidence: string; reason: string }>;
+  workArtifacts: Array<{ path: string; confidence: string; reason: string }>;
+  evidenceRefs: Array<{ file: string; kind: string; confidence: string; resourceUri?: string }>;
+  verificationActions: Array<{ display: string; confidence: string }>;
+  verificationPlan: {
+    groups: Array<{
+      rank: number;
+      display: string;
+      confidence: string;
+      packageRoot: string;
+      targetPaths: string[];
+      coveredChangedFiles: string[];
+      coveredAffectedFiles: string[];
+      omittedTargetCount: number;
+    }>;
+    omittedCounts: { groups: number; targetPaths: number };
+  };
+  resources: { coverage: string; entities: string[]; evidence: string[] };
+  query?: string;
+  queryMatches?: Array<{ resourceUri: string; score?: number; entity?: { displayName?: string; path?: string; id?: string } }>;
+  confidence: { overall: string; provenance: string[]; knownGaps: string[] };
+  omittedCounts: Record<string, number>;
+}): void {
+  console.log(`Repo map for index run ${map.indexRunId}`);
+  console.log(`Budget: ${map.budget.estimatedTokens}/${map.budget.requestedTokens} estimated tokens${map.budget.truncated ? ' (truncated)' : ''}`);
+  console.log(`Changed roots: ${map.changedRoots.join(', ') || '(none)'}`);
+  console.log(`Changed files: ${map.changedFiles.join(', ')}`);
+  printRepoMapSection('Affected files', map.affectedFiles);
+  printRepoMapSection('Tests', map.tests);
+  printRepoMapSection('Docs', map.docs);
+  printRepoMapSection('Config', map.config);
+  printRepoMapSection('Work artifacts', map.workArtifacts);
+  if (map.evidenceRefs.length > 0) {
+    console.log('Evidence refs:');
+    for (const item of map.evidenceRefs) {
+      console.log(`  - ${item.file} [${item.kind}, ${item.confidence}]${item.resourceUri ? ` ${item.resourceUri}` : ''}`);
+    }
+  }
+  if (map.verificationActions.length > 0) {
+    console.log('Verification actions:');
+    for (const action of map.verificationActions) {
+      console.log(`  - ${action.display} [${action.confidence}]`);
+    }
+  }
+  if (map.verificationPlan.groups.length > 0) {
+    console.log('Verification plan:');
+    for (const group of map.verificationPlan.groups) {
+      console.log(`  ${group.rank}. ${group.display} [${group.confidence}] package ${group.packageRoot}`);
+      if (group.coveredChangedFiles.length > 0) {
+        console.log(`     changed: ${group.coveredChangedFiles.join(', ')}`);
+      }
+      if (group.targetPaths.length > 0) {
+        console.log(`     targets: ${group.targetPaths.join(', ')}`);
+      }
+      if (group.coveredAffectedFiles.length > 0) {
+        console.log(`     covers: ${group.coveredAffectedFiles.slice(0, 5).join(', ')}${group.coveredAffectedFiles.length > 5 ? ', ...' : ''}`);
+      }
+      if (group.omittedTargetCount > 0) {
+        console.log(`     omitted: ${group.omittedTargetCount} path(s)`);
+      }
+    }
+  }
+  if (map.query && map.queryMatches && map.queryMatches.length > 0) {
+    console.log(`Query matches for "${map.query}":`);
+    for (const match of map.queryMatches.slice(0, 5)) {
+      const label = match.entity?.displayName ?? match.entity?.path ?? match.entity?.id ?? match.resourceUri;
+      console.log(`  - ${label}${match.score === undefined ? '' : ` (${match.score.toFixed(3)})`} ${match.resourceUri}`);
+    }
+  }
+  console.log(`Resources: ${map.resources.entities.length} entities, ${map.resources.evidence.length} evidence refs, coverage ${map.resources.coverage}`);
+  for (const uri of [...map.resources.entities.slice(0, 3), ...map.resources.evidence.slice(0, 3)]) {
+    console.log(`  - ${uri}`);
+  }
+  console.log(`Confidence: ${map.confidence.overall}`);
+  for (const item of map.confidence.provenance.slice(0, 4)) {
+    console.log(`  - ${item}`);
+  }
+  if (map.confidence.knownGaps.length > 0) {
+    console.log(`Known gaps: ${map.confidence.knownGaps.join('; ')}`);
+  }
+  const omitted = Object.entries(map.omittedCounts).filter(([, count]) => count > 0);
+  if (omitted.length > 0) {
+    console.log(`Omitted: ${omitted.map(([key, count]) => `${key}=${count}`).join(', ')}`);
+  }
+}
+
+function printRepoMapSection(
+  label: string,
+  items: Array<{ path: string; confidence: string; reason: string }>
+): void {
+  if (items.length === 0) return;
+  console.log(`${label}:`);
+  for (const item of items) {
+    console.log(`  - ${item.path} [${item.confidence}] ${item.reason}`);
+  }
 }
 
 function formatEventTopology(topology: {
@@ -713,12 +959,12 @@ function parseIntegerArg(args: string[], name: string): number | undefined {
 function parsePositionals(args: string[]): string[] {
   const valueFlags = new Set([
     '--changed', '--base', '--head', '--depth', '--max-fanout', '--max-file-bytes',
-    '--sarif-output', '--sarif-category',
+    '--sarif-output', '--sarif-category', '--fail-on',
     '--report', '--format', '--file', '--port', '--service', '--remote',
     '--provider', '--provider-path', '--contract', '--method', '--path', '--consumer',
     '--entity', '--attribute', '--value', '--branch', '--agent', '--evidence-fact-ids',
     '--name', '--from', '--fact-id', '--k', '--op', '--as-of-tx',
-    '--target', '--source', '--query', '--model',
+    '--target', '--source', '--query', '--model', '--budget', '--hook', '--command',
     '--older-than-days', '--abandon', '--restore', '--max-age', '--limit', '--cursor'
   ]);
   const positionals: string[] = [];
@@ -731,6 +977,12 @@ function parsePositionals(args: string[]): string[] {
     if (!arg.startsWith('--')) positionals.push(arg);
   }
   return positionals;
+}
+
+function parseHookNames(raw: string): Array<'pre-commit' | 'pre-push'> {
+  if (raw === 'all') return ['pre-commit', 'pre-push'];
+  if (raw === 'pre-commit' || raw === 'pre-push') return [raw];
+  throw new Error('install-hook --hook must be pre-commit, pre-push, or all');
 }
 
 function parseGraphFormat(args: string[]): 'json' | 'mermaid' | 'dot' {
@@ -749,10 +1001,16 @@ Commands:
   ${PACKAGE_NAME} init
   ${PACKAGE_NAME} index [--max-file-bytes 1000000]
   ${PACKAGE_NAME} doctor
+  ${PACKAGE_NAME} repo-map --changed <file[,file]> [--query <text>] [--budget <tokens>] [--json]
+  ${PACKAGE_NAME} pr triage --base <ref> [--head <ref>] [--fail-on <level>]
+                         [--sarif-output .parallax/pr-triage.sarif] [--query <text>] [--budget <tokens>]
   ${PACKAGE_NAME} ui [--report <id>] [--port <n>]
   ${PACKAGE_NAME} import-session --file <path> --format codex|claude [--branch <name>]
+  ${PACKAGE_NAME} scip import --file <index.scip|index.scip.json>
+  ${PACKAGE_NAME} scip export [--file <index.scip.json>]
   ${PACKAGE_NAME} workspace init [--name <name>] [--service <service>] [--force]
   ${PACKAGE_NAME} workspace add-repo <path> [--name <name>] [--service <service>] [--remote <url>]
+  ${PACKAGE_NAME} workspace discover-packages [--name <name>] [--json]
   ${PACKAGE_NAME} workspace list [--name <name>] [--json]
   ${PACKAGE_NAME} workspace resolve-contracts [--name <name>] [--json]
   ${PACKAGE_NAME} workspace contract-diff --contract <path> [--name <name>]
@@ -793,6 +1051,8 @@ Agent memory:
   ${PACKAGE_NAME} install-agent [--config .mcp.json] [--name parallax] [--dry-run]
   ${PACKAGE_NAME} install-agent --copilot-package --target <repo> [--config .mcp.json]
                           [--name parallax] [--dry-run] [--force]
+  ${PACKAGE_NAME} install-hook [--hook pre-commit|pre-push|all] [--fail-on proven]
+                          [--command parallax] [--dry-run] [--force]
 `);
 }
 

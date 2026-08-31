@@ -27,7 +27,7 @@ npm run verify
 | `npm test` | Fast unit and integration tests pass. | Every change. |
 | `npm run test:dogfood` | Parallax can index itself and preserve the real dependency graph. | Engine changes. |
 | `npm run bench` | Multi-language fixture recall, evidence, ranking, and retrieval stay within pinned expectations. | Adapter, analyzer, search, ranking, or retrieval changes. |
-| `npm audit --audit-level=high` | Current lockfile has no high-level dependency advisory. | Release and CI. |
+| `npm run audit:dependencies` | Audit is clean or exactly matches the unexpired pinned exception. | Release and CI. |
 
 ## Documentation gate
 
@@ -47,7 +47,13 @@ When `npm audit fix` changes `package-lock.json`:
 1. Confirm `package.json` did not change unless a direct dependency range must change.
 2. Review direct and transitive package bumps.
 3. Run `npm run test:install-smoke`.
-4. Run `npm audit --audit-level=high`.
+4. Run `npm run audit:dependencies`.
+
+The temporary exception expires after 2026-09-30 UTC and covers only the exact
+locked `@huggingface/transformers` tree reported by `GHSA-xcpc-8h2w-3j85` and
+`GHSA-f88m-g3jw-g9cj`. Any pinned high/critical finding/advisory field or count,
+package path, severity, node, version, dependency-edge, command, network, or
+JSON drift blocks release. Low/moderate-only findings remain below this gate.
 
 ## Engine-change gate
 

@@ -1,15 +1,11 @@
-// Pure classifier for incremental indexing (S1). Given the prior completed run's
-// per-file content hashes + extractor version and the current working tree's, it
-// decides whether the next run can reuse unchanged files' graph rows, and which
-// files must be re-extracted.
+// Pure content/path classifier for incremental indexing (S1). Given the prior
+// completed run's hashes + extractor version and the current working tree's, it
+// partitions stable-path files into changed and unchanged candidates. The
+// orchestrator applies the final extraction-safety policy.
 //
-// It is deliberately conservative. Cross-file edges are file-level and resolved
-// against target *paths* (verified empirically), so an unchanged file's edges are
-// byte-identical only while the path set and the extractor are stable. Any change
-// to either — a different extractor_version, or any added/deleted/renamed file —
-// could shift resolution for files whose content did not change, so the delta
-// falls back to a full reindex. This keeps the incremental path provably
-// byte-identical to a full reindex for the common case (editing existing files).
+// A different extractor_version or any added/deleted/renamed path is immediately
+// full. Stable paths alone do not prove graph output reusable: adapter startup
+// context and emitted-row ownership can both invalidate unchanged source paths.
 
 export type IndexDeltaMode = 'full' | 'incremental';
 

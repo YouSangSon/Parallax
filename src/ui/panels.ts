@@ -345,12 +345,12 @@ export function renderImpactPathRow(
     : `<a class="source-link" href="${escapeHtml(sourceHref(item.path, 1, sourceContext))}" target="_blank" rel="noreferrer">${escapeHtml(m.source)}</a>`;
 
   return `
-    <li class="impact-row impact-path-row selectable-impact" tabindex="0" role="button" data-impact-path="${escapeHtml(item.path)}" data-filter-text="${escapeHtml(filterText)}">
-      <div class="impact-path-main">
+    <li class="impact-row impact-path-row" data-filter-text="${escapeHtml(filterText)}">
+      <button class="impact-path-main selectable-impact" type="button" data-impact-path="${escapeHtml(item.path)}" data-filter-text="${escapeHtml(filterText)}">
         <strong>${escapeHtml(item.path)}</strong>
         <span>${escapeHtml(item.reason)}</span>
-        <div class="relation-trail" aria-label="${escapeHtml(m.ariaRelationTrail)}">${trail}</div>
-      </div>
+        <span class="relation-trail" aria-label="${escapeHtml(m.ariaRelationTrail)}">${trail}</span>
+      </button>
       <div class="impact-path-meta">
         <span class="badge confidence-${escapeHtml(item.confidence)}">${escapeHtml(item.confidence)}</span>
         <span class="evidence-pill">${escapeHtml(String(evidenceCount))} ${escapeHtml(m.evidence)}</span>

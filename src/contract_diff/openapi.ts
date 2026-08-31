@@ -65,6 +65,24 @@ function classifyRequestBodyChanges(
     previousBody,
     currentBody
   }));
+  changes.push(...classifyPropertyEnumRemovals({
+    kind: 'removed_request_property_enum_value',
+    reason: 'request enum value removed from current contract',
+    httpMethod: currentOperation.method,
+    routePath: currentOperation.path,
+    schemaPathPrefix: 'requestBody.properties',
+    previousBody,
+    currentBody
+  }));
+  changes.push(...classifyPropertyFormatChanges({
+    kind: 'changed_request_property_format',
+    reason: 'request property format added or changed in current contract',
+    httpMethod: currentOperation.method,
+    routePath: currentOperation.path,
+    schemaPathPrefix: 'requestBody.properties',
+    previousBody,
+    currentBody
+  }));
   return changes;
 }
 
@@ -106,6 +124,13 @@ function classifyResponseBodyChanges(
         schemaPath: `responses.${statusCode}.body.required.${propertyName}`
       });
     }
+    changes.push(...classifyResponseOptionalPropertyRemovals({
+      httpMethod: previousOperation.method,
+      routePath: previousOperation.path,
+      statusCode,
+      previousBody,
+      currentBody
+    }));
     changes.push(...classifyPropertyTypeChanges({
       kind: 'changed_response_property_type',
       reason: 'response property type changed in current contract',
@@ -116,6 +141,60 @@ function classifyResponseBodyChanges(
       previousBody,
       currentBody
     }));
+    changes.push(...classifyPropertyEnumRemovals({
+      kind: 'removed_response_property_enum_value',
+      reason: 'response enum value removed from current contract',
+      httpMethod: previousOperation.method,
+      routePath: previousOperation.path,
+      statusCode,
+      schemaPathPrefix: `responses.${statusCode}.body.properties`,
+      previousBody,
+      currentBody
+    }));
+    changes.push(...classifyPropertyFormatChanges({
+      kind: 'changed_response_property_format',
+      reason: 'response property format changed in current contract',
+      httpMethod: previousOperation.method,
+      routePath: previousOperation.path,
+      statusCode,
+      schemaPathPrefix: `responses.${statusCode}.body.properties`,
+      previousBody,
+      currentBody
+    }));
+    changes.push(...classifyResponsePropertyNullableAdditions({
+      httpMethod: previousOperation.method,
+      routePath: previousOperation.path,
+      statusCode,
+      schemaPathPrefix: `responses.${statusCode}.body.properties`,
+      previousBody,
+      currentBody
+    }));
+  }
+  return changes;
+}
+
+function classifyResponseOptionalPropertyRemovals(options: {
+  httpMethod: string;
+  routePath: string;
+  statusCode: string;
+  previousBody: OpenApiObjectSchemaSignature;
+  currentBody: OpenApiObjectSchemaSignature | undefined;
+}): ContractDiffChange[] {
+  const previousRequired = new Set(options.previousBody.required);
+  const currentProperties = new Set(Object.keys(options.currentBody?.properties ?? {}));
+  const changes: ContractDiffChange[] = [];
+  for (const propertyName of Object.keys(options.previousBody.properties)) {
+    if (previousRequired.has(propertyName) || currentProperties.has(propertyName)) continue;
+    changes.push({
+      kind: 'removed_response_optional_property',
+      classification: 'non-breaking',
+      reason: 'response optional property removed from current contract',
+      httpMethod: options.httpMethod,
+      routePath: options.routePath,
+      statusCode: options.statusCode,
+      propertyName,
+      schemaPath: `responses.${options.statusCode}.body.properties.${propertyName}`
+    });
   }
   return changes;
 }
@@ -147,6 +226,106 @@ function classifyPropertyTypeChanges(options: {
       schemaPath: `${options.schemaPathPrefix}.${propertyName}`,
       previousSchemaType: previousProperty.type,
       currentSchemaType: currentProperty.type
+    });
+  }
+  return changes;
+}
+
+function classifyPropertyEnumRemovals(options: {
+  kind: 'removed_request_property_enum_value' | 'removed_response_property_enum_value';
+  reason: string;
+  httpMethod: string;
+  routePath: string;
+  statusCode?: string;
+  schemaPathPrefix: string;
+  previousBody: OpenApiObjectSchemaSignature | undefined;
+  currentBody: OpenApiObjectSchemaSignature | undefined;
+}): ContractDiffChange[] {
+  if (options.previousBody === undefined || options.currentBody === undefined) return [];
+  const changes: ContractDiffChange[] = [];
+  for (const [propertyName, previousProperty] of Object.entries(options.previousBody.properties)) {
+    const currentProperty = options.currentBody.properties[propertyName];
+    if (currentProperty === undefined) continue;
+    if (previousProperty.enumValues === undefined || currentProperty.enumValues === undefined) continue;
+    const currentEnumValues = new Set(currentProperty.enumValues);
+    for (const enumValue of previousProperty.enumValues) {
+      if (currentEnumValues.has(enumValue)) continue;
+      changes.push({
+        kind: options.kind,
+        classification: 'breaking',
+        reason: options.reason,
+        httpMethod: options.httpMethod,
+        routePath: options.routePath,
+        ...(options.statusCode !== undefined ? { statusCode: options.statusCode } : {}),
+        propertyName,
+        schemaPath: `${options.schemaPathPrefix}.${propertyName}.enum.${enumValue}`,
+        enumValue,
+        previousEnumValues: previousProperty.enumValues,
+        currentEnumValues: currentProperty.enumValues
+      });
+    }
+  }
+  return changes;
+}
+
+function classifyPropertyFormatChanges(options: {
+  kind: 'changed_request_property_format' | 'changed_response_property_format';
+  reason: string;
+  httpMethod: string;
+  routePath: string;
+  statusCode?: string;
+  schemaPathPrefix: string;
+  previousBody: OpenApiObjectSchemaSignature | undefined;
+  currentBody: OpenApiObjectSchemaSignature | undefined;
+}): ContractDiffChange[] {
+  if (options.previousBody === undefined || options.currentBody === undefined) return [];
+  const changes: ContractDiffChange[] = [];
+  for (const [propertyName, previousProperty] of Object.entries(options.previousBody.properties)) {
+    const currentProperty = options.currentBody.properties[propertyName];
+    if (currentProperty === undefined) continue;
+    if (previousProperty.format === currentProperty.format) continue;
+    if (options.kind === 'changed_response_property_format' && previousProperty.format === undefined) continue;
+    if (options.kind === 'changed_request_property_format' && currentProperty.format === undefined) continue;
+    changes.push({
+      kind: options.kind,
+      classification: 'breaking',
+      reason: options.reason,
+      httpMethod: options.httpMethod,
+      routePath: options.routePath,
+      ...(options.statusCode !== undefined ? { statusCode: options.statusCode } : {}),
+      propertyName,
+      schemaPath: `${options.schemaPathPrefix}.${propertyName}.format`,
+      ...(previousProperty.format !== undefined ? { previousFormat: previousProperty.format } : {}),
+      ...(currentProperty.format !== undefined ? { currentFormat: currentProperty.format } : {})
+    });
+  }
+  return changes;
+}
+
+function classifyResponsePropertyNullableAdditions(options: {
+  httpMethod: string;
+  routePath: string;
+  statusCode: string;
+  schemaPathPrefix: string;
+  previousBody: OpenApiObjectSchemaSignature | undefined;
+  currentBody: OpenApiObjectSchemaSignature | undefined;
+}): ContractDiffChange[] {
+  if (options.previousBody === undefined || options.currentBody === undefined) return [];
+  const changes: ContractDiffChange[] = [];
+  for (const [propertyName, previousProperty] of Object.entries(options.previousBody.properties)) {
+    const currentProperty = options.currentBody.properties[propertyName];
+    if (currentProperty === undefined || previousProperty.nullable === true || currentProperty.nullable !== true) continue;
+    changes.push({
+      kind: 'added_response_property_nullable',
+      classification: 'breaking',
+      reason: 'response property became nullable in current contract',
+      httpMethod: options.httpMethod,
+      routePath: options.routePath,
+      statusCode: options.statusCode,
+      propertyName,
+      schemaPath: `${options.schemaPathPrefix}.${propertyName}.nullable`,
+      previousNullable: false,
+      currentNullable: true
     });
   }
   return changes;

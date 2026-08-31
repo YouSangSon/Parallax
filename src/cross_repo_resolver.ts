@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
-import { readFileSync, realpathSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import path from 'node:path';
 
 import { normalizeRepoRoot, resolveInsideRoot } from './security.js';
-import { contentHash, ensureRepo, getRepoId, latestCompletedIndexRun, openDatabase } from './store.js';
+import { contentHash, databasePath, ensureRepo, getRepoId, latestCompletedIndexRun, openDatabase } from './store.js';
 import { listWorkspaces, type WorkspaceSummary } from './workspace.js';
 import type { Confidence } from './types.js';
 import { firstMatchingAsyncApiEventEvidence } from './cross_repo/asyncapi.js';
@@ -49,6 +50,8 @@ export type ResolveCrossRepoContractsResult = {
 
 type IndexedRepo = {
   repoPath: string;
+  indexedRepoPath: string;
+  packagePrefix: string;
   serviceName: string;
   db: ReturnType<typeof openDatabase>;
   repoId: number;
@@ -143,11 +146,14 @@ function openIndexedWorkspaceRepos(workspace: WorkspaceSummary, warnings: string
     let db: ReturnType<typeof openDatabase> | undefined;
     try {
       const repoPath = realpathSync(repo.localPath);
-      db = openDatabase(repoPath, { readOnly: true });
-      const repoId = getRepoId(db, repoPath);
+      const indexedRepoPath = indexedRepoRootForMember(repoPath);
+      db = openDatabase(indexedRepoPath, { readOnly: true });
+      const repoId = getRepoId(db, indexedRepoPath);
       const indexRunId = latestCompletedIndexRun(db, repoId);
       repos.push({
         repoPath,
+        indexedRepoPath,
+        packagePrefix: packagePrefix(indexedRepoPath, repoPath),
         serviceName: repo.serviceName,
         db,
         repoId,
@@ -198,14 +204,16 @@ function loadProviderEndpoints(repo: IndexedRepo, warnings: string[], warnedFile
     .all(repo.repoId, repo.indexRunId) as EndpointRow[];
 
   return rows.flatMap((row) => {
-    const content = readFreshIndexedFile(repo, row.contract_path, row.content_hash, 'provider contract', warnings, warnedFiles);
+    const contractPath = memberRelativePath(repo, row.contract_path);
+    if (contractPath === undefined) return [];
+    const content = readFreshIndexedFile(repo, row.contract_path, contractPath, row.content_hash, 'provider contract', warnings, warnedFiles);
     if (content === undefined) return [];
     const parsed = parseContractEndpointDisplay(row.endpoint_display_name, providerContractKind(row));
     if (!parsed) return [];
     return [{
       repoPath: repo.repoPath,
       serviceName: repo.serviceName,
-      contractPath: row.contract_path,
+      contractPath,
       endpointId: row.endpoint_id,
       httpMethod: parsed.method,
       routePath: parsed.path
@@ -262,15 +270,17 @@ function findConsumerMatches(
     .all(repo.repoId, repo.indexRunId) as FileRow[];
   const matches: ConsumerMatch[] = [];
   for (const row of rows) {
-    if (!shouldScanConsumerFile(row.path, endpoint)) continue;
-    const content = readFreshIndexedFile(repo, row.path, row.content_hash, 'consumer file', warnings, warnedFiles);
+    const filePath = memberRelativePath(repo, row.path);
+    if (filePath === undefined) continue;
+    if (!shouldScanConsumerFile(filePath, endpoint)) continue;
+    const content = readFreshIndexedFile(repo, row.path, filePath, row.content_hash, 'consumer file', warnings, warnedFiles);
     if (content === undefined) continue;
-    const evidence = firstMatchingEvidence(content, row.path, endpoint);
+    const evidence = firstMatchingEvidence(content, filePath, endpoint);
     if (!evidence) continue;
     matches.push({
       repoPath: repo.repoPath,
       serviceName: repo.serviceName,
-      filePath: row.path,
+      filePath,
       snippet: evidence.snippet,
       ...(evidence.eventTopology !== undefined ? { eventTopology: evidence.eventTopology } : {})
     });
@@ -297,18 +307,19 @@ function shouldScanConsumerFile(filePath: string, endpoint: ProviderEndpoint): b
 
 function readFreshIndexedFile(
   repo: IndexedRepo,
-  filePath: string,
+  indexedFilePath: string,
+  displayFilePath: string,
   indexedHash: string,
   label: 'consumer file' | 'provider contract',
   warnings: string[],
   warnedFiles: Set<string>
 ): string | undefined {
-  const warningKey = `${label}\0${repo.repoPath}\0${filePath}`;
+  const warningKey = `${label}\0${repo.repoPath}\0${displayFilePath}`;
   let absolutePath: string;
   try {
-    absolutePath = resolveInsideRoot(repo.repoPath, filePath);
+    absolutePath = resolveInsideRoot(repo.indexedRepoPath, indexedFilePath);
   } catch (error) {
-    warnOnce(warnings, warnedFiles, warningKey, `${label} skipped: ${repo.serviceName}:${filePath}: ${errorMessage(error)}`);
+    warnOnce(warnings, warnedFiles, warningKey, `${label} skipped: ${repo.serviceName}:${displayFilePath}: ${errorMessage(error)}`);
     return undefined;
   }
 
@@ -316,7 +327,7 @@ function readFreshIndexedFile(
   try {
     content = readFileSync(absolutePath, 'utf8');
   } catch (error) {
-    warnOnce(warnings, warnedFiles, warningKey, `${label} skipped: ${repo.serviceName}:${filePath}: ${errorMessage(error)}`);
+    warnOnce(warnings, warnedFiles, warningKey, `${label} skipped: ${repo.serviceName}:${displayFilePath}: ${errorMessage(error)}`);
     return undefined;
   }
 
@@ -325,12 +336,33 @@ function readFreshIndexedFile(
       warnings,
       warnedFiles,
       warningKey,
-      `stale index: ${repo.serviceName}:${filePath} differs from latest completed index run ${repo.indexRunId}`
+      `stale index: ${repo.serviceName}:${displayFilePath} differs from latest completed index run ${repo.indexRunId}`
     );
     return undefined;
   }
 
   return content;
+}
+
+function indexedRepoRootForMember(memberPath: string): string {
+  let current = memberPath;
+  while (true) {
+    if (existsSync(databasePath(current))) return current;
+    const parent = path.dirname(current);
+    if (parent === current) return memberPath;
+    current = parent;
+  }
+}
+
+function packagePrefix(indexedRepoPath: string, memberPath: string): string {
+  const relative = path.relative(indexedRepoPath, memberPath);
+  return relative === '' ? '' : relative.split(path.sep).join('/');
+}
+
+function memberRelativePath(repo: IndexedRepo, indexedPath: string): string | undefined {
+  if (repo.packagePrefix === '') return indexedPath;
+  const prefix = `${repo.packagePrefix}/`;
+  return indexedPath.startsWith(prefix) ? indexedPath.slice(prefix.length) : undefined;
 }
 
 function firstMatchingEvidence(content: string, filePath: string, endpoint: ProviderEndpoint): ConsumerEvidence | undefined {

@@ -1,5 +1,7 @@
 import type { AsyncApiCompatibilitySignature } from '../asyncapi_compat.js';
+import type { AvroCompatibilitySignature } from '../avro_compat.js';
 import type { GraphqlCompatibilitySignature } from '../graphql_compat.js';
+import type { JsonSchemaCompatibilitySignature } from '../json_schema_compat.js';
 import type { OpenApiCompatibilitySignature } from '../openapi_compat.js';
 import type { ProtobufCompatibilitySignature } from '../protobuf_compat.js';
 
@@ -10,8 +12,14 @@ export type ContractDiffChangeKind =
   | 'added_endpoint'
   | 'removed_response_status'
   | 'removed_response_required_property'
+  | 'removed_response_optional_property'
   | 'changed_response_property_type'
+  | 'removed_response_property_enum_value'
+  | 'changed_response_property_format'
+  | 'added_response_property_nullable'
   | 'added_request_required_property'
+  | 'removed_request_property_enum_value'
+  | 'changed_request_property_format'
   | 'changed_request_property_type'
   | 'unreadable_current_contract'
   | 'unparsed_current_contract'
@@ -30,6 +38,13 @@ export type ContractDiffChange = {
   schemaPath?: string;
   previousSchemaType?: string;
   currentSchemaType?: string;
+  enumValue?: string;
+  previousEnumValues?: readonly string[];
+  currentEnumValues?: readonly string[];
+  previousFormat?: string;
+  currentFormat?: string;
+  previousNullable?: boolean;
+  currentNullable?: boolean;
 };
 
 export type ContractEndpoint = {
@@ -45,5 +60,7 @@ export type CurrentContractParse = {
   protobufCompatibility?: ProtobufCompatibilitySignature;
   graphqlCompatibility?: GraphqlCompatibilitySignature;
   asyncApiCompatibility?: AsyncApiCompatibilitySignature;
+  jsonSchemaCompatibility?: JsonSchemaCompatibilitySignature;
+  avroCompatibility?: AvroCompatibilitySignature;
   warning?: string;
 };

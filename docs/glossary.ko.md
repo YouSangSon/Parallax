@@ -31,7 +31,7 @@ Parallax는 report나 graph export를 쓰기 전에 file-backed entity를 하나
 relation을 뒷받침하는 source span / 명령 출력 / confidence 근거. "왜 이 relation을 추출했는가"의 audit trail.
 
 ### contract / endpoint / event
-`contracts`, `cross_repo_links` 테이블. OpenAPI / protobuf / GraphQL / AsyncAPI를 entity로 모델링해 *cross-repo* 영향을 분석한다 (provider repo의 API 변경 → consumer repo 깨짐).
+`contracts`, `cross_repo_links` 테이블. OpenAPI / protobuf / GraphQL / AsyncAPI / JSON Schema / Avro를 entity로 모델링해 *cross-repo* 영향을 분석한다 (provider repo의 API 변경 -> consumer repo 깨짐).
 
 ### workspace
 `workspaces`, `workspace_repos` — 여러 repo를 하나의 *제품/조직 경계*로 묶는 logical 단위. 단일 repo에서는 의미 안 함.

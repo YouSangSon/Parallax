@@ -40,8 +40,12 @@ npm test
 npm run test:security
 npm run test:mcp
 npm run test:install-smoke
-npm audit --audit-level=high
+npm run audit:dependencies
 ```
+
+Dependency audit gate는 command가 출력하는 pin된 임시 예외만 허용한다.
+Pin된 high/critical finding 또는 count, lockfile version/edge,
+network/command result, 만료 시점이 바뀌면 fail closed한다.
 
 문서만 바꾼 경우에도 최소한 아래는 실행해 주세요.
 
@@ -66,4 +70,3 @@ fix: reject symlink escapes
 docs: update MCP usage
 test: cover redaction edge cases
 ```
-

@@ -1,0 +1,943 @@
+# Worklog
+
+## 2026-06-27
+
+- Refreshed ecosystem research in `IMPROVEMENT_OPPORTUNITIES.md`.
+  Commit: `e436032 docs: refresh ecosystem opportunity review`.
+- Continued M9 repo-map hardening from review findings.
+  - `src/repo_map.ts` now carries omitted query-match counts from
+    `searchContext`.
+  - `src/cli.ts` human output now prints query matches, resource URIs,
+    coverage, and provenance.
+  - `tests/repo-map.test.ts` covers omitted query matches and human CLI output.
+- Verification so far:
+  - `node --import tsx --test tests/repo-map.test.ts`
+  - `npm run test:mcp`
+  - `npm run check`
+  - `npm run docs:lint`
+  - `git diff --check`
+  - `npm run build`
+  - `npm test`
+- Review:
+  - reviewer subagent found no correctness, regression, safety, or missing-test
+    issues in the repo-map hardening diff.
+- Refreshed live Dependabot queue on GitHub: PRs #23-#31 remain open as of
+  2026-06-27.
+- Shipped D8 dependency PR dogfood.
+  - `src/cli.ts` adds `parallax pr triage`, a local wrapper around
+    `analyzeDiff`, SARIF output, `--fail-on`, and `buildRepoMap`.
+  - `tests/parallax.test.ts` covers SARIF emission, repo-map output, and
+    `--fail-on none` success for local PR triage.
+  - `docs/cli-reference*.md` and `docs/roadmap*.md` document the workflow.
+- D8 verification:
+  - `node --import tsx --test tests/parallax.test.ts --test-name-pattern "CLI pr triage"`
+  - `npm run check`
+  - `npm run docs:lint`
+  - `npm run build`
+  - `git diff --check`
+  - `npm test`
+  - `npm test`
+- Review:
+  - spec reviewer approved the D8 diff.
+  - code quality reviewer found depth/fanout and docs-boundary issues; both
+    were fixed and re-reviewed clean.
+- Shipped first D7 SARIF breadth slice.
+  - `src/sarif.ts` now projects `ImpactReport.actions` as
+    `parallax.verification` note results with target locations, stable
+    fingerprints, and command metadata.
+  - `tests/sarif.test.ts` covers the verification-action SARIF result.
+  - `docs/cli-reference*.md`, `docs/report-schema*.md`,
+    `docs/roadmap*.md`, and `IMPROVEMENT_OPPORTUNITIES.md` document that
+    verification actions are covered; remaining SARIF breadth continues below.
+- Shipped second D7 SARIF breadth slice.
+  - `src/sarif.ts` now projects `ImpactReport.adapterInsights[].knownGaps` as
+    `parallax.adapter-known-gap` note results anchored to changed files, with
+    stable fingerprints and emitted/omitted counts.
+  - `tests/sarif.test.ts` covers emitted adapter known-gap notes and omitted
+    notes when no uploadable changed-file anchor exists.
+  - `docs/cli-reference*.md`, `docs/report-schema*.md`,
+    `docs/roadmap*.md`, and `IMPROVEMENT_OPPORTUNITIES.md` document that
+    adapter known gaps are covered; remaining SARIF breadth continues below.
+- Shipped third D7 SARIF breadth slice.
+  - `src/sarif.ts` now projects `ImpactReport.crossRepoImpacts` as
+    `parallax.contract-break` warning/note results anchored to provider
+    contracts, with consumer/change metadata in SARIF properties.
+  - `tests/sarif.test.ts` covers emitted contract-break results and omitted
+    results when no uploadable provider contract anchor exists.
+  - `docs/cli-reference*.md`, `docs/report-schema*.md`,
+    `docs/roadmap*.md`, and `IMPROVEMENT_OPPORTUNITIES.md` document that
+    contract breaks are covered; remaining SARIF breadth continues below.
+- Shipped fourth D7 SARIF breadth slice.
+  - `src/sarif.ts` now projects changed files with `changed file not in index`
+    impact state as `parallax.coverage-gap` warning results anchored to the
+    changed file.
+  - `tests/sarif.test.ts` covers emitted coverage-gap warnings and omitted
+    warnings when no uploadable changed-file anchor exists.
+  - `docs/cli-reference*.md`, `docs/report-schema*.md`,
+    `docs/roadmap*.md`, and `IMPROVEMENT_OPPORTUNITIES.md` document D7 SARIF
+    breadth as complete.
+- D7 verification:
+  - `node --import tsx --test tests/sarif.test.ts`
+  - `npm run check`
+  - `npm run docs:lint`
+  - `npm run build`
+  - `git diff --check`
+  - `npm test`
+- Review:
+  - spec reviewer approved the verification-action SARIF slice.
+  - code quality reviewer found no blocking issues.
+- Shipped D1 PR action wrapper slice.
+  - `action.yml` now accepts either `changed` or `base`/`head`, runs
+    `parallax init`, `parallax index`, and `parallax pr triage`, writes SARIF,
+    captures `.parallax/pr-triage-summary.md`, and appends the summary to
+    `$GITHUB_STEP_SUMMARY`.
+  - SARIF upload remains outside the action so `security-events: write` stays
+    explicit in the user's workflow.
+  - `README*.md` now show the action wrapper with `fetch-depth: 0`, PR base/head
+    inputs, explicit `github/codeql-action/upload-sarif`, and `fail-on`
+    guidance.
+- D1 verification:
+  - `node --import tsx --test tests/package_metadata.test.ts`
+  - `npm run docs:lint`
+  - `npm run build`
+  - `git diff --check`
+  - `npm test`
+- Shipped D6 local Git hook installer slice.
+  - `src/git_hooks.ts` adds pure planning and install functions for managed
+    `pre-commit` / `pre-push` Parallax hooks.
+  - `src/cli.ts` adds `parallax install-hook [--hook pre-commit|pre-push|all]`
+    with `--fail-on`, `--command`, `--dry-run`, and `--force`.
+  - Generated hooks run `parallax init`, `parallax index`, and
+    `parallax analyze --changed ... --fail-on ...`; `pre-commit` uses staged
+    files and `pre-push` uses Git's pre-push input with safe fallbacks.
+  - Existing non-Parallax hooks are skipped unless forced; managed hooks are
+    idempotently overwritten; `core.hooksPath` is respected.
+  - `README*.md`, `docs/cli-reference*.md`, `docs/roadmap*.md`,
+    `PLAN.md`, `BACKLOG.md`, `DECISIONS.md`, and
+    `IMPROVEMENT_OPPORTUNITIES.md` document the shipped hook workflow.
+- D6 verification:
+  - `node --import tsx --test tests/git-hooks.test.ts`
+  - `npm run check`
+  - `npm run docs:lint`
+  - `npm run build`
+  - `git diff --check`
+- Shipped D4 deep-linkable UI/export slice.
+  - `src/ui/client.ts` now keeps selected impact path, filter text, and
+    report-delta policy preset in the URL using `URLSearchParams` and
+    `history.replaceState`.
+  - `src/ui.ts` and `src/ui/styles.ts` add toolbar controls for link copy,
+    JSON export, affected-path CSV export, and PNG/SVG impact-map export.
+  - `src/ui/report_delta.ts` makes policy preset cards selectable so shared
+    URLs can reopen the same preset context.
+  - `tests/ui.test.ts` covers the rendered export controls, deep-link state
+    script, preset state, mobile layout, and CSP image allowances.
+- D4 verification:
+  - `npm run check`
+  - `node --import tsx --test tests/ui.test.ts`
+  - `npm run docs:lint`
+  - `npm run build`
+  - `git diff --check`
+  - `npm test`
+
+## 2026-06-28
+
+- Refreshed web/GitHub signals while closing M10.
+  - SCIP remains the right standards bridge for code-intelligence
+    import/export.
+  - The live GitHub queue is still Dependabot PRs #23-#31 plus issue #3, so
+    continued dogfooding can use existing read-only PR triage without adding a
+    write-capable GitHub surface.
+- Shipped S4 observed peak RSS slice.
+  - `bench/impact-perf.ts` now reports `observed_peak_rss_mb`, sampled at phase
+    boundaries with Node's built-in RSS reading.
+  - `docs/verification*.md`, `PLAN.md`, `BACKLOG.md`, `DECISIONS.md`, and
+    `IMPROVEMENT_OPPORTUNITIES.md` document the intentionally non-deterministic
+    perf signal and leave 10k/50k baseline guidance as the next S4 step.
+- S4 observed peak RSS verification:
+  - `node --import tsx --test tests/synthetic-repo.test.ts`
+  - `npm run check`
+  - `npm run bench:perf -- --scales 10`
+- Shipped S4 large-repo baseline guidance.
+  - `docs/verification*.md` now names
+    `npm run bench:perf -- --scales 10000,50000` as the standard comparable
+    baseline command and says to record command, commit, Node version, OS /
+    hardware class, and the full output table.
+  - No new `bench:perf` flag was added because existing `--scales` already
+    covers the use case.
+  - `BACKLOG.md` and `PLAN.md` move the next active work to S1 unchanged-file
+    bookkeeping cost; measured S4 10k/50k limits stay pending until run on a
+    stable baseline host.
+- S4 large-repo baseline guidance verification:
+  - `npm run docs:lint`
+  - `git diff --check`
+- Shipped M10 SCIP JSON import first slice.
+  - `src/scip.ts` imports JSON produced by the official SCIP CLI and augments
+    the latest completed Parallax index run instead of creating a SCIP-only run.
+  - `src/cli.ts` adds `parallax scip import --file <index.scip.json>`.
+  - Imported SCIP definition/reference occurrences become proven file-level
+    `REFERENCES` relations with evidence spans, so existing `analyzeDiff`
+    reverse traversal can surface impacted referrers.
+  - `tests/scip.test.ts` covers API import, CLI import, persisted evidence
+    spans, and impact analysis using the imported edge.
+- M10 SCIP JSON import verification so far:
+  - `npm run check`
+  - `node --import tsx --test tests/scip.test.ts`
+  - `npm run docs:lint`
+  - `npm run build`
+  - `git diff --check`
+  - `npm test`
+- Shipped M10 SCIP binary ingest follow-up.
+  - Web/GitHub review reconfirmed SCIP as the right standards bridge:
+    `scip-code/scip` documents the language-agnostic index format, official
+    `scip print --json`, and path-based `scip print /path/to/index.scip`
+    inspection.
+  - `src/scip.ts` now accepts binary `index.scip` inputs by shelling out to
+    `scip print --json <file>` and reusing the JSON importer. No protobuf
+    runtime dependency was added.
+  - JSON import remains supported without requiring `scip` at import time.
+  - `tests/scip.test.ts` adds a fake official CLI printer to cover binary
+    ingest deterministically.
+- M10 SCIP binary ingest verification:
+  - `npm run check`
+  - `node --import tsx --test tests/scip.test.ts`
+  - `npm run docs:lint`
+  - `npm run build`
+  - `git diff --check`
+  - `npm test`
+- Shipped M10 SCIP JSON export.
+  - `src/scip.ts` now exports the latest completed Parallax index as
+    SCIP-compatible JSON with metadata, documents, symbols, and relation-backed
+    reference occurrences.
+  - `src/cli.ts` adds `parallax scip export [--file <index.scip.json>]`; stdout
+    emits the JSON payload, while `--file` writes the payload and prints a small
+    summary.
+  - No protobuf writer dependency was added; binary `.scip` output stays
+    deferred until JSON export is not enough.
+  - `tests/scip.test.ts` covers API export and CLI file export.
+- M10 SCIP JSON export verification:
+  - `npm run check`
+  - `node --import tsx --test tests/scip.test.ts`
+  - `npm run docs:lint`
+  - `npm run build`
+  - `git diff --check`
+  - `npm test`
+- Refreshed web/GitHub signals for the next product additions.
+  - GitHub issue/PR review still shows one open issue (#3) and Dependabot PRs
+    #23-#31 as the live remote queue.
+  - External affected-target systems (Nx affected and Bazel query/test
+    selection patterns) point to D9: convert Parallax impact output into ranked
+    verification commands, not only affected-file lists.
+  - SCIP and GitHub SARIF remain the standards/output lanes Parallax already
+    started covering through M10 and D7/D1.
+- Shipped first S1 unchanged-file bookkeeping slice.
+  - Incremental persistence now replays file-level rows only for changed files
+    plus contract files.
+  - Unchanged `files.index_run_id` rows are carried forward in SQL, file ids are
+    bulk-loaded once, and unchanged file `entity_versions` are canonicalized in
+    SQL after changed-file events so placeholder endpoints cannot drift from
+    full reindex output.
+  - The incremental oracle now snapshots current `files` rows, proving chained
+    incremental runs keep every live file stamped to the latest completed run
+    and remain byte-identical to a full reindex of the same end state.
+- S1 file-replay narrowing verification:
+  - `node --import tsx --test tests/index-delta.test.ts tests/incremental-index-oracle.test.ts`
+  - `npm run check`
+  - `npm run docs:lint`
+  - `npm run build`
+  - `git diff --check`
+  - `npm test`
+  - `npm run test:dogfood`
+  - `npm run bench`
+  - `npm run bench:perf -- --scales 10`
+  - `npm audit --audit-level=high`
+- Shipped second S1 unchanged-file bookkeeping slice.
+  - Incremental runs now insert indexed coverage only for changed files.
+  - Unchanged indexed coverage rows are carried from the prior completed run to
+    the new run inside successful persistence.
+  - Skipped and unsupported files intentionally stay on the existing scan loop
+    because they are outside the indexed-file delta model.
+  - The incremental oracle now snapshots `index_coverage`, so coverage
+    carry-forward must remain byte-identical to a full reindex of the same end
+    state.
+- S1 indexed-coverage carry-forward verification:
+  - `node --import tsx --test tests/index-delta.test.ts tests/incremental-index-oracle.test.ts`
+  - `npm run check`
+  - `npm run docs:lint`
+  - `node --import tsx --test tests/parallax.test.ts --test-name-pattern "coverage|failed reruns preserve|incremental"`
+  - `npm run build`
+  - `git diff --check`
+  - `npm test`
+  - `npm run bench:perf -- --scales 10`
+  - `npm run bench`
+  - `npm run test:dogfood`
+- Refreshed web/GitHub signals for the current S1 follow-through.
+  - Nx and Turborepo both emphasize running only the tasks/packages affected by
+    a change, which supports D9 as the next user-facing planner and S1 as the
+    current cost-reduction path.
+  - The live GitHub queue still has one open issue (#3) and Dependabot PRs
+    #23-#31, so there is no newer remote issue that displaces the current S1
+    loop.
+  - SCIP and GitHub SARIF remain standards/output lanes already covered by M10
+    and D7/D1, so the smallest unshipped improvement was not another
+    integration but cheaper repeated local indexing.
+- Shipped third S1 scan-cost slice.
+  - `src/indexer.ts` now reuses the latest completed clean same-HEAD git index
+    for default resource limits instead of rescanning, restarting adapters, or
+    creating a redundant `index_runs` row.
+  - The fast path is disabled when `maxFileBytes` is explicit, the prior run had
+    resource-limit coverage skips, current indexed files exceed the default
+    resource limit, the repo is dirty/non-git, or prior indexed/coverage paths
+    are not git tracked.
+  - `src/git-snapshot.ts` adds a small `git ls-files -z` helper so
+    git-ignored files that Parallax still scans cannot be hidden by a clean git
+    status.
+  - `tests/parallax.test.ts` covers the clean same-HEAD reuse, the
+    git-ignored-file fallback, and the resource-skip fallback.
+- S1 clean same-HEAD fast-path verification:
+  - `npm run check`
+  - `node --import tsx --test tests/parallax.test.ts --test-name-pattern "same-HEAD|resource skips|git snapshot|dirty state|git-ignored"`
+  - `node --import tsx --test tests/index-delta.test.ts tests/incremental-index-oracle.test.ts`
+  - `npm run docs:lint`
+  - `npm run build`
+  - `git diff --check`
+  - `npm test`
+  - `npm run bench:perf -- --scales 10`
+  - `npm audit --audit-level=high`
+  - `npm run bench`
+  - `npm run test:dogfood`
+- Hardened the S1 clean same-HEAD fast path for newly created git-ignored
+  scanner targets.
+  - Root cause: `git status` can stay clean when a new ignored source file is
+    added, while Parallax's scanner intentionally does not follow `.gitignore`.
+  - `src/git-snapshot.ts` now exposes ignored files via
+    `git ls-files --others --ignored --exclude-standard -z`.
+  - `src/indexer.ts` disables clean same-HEAD reuse when any ignored path would
+    be scanned by Parallax, preserving correctness without adding a file
+    manifest schema.
+  - `tests/parallax.test.ts` covers the clean-status/new-ignored-source
+    regression.
+- S1 ignored-target guard verification:
+  - `npm run check`
+  - `node --import tsx --test tests/parallax.test.ts --test-name-pattern "same-HEAD|git-ignored|resource skips|new git-ignored"`
+  - `node --import tsx --test tests/index-delta.test.ts tests/incremental-index-oracle.test.ts`
+  - `npm run docs:lint`
+  - `git diff --check`
+  - `npm run build`
+  - `npm run bench:perf -- --scales 10`
+  - `npm audit --audit-level=high`
+  - `npm test`
+  - `npm run bench`
+  - `npm run test:dogfood`
+- Refreshed web/GitHub signals for the next improvement candidate.
+  - GitHub still has only issue #3 open and Dependabot PRs #23-#31 open.
+  - Official Nx/Bazel affected-target docs still point to executable
+    verification planning as the clearest unshipped user-facing gap.
+  - Repo-map/agent context tools still reinforce that the next output should
+    be compact and ranked rather than a separate heavy integration.
+- Shipped D9 affected verification planner slice.
+  - `src/repo_map.ts` now builds `verificationPlan` from existing
+    `ImpactReport.actions`, nearest `package.json` package roots, repo-map
+    affected/test/doc/config/work artifact sections, and context-pack limits.
+  - Planner groups recommended actions by package root / runner into ranked,
+    copy-pasteable commands and reports covered changed / affected / target
+    paths, source actions, confidence, and omitted counts.
+  - `parallax repo-map` human output prints the verification plan; JSON and MCP
+    structured output include it.
+  - Docs/backlog now mark D9 shipped and move residual S1 scan-cost work behind
+    an adapter-contract design.
+- D9 focused verification:
+  - `npm run check`
+  - `node --import tsx --test tests/repo-map.test.ts`
+  - `node --import tsx --test tests/mcp.test.ts --test-name-pattern "repo_map"`
+- D9 final verification:
+  - `npm run check`
+  - `npm run docs:lint`
+  - `node --import tsx --test tests/repo-map.test.ts tests/mcp.test.ts --test-name-pattern "repo_map|RepoMap|buildRepoMap|repo-map"`
+  - `npm run build`
+  - `git diff --check`
+  - `npm test`
+  - `npm run bench`
+  - `npm audit --audit-level=high`
+  - `npm run test:dogfood`
+- Shipped S4 measured perf baseline limits.
+  - Rechecked external direction against Nx affected commands, Bazel query,
+    Turborepo affected tasks, and Bazel GitHub issues about
+    reverse-dependency/rule-key based changed-target selection.
+  - Captured local baseline metadata: commit `f8f6060`, Node `v24.14.0`, npm
+    `11.9.0`, macOS Darwin 24.6.0, Apple M1 Max, 10 CPU cores, 32 GiB RAM.
+  - `npm run bench:perf -- --scales 1000,2000` completed and is now recorded
+    in `docs/verification*.md`.
+  - `npm run bench:perf -- --scales 10000` emitted no table within about 20
+    minutes and was interrupted. 50k was not started because the 10k full-phase
+    run already exceeded this local limit.
+  - Backlog now moves to D2 trend metrics.
+- S4 measured limit verification:
+  - `npm run bench:perf -- --scales 1000,2000`
+  - `npm run bench:perf -- --scales 10000` (interrupted after about 20 minutes
+    without an output table)
+  - `npm run docs:lint`
+  - `git diff --check`
+  - `ps -axo pid,ppid,stat,etime,pcpu,pmem,command | rg 'impact-perf|bench:perf|tsx bench/impact-perf' | rg -v 'rg ' || true`
+- Shipped D2 contract-diff quality trend metric.
+  - Rechecked OpenAPI diff direction against `oasdiff` and `openapi-diff`:
+    paired old/new contract comparison with breaking-change output is the right
+    model for this lane.
+  - `bench/impact-bench.ts` now emits `contractDiffQuality` over three paired
+    OpenAPI v1/v2 cases: removed response required property, added request
+    required property, and changed response property type.
+  - `bench/impact-bench-report.ts` now renders contract-diff quality and
+    matched case/change deltas in Markdown and GitHub Step Summary output.
+  - Backlog now narrows D2 to co-change and trace-ingest promotion metrics.
+- D2 contract-diff quality verification:
+  - `npm run check`
+  - `node --import tsx --test tests/impact-bench-report.test.ts`
+  - `node --import tsx --test tests/impact-bench.test.ts`
+  - `npm run bench`
+  - `npm run bench:report`
+  - `npm run docs:lint`
+  - `git diff --check`
+  - `npm run build`
+  - `npm test`
+  - `npm audit --audit-level=high`
+  - `npm run test:dogfood`
+- Refreshed web/GitHub signals for the remaining D2 metric work.
+  - `gh issue list` still shows only issue #3 open; `gh pr list` still shows
+    Dependabot PRs #23-#31.
+  - Code Maat confirms the VCS-mining lane is still active, and
+    `optave/ops-codegraph-tool` explicitly positions git diff impact with
+    co-change analysis as an adjacent code-intelligence capability.
+  - The smallest useful D2 slice is therefore a read-only co-change trend
+    metric before the write-surface trace promotion metric.
+- Shipped D2 co-change quality trend metric.
+  - `bench/impact-bench.ts` now emits `coChangeQuality` over a tiny git-history
+    fixture where unrelated `alpha.ts` and `beta.ts` co-change three times.
+  - The lane checks both `queryCoChanges` and `analyzeDiff` for the expected
+    heuristic partner and gates `summary.passed`.
+  - `bench/impact-bench-report.ts` now renders co-change quality and matched
+    partner/affected-file deltas in Markdown and GitHub Step Summary output.
+  - Backlog now narrows D2 to the trace-ingest promotion trend metric.
+- D2 co-change quality verification:
+  - `npm run check`
+  - `node --import tsx --test tests/impact-bench-report.test.ts`
+  - `node --import tsx --test tests/impact-bench.test.ts`
+  - `npm run docs:lint`
+  - `git diff --check`
+  - `npm run bench`
+  - `npm run bench:report`
+  - `npm run build`
+  - `npm test`
+  - `npm audit --audit-level=high`
+  - `npm run test:dogfood`
+- Refreshed web/GitHub signals for the final D2 metric.
+  - OpenTelemetry trace docs reinforce the runtime-observed-edge model, but the
+    bench does not need a collector or dependency.
+  - GitHub issue/PR review still shows issue #3 and Dependabot PRs #23-#31, so
+    no remote issue displaces finishing the trace-promotion trend metric.
+- Shipped D2 trace-promotion quality trend metric.
+  - `bench/impact-bench.ts` now emits `tracePromotionQuality` by ingesting a
+    runtime-observed `src/beta.ts -> src/alpha.ts` edge into the same tiny
+    co-change fixture.
+  - The lane checks the promotion count, unmatched trace edge count, and
+    post-ingest `analyzeDiff` proven affected-file output.
+  - `bench/impact-bench-report.ts` now renders trace-promotion quality,
+    promotion counts, proven affected-file counts, and unmatched trace edge
+    deltas in Markdown and GitHub Step Summary output.
+  - Backlog now moves from D2 to W4/W5 richer contract signatures.
+- D2 trace-promotion quality verification:
+  - `npm run check`
+  - `node --import tsx --test tests/impact-bench-report.test.ts`
+  - `node --import tsx --test tests/impact-bench.test.ts`
+  - `npm run docs:lint`
+  - `git diff --check`
+  - `npm run bench`
+  - `npm run bench:report`
+  - `npm run build`
+  - `npm test`
+  - `npm audit --audit-level=high`
+  - `npm run test:dogfood`
+- Refreshed W4/W5 research and remote project signals.
+  - Official OpenAPI 3.0.3 / 3.1.0 Schema Object and JSON Schema enum docs
+    confirm `enum` is a schema validation constraint, so removing an allowed
+    response value is a contract narrowing.
+  - `gh issue list` still shows only issue #3 open; `gh pr list` still shows
+    Dependabot PRs #23-#31, so no remote issue displaced the W4 contract
+    fidelity slice.
+- Shipped W4 OpenAPI response enum-removal detection.
+  - `OpenApiPropertySignature` now records type-preserving `enumValues`, and
+    OpenAPI compatibility baselines moved to schemaVersion 3.
+  - `analyzeContractDiff` now emits
+    `removed_response_property_enum_value` breaking changes with enum value,
+    previous/current enum sets, schema path, and persisted breaking-link
+    provenance.
+  - The deterministic `contractDiffQuality` bench now includes a response
+    enum-removal case, so CI summaries show 4/4 contract-diff cases and
+    changes.
+  - Reviewer found an enum fingerprint collision risk for mixed JSON primitive
+    values; fixed by encoding enum fingerprints as type-preserving keys and
+    adding a mixed numeric/string/null/boolean regression test.
+  - Backlog remains on W4/W5 for `format`, `nullable`, request enum semantics,
+    and the reusable JSON Schema contract kind.
+- W4 enum-removal verification:
+  - `npm run check`
+  - `node --import tsx --test tests/contract-diff.test.ts`
+  - `node --import tsx --test tests/impact-bench.test.ts tests/impact-bench-report.test.ts`
+  - `node --import tsx --test tests/parallax.test.ts`
+  - `npm run docs:lint`
+  - `git diff --check`
+  - `npm run bench`
+  - `npm run bench:report`
+  - `npm run build`
+  - `npm audit --audit-level=high`
+  - `npm run test:dogfood`
+  - `npm test`
+- Refreshed W4/W5 research and remote project signals for response format
+  changes.
+  - Official OpenAPI 3.0.3 data type / Schema Object docs, OpenAPI 3.1.0
+    Schema Object docs, and JSON Schema format vocabulary docs confirm
+    `format` is schema-level information that can refine primitive values.
+  - `gh issue list` still shows only issue #3 open; `gh pr list` still shows
+    Dependabot PRs #23-#31, so no remote issue displaced the W4 contract
+    fidelity slice.
+- Shipped W4 OpenAPI response format-change detection.
+  - `OpenApiPropertySignature` now records `format`, and OpenAPI compatibility
+    baselines moved to schemaVersion 4.
+  - `analyzeContractDiff` now emits
+    `changed_response_property_format` breaking changes with previous/current
+    format provenance and schema path.
+  - The deterministic `contractDiffQuality` bench now includes a response
+    format-change case, so CI summaries show 5/5 contract-diff cases and
+    changes.
+  - Backlog remains on W4/W5 for `nullable`, request enum/format semantics, and
+    the reusable JSON Schema contract kind.
+- W4 format-change verification:
+  - `npm run check`
+  - `node --import tsx --test tests/contract-diff.test.ts`
+  - `node --import tsx --test tests/impact-bench.test.ts tests/impact-bench-report.test.ts`
+  - `node --import tsx --test tests/parallax.test.ts`
+  - `npm run docs:lint`
+  - `git diff --check`
+  - `npm run bench`
+  - `npm run bench:report`
+  - `npm run build`
+  - `npm test`
+  - `npm audit --audit-level=high`
+  - `npm run test:dogfood`
+- Refreshed W4/W5 research and remote project signals for response nullable
+  additions.
+  - Official OpenAPI 3.0.3 Schema Object docs confirm `nullable: true` adds
+    `null` to a typed schema; OpenAPI 3.1 Schema Object and JSON Schema null
+    docs confirm the equivalent type-level null model.
+  - `gh issue list` still shows only issue #3 open; `gh pr list` still shows
+    Dependabot PRs #23-#31, so no remote issue displaced the W4 nullable
+    fidelity slice.
+- Shipped W4 OpenAPI response nullable-addition detection.
+  - `OpenApiPropertySignature` now records `nullable`, and OpenAPI
+    compatibility baselines moved to schemaVersion 5.
+  - `analyzeContractDiff` now emits
+    `added_response_property_nullable` breaking changes with previous/current
+    nullable provenance and schema path.
+  - The deterministic `contractDiffQuality` bench now includes a response
+    nullable-addition case, so CI summaries show 6/6 contract-diff cases and
+    changes.
+  - Backlog remains on W4/W5 for request enum/format semantics, response
+    optionality rules, and the reusable JSON Schema contract kind.
+- W4 nullable-addition verification:
+  - `npm run check`
+  - `node --import tsx --test tests/contract-diff.test.ts`
+  - `node --import tsx --test tests/impact-bench.test.ts tests/impact-bench-report.test.ts`
+  - `node --import tsx --test tests/parallax.test.ts`
+  - `npm run docs:lint`
+  - `git diff --check`
+  - `npm run bench`
+  - `npm run bench:report`
+  - `npm run build`
+  - `npm test`
+  - `npm audit --audit-level=high`
+  - `npm run test:dogfood`
+- Refreshed W4/W5 research and remote project signals for request enum-value
+  removals.
+  - Official OpenAPI 3.0.3 / 3.1.0 Schema Object docs and the JSON Schema
+    enum reference confirm `enum` is a validation constraint on allowed values.
+    Removing an allowed request value narrows provider acceptance for existing
+    clients.
+  - `gh issue list` still shows only issue #3 open; `gh pr list` still shows
+    Dependabot PRs #23-#31, so no remote issue displaced the W4 contract
+    fidelity slice.
+- Shipped W4 OpenAPI request enum-removal detection.
+  - `analyzeContractDiff` now emits
+    `removed_request_property_enum_value` breaking changes when a current
+    OpenAPI JSON request body removes a previously allowed enum value.
+  - The change reuses existing type-preserving enum provenance
+    (`enumValue`, `previousEnumValues`, `currentEnumValues`), so no OpenAPI
+    compatibility schemaVersion bump was required beyond the existing v5
+    property-signature shape.
+  - The deterministic `contractDiffQuality` bench now includes a request
+    enum-removal case, so CI summaries show 7/7 contract-diff cases and
+    changes.
+  - Backlog remains on W4/W5 for request format semantics, response optionality
+    rules, and the reusable JSON Schema contract kind.
+- W4 request enum-removal verification:
+  - `npm run check`
+  - `node --import tsx --test tests/contract-diff.test.ts`
+  - `node --import tsx --test tests/impact-bench.test.ts tests/impact-bench-report.test.ts`
+  - `node --import tsx --test tests/parallax.test.ts`
+  - `npm run docs:lint`
+  - `git diff --check`
+  - `npm run bench`
+  - `npm run bench:report`
+  - `npm run build`
+  - `npm test`
+  - `npm audit --audit-level=high`
+  - `npm run test:dogfood`
+  - Process check: no project dev server or test runner remained listening;
+    only unrelated system/MCP helper processes were visible.
+- Refreshed W4/W5 research and remote project signals for request format
+  additions/changes.
+  - Official OpenAPI 3.0.3 data type / Schema Object docs, OpenAPI 3.1.0
+    Schema Object docs, and JSON Schema format vocabulary docs confirm
+    `format` is schema-level information that can refine primitive values.
+  - `gh issue list` still shows only issue #3 open; `gh pr list` still shows
+    Dependabot PRs #23-#31, so no remote issue displaced the W4 request-format
+    fidelity slice.
+- Shipped W4 OpenAPI request format-addition/change detection.
+  - `analyzeContractDiff` now emits `changed_request_property_format`
+    breaking changes when a current OpenAPI JSON request body adds a format
+    constraint or switches a property to a different format.
+  - Request format removals are intentionally omitted because removing a
+    request-side format constraint broadens provider acceptance rather than
+    breaking existing clients.
+  - The deterministic `contractDiffQuality` bench now includes a request
+    format-addition case, so CI summaries show 8/8 contract-diff cases and
+    changes.
+  - Backlog remains on W4/W5 for response optionality rules and the reusable
+    JSON Schema contract kind.
+- W4 request format verification:
+  - `npm run check`
+  - `node --import tsx --test tests/contract-diff.test.ts`
+  - `node --import tsx --test tests/impact-bench.test.ts tests/impact-bench-report.test.ts`
+  - `git diff --check`
+  - `npm run verify`
+  - `npm run bench:report`
+- Refreshed W4/W5 research and remote project signals for response optional
+  property removals.
+  - Official OpenAPI 3.0.3 / 3.1.0 Schema Object docs and the JSON Schema
+    object/required reference confirm that `required` controls which object
+    properties must appear; properties outside `required` remain documented but
+    optional.
+  - OpenAPITools openapi-diff issue #198 shows the ecosystem treats optional
+    response field removal as a debated/false-positive breaking signal.
+  - `gh issue list` still shows only issue #3 open; `gh pr list` still shows
+    Dependabot PRs #23-#31, so no remote issue displaced the W4 optionality
+    slice.
+- Shipped W4 OpenAPI response optional-property removal visibility.
+  - `analyzeContractDiff` now emits `removed_response_optional_property`
+    non-breaking changes when an optional OpenAPI JSON response property was
+    present in the indexed baseline but is absent from the current contract.
+  - The change intentionally does not create `BREAKS_COMPATIBILITY_WITH`
+    consumer links because a schema-valid response could already omit optional
+    properties.
+  - The deterministic `contractDiffQuality` bench now includes a response
+    optional-property removal case, so CI summaries show 9/9 contract-diff
+    cases and changes.
+  - Backlog now moves to W5 reusable JSON Schema contract-kind support.
+- W4 response optional-property verification:
+  - `npm run check`
+  - `node --import tsx --test tests/contract-diff.test.ts`
+  - `node --import tsx --test tests/impact-bench.test.ts tests/impact-bench-report.test.ts`
+  - `npm run docs:lint`
+  - `git diff --check`
+  - `npm run verify`
+- Refreshed W5 research and remote project signals for standalone JSON Schema
+  contract support.
+  - JSON Schema Validation draft 2020-12 and the JSON Schema object/required
+    reference confirm `required` controls mandatory object members and `type`
+    can include `null`.
+  - OpenAPI 3.1.0 Schema Object confirms OpenAPI 3.1 aligns with JSON Schema
+    vocabularies, while OpenAPI 3.0.3 keeps the older `nullable` keyword.
+  - The practical compatibility decision is direction-specific rather than a
+    full JSON Schema subschema solver: compare root schemas as produced data,
+    and defer `additionalProperties`, enum/format policy, multi-schema graph
+    resolution, and Avro.
+  - `gh issue list` still shows only issue #3 open; `gh pr list` still shows
+    Dependabot PRs #23-#31, so no remote issue displaced the W5 JSON Schema
+    slice.
+- Shipped W5 JSON Schema contract-kind first slice.
+  - `*.schema.json` and contract-located `schema.json` files now classify as
+    `json-schema` contracts without treating ordinary `config/schema.json` as a
+    contract.
+  - Indexing persists `$schema` dialect, compatibility JSON, and a synthetic
+    `SCHEMA #` endpoint for root object schemas.
+  - `analyzeContractDiff` now compares JSON Schema root-object signatures for
+    required property removals, optional property removals, property type
+    changes, and nullable additions.
+  - Nullable additions are reported once as
+    `added_response_property_nullable`, not double-counted as generic type
+    changes.
+  - The deterministic `contractDiffQuality` bench now includes a JSON Schema
+    required-property removal case, so CI summaries show 10/10 contract-diff
+    cases and changes.
+  - Backlog now moves to W3 monorepo sub-packages as first-class catalog
+    members; W5 Avro remains a later mechanical follow-on.
+- W5 JSON Schema verification:
+  - `npm run check`
+  - `node --import tsx --test tests/entity_classification.test.ts tests/parallax.test.ts tests/contract-diff.test.ts tests/impact-bench.test.ts`
+  - `git diff --check`
+  - `npm run verify`
+  - Full verify result: lint, install smoke/build, 668 unit tests, dogfood, bench, and `npm audit --audit-level=high` all passed.
+  - Bench result: `summary.passed=true`, score `0.9987`, `contractDiffQuality` `expectedCases=10`, `matchedCases=10`, `expectedChanges=10`, `matchedChanges=10`, and `missingChanges=[]`.
+- Refreshed W3 web/GitHub research for the next improvement loop.
+  - Official npm/pnpm docs confirm workspace package membership can be derived
+    from manifests/globs without installing dependencies.
+  - Nx affected and Turborepo filters confirm modern monorepo impact workflows
+    operate on package/project graphs plus Git changes.
+  - GitHub repo search found small/local semantic code graph + MCP projects,
+    but no higher-priority pivot than Parallax's contract-aware impact lane.
+  - Current code inspection found the concrete W3 blocker:
+    `cross_repo_resolver.ts` skips same-`repoPath` pairs and
+    `workspace_repos` is unique by `(workspace_id, local_path)`, so sibling
+    packages inside one monorepo cannot yet be provider/consumer members.
+  - Updated `IMPROVEMENT_OPPORTUNITIES.md`, `PLAN.md`, and `DECISIONS.md` to
+    sequence W3 around package-scoped workspace identity before parse-only
+    npm/pnpm discovery and later Nx/Turbo metadata.
+- Shipped W3 explicit package-directory member resolution.
+  - `resolveCrossRepoContracts` now opens the nearest parent Parallax DB when a
+    workspace member path is a package directory inside an indexed monorepo.
+  - Provider endpoints and consumer scans are filtered to the member package
+    prefix; result paths and provenance paths are member-relative/member-rooted.
+  - Persisted `CONSUMES_HTTP_ENDPOINT` links remain readable through
+    `workspace verify`, `workspace consumers`, and `workspace providers`.
+  - Added a monorepo regression fixture with `packages/web` consuming
+    `packages/users/contracts/openapi.yaml` from one root index, plus an
+    unregistered sibling package to guard package-prefix scoping.
+  - Deferred automatic `package.json` / `pnpm-workspace.yaml` discovery to the
+    next W3 slice.
+- W3 package-member verification:
+  - `npm run check`
+  - `node --import tsx --test tests/cross-repo-resolver.test.ts`
+  - `node --import tsx --test tests/cross-repo-links.test.ts`
+  - `npm run docs:lint`
+  - `git diff --check`
+  - `npm run verify`
+  - Full verify result: lint, install smoke/build, 669 unit tests, dogfood,
+    bench, and `npm audit --audit-level=high` all passed.
+  - Bench result: `summary.passed=true`, score `0.9987`, and all quality lanes
+    passed (`crossRepoContracts`, `contractDiffQuality`, `coChangeQuality`,
+    `tracePromotionQuality`).
+- Refreshed web/GitHub research for W3 discovery.
+  - Official npm and pnpm docs confirm package membership is local manifest
+    data (`package.json` workspaces and `pnpm-workspace.yaml` packages).
+  - Nx affected and Turborepo affected/filter docs reconfirm that large
+    monorepo workflows operate on package/project graphs plus Git changes, but
+    their task execution and caches should remain outside Parallax discovery.
+  - GitHub repo search surfaced more 2026 local code-graph / repo-map / impact
+    MCP projects (`syke`, `sem`, `agentmap`, `RepoMapper`, `tessera`), but no
+    higher-priority pivot than Parallax's contract-aware impact lane.
+  - `gh issue list` still shows only issue #3 open; `gh pr list` still shows
+    Dependabot PRs #23-#31.
+- Shipped W3 deterministic npm/pnpm workspace package discovery.
+  - `src/workspace.ts` adds `discoverWorkspacePackages`, reading local
+    `package.json` `workspaces` / `workspaces.packages` and
+    `pnpm-workspace.yaml` `packages` without running package-manager CLIs.
+  - Discovery expands direct paths, `*`, `**`, leading `!` excludes, and simple
+    brace groups, then writes package directories as catalog members while
+    preserving catalog entries outside the current repo root.
+  - When package members are found, the root repo entry is replaced by package
+    entries to avoid duplicate same-monorepo links.
+  - `src/cli.ts` adds `parallax workspace discover-packages [--name <name>]
+    [--json]`.
+  - `tests/workspace.test.ts` covers npm workspace discovery, pnpm include /
+    exclude discovery, DB sync, root replacement, and external repo
+    preservation.
+- W3 discovery verification so far:
+  - `npm run check`
+  - `node --import tsx --test tests/workspace.test.ts`
+  - `npm run docs:lint`
+  - `git diff --check`
+  - `npm run verify`
+  - Full verify result: lint, schema check, install smoke/build, 671 unit
+    tests, dogfood, bench, and `npm audit --audit-level=high` all passed.
+  - Bench result: `summary.passed=true`, score `0.9987`, and all quality lanes
+    passed (`crossRepoContracts`, `contractDiffQuality`, `coChangeQuality`,
+    `tracePromotionQuality`).
+  - Process check: no Parallax dev server, UI server, test runner, Playwright,
+    or bench process remained.
+- Refreshed W3 Nx/Turbo web/GitHub research on 2026-06-29.
+  - Context7 and official Nx docs confirm project metadata can live in
+    `project.json` or the `nx` property of `package.json`, and affected
+    workflows operate on the project graph plus Git changes.
+  - Context7 and official Turborepo docs confirm package membership comes from
+    package-manager workspace manifests, while `turbo.json` is task/caching
+    configuration and filter behavior.
+  - `gh issue list` still shows only issue #3 open.
+  - `gh pr list` still shows Dependabot PRs #23-#31.
+  - GitHub repo search still shows active local semantic-code-graph / MCP
+    projects, but no higher-priority pivot than Parallax's contract-aware
+    impact lane.
+- Shipped W3 parse-only Nx project config discovery.
+  - `src/workspace.ts` now reads `nx.json` as the guard for Nx config discovery.
+  - `workspace discover-packages` scans `project.json` directories and
+    `package.json` files with an `nx` project config, then syncs them as
+    package/project workspace members without executing Nx or Turbo.
+  - Package-manager workspace members keep precedence for duplicate directories.
+  - Turborepo did not receive a separate parser because package membership is
+    already covered through package-manager workspace manifests and `turbo.json`
+    is task metadata, not catalog membership.
+  - `tests/workspace.test.ts` covers CLI discovery of a `project.json` Nx app
+    and a `package.json` `nx` library.
+  - Updated README, CLI reference, roadmap, backlog, plan, improvement
+    opportunities, and decisions docs.
+- W3 Nx discovery verification:
+  - `npm run check`
+  - `node --import tsx --test tests/workspace.test.ts`
+  - `npm run docs:lint`
+  - `git diff --check`
+  - `npm run verify`
+  - Full verify result: lint, schema check, install smoke/build, 672 unit
+    tests, dogfood, bench, and `npm audit --audit-level=high` all passed.
+  - Bench result: `summary.passed=true`, score `0.9987`, and all quality lanes
+    passed (`crossRepoContracts`, `contractDiffQuality`, `coChangeQuality`,
+    `tracePromotionQuality`).
+- Refreshed W5 Avro web/GitHub research on 2026-06-29.
+  - Apache Avro 1.12.0 docs confirm schemas are JSON/IDL, records have named
+    fields, unions are arrays, and fields can carry defaults.
+  - GitHub repo search surfaced Avro compatibility libraries such as
+    `ExpediaGroup/avro-compatibility` and `petermyers/avro-compatibility`, but
+    no dependency that is preferable to a dependency-free local first slice for
+    Parallax.
+  - Broader GitHub code search shows schema-registry compatibility is common in
+    Kafka-oriented stacks, so registry modes should remain a follow-on rather
+    than a default local contract requirement.
+  - `gh issue list` still shows only issue #3 open; `gh pr list` still shows
+    Dependabot PRs #23-#31.
+- Shipped W5 Avro contract-kind first slice.
+  - `.avsc` files now classify as contract files and persist with
+    `contractKind: avro`.
+  - `src/avro_compat.ts` extracts top-level record signatures: schema full
+    name, root path `#`, required fields, field types, and nullable union
+    shapes.
+  - `analyzeContractDiff` now parses current Avro contracts, compares them
+    against indexed Avro compatibility baselines, warns on stale Avro baseline
+    schema versions, and emits Avro-labelled changes through the produced
+    object-schema classifier.
+  - The scanner/indexer emits a synthetic `AVRO #` endpoint and records Avro
+    compatibility metadata for `.avsc` files.
+  - Added regression coverage for Avro required field removal, defaulted field
+    removal, type changes, nullable additions, stale baselines, entity
+    classification, contract persistence, and bench quality counts.
+  - The deterministic `contractDiffQuality` bench now includes
+    `avro-required-field-removal`, raising expected/matched cases and changes
+    from 10 to 11.
+- W5 Avro verification:
+  - `npm run check`
+  - `node --import tsx --test tests/entity_classification.test.ts tests/parallax.test.ts tests/contract-diff.test.ts tests/impact-bench.test.ts`
+  - `npm run docs:lint`
+  - `git diff --check`
+  - `npm run bench`
+  - `npm run verify`
+  - Focused tests passed 196/196.
+  - Full verify result: lint, schema check, install smoke/build, 677 unit
+    tests, dogfood, bench, and `npm audit --audit-level=high` all passed.
+  - Bench result: `summary.passed=true`, score `0.9987`,
+    `contractDiffQuality` `expectedCases=11`, `matchedCases=11`,
+    `expectedChanges=11`, `matchedChanges=11`, and `missingChanges=[]`.
+- Refreshed S1 scan-cost research on 2026-06-29.
+  - Git docs confirm porcelain status and `ls-files` remain the right local
+    primitives for proving dirty/tracked/ignored file state without network.
+  - Nx and Turborepo affected docs again support doing less work only after a
+    changed-file set is known.
+  - GitHub repo search for incremental code-indexing projects did not surface a
+    better lightweight dependency or pattern than Parallax's existing
+    content-hash delta plus carry-forward model.
+  - `gh issue list` still shows only issue #3 open; `gh pr list` still shows
+    Dependabot PRs #23-#31.
+- Shipped S1 dirty/non-git no-changed-file adapter startup skip.
+  - `collectAdapterEvents` now marks an adapter run completed without calling
+    `start()` when the run is incremental and every file owned by that adapter
+    is unchanged.
+  - This preserves the existing scanner, current git dirty metadata, and
+    carry-forward semantics; it only removes unnecessary adapter startup and
+    per-file skip loops after `delta.changed=[]` is already proven.
+  - `tests/parallax.test.ts` covers a dirty rerun caused by an unindexed file:
+    the rerun creates a new dirty index row, stays incremental, and does not
+    call adapter `start()` again.
+- S1 dirty/no-changed adapter-startup verification:
+  - `npm run check`
+  - `node --import tsx --test tests/parallax.test.ts --test-name-pattern "same-HEAD|dirty rerun|git snapshot|git-ignored|resource skips|incremental"`
+  - `node --import tsx --test tests/index-delta.test.ts tests/incremental-index-oracle.test.ts`
+  - `npm run docs:lint`
+  - `git diff --check`
+  - `npm run bench:perf -- --scales 10`
+  - `npm run verify`
+  - Focused Parallax subset passed 104/104; index-delta/oracle tests passed
+    9/9.
+  - Full verify result: lint, schema check, install smoke/build, 678 unit
+    tests, dogfood, bench, and `npm audit --audit-level=high` all passed.
+  - Perf smoke result for scale 10:
+    `10 70 36.4 52.4 7.7 5.7 9 275 7003 3635 5244 772 569`.
+- Refreshed S1 scan/read research on 2026-06-29.
+  - Git status and `ls-files` remain the right local primitives for dirty,
+    tracked, ignored, and untracked path state, but they do not prove adapter
+    content-read safety by themselves.
+  - Nx and Turborepo affected docs again support the same sequence: establish
+    the changed set first, then reduce work.
+  - GitHub repo search for incremental code-indexing / semantic graph projects
+    did not surface a lighter dependency or safer shortcut than measuring
+    Parallax's own scan phase before changing adapter contracts.
+  - `gh issue list` still shows only issue #3 open; `gh pr list` still shows
+    Dependabot PRs #23-#31.
+- Shipped S1 scan-phase perf measurement.
+  - `IndexOptions.perfObserver` can now receive the internal `scan` phase time;
+    the normal `parallax index` result JSON is unchanged.
+  - `bench:perf` reports `full_scan_ms`, `noop_scan_ms`, and `edit_scan_ms`
+    next to the existing total index timings, so residual scan/read work is
+    measurable before any cached-content shortcut is attempted.
+  - `docs/verification*.md` documents the new scan columns and notes that the
+    historical 1k/2k baseline predates them.
+- S1 scan-phase perf verification:
+  - `npm run check`
+  - `node --import tsx --test tests/synthetic-repo.test.ts`
+  - `npm run docs:lint`
+  - `git diff --check`
+  - `npm run bench:perf -- --scales 10`
+  - `npm run verify`
+  - Focused synthetic/perf formatter tests passed 4/4.
+  - Full verify result: lint, schema check, install smoke/build, 678 unit
+    tests, dogfood, bench, and `npm audit --audit-level=high` all passed.
+  - Perf smoke result for scale 10:
+    `10 78 15.1 40.7 2.7 38.0 2.4 7.3 6.0 9 289 7836 4066 3795 725 600`.
+- Refreshed S1 adapter-contract research on 2026-06-29.
+  - Git status and `ls-files` still prove path state but not whether unchanged
+    file content can be omitted safely.
+  - Nx and Turborepo affected docs keep reinforcing the safe sequence:
+    establish the changed set, then reduce downstream work.
+  - GitHub repo search did not surface a safer lightweight incremental semantic
+    graph dependency or shortcut than making Parallax's own adapter content
+    contract explicit.
+  - `gh issue list` still shows only issue #3 open; `gh pr list` still shows
+    Dependabot PRs #23-#31.
+- Shipped S1 adapter file content scope contract.
+  - `SemanticAdapter.fileContentScope` and `AdapterManifestEntry.fileContentScope`
+    now expose whether an adapter may inspect content from the full index
+    (`full-index`) or only the current `process(file)` input (`target-only`).
+  - The registry manifest defaults omitted values to conservative
+    `full-index`, preserving source compatibility for custom adapters.
+  - Config/infra declares `target-only` because it uses indexed files as a path
+    set and reads content only from the current file.
+  - Build-system/package, TypeScript/JavaScript, and broad regex coverage
+    declare `full-index` because they build package/lockfile catalogs, import
+    resolvers, or cross-file target maps from indexed content.
+  - `docs/extending-adapters*.md` documents the contract, manifest field, and
+    adapter checklist in English, Korean, and Chinese.
+- S1 adapter content-scope verification:
+  - `npm run check`
+  - `node --import tsx --test tests/adapter_registry.test.ts tests/config-infra-adapter.test.ts tests/parallax.test.ts --test-name-pattern "manifest|config|indexedFiles"`
+  - `npm run docs:lint`
+  - `git diff --check`
+  - `npm run bench:perf -- --scales 10`
+  - `npm run verify`
+  - Focused tests passed 117/117.
+  - Full verify result: lint, schema check, install smoke/build, 680 unit
+    tests, dogfood, bench, and `npm audit --audit-level=high` all passed.
+  - Bench result: `summary.passed=true`, score `0.9987`.
+  - Perf smoke result for scale 10:
+    `10 367 50.4 165.2 3.5 145.9 13.9 13.1 51.0 9 275 36650 16516 14593 1306 5096`.

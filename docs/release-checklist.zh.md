@@ -27,7 +27,7 @@ npm run verify
 | `npm test` | 快速 unit 和 integration test 通过。 | 每次变更。 |
 | `npm run test:dogfood` | Parallax 能 index 自己并保留真实 dependency graph。 | Engine 变更。 |
 | `npm run bench` | Multi-language fixture 的 recall、evidence、ranking 和 retrieval 保持在固定期望内。 | Adapter、analyzer、search、ranking 或 retrieval 变更。 |
-| `npm audit --audit-level=high` | 当前 lockfile 没有 high-level dependency advisory。 | Release 和 CI。 |
+| `npm run audit:dependencies` | Audit clean，或与尚未过期且精确 pin 住的例外一致。 | Release 和 CI。 |
 
 ## 文档 gate
 
@@ -47,7 +47,14 @@ npm run verify
 1. 除非 direct dependency range 必须改变，否则确认 `package.json` 没有变化。
 2. 审查 direct 和 transitive package bump。
 3. 运行 `npm run test:install-smoke`。
-4. 运行 `npm audit --audit-level=high`。
+4. 运行 `npm run audit:dependencies`。
+
+临时例外在 2026-09-30 UTC 之后失效，且只覆盖
+`GHSA-xcpc-8h2w-3j85` 与 `GHSA-f88m-g3jw-g9cj` 所报告的、精确 lock 住的
+`@huggingface/transformers` tree。Pin 住的 high/critical finding/advisory field
+和 count、package path、severity、node、version、dependency edge、command、
+network 或 JSON 只要发生变化，就会阻止 release。只有 low/moderate 的 finding
+低于此 gate。
 
 ## Engine-change gate
 

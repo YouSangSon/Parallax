@@ -88,21 +88,21 @@ const mcpDocsToolTables: McpDocsToolTable[] = [
   },
   {
     filePath: 'skills/parallax/SKILL.md',
-    toolsHeading: '## MCP tools surfaced (23)',
+    toolsHeading: '## MCP tools surfaced (24)',
     yesLabel: '✅',
     noLabel: '❌',
     readOnlyColumnIndex: 1
   },
   {
     filePath: 'skills/parallax/SKILL.ko.md',
-    toolsHeading: '## MCP tools surfaced (23)',
+    toolsHeading: '## MCP tools surfaced (24)',
     yesLabel: '✅',
     noLabel: '❌',
     readOnlyColumnIndex: 1
   },
   {
     filePath: 'skills/parallax/SKILL.zh.md',
-    toolsHeading: '## MCP tools surfaced (23)',
+    toolsHeading: '## MCP tools surfaced (24)',
     yesLabel: '✅',
     noLabel: '❌',
     readOnlyColumnIndex: 1
@@ -1239,6 +1239,7 @@ test('MCP stdio server initializes and exposes the full agent memory tool surfac
       'parallax_analyze_diff',
       'parallax_context_for_change',
       'parallax_search_context',
+      'parallax_repo_map',
       'parallax_remember',
       'parallax_recall',
       'parallax_query',
@@ -1286,6 +1287,7 @@ test('MCP stdio server initializes and exposes the full agent memory tool surfac
     assert.equal(toolByName.get('parallax_analyze_diff')!.annotations?.readOnlyHint, false);
     assert.equal(toolByName.get('parallax_context_for_change')!.annotations?.readOnlyHint, false);
     assert.equal(toolByName.get('parallax_search_context')!.annotations?.readOnlyHint, false);
+    assert.equal(toolByName.get('parallax_repo_map')!.annotations?.readOnlyHint, true);
     assert.equal(toolByName.get('parallax_analyze_diff')!.inputSchema?.properties?.changedFiles?.type, 'array');
     assert.equal(toolByName.get('parallax_analyze_diff')!.inputSchema?.properties?.changedFiles?.items?.type, 'string');
     assert.equal(toolByName.get('parallax_analyze_diff')!.inputSchema?.properties?.maxDepth?.maximum, 8);
@@ -1303,6 +1305,12 @@ test('MCP stdio server initializes and exposes the full agent memory tool surfac
     ]);
     assert.equal(toolByName.get('parallax_search_context')!.inputSchema?.properties?.query?.type, 'string');
     assert.equal(toolByName.get('parallax_search_context')!.inputSchema?.properties?.k?.maximum, 50);
+    assert.equal(toolByName.get('parallax_repo_map')!.inputSchema?.properties?.changedFiles?.type, 'array');
+    assert.equal(toolByName.get('parallax_repo_map')!.inputSchema?.properties?.budget?.minimum, 200);
+    assert.ok(
+      toolByName.get('parallax_repo_map')!.outputSchema?.required?.includes('omittedCounts'),
+      'parallax_repo_map outputSchema must include omittedCounts'
+    );
     assert.equal(toolByName.get('parallax_explain_entity')!.inputSchema?.properties?.relationLimit?.maximum, 100);
     assert.equal(toolByName.get('parallax_contract_diff')!.inputSchema?.properties?.contractPath?.type, 'string');
     assert.equal(toolByName.get('parallax_contract_diff')!.inputSchema?.properties?.providerServiceName?.type, 'string');
@@ -1310,6 +1318,7 @@ test('MCP stdio server initializes and exposes the full agent memory tool surfac
     assert.equal(toolByName.get('parallax_analyze_diff')!.annotations?.idempotentHint, false);
     assert.equal(toolByName.get('parallax_context_for_change')!.annotations?.idempotentHint, false);
     assert.equal(toolByName.get('parallax_search_context')!.annotations?.idempotentHint, false);
+    assert.equal(toolByName.get('parallax_repo_map')!.annotations?.idempotentHint, true);
     assert.equal(toolByName.get('parallax_recall')!.annotations?.readOnlyHint, true);
     assert.equal(toolByName.get('parallax_trace')!.annotations?.readOnlyHint, true);
     assert.equal(toolByName.get('parallax_profile')!.annotations?.readOnlyHint, true);
@@ -1977,6 +1986,60 @@ test('MCP context_for_change returns budgeted compact context without persisting
       names.filter((name) => !/\.db-(wal|shm)$/.test(name));
     assert.deepEqual(filterWalAux(dbArtifacts(repoRoot)), filterWalAux(artifactsBefore));
     assert.equal(existsSync(path.join(repoRoot, '.parallax/reports')), false);
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP repo_map returns structured read-only context card', async () => {
+  const repoRoot = await makeRepo();
+  const client = new McpProcessClient(repoRoot);
+  try {
+    await client.initialize();
+    const response = await client.request('tools/call', {
+      name: 'parallax_repo_map',
+      arguments: {
+        changedFiles: ['src/a.ts'],
+        query: 'src/b.ts',
+        budget: 10_000
+      }
+    });
+
+    assert.equal(response.error, undefined);
+    assert.notEqual(response.result?.structuredContent, undefined);
+    const map = response.result.structuredContent as {
+      kind: string;
+      budget: { requestedTokens: number; estimatedTokens: number; estimator: string };
+      changedRoots: string[];
+      affectedFiles: Array<{ path: string; resourceUri: string }>;
+      evidenceRefs: Array<{ file: string; resourceUri?: string }>;
+      verificationActions: unknown[];
+      verificationPlan: {
+        groups: Array<{ display: string; targetPaths: string[]; coveredChangedFiles: string[] }>;
+        omittedCounts: { groups: number; targetPaths: number };
+      };
+      resources: { coverage: string; entities: string[]; evidence: string[] };
+      confidence: { provenance: string[]; knownGaps: string[] };
+      queryMatches: unknown[];
+      omittedCounts: { budgetItems: number; evidenceRefs: number };
+    };
+    assert.equal(map.kind, 'repo_map');
+    assert.equal(map.budget.requestedTokens, 10_000);
+    assert.equal(map.budget.estimator, 'Math.ceil(text.length / 4)');
+    assert.ok(map.budget.estimatedTokens > 0);
+    assert.deepEqual(map.changedRoots, ['src/a.ts']);
+    assert.ok(map.affectedFiles.some((item) => item.path === 'src/b.ts'));
+    assert.ok(map.affectedFiles.every((item) => item.resourceUri.startsWith('parallax://entities/')));
+    assert.ok(map.evidenceRefs.length > 0);
+    assert.ok(Array.isArray(map.verificationPlan.groups));
+    assert.equal(typeof map.verificationPlan.omittedCounts.groups, 'number');
+    assert.equal(map.resources.coverage, 'parallax://coverage/latest');
+    assert.ok(map.resources.entities.length > 0);
+    assert.ok(map.confidence.provenance.some((item) => item.includes('buildContextPack')));
+    assert.ok(map.confidence.provenance.some((item) => item.includes('searchContext')));
+    assert.ok(map.confidence.knownGaps.length > 0);
+    assert.ok(Array.isArray(map.queryMatches));
+    assert.ok(Number.isInteger(map.omittedCounts.budgetItems));
   } finally {
     await client.close();
   }

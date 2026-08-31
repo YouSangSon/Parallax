@@ -34,6 +34,7 @@ import type {
 import { readGitSnapshot } from './git-snapshot.js';
 import { reflectFacts, repairReflections } from './reflection.js';
 import { profileEntity } from './profile.js';
+import { buildRepoMap } from './repo_map.js';
 import { normalizeRepoRoot, redactSecrets } from './security.js';
 import {
   byteLength,
@@ -240,6 +241,52 @@ export function createMcpServer(context: McpContext): McpServer {
           query,
           budget: normalizedBudget,
           resourceCount: telemetry.resourceCount
+        });
+      } catch (error) {
+        return typedToolErrorResponse(error);
+      }
+    }
+  );
+
+  server.registerTool(
+    'parallax_repo_map',
+    {
+      title: 'Build repo map context card',
+      description:
+        'Return a token-budgeted repo map/context card for changed files, including ranked affected files, tests, docs, config, work artifacts, evidence refs, verification actions, resources, and confidence disclosures.',
+      inputSchema: {
+        changedFiles: z.array(z.string()).min(1),
+        query: z.string().trim().min(1).optional(),
+        budget: z.number().int().min(200).max(50_000).optional(),
+        maxDepth: z.number().int().min(1).max(8).optional(),
+        maxFanout: z.number().int().min(1).max(2_000).optional()
+      },
+      outputSchema: MCP_OUTPUT_SCHEMAS.parallax_repo_map,
+      annotations: {
+        title: 'Build repo map context card',
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      }
+    },
+    async ({ changedFiles, query, budget, maxDepth, maxFanout }) => {
+      try {
+        const map = await buildRepoMap({
+          repoRoot: context.repoRoot,
+          changedFiles,
+          ...(query === undefined ? {} : { query }),
+          ...(budget === undefined ? {} : { budgetTokens: budget }),
+          ...(maxDepth === undefined ? {} : { maxDepth }),
+          ...(maxFanout === undefined ? {} : { maxFanout })
+        });
+        return toolJsonResponse(context, 'parallax_repo_map', map, {
+          indexRunId: map.indexRunId,
+          budget: String(map.budget.requestedTokens),
+          query: query ?? null,
+          changedFiles: map.changedFiles,
+          resourceCount: resourceCountOf(map),
+          omitted: map.omittedCounts
         });
       } catch (error) {
         return typedToolErrorResponse(error);

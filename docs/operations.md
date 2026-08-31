@@ -163,7 +163,7 @@ CI runs `npm ci` and then the aggregate `npm run verify` gate. Reproduce `npm ru
 | Failing command | What it usually means | First fix |
 | :--- | :--- | :--- |
 | `npm run verify` | One of the release sub-gates failed | Re-run it locally, then jump to the first failing subcommand below. |
-| `npm audit --audit-level=high` | Dependency advisory affects current lockfile | Run `npm audit fix`, review lockfile, rerun tests. |
+| `npm run audit:dependencies` | Audit command failed, pinned findings/lock subset drifted, or the exception expired | Rerun `npm audit --audit-level=high --json` locally for raw diagnostics; fix/update the dependency, then rerun the gate. |
 | `npm run lint` | Typecheck or docs lint failed | Run the command locally and fix the first reported file. |
 | `npm run build` | TypeScript compile output failed | Run `npm run check`, then fix type or module errors. |
 | `npm test` | Fast unit/integration suite failed | Reproduce the named test file locally. |

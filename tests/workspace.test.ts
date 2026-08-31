@@ -11,6 +11,7 @@ import { test } from 'node:test';
 import { databasePath } from '../src/store.js';
 import {
   addWorkspaceRepo,
+  discoverWorkspacePackages,
   initWorkspace,
   listWorkspaces,
   syncWorkspaceCatalog,
@@ -161,6 +162,168 @@ test('workspace CLI adds sibling repos, lists deterministic JSON, and updates on
   } finally {
     db.close();
   }
+});
+
+test('discoverWorkspacePackages syncs npm workspace package members and preserves external repos', async () => {
+  const repoRoot = await makeRepo('parallax-workspace-npm-discover-');
+  const siblingRepo = await makeRepo('parallax-workspace-npm-sibling-');
+  await mkdir(path.join(repoRoot, 'apps/web'), { recursive: true });
+  await mkdir(path.join(repoRoot, 'packages/api'), { recursive: true });
+  await writeFile(
+    path.join(repoRoot, 'package.json'),
+    JSON.stringify({ name: 'platform-root', workspaces: { packages: ['apps/*', 'packages/*'] } }, null, 2),
+    'utf8'
+  );
+  await writeFile(
+    path.join(repoRoot, 'apps/web/package.json'),
+    JSON.stringify({ name: '@platform/web' }, null, 2),
+    'utf8'
+  );
+  await writeFile(
+    path.join(repoRoot, 'packages/api/package.json'),
+    JSON.stringify({ name: '@platform/api' }, null, 2),
+    'utf8'
+  );
+
+  initWorkspace({ repoRoot, name: 'platform', serviceName: 'root' });
+  addWorkspaceRepo({ repoRoot, workspaceName: 'platform', localPath: siblingRepo, serviceName: 'worker' });
+
+  const result = discoverWorkspacePackages({ repoRoot, workspaceName: 'platform' });
+
+  assert.deepEqual(result.sources, ['package.json']);
+  assert.deepEqual(
+    result.packages.map((member) => ({
+      relativePath: member.relativePath,
+      manifestPath: member.manifestPath,
+      serviceName: member.serviceName
+    })),
+    [
+      { relativePath: 'apps/web', manifestPath: 'apps/web/package.json', serviceName: '@platform/web' },
+      { relativePath: 'packages/api', manifestPath: 'packages/api/package.json', serviceName: '@platform/api' }
+    ]
+  );
+
+  const listed = listWorkspaces({ repoRoot, name: 'platform' });
+  const servicesByPath = new Map(listed.workspaces[0]!.repos.map((repo) => [repo.localPath, repo.serviceName]));
+  assert.equal(servicesByPath.get(realpathSync(path.join(repoRoot, 'apps/web'))), '@platform/web');
+  assert.equal(servicesByPath.get(realpathSync(path.join(repoRoot, 'packages/api'))), '@platform/api');
+  assert.equal(servicesByPath.get(realpathSync(siblingRepo)), 'worker');
+  assert.equal(servicesByPath.has(realpathSync(repoRoot)), false);
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    assert.equal((db.prepare('SELECT count(*) AS count FROM workspace_repos').get() as { count: number }).count, 3);
+  } finally {
+    db.close();
+  }
+});
+
+test('workspace CLI discovers pnpm packages with excludes', async () => {
+  const repoRoot = await makeRepo('parallax-workspace-pnpm-discover-');
+  await mkdir(path.join(repoRoot, 'packages/web'), { recursive: true });
+  await mkdir(path.join(repoRoot, 'packages/test/fixture'), { recursive: true });
+  await writeFile(
+    path.join(repoRoot, 'pnpm-workspace.yaml'),
+    "packages:\n  - 'packages/**'\n  - '!**/test/**'\n",
+    'utf8'
+  );
+  await writeFile(
+    path.join(repoRoot, 'packages/web/package.json'),
+    JSON.stringify({ name: '@platform/web' }, null, 2),
+    'utf8'
+  );
+  await writeFile(
+    path.join(repoRoot, 'packages/test/fixture/package.json'),
+    JSON.stringify({ name: '@platform/test-fixture' }, null, 2),
+    'utf8'
+  );
+
+  const run = runCli(repoRoot, ['workspace', 'discover-packages', '--name', 'platform', '--json']);
+  assert.equal(run.status, 0, `workspace discover-packages failed: ${run.stderr}`);
+  const parsed = JSON.parse(run.stdout) as {
+    sources: string[];
+    packages: Array<{ relativePath: string; serviceName: string }>;
+    workspace: { repos: Array<{ localPath: string; serviceName: string }> };
+  };
+
+  assert.deepEqual(parsed.sources, ['pnpm-workspace.yaml']);
+  assert.deepEqual(parsed.packages, [
+    {
+      localPath: realpathSync(path.join(repoRoot, 'packages/web')),
+      relativePath: 'packages/web',
+      manifestPath: 'packages/web/package.json',
+      serviceName: '@platform/web'
+    }
+  ]);
+  assert.deepEqual(parsed.workspace.repos, [
+    {
+      localPath: realpathSync(path.join(repoRoot, 'packages/web')),
+      serviceName: '@platform/web',
+      remoteUrl: null,
+      trustPolicy: { readOnly: true }
+    }
+  ]);
+});
+
+test('workspace CLI discovers Nx project configs without executing Nx', async () => {
+  const repoRoot = await makeRepo('parallax-workspace-nx-discover-');
+  await mkdir(path.join(repoRoot, 'apps/api'), { recursive: true });
+  await mkdir(path.join(repoRoot, 'libs/shared'), { recursive: true });
+  await mkdir(path.join(repoRoot, 'tools/broken'), { recursive: true });
+  await writeFile(
+    path.join(repoRoot, 'nx.json'),
+    JSON.stringify({ workspaceLayout: { appsDir: 'apps', libsDir: 'libs' } }, null, 2),
+    'utf8'
+  );
+  await writeFile(
+    path.join(repoRoot, 'apps/api/project.json'),
+    JSON.stringify({ name: 'api', sourceRoot: 'apps/api/src', targets: {} }, null, 2),
+    'utf8'
+  );
+  await writeFile(
+    path.join(repoRoot, 'libs/shared/package.json'),
+    JSON.stringify({ name: '@platform/shared', nx: { targets: { test: { command: 'node --test' } } } }, null, 2),
+    'utf8'
+  );
+  await writeFile(path.join(repoRoot, 'tools/broken/package.json'), '{not-json', 'utf8');
+
+  const run = runCli(repoRoot, ['workspace', 'discover-packages', '--name', 'platform', '--json']);
+  assert.equal(run.status, 0, `workspace discover-packages failed: ${run.stderr}`);
+  const parsed = JSON.parse(run.stdout) as {
+    sources: string[];
+    packages: Array<{ relativePath: string; serviceName: string }>;
+    workspace: { repos: Array<{ localPath: string; serviceName: string }> };
+  };
+
+  assert.deepEqual(parsed.sources, ['nx.json']);
+  assert.deepEqual(parsed.packages, [
+    {
+      localPath: realpathSync(path.join(repoRoot, 'apps/api')),
+      relativePath: 'apps/api',
+      manifestPath: 'apps/api/project.json',
+      serviceName: 'api'
+    },
+    {
+      localPath: realpathSync(path.join(repoRoot, 'libs/shared')),
+      relativePath: 'libs/shared',
+      manifestPath: 'libs/shared/package.json',
+      serviceName: '@platform/shared'
+    }
+  ]);
+  assert.deepEqual(parsed.workspace.repos, [
+    {
+      localPath: realpathSync(path.join(repoRoot, 'apps/api')),
+      serviceName: 'api',
+      remoteUrl: null,
+      trustPolicy: { readOnly: true }
+    },
+    {
+      localPath: realpathSync(path.join(repoRoot, 'libs/shared')),
+      serviceName: '@platform/shared',
+      remoteUrl: null,
+      trustPolicy: { readOnly: true }
+    }
+  ]);
 });
 
 test('workspace catalog rejects invalid local paths and duplicate resolved catalog paths', async () => {

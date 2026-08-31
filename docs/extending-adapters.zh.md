@@ -14,6 +14,7 @@ adapter 实现 `SemanticAdapter` 接口（`src/adapters/types.ts`）：
 - `confidence?` — adapter 的默认 confidence 标签（省略时回退为 `unknown`）。
 - `knownGaps?` — 关于此 adapter *不*解析什么的人类可读说明。
 - `selectionMode?` — 有边界的语言/文件 adapter 默认是 `targeted`，最后的 fallback adapter 使用 `catch-all`。
+- `fileContentScope?` — 默认是 `full-index`；只有当 adapter 只需要当前 `process(file)` 输入的 content，并且只把 `ctx.indexedFiles` / `files` 当作 path-level context 时，才设置为 `target-only`。
 - `supports(file)` — 若此 adapter 处理该文件则返回 `true`。
 - `start(ctx, files)` — 为该 index run 返回一个 `AdapterRun`（或 `Promise<AdapterRun>`）。
 
@@ -28,6 +29,15 @@ orchestrator 对每个 `EntityDescriptor` 做 content-hash 来计算其 entity i
 ## Capability
 
 `AdapterCapability` 是以下之一：`imports`、`exports`、`calls`、`references`、`types`、`symbols`、`docrefs`、`tests`、`packages`。adapter 声明它能提取的子集，使 coverage 与 gap 按 adapter 显式呈现。
+
+## 文件 content 范围
+
+`fileContentScope` 显式说明 adapter 的跨文件 content 契约：
+
+- `full-index` — adapter 可以通过 `ctx.indexedFiles`、`files`、import resolution、package/lockfile discovery 或其他 startup state 读取任意已扫描文件的 content。为了 source compatibility 与安全性，这是默认值。
+- `target-only` — adapter 只读取当前传给 `process(file)` 的文件 content。它仍可使用 indexed path set 做 reference resolution，但不能在 `start()` 中或处理 target file 时读取其他文件的 `content`。
+
+只有检查实现后才使用 `target-only`。例如 config/infra path-reference extraction 用 indexed file path 校验 reference，但不读取其他 indexed file content。build-system/package 与 TypeScript/JavaScript adapter 会从 indexed content 构建 lockfile/package catalog、import resolver 与 cross-file target，因此保持 `full-index`。
 
 ## Evidence 与 confidence（不变量 I-10）
 
@@ -48,7 +58,7 @@ adapter 存放于 registry（`src/adapters/registry.ts`），由 `src/indexer.ts
 
 registry 现在显式强制这项契约。`selectionMode` 为了 source compatibility 是可选字段，省略时默认为 `targeted`；只有刻意作为最后 fallback coverage 的 adapter 才设置 `selectionMode = 'catch-all'`。如果已经存在 catch-all adapter，`AdapterRegistry.register()` 会拒绝在它之后注册任何 adapter，error 会同时命名新 adapter 与阻挡它的 catch-all adapter。重复 `id` 校验仍然先运行，并保留既有的重复 id error。
 
-审查或测试 adapter 注册时使用 `registry.manifest()`。它按注册顺序返回一个 immutable snapshot。每个 entry 暴露 `order`、`id`、`version`、`capabilities`、`confidence`（默认 `unknown`）、`knownGaps`（默认空数组）和 `selectionMode`（默认 `targeted`）。调用方可以检查这些信息，但不能改变 registry 状态。
+审查或测试 adapter 注册时使用 `registry.manifest()`。它按注册顺序返回一个 immutable snapshot。每个 entry 暴露 `order`、`id`、`version`、`capabilities`、`confidence`（默认 `unknown`）、`knownGaps`（默认空数组）、`selectionMode`（默认 `targeted`）和 `fileContentScope`（默认 `full-index`）。调用方可以检查这些信息，但不能改变 registry 状态。
 
 ## 版本管理与重新提取
 
@@ -76,6 +86,7 @@ export class ExampleAdapter implements SemanticAdapter {
   readonly capabilities = capabilities;
   readonly confidence = 'heuristic';
   readonly selectionMode = 'targeted';
+  readonly fileContentScope = 'target-only';
   readonly knownGaps = ['only resolves a single literal import form'];
 
   supports(file: ScannedFile): boolean {
@@ -122,8 +133,9 @@ export class ExampleAdapter implements SemanticAdapter {
 
 - 使用唯一的 `id`，并在提取输出变化时提升 `version`。
 - 对语言/文件专用 adapter 优先使用 `selectionMode = 'targeted'`；只把 `catch-all` 留给最后的 fallback adapter。
+- 除非 adapter 只读取 target-file content，并把 indexed files 仅当作 path metadata，否则保持 `fileContentScope = 'full-index'`。
 - 将所有 targeted adapter 注册在任何 catch-all adapter 之前。
-- 在 focused test 或 review note 中用 `registry.manifest()` 确认顺序、capability、confidence、known gap 和 selection mode。
+- 在 focused test 或 review note 中用 `registry.manifest()` 确认顺序、capability、confidence、known gap、selection mode 和 file content scope。
 - 保持 `knownGaps` 最新，让 manifest 能说明哪些 coverage 是 heuristic 或不完整的。
 
 ## 另见

@@ -71,8 +71,8 @@ test('impactReportToSarif maps affected files into GitHub-compatible results', (
   assert.equal(sarif.runs.length, 1);
   assert.equal(sarif.runs[0]?.tool.driver.name, 'Parallax');
   assert.equal(sarif.runs[0]?.automationDetails?.id, 'parallax-pr');
-  assert.equal(sarif.runs[0]?.results.length, 1);
-  const result = sarif.runs[0]?.results[0];
+  assert.equal(sarif.runs[0]?.results.length, 2);
+  const result = sarif.runs[0]?.results.find((item) => item.ruleId === 'parallax.impact.proven');
   assert.equal(result?.ruleId, 'parallax.impact.proven');
   assert.equal(result?.level, 'warning');
   assert.equal(result?.locations?.[0]?.physicalLocation?.artifactLocation?.uri, 'src/client.ts');
@@ -81,10 +81,206 @@ test('impactReportToSarif maps affected files into GitHub-compatible results', (
   assert.deepEqual(result?.properties?.evidenceIds, ['ev-1']);
 });
 
+test('impactReportToSarif emits recommended verification actions as note results', () => {
+  const sarif = impactReportToSarif(reportFixture());
+
+  const result = sarif.runs[0]?.results.find((item) => item.ruleId === 'parallax.verification');
+
+  assert.equal(result?.level, 'note');
+  assert.equal(result?.message.text, 'Recommended verification: npm test -- tests/client.test.ts');
+  assert.equal(result?.locations[0]?.physicalLocation.artifactLocation.uri, 'src/client.ts');
+  assert.equal(result?.properties?.command, 'npm');
+  assert.deepEqual(result?.properties?.args, ['test', '--', 'tests/client.test.ts']);
+  assert.equal(sarif.runs[0]?.properties?.verificationActionCount, 1);
+  assert.equal(sarif.runs[0]?.properties?.omittedVerificationActionCount, 0);
+});
+
+test('impactReportToSarif emits index coverage gaps as warning results', () => {
+  const report = reportFixture();
+  report.changedFiles = ['src/new-api.ts'];
+  report.affectedFiles = [{
+    path: 'src/new-api.ts',
+    reason: 'changed file not in index',
+    confidence: 'unknown'
+  }];
+  report.affected = [];
+  report.actions = [];
+  report.testCommands = [];
+  report.evidence = [];
+
+  const sarif = impactReportToSarif(report);
+
+  const result = sarif.runs[0]?.results.find((item) => item.ruleId === 'parallax.coverage-gap');
+  assert.equal(result?.level, 'warning');
+  assert.equal(result?.message.text, 'Index coverage gap: src/new-api.ts was not present in index run 1');
+  assert.equal(result?.locations[0]?.physicalLocation.artifactLocation.uri, 'src/new-api.ts');
+  assert.equal(result?.properties?.changedPath, 'src/new-api.ts');
+  assert.ok(result?.partialFingerprints?.parallaxImpact);
+  assert.equal(sarif.runs[0]?.properties?.coverageGapCount, 1);
+  assert.equal(sarif.runs[0]?.properties?.omittedCoverageGapCount, 0);
+});
+
+test('impactReportToSarif omits coverage-gap results without an uploadable changed file anchor', () => {
+  const report = reportFixture();
+  report.changedFiles = ['workspace:src/new-api.ts'];
+  report.affectedFiles = [{
+    path: 'workspace:src/new-api.ts',
+    reason: 'changed file not in index',
+    confidence: 'unknown'
+  }];
+  report.affected = [];
+  report.actions = [];
+  report.testCommands = [];
+  report.evidence = [];
+
+  const sarif = impactReportToSarif(report);
+
+  assert.equal(sarif.runs[0]?.results.length, 0);
+  assert.equal(sarif.runs[0]?.properties?.coverageGapCount, 0);
+  assert.equal(sarif.runs[0]?.properties?.omittedCoverageGapCount, 1);
+});
+
+test('impactReportToSarif emits cross-repo contract breaks on provider contracts', () => {
+  const report = reportFixture();
+  report.changedFiles = ['contracts/openapi.yaml'];
+  report.crossRepoImpacts = [{
+    workspace: 'platform',
+    provider: {
+      serviceName: 'users-api',
+      contractPath: 'contracts/openapi.yaml'
+    },
+    consumer: {
+      serviceName: 'web',
+      path: 'src/client.ts'
+    },
+    change: {
+      kind: 'removed_endpoint',
+      method: 'GET',
+      path: '/api/users',
+      previousEndpointId: 'endpoint:yaml:GET /api/users'
+    },
+    confidence: 'heuristic',
+    evidence: {
+      filePath: 'web:src/client.ts',
+      snippet: 'return fetch("https://users.example.test/api/users");'
+    },
+    resources: {
+      workspace: 'parallax://workspaces/platform',
+      crossRepoLinks: 'parallax://workspaces/platform/cross-repo-links'
+    }
+  }];
+
+  const sarif = impactReportToSarif(report);
+
+  const result = sarif.runs[0]?.results.find((item) => item.ruleId === 'parallax.contract-break');
+  assert.equal(result?.level, 'warning');
+  assert.equal(
+    result?.message.text,
+    'Breaking contract change may affect web:src/client.ts: removed_endpoint GET /api/users'
+  );
+  assert.equal(result?.locations[0]?.physicalLocation.artifactLocation.uri, 'contracts/openapi.yaml');
+  assert.equal(result?.properties?.providerContractPath, 'contracts/openapi.yaml');
+  assert.equal(result?.properties?.consumerServiceName, 'web');
+  assert.equal(result?.properties?.consumerPath, 'src/client.ts');
+  assert.equal(result?.properties?.evidenceFilePath, 'web:src/client.ts');
+  assert.ok(result?.partialFingerprints?.parallaxImpact);
+  assert.equal(sarif.runs[0]?.properties?.contractBreakCount, 1);
+  assert.equal(sarif.runs[0]?.properties?.omittedContractBreakCount, 0);
+});
+
+test('impactReportToSarif omits contract-break results without an uploadable provider contract anchor', () => {
+  const report = reportFixture();
+  report.affectedFiles = [];
+  report.affected = [];
+  report.actions = [];
+  report.testCommands = [];
+  report.crossRepoImpacts = [{
+    workspace: 'platform',
+    provider: {
+      serviceName: 'users-api',
+      contractPath: 'users-api:contracts/openapi.yaml'
+    },
+    consumer: {
+      serviceName: 'web',
+      path: 'src/client.ts'
+    },
+    change: {
+      kind: 'removed_endpoint',
+      method: 'GET',
+      path: '/api/users'
+    },
+    confidence: 'heuristic',
+    evidence: {
+      filePath: 'web:src/client.ts',
+      snippet: 'return fetch("https://users.example.test/api/users");'
+    }
+  }];
+
+  const sarif = impactReportToSarif(report);
+
+  assert.equal(sarif.runs[0]?.results.length, 0);
+  assert.equal(sarif.runs[0]?.properties?.contractBreakCount, 0);
+  assert.equal(sarif.runs[0]?.properties?.omittedContractBreakCount, 1);
+});
+
+test('impactReportToSarif emits adapter known gaps as note results on changed files', () => {
+  const report = reportFixture();
+  report.changedFiles = ['src/api.ts', 'docs/api-contract.md'];
+  report.adapterInsights = [{
+    id: 'typescript-adapter',
+    version: '1.2.3',
+    languageIds: ['typescript'],
+    status: 'completed',
+    confidence: 'heuristic',
+    knownGaps: ['dynamic dispatch can miss indirect callers']
+  }];
+
+  const sarif = impactReportToSarif(report);
+
+  const result = sarif.runs[0]?.results.find((item) => item.ruleId === 'parallax.adapter-known-gap');
+  assert.equal(result?.level, 'note');
+  assert.equal(
+    result?.message.text,
+    'Adapter known gap: typescript-adapter: dynamic dispatch can miss indirect callers'
+  );
+  assert.equal(result?.locations[0]?.physicalLocation.artifactLocation.uri, 'src/api.ts');
+  assert.equal(result?.relatedLocations?.[0]?.physicalLocation.artifactLocation.uri, 'docs/api-contract.md');
+  assert.equal(result?.properties?.adapterId, 'typescript-adapter');
+  assert.equal(result?.properties?.knownGap, 'dynamic dispatch can miss indirect callers');
+  assert.ok(result?.partialFingerprints?.parallaxImpact);
+  assert.equal(sarif.runs[0]?.properties?.adapterKnownGapCount, 1);
+  assert.equal(sarif.runs[0]?.properties?.omittedAdapterKnownGapCount, 0);
+});
+
+test('impactReportToSarif omits adapter known-gap results without an uploadable changed file anchor', () => {
+  const report = reportFixture();
+  report.changedFiles = ['workspace:src/api.ts'];
+  report.affectedFiles = [];
+  report.affected = [];
+  report.actions = [];
+  report.testCommands = [];
+  report.adapterInsights = [{
+    id: 'typescript-adapter',
+    version: '1.2.3',
+    languageIds: ['typescript'],
+    status: 'completed',
+    confidence: 'heuristic',
+    knownGaps: ['dynamic dispatch can miss indirect callers']
+  }];
+
+  const sarif = impactReportToSarif(report);
+
+  assert.equal(sarif.runs[0]?.results.length, 0);
+  assert.equal(sarif.runs[0]?.properties?.adapterKnownGapCount, 0);
+  assert.equal(sarif.runs[0]?.properties?.omittedAdapterKnownGapCount, 1);
+});
+
 test('impactReportToSarif emits empty runs for no-impact reports', () => {
   const report = reportFixture();
   report.affectedFiles = [];
   report.affected = [];
+  report.actions = [];
+  report.testCommands = [];
 
   const sarif = impactReportToSarif(report);
 
@@ -101,7 +297,7 @@ test('impactReportToSarif does not emit human-readable relation steps as artifac
   ];
 
   const sarif = impactReportToSarif(report);
-  const result = sarif.runs[0]!.results[0]!;
+  const result = sarif.runs[0]!.results.find((item) => item.ruleId === 'parallax.impact.proven')!;
   const codeFlowUris = result.codeFlows?.flatMap((flow) =>
     flow.threadFlows.flatMap((threadFlow) =>
       threadFlow.locations.map((location) =>
@@ -128,9 +324,9 @@ test('impactReportToSarif omits non-repo-relative affected files from uploadable
   });
 
   const sarif = impactReportToSarif(report);
-  const resultUris = sarif.runs[0]!.results.map((result) =>
-    result.locations[0]!.physicalLocation.artifactLocation.uri
-  );
+  const resultUris = sarif.runs[0]!.results
+    .filter((result) => result.ruleId.startsWith('parallax.impact.'))
+    .map((result) => result.locations[0]!.physicalLocation.artifactLocation.uri);
 
   assert.deepEqual(resultUris, ['src/client.ts']);
   assert.equal(resultUris.includes('web:src/client.ts'), false);

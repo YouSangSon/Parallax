@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -439,6 +439,33 @@ test('indexProject persists OpenAPI contracts and analyzeDiff reaches implementi
     ].join('\n')
   );
   await writeFile(
+    path.join(repoRoot, 'contracts/user.schema.json'),
+    `${JSON.stringify({
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      $id: 'https://example.test/schemas/user',
+      type: 'object',
+      required: ['id', 'name'],
+      properties: {
+        id: { type: 'string' },
+        name: { type: 'string' },
+        status: { type: 'string' }
+      }
+    }, null, 2)}\n`
+  );
+  await writeFile(
+    path.join(repoRoot, 'contracts/user.avsc'),
+    `${JSON.stringify({
+      type: 'record',
+      name: 'UserEvent',
+      namespace: 'example.events',
+      fields: [
+        { name: 'id', type: 'string' },
+        { name: 'name', type: 'string' },
+        { name: 'status', type: ['null', 'string'], default: null }
+      ]
+    }, null, 2)}\n`
+  );
+  await writeFile(
     path.join(repoRoot, 'src/main/java/com/example/UserController.java'),
     [
       'package com.example;',
@@ -534,7 +561,7 @@ test('indexProject persists OpenAPI contracts and analyzeDiff reaches implementi
         }>;
       }>;
     };
-    assert.equal(yamlCompatibility.schemaVersion, 2);
+    assert.equal(yamlCompatibility.schemaVersion, 5);
     assert.equal(yamlCompatibility.analyzer, 'openapi-compat-v0');
     assert.deepEqual(
       yamlCompatibility.operations?.find((operation) => operation.method === 'GET' && operation.path === '/api/users'),
@@ -580,6 +607,148 @@ test('indexProject persists OpenAPI contracts and analyzeDiff reaches implementi
     assert.equal(swaggerContract.kind, 'openapi');
     assert.equal(swaggerContract.service_name, 'legacy-user-service');
     assert.equal(swaggerContract.schema_version, '2.0');
+
+    const jsonSchemaContract = db
+      .prepare(
+        `SELECT c.kind, c.service_name, v.schema_version, v.compatibility_json
+         FROM contracts c
+         INNER JOIN contract_versions v ON v.contract_id = c.id
+         WHERE c.id = ?`
+      )
+      .get('file:contracts/user.schema.json') as
+      | {
+          kind: string;
+          service_name: string | null;
+          schema_version: string | null;
+          compatibility_json: string;
+        }
+      | undefined;
+    assert.ok(jsonSchemaContract, 'expected JSON Schema contract baseline row');
+    assert.equal(jsonSchemaContract.kind, 'json-schema');
+    assert.equal(jsonSchemaContract.service_name, null);
+    assert.equal(jsonSchemaContract.schema_version, 'https://json-schema.org/draft/2020-12/schema');
+    const jsonSchemaCompatibility = JSON.parse(jsonSchemaContract.compatibility_json) as {
+      schemaVersion?: number;
+      analyzer?: string;
+      contractKind?: string;
+      schemas?: Array<{
+        id?: string;
+        path: string;
+        body: {
+          required?: string[];
+          properties?: Record<string, { type?: string }>;
+        };
+      }>;
+    };
+    assert.equal(jsonSchemaCompatibility.schemaVersion, 1);
+    assert.equal(jsonSchemaCompatibility.analyzer, 'json-schema-compat-v0');
+    assert.equal(jsonSchemaCompatibility.contractKind, 'json-schema');
+    assert.deepEqual(jsonSchemaCompatibility.schemas, [
+      {
+        id: 'https://example.test/schemas/user',
+        path: '#',
+        body: {
+          required: ['id', 'name'],
+          properties: {
+            id: { type: 'string' },
+            name: { type: 'string' },
+            status: { type: 'string' }
+          }
+        }
+      }
+    ]);
+
+    const jsonSchemaEndpoints = db
+      .prepare(
+        `SELECT e.id, e.display_name
+         FROM relations r
+         INNER JOIN entities e ON e.id = r.target_entity_id
+         WHERE r.index_run_id = ?
+           AND r.kind = ?
+           AND r.source_entity_id = ?
+           AND e.kind = ?`
+      )
+      .all(index.indexRunId, 'DECLARES', 'file:contracts/user.schema.json', 'endpoint') as Array<{
+      id: string;
+      display_name: string;
+    }>;
+    assert.deepEqual(jsonSchemaEndpoints.map((row) => ({ id: row.id, display_name: row.display_name })), [
+      {
+        id: 'endpoint:json-schema:SCHEMA #',
+        display_name: 'SCHEMA #'
+      }
+    ]);
+
+    const avroContract = db
+      .prepare(
+        `SELECT c.kind, c.service_name, v.schema_version, v.compatibility_json
+         FROM contracts c
+         INNER JOIN contract_versions v ON v.contract_id = c.id
+         WHERE c.id = ?`
+      )
+      .get('file:contracts/user.avsc') as
+      | {
+          kind: string;
+          service_name: string | null;
+          schema_version: string | null;
+          compatibility_json: string;
+        }
+      | undefined;
+    assert.ok(avroContract, 'expected Avro contract baseline row');
+    assert.equal(avroContract.kind, 'avro');
+    assert.equal(avroContract.service_name, null);
+    assert.equal(avroContract.schema_version, null);
+    const avroCompatibility = JSON.parse(avroContract.compatibility_json) as {
+      schemaVersion?: number;
+      analyzer?: string;
+      contractKind?: string;
+      schemas?: Array<{
+        id?: string;
+        path: string;
+        body: {
+          required?: string[];
+          properties?: Record<string, { type?: string }>;
+        };
+      }>;
+    };
+    assert.equal(avroCompatibility.schemaVersion, 1);
+    assert.equal(avroCompatibility.analyzer, 'avro-compat-v0');
+    assert.equal(avroCompatibility.contractKind, 'avro');
+    assert.deepEqual(avroCompatibility.schemas, [
+      {
+        id: 'example.events.UserEvent',
+        path: '#',
+        body: {
+          required: ['id', 'name'],
+          properties: {
+            id: { type: 'string' },
+            name: { type: 'string' },
+            status: { type: 'null|string' }
+          }
+        }
+      }
+    ]);
+
+    const avroEndpoints = db
+      .prepare(
+        `SELECT e.id, e.display_name
+         FROM relations r
+         INNER JOIN entities e ON e.id = r.target_entity_id
+         WHERE r.index_run_id = ?
+           AND r.kind = ?
+           AND r.source_entity_id = ?
+           AND e.kind = ?`
+      )
+      .all(index.indexRunId, 'DECLARES', 'file:contracts/user.avsc', 'endpoint') as Array<{
+      id: string;
+      display_name: string;
+    }>;
+    assert.deepEqual(avroEndpoints.map((row) => ({ id: row.id, display_name: row.display_name })), [
+      {
+        id: 'endpoint:avro:AVRO #',
+        display_name: 'AVRO #'
+      }
+    ]);
 
     const jsonEndpointEvidence = db
       .prepare(
@@ -630,7 +799,7 @@ test('indexProject persists OpenAPI contracts and analyzeDiff reaches implementi
         }>;
       }>;
     };
-    assert.equal(compatibility.schemaVersion, 2);
+    assert.equal(compatibility.schemaVersion, 5);
     assert.equal(compatibility.analyzer, 'openapi-compat-v0');
     assert.deepEqual(
       compatibility.operations?.find((operation) => operation.method === 'GET' && operation.path === '/api/users'),
@@ -3810,7 +3979,7 @@ test('exportImpactGraph renders report graph from SQLite relations without graph
   assert.doesNotMatch(dotGraph.rendered, /sk-test-secret/);
 });
 
-test('exportImpactGraph keeps a saved report graph stable after incremental reindex', async () => {
+test('exportImpactGraph keeps a saved report graph stable after reindex', async () => {
   const repoRoot = await makeFixtureRepo();
   await initProject({ repoRoot });
   await indexProject({ repoRoot });
@@ -3837,7 +4006,7 @@ test('exportImpactGraph keeps a saved report graph stable after incremental rein
     ].join('\n')
   );
   const reindex = await indexProject({ repoRoot });
-  assert.equal(reindex.mode, 'incremental');
+  assert.equal(reindex.mode, 'full');
 
   const after = await exportImpactGraph({ repoRoot, reportId: report.id, format: 'json' });
   const afterParsed = JSON.parse(after.rendered) as {
@@ -4251,6 +4420,297 @@ test('indexProject records git snapshot metadata for clean, dirty, and non-git r
   }
 });
 
+test('indexProject reuses a clean same-HEAD git index without scanning again', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-git-noop-index-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const value = 1;\n');
+  initGitRepo(repoRoot);
+  await initProject({ repoRoot });
+
+  let startCalls = 0;
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'noop-fast-path-test-adapter',
+    version: '1',
+    capabilities: ['references'],
+    supports: (file) => file.language === 'typescript',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => {
+      startCalls++;
+      return {
+        async *process(_file: ScannedFile): AsyncIterable<IndexEvent> {}
+      };
+    }
+  });
+
+  const first = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+  const second = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+
+  assert.equal(first.mode, 'full');
+  assert.equal(second.mode, 'incremental');
+  assert.equal(second.indexRunId, first.indexRunId);
+  assert.equal(startCalls, 1);
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const runCount = db.prepare('SELECT count(*) AS count FROM index_runs').get() as { count: number };
+    assert.equal(runCount.count, 1);
+  } finally {
+    db.close();
+  }
+});
+
+test('indexProject skips adapter startup when an incremental dirty rerun has no indexed file changes', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-dirty-noop-index-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const value = 1;\n');
+  initGitRepo(repoRoot);
+  await initProject({ repoRoot });
+
+  let startCalls = 0;
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'dirty-noop-test-adapter',
+    version: '1',
+    capabilities: ['references'],
+    supports: (file) => file.language === 'typescript',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => {
+      startCalls++;
+      return {
+        async *process(_file: ScannedFile): AsyncIterable<IndexEvent> {}
+      };
+    }
+  });
+
+  const first = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+  await writeFile(path.join(repoRoot, 'scratch.txt'), 'not indexed, but keeps git dirty\n');
+  const second = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+
+  assert.equal(first.mode, 'full');
+  assert.equal(second.mode, 'incremental');
+  assert.notEqual(second.indexRunId, first.indexRunId);
+  assert.equal(startCalls, 1);
+
+  const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+  try {
+    const run = db
+      .prepare('SELECT git_is_dirty FROM index_runs WHERE id = ?')
+      .get(second.indexRunId) as { git_is_dirty: number };
+    assert.equal(run.git_is_dirty, 1);
+    const adapterRun = db
+      .prepare('SELECT status FROM adapter_runs WHERE index_run_id = ? AND adapter_id = ?')
+      .get(second.indexRunId, 'dirty-noop-test-adapter') as { status: string };
+    assert.equal(adapterRun.status, 'completed');
+  } finally {
+    db.close();
+  }
+});
+
+test('target-only content scope alone does not permit changed-only carry-forward', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-target-only-index-'));
+  try {
+    await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+    await writeFile(path.join(repoRoot, 'src/a.ts'), 'emit\n');
+    await writeFile(path.join(repoRoot, 'src/b.ts'), 'export const b = 1;\n');
+    await writeFile(path.join(repoRoot, 'src/external.ts'), 'export const external = 1;\n');
+    await initProject({ repoRoot });
+
+    const registry = new AdapterRegistry();
+    registry.register({
+      id: 'target-only-test-adapter',
+      version: '1',
+      capabilities: ['references'],
+      fileContentScope: 'target-only',
+      supports: (file) => file.language === 'typescript',
+      start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
+        async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
+          if (file.relativePath === 'src/a.ts' && file.content.includes('emit')) {
+            yield {
+              kind: 'relation',
+              relation: {
+                source: { kind: 'file', path: 'src/b.ts' },
+                target: { kind: 'file', path: 'src/external.ts' },
+                kind: 'DEPENDS_ON',
+                evidence: [{ file: file.relativePath, confidence: 'heuristic' }]
+              }
+            };
+          }
+        }
+      })
+    });
+
+    const first = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+    await writeFile(path.join(repoRoot, 'src/a.ts'), 'no relation\n');
+    const second = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+
+    assert.equal(first.mode, 'full');
+    assert.equal(second.mode, 'full');
+    const db = new DatabaseSync(databasePath(repoRoot), { readOnly: true });
+    try {
+      const relationCount = db
+        .prepare(
+          `SELECT count(*) AS count FROM relations
+           WHERE index_run_id = ? AND source_entity_id = 'file:src/b.ts'
+             AND target_entity_id = 'file:src/external.ts' AND kind = 'DEPENDS_ON'`
+        )
+        .get(second.indexRunId) as { count: number };
+      assert.equal(relationCount.count, 0, 'the vanished foreign-source event must not carry forward');
+    } finally {
+      db.close();
+    }
+  } finally {
+    await rm(repoRoot, { recursive: true, force: true });
+  }
+});
+
+test('indexer semantics revision forces one rebuild of a pre-fix completed cohort', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-indexer-semantics-'));
+  try {
+    await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+    await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const value = 1;\n');
+    await initProject({ repoRoot });
+
+    let startCalls = 0;
+    const adapterId = 'semantics-revision-test-adapter';
+    const registry = new AdapterRegistry();
+    registry.register({
+      id: adapterId,
+      version: '1',
+      capabilities: ['references'],
+      supports: (file) => file.language === 'typescript',
+      start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => {
+        startCalls++;
+        return { async *process(_file: ScannedFile): AsyncIterable<IndexEvent> {} };
+      }
+    });
+
+    const first = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+    const db = new DatabaseSync(databasePath(repoRoot));
+    try {
+      db.prepare('UPDATE index_runs SET extractor_version = ? WHERE id = ?').run(
+        `${adapterId}-1`,
+        first.indexRunId
+      );
+    } finally {
+      db.close();
+    }
+    const second = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+
+    assert.equal(first.mode, 'full');
+    assert.equal(second.mode, 'full');
+    assert.equal(startCalls, 2);
+  } finally {
+    await rm(repoRoot, { recursive: true, force: true });
+  }
+});
+
+test('indexProject fully re-extracts when ignored indexed content changes', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-git-noop-ignored-file-'));
+  try {
+    await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+    await writeFile(path.join(repoRoot, '.gitignore'), 'src/generated.ts\n');
+    await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const value = 1;\n');
+    await writeFile(path.join(repoRoot, 'src/generated.ts'), 'export const generated = 1;\n');
+    initGitRepo(repoRoot);
+    await initProject({ repoRoot });
+
+    let startCalls = 0;
+    const registry = new AdapterRegistry();
+    registry.register({
+      id: 'ignored-file-fast-path-test-adapter',
+      version: '1',
+      capabilities: ['references'],
+      supports: (file) => file.language === 'typescript',
+      start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => {
+        startCalls++;
+        return {
+          async *process(_file: ScannedFile): AsyncIterable<IndexEvent> {}
+        };
+      }
+    });
+
+    const first = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+    await writeFile(path.join(repoRoot, 'src/generated.ts'), 'export const generated = 2;\n');
+    const second = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+
+    assert.equal(first.filesIndexed, 2);
+    assert.equal(second.mode, 'full');
+    assert.notEqual(second.indexRunId, first.indexRunId);
+    assert.equal(startCalls, 2);
+  } finally {
+    await rm(repoRoot, { recursive: true, force: true });
+  }
+});
+
+test('indexProject scans again when a new git-ignored scan target appears under the same HEAD', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-git-noop-new-ignored-file-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, '.gitignore'), 'src/generated.ts\n');
+  await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const value = 1;\n');
+  initGitRepo(repoRoot);
+  await initProject({ repoRoot });
+
+  let startCalls = 0;
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'new-ignored-file-fast-path-test-adapter',
+    version: '1',
+    capabilities: ['references'],
+    supports: (file) => file.language === 'typescript',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => {
+      startCalls++;
+      return {
+        async *process(_file: ScannedFile): AsyncIterable<IndexEvent> {}
+      };
+    }
+  });
+
+  const first = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+  await writeFile(path.join(repoRoot, 'src/generated.ts'), 'export const generated = 1;\n');
+  const gitStatus = execFileSync(
+    'git',
+    ['status', '--porcelain=v1', '--untracked-files=all', '--', 'src/generated.ts'],
+    { cwd: repoRoot, encoding: 'utf8' }
+  ).trim();
+  const second = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+
+  assert.equal(gitStatus, '');
+  assert.equal(first.filesIndexed, 1);
+  assert.equal(second.filesIndexed, 2);
+  assert.notEqual(second.indexRunId, first.indexRunId);
+  assert.equal(startCalls, 2);
+});
+
+test('indexProject does not reuse a same-HEAD index created with resource skips', async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-git-noop-resource-skip-'));
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  await writeFile(path.join(repoRoot, 'src/app.ts'), 'export const value = 1;\n');
+  initGitRepo(repoRoot);
+  await initProject({ repoRoot });
+
+  let startCalls = 0;
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'resource-skip-fast-path-test-adapter',
+    version: '1',
+    capabilities: ['references'],
+    supports: (file) => file.language === 'typescript',
+    start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => {
+      startCalls++;
+      return {
+        async *process(_file: ScannedFile): AsyncIterable<IndexEvent> {}
+      };
+    }
+  });
+
+  const skipped = await indexProjectWithRegistryForTest({ repoRoot, maxFileBytes: 1 }, registry);
+  const indexed = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+
+  assert.equal(skipped.filesIndexed, 0);
+  assert.notEqual(indexed.indexRunId, skipped.indexRunId);
+  assert.equal(indexed.filesIndexed, 1);
+  assert.equal(startCalls, 1);
+});
+
 test('indexProject records branch and dirty state for git repos before the first commit', async () => {
   const repoRoot = await makeFixtureRepo();
   execFileSync('git', ['init', '-b', 'main'], { cwd: repoRoot, stdio: 'ignore' });
@@ -4621,6 +5081,54 @@ test('CLI analyze rejects missing SARIF category value', () => {
 
   assert.equal(result.status, 2);
   assert.match(result.stderr, /missing value for --sarif-category/);
+});
+
+test('CLI pr triage emits SARIF and repo-map output for local dependency PR review', async () => {
+  const repoRoot = await makeFixtureRepo();
+  await initProject({ repoRoot });
+  await indexProject({ repoRoot });
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      '--import',
+      tsxLoaderPath,
+      path.resolve('src/cli.ts'),
+      'pr',
+      'triage',
+      '--changed',
+      'src/auth/session.ts',
+      '--query',
+      'privateRoute',
+      '--budget',
+      '5000',
+      '--depth',
+      '1',
+      '--max-fanout',
+      '1',
+      '--sarif-category',
+      'dependabot-triage',
+      '--fail-on',
+      'none'
+    ],
+    {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      env: { ...process.env, PARALLAX_EMBEDDING_MODEL: 'stub-sha256' }
+    }
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /PR triage/);
+  assert.match(result.stdout, /SARIF: \.parallax\/pr-triage\.sarif/);
+  assert.match(result.stdout, /Repo map for index run/);
+  assert.match(result.stdout, /Query matches for "privateRoute":/);
+  assert.equal(reportRowCount(repoRoot), 1);
+
+  const sarif = JSON.parse(await readFile(path.join(repoRoot, '.parallax/pr-triage.sarif'), 'utf8')) as {
+    runs: Array<{ automationDetails?: { id?: string } }>;
+  };
+  assert.equal(sarif.runs[0]?.automationDetails?.id, 'dependabot-triage');
 });
 
 test('remember populates fact_embeddings (model, vector, dim) for non-redacted facts', async () => {

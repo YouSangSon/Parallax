@@ -44,6 +44,29 @@ export const MCP_OUTPUT_SCHEMAS = {
       includeEvidence: z.boolean()
     }).passthrough()
   }).passthrough(),
+  parallax_repo_map: z.object({
+    version: z.number(),
+    kind: z.literal('repo_map'),
+    indexRunId: z.number(),
+    changedFiles: z.array(z.string()),
+    changedRoots: z.array(z.string()),
+    affectedFiles: z.array(z.unknown()),
+    evidenceRefs: z.array(z.unknown()),
+    verificationActions: z.array(z.unknown()),
+    verificationPlan: z.object({
+      generatedFrom: z.array(z.string()),
+      groups: z.array(z.unknown()),
+      omittedCounts: z.record(z.string(), z.number())
+    }).passthrough(),
+    resources: resourcesSchema,
+    budget: z.object({
+      requestedTokens: z.number(),
+      estimatedTokens: z.number(),
+      estimator: z.literal('Math.ceil(text.length / 4)'),
+      truncated: z.boolean()
+    }).passthrough(),
+    omittedCounts: z.record(z.string(), z.number())
+  }).passthrough(),
   parallax_contract_diff: z.object({
     workspace: z.object({ name: z.string() }).passthrough(),
     provider: z.object({ serviceName: z.string() }).passthrough(),

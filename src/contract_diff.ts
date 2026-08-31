@@ -8,6 +8,11 @@ import {
   parseCurrentAsyncApiContract
 } from './contract_diff/asyncapi.js';
 import {
+  classifyAvroCompatibilityChanges,
+  parseAvroCompatibility,
+  parseCurrentAvroContract
+} from './contract_diff/avro.js';
+import {
   classifyGraphqlCompatibilityChanges,
   parseCurrentGraphqlContract,
   parseGraphqlCompatibility
@@ -17,6 +22,11 @@ import {
   parseCurrentOpenApiContract,
   parseOpenApiCompatibility
 } from './contract_diff/openapi.js';
+import {
+  classifyJsonSchemaCompatibilityChanges,
+  parseCurrentJsonSchemaContract,
+  parseJsonSchemaCompatibility
+} from './contract_diff/json_schema.js';
 import {
   classifyProtobufCompatibilityChanges,
   parseCurrentProtobufContract,
@@ -30,6 +40,7 @@ import type {
   ContractEndpoint,
   CurrentContractParse
 } from './contract_diff/types.js';
+import { isJsonSchemaContractPath } from './entity_classification.js';
 import { normalizeRepoRoot, resolveInsideRoot } from './security.js';
 import { contentHash, ensureRepo, getRepoId, latestCompletedIndexRun, openDatabase } from './store.js';
 import { listWorkspaces, type WorkspaceSummary } from './workspace.js';
@@ -415,6 +426,16 @@ function classifyChanges(
     if (previousCompatibility !== undefined && current.asyncApiCompatibility !== undefined) {
       changes.push(...classifyAsyncApiCompatibilityChanges(previousCompatibility, current.asyncApiCompatibility));
     }
+  } else if (provider.contract.kind === 'json-schema') {
+    const previousCompatibility = parseJsonSchemaCompatibility(provider.contract.compatibility_json, warnings);
+    if (previousCompatibility !== undefined && current.jsonSchemaCompatibility !== undefined) {
+      changes.push(...classifyJsonSchemaCompatibilityChanges(previousCompatibility, current.jsonSchemaCompatibility));
+    }
+  } else if (provider.contract.kind === 'avro') {
+    const previousCompatibility = parseAvroCompatibility(provider.contract.compatibility_json, warnings);
+    if (previousCompatibility !== undefined && current.avroCompatibility !== undefined) {
+      changes.push(...classifyAvroCompatibilityChanges(previousCompatibility, current.avroCompatibility));
+    }
   } else {
     const previousCompatibility = parseOpenApiCompatibility(provider.contract.compatibility_json, warnings);
     if (previousCompatibility !== undefined && current.compatibility !== undefined) {
@@ -646,6 +667,8 @@ function parseCurrentContractByKind(content: string, contractPath: string, contr
     return parseCurrentGraphqlContract(content);
   }
   if (contractKind === 'asyncapi' || isAsyncApiContractPath(contractPath)) return parseCurrentAsyncApiContract(content, contractPath);
+  if (contractKind === 'json-schema') return parseCurrentJsonSchemaContract(content);
+  if (contractKind === 'avro' || lowerPath.endsWith('.avsc')) return parseCurrentAvroContract(content);
   return parseCurrentOpenApiContract(content, contractPath);
 }
 
@@ -723,13 +746,17 @@ function currentEndpointId(contractPath: string, endpoint: ContractEndpoint): st
   const lowerPath = contractPath.toLowerCase();
   const languageId = isAsyncApiContractPath(contractPath)
     ? 'asyncapi'
-    : lowerPath.endsWith('.proto')
-    ? 'protobuf'
-    : lowerPath.endsWith('.graphql') || lowerPath.endsWith('.gql')
-      ? 'graphql'
-      : lowerPath.endsWith('.json')
-        ? 'json'
-        : 'yaml';
+    : isJsonSchemaContractPath(contractPath)
+      ? 'json-schema'
+      : lowerPath.endsWith('.avsc')
+        ? 'avro'
+        : lowerPath.endsWith('.proto')
+          ? 'protobuf'
+          : lowerPath.endsWith('.graphql') || lowerPath.endsWith('.gql')
+            ? 'graphql'
+            : lowerPath.endsWith('.json')
+              ? 'json'
+              : 'yaml';
   if (languageId === 'protobuf' && endpoint.httpMethod === 'RPC') {
     return `endpoint:protobuf:${endpoint.routePath.replace('/', '.')}`;
   }
@@ -739,6 +766,12 @@ function currentEndpointId(contractPath: string, endpoint: ContractEndpoint): st
   if (languageId === 'asyncapi') {
     return `endpoint:asyncapi:${endpointKey(endpoint.httpMethod, endpoint.routePath)}`;
   }
+  if (languageId === 'json-schema' && endpoint.httpMethod === 'SCHEMA') {
+    return `endpoint:json-schema:${endpoint.routePath}`;
+  }
+  if (languageId === 'avro' && endpoint.httpMethod === 'AVRO') {
+    return `endpoint:avro:${endpoint.routePath}`;
+  }
   return `endpoint:${languageId}:${endpointKey(endpoint.httpMethod, endpoint.routePath)}`;
 }
 
@@ -746,6 +779,8 @@ function endpointDisplayForContractKind(kind: string, displayName: string): { me
   if (kind === 'protobuf') return parseProtobufEndpointDisplay(displayName);
   if (kind === 'graphql') return parseGraphqlEndpointDisplay(displayName);
   if (kind === 'asyncapi') return parseAsyncApiEndpointDisplay(displayName);
+  if (kind === 'json-schema') return parseJsonSchemaEndpointDisplay(displayName);
+  if (kind === 'avro') return parseAvroEndpointDisplay(displayName);
   return parseHttpEndpointDisplay(displayName);
 }
 
@@ -773,6 +808,18 @@ function parseAsyncApiEndpointDisplay(displayName: string): { method: string; pa
   return { method: match[1]!, path: match[2]! };
 }
 
+function parseJsonSchemaEndpointDisplay(displayName: string): { method: string; path: string } | undefined {
+  const match = /^SCHEMA\s+(.+)$/i.exec(displayName.trim());
+  if (!match) return undefined;
+  return { method: 'SCHEMA', path: match[1]! };
+}
+
+function parseAvroEndpointDisplay(displayName: string): { method: string; path: string } | undefined {
+  const match = /^AVRO\s+(.+)$/i.exec(displayName.trim());
+  if (!match) return undefined;
+  return { method: 'AVRO', path: match[1]! };
+}
+
 function isAsyncApiContractPath(contractPath: string): boolean {
   const basename = path.posix.basename(contractPath);
   return basename.replace(/\.[^.]+$/, '').toLowerCase().includes('asyncapi');
@@ -786,7 +833,8 @@ function compareChanges(left: ContractDiffChange, right: ContractDiffChange): nu
     (left.httpMethod ?? '').localeCompare(right.httpMethod ?? '') ||
     (left.statusCode ?? '').localeCompare(right.statusCode ?? '') ||
     (left.schemaPath ?? '').localeCompare(right.schemaPath ?? '') ||
-    (left.propertyName ?? '').localeCompare(right.propertyName ?? '')
+    (left.propertyName ?? '').localeCompare(right.propertyName ?? '') ||
+    (left.enumValue ?? '').localeCompare(right.enumValue ?? '')
   );
 }
 
@@ -795,10 +843,16 @@ function changeKindOrder(kind: ContractDiffChangeKind): number {
   if (kind === 'removed_endpoint') return 1;
   if (kind === 'removed_response_status') return 2;
   if (kind === 'removed_response_required_property') return 3;
-  if (kind === 'changed_response_property_type') return 4;
-  if (kind === 'added_request_required_property') return 5;
-  if (kind === 'changed_request_property_type') return 6;
-  return 7;
+  if (kind === 'removed_response_optional_property') return 4;
+  if (kind === 'changed_response_property_type') return 5;
+  if (kind === 'removed_response_property_enum_value') return 6;
+  if (kind === 'changed_response_property_format') return 7;
+  if (kind === 'added_response_property_nullable') return 8;
+  if (kind === 'added_request_required_property') return 9;
+  if (kind === 'removed_request_property_enum_value') return 10;
+  if (kind === 'changed_request_property_format') return 11;
+  if (kind === 'changed_request_property_type') return 12;
+  return 13;
 }
 
 function dedupeConsumers(consumers: ImpactedContractConsumer[]): ImpactedContractConsumer[] {
@@ -866,7 +920,14 @@ function breakingLinkProvenance(link: PersistableBreakLink): string {
       ...(link.change.propertyName !== undefined ? { propertyName: link.change.propertyName } : {}),
       ...(link.change.schemaPath !== undefined ? { schemaPath: link.change.schemaPath } : {}),
       ...(link.change.previousSchemaType !== undefined ? { previousSchemaType: link.change.previousSchemaType } : {}),
-      ...(link.change.currentSchemaType !== undefined ? { currentSchemaType: link.change.currentSchemaType } : {})
+      ...(link.change.currentSchemaType !== undefined ? { currentSchemaType: link.change.currentSchemaType } : {}),
+      ...(link.change.enumValue !== undefined ? { enumValue: link.change.enumValue } : {}),
+      ...(link.change.previousEnumValues !== undefined ? { previousEnumValues: link.change.previousEnumValues } : {}),
+      ...(link.change.currentEnumValues !== undefined ? { currentEnumValues: link.change.currentEnumValues } : {}),
+      ...(link.change.previousFormat !== undefined ? { previousFormat: link.change.previousFormat } : {}),
+      ...(link.change.currentFormat !== undefined ? { currentFormat: link.change.currentFormat } : {}),
+      ...(link.change.previousNullable !== undefined ? { previousNullable: link.change.previousNullable } : {}),
+      ...(link.change.currentNullable !== undefined ? { currentNullable: link.change.currentNullable } : {})
     },
     ...(link.consumer.eventTopology !== undefined ? { eventTopology: link.consumer.eventTopology } : {}),
     evidence: {
@@ -885,7 +946,14 @@ function changeFingerprint(change: ContractDiffChange): string {
     propertyName: change.propertyName,
     schemaPath: change.schemaPath,
     previousSchemaType: change.previousSchemaType,
-    currentSchemaType: change.currentSchemaType
+    currentSchemaType: change.currentSchemaType,
+    enumValue: change.enumValue,
+    previousEnumValues: change.previousEnumValues,
+    currentEnumValues: change.currentEnumValues,
+    previousFormat: change.previousFormat,
+    currentFormat: change.currentFormat,
+    previousNullable: change.previousNullable,
+    currentNullable: change.currentNullable
   });
 }
 

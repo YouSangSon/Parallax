@@ -80,5 +80,5 @@ Local-first 是根基——所有数据都在 `<repo>/.parallax/impact.db`。无
 | 如果你是 ... | 起点 |
 |---|---|
 | 初次进入的 AI agent/工程师 | [README.zh.md](../README.zh.md) → 本文件 → [invariants.md](invariants.zh.md) |
-| 寻找下一项工作的 contributor | [roadmap.zh.md](roadmap.zh.md) |
+| 寻找下一项工作的 contributor | [Codex 导航指南](CODEX-NAVIGATION-GUIDE.zh.md) → [roadmap.zh.md](roadmap.zh.md) |
 | 对术语感到困惑的人 | [glossary.zh.md](glossary.zh.md) |

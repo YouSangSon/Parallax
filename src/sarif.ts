@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { PRODUCT_NAME } from './branding.js';
-import type { AffectedFile, Confidence, Evidence, ImpactReport } from './types.js';
+import type { AffectedFile, Confidence, CrossRepoImpact, Evidence, ImpactAction, ImpactReport } from './types.js';
 
 export interface SarifOptions {
   category?: string;
@@ -109,13 +109,34 @@ export interface SarifInvocation {
 const packageMetadata = loadPackageMetadata();
 
 const confidences: Confidence[] = ['proven', 'inferred', 'heuristic', 'unknown'];
+const coverageGapRuleId = 'parallax.coverage-gap';
+const contractBreakRuleId = 'parallax.contract-break';
+const verificationRuleId = 'parallax.verification';
+const adapterKnownGapRuleId = 'parallax.adapter-known-gap';
 const maxSnippetLength = 400;
+
+type AdapterKnownGapEntry = {
+  adapterId: string;
+  adapterVersion: string;
+  languageIds: string[];
+  status: string;
+  confidence: Confidence;
+  gap: string;
+  gapIndex: number;
+};
 
 export function impactReportToSarif(report: ImpactReport, options: SarifOptions = {}): SarifLog {
   const toolVersion = options.toolVersion ?? packageMetadata.version;
   const informationUri = options.informationUri ?? packageMetadata.homepage;
-  const rules = confidences.map((confidence) => ruleForConfidence(confidence));
+  const rules = [
+    ...confidences.map((confidence) => ruleForConfidence(confidence)),
+    coverageGapRule(),
+    contractBreakRule(),
+    verificationActionRule(),
+    adapterKnownGapRule()
+  ];
   const ruleIndex = new Map(rules.map((rule, index) => [rule.id, index]));
+  const uploadableChangedFiles = report.changedFiles.filter(isRepoRelativeFilePath);
   const uploadableAffectedFiles = report.affectedFiles.filter((affectedFile) =>
     isRepoRelativeFilePath(affectedFile.path)
   );
@@ -127,7 +148,7 @@ export function impactReportToSarif(report: ImpactReport, options: SarifOptions 
       reason: affectedFile.reason
     }));
   const evidenceByAffectedFile = groupEvidenceByAffectedFile(report.evidence, uploadableAffectedFiles);
-  const results = uploadableAffectedFiles.map((affectedFile) => {
+  const impactResults = uploadableAffectedFiles.map((affectedFile) => {
     const evidence = evidenceByAffectedFile.get(affectedFile.path) ?? [];
     const ruleId = `parallax.impact.${affectedFile.confidence}`;
     const location = locationForAffectedFile(affectedFile, evidence, options.checkoutRoot);
@@ -161,6 +182,37 @@ export function impactReportToSarif(report: ImpactReport, options: SarifOptions 
       properties
     } satisfies SarifResult;
   });
+  const uploadableActions = report.actions.filter((action) =>
+    action.target.path !== undefined && isRepoRelativeFilePath(action.target.path)
+  );
+  const verificationResults = uploadableActions.map((action) =>
+    verificationResultFor(report, action, ruleIndex, options.checkoutRoot)
+  );
+  const coverageGapFiles = coverageGapFilesFor(report);
+  const uploadableCoverageGapFiles = coverageGapFiles.filter(isRepoRelativeFilePath);
+  const coverageGapResults = uploadableCoverageGapFiles.map((filePath) =>
+    coverageGapResultFor(report, filePath, ruleIndex, options.checkoutRoot)
+  );
+  const contractBreakImpacts = report.crossRepoImpacts ?? [];
+  const uploadableContractBreakImpacts = contractBreakImpacts.filter((impact) =>
+    isRepoRelativeFilePath(impact.provider.contractPath)
+  );
+  const contractBreakResults = uploadableContractBreakImpacts.map((impact) =>
+    contractBreakResultFor(report, impact, ruleIndex, options.checkoutRoot)
+  );
+  const adapterKnownGaps = adapterKnownGapEntries(report);
+  const adapterKnownGapResults = uploadableChangedFiles.length > 0
+    ? adapterKnownGaps.map((knownGap) =>
+      adapterKnownGapResultFor(report, knownGap, uploadableChangedFiles, ruleIndex, options.checkoutRoot)
+    )
+    : [];
+  const results = [
+    ...impactResults,
+    ...coverageGapResults,
+    ...contractBreakResults,
+    ...verificationResults,
+    ...adapterKnownGapResults
+  ];
 
   const run: SarifRun = {
     tool: {
@@ -179,7 +231,15 @@ export function impactReportToSarif(report: ImpactReport, options: SarifOptions 
         changedFiles: report.changedFiles,
         warnings: report.warnings ?? [],
         omittedAffectedFileCount: omittedAffectedFiles.length,
-        omittedAffectedFiles
+        omittedAffectedFiles,
+        verificationActionCount: uploadableActions.length,
+        omittedVerificationActionCount: report.actions.length - uploadableActions.length,
+        coverageGapCount: coverageGapResults.length,
+        omittedCoverageGapCount: coverageGapFiles.length - coverageGapResults.length,
+        contractBreakCount: contractBreakResults.length,
+        omittedContractBreakCount: contractBreakImpacts.length - contractBreakResults.length,
+        adapterKnownGapCount: adapterKnownGapResults.length,
+        omittedAdapterKnownGapCount: adapterKnownGaps.length - adapterKnownGapResults.length
       }
     }],
     ...(options.category ? { automationDetails: { id: options.category } } : {}),
@@ -188,7 +248,15 @@ export function impactReportToSarif(report: ImpactReport, options: SarifOptions 
       changedFiles: report.changedFiles,
       warnings: report.warnings ?? [],
       omittedAffectedFileCount: omittedAffectedFiles.length,
-      omittedAffectedFiles
+      omittedAffectedFiles,
+      verificationActionCount: uploadableActions.length,
+      omittedVerificationActionCount: report.actions.length - uploadableActions.length,
+      coverageGapCount: coverageGapResults.length,
+      omittedCoverageGapCount: coverageGapFiles.length - coverageGapResults.length,
+      contractBreakCount: contractBreakResults.length,
+      omittedContractBreakCount: contractBreakImpacts.length - contractBreakResults.length,
+      adapterKnownGapCount: adapterKnownGapResults.length,
+      omittedAdapterKnownGapCount: adapterKnownGaps.length - adapterKnownGapResults.length
     }
   };
 
@@ -196,6 +264,70 @@ export function impactReportToSarif(report: ImpactReport, options: SarifOptions 
     version: '2.1.0',
     $schema: 'https://json.schemastore.org/sarif-2.1.0.json',
     runs: [run]
+  };
+}
+
+function verificationActionRule(): SarifReportingDescriptor {
+  return {
+    id: verificationRuleId,
+    name: 'Parallax verification action',
+    shortDescription: {
+      text: 'Parallax recommended verification action'
+    },
+    fullDescription: {
+      text: 'Parallax identified a test or review command that should be run for this impact analysis.'
+    },
+    defaultConfiguration: {
+      level: 'note'
+    }
+  };
+}
+
+function coverageGapRule(): SarifReportingDescriptor {
+  return {
+    id: coverageGapRuleId,
+    name: 'Parallax coverage gap',
+    shortDescription: {
+      text: 'Parallax index coverage gap'
+    },
+    fullDescription: {
+      text: 'Parallax could not find a changed file in the latest completed index run, so impact analysis may be incomplete.'
+    },
+    defaultConfiguration: {
+      level: 'warning'
+    }
+  };
+}
+
+function contractBreakRule(): SarifReportingDescriptor {
+  return {
+    id: contractBreakRuleId,
+    name: 'Parallax contract break',
+    shortDescription: {
+      text: 'Parallax cross-repo contract break'
+    },
+    fullDescription: {
+      text: 'Parallax identified a breaking provider contract change with a persisted cross-repo consumer impact.'
+    },
+    defaultConfiguration: {
+      level: 'warning'
+    }
+  };
+}
+
+function adapterKnownGapRule(): SarifReportingDescriptor {
+  return {
+    id: adapterKnownGapRuleId,
+    name: 'Parallax adapter known gap',
+    shortDescription: {
+      text: 'Parallax adapter known gap'
+    },
+    fullDescription: {
+      text: 'Parallax identified an extraction limitation from an adapter used by this impact analysis.'
+    },
+    defaultConfiguration: {
+      level: 'note'
+    }
   };
 }
 
@@ -217,6 +349,223 @@ function ruleForConfidence(confidence: Confidence): SarifReportingDescriptor {
 
 function levelForConfidence(confidence: Confidence): SarifResultLevel {
   return confidence === 'unknown' ? 'note' : 'warning';
+}
+
+function coverageGapResultFor(
+  report: ImpactReport,
+  filePath: string,
+  ruleIndex: Map<string, number>,
+  checkoutRoot: string | undefined
+): SarifResult {
+  return {
+    ruleId: coverageGapRuleId,
+    ruleIndex: ruleIndex.get(coverageGapRuleId) ?? 0,
+    level: 'warning',
+    message: {
+      text: `Index coverage gap: ${filePath} was not present in index run ${report.indexRunId}`
+    },
+    locations: [{
+      physicalLocation: {
+        artifactLocation: artifactLocation(filePath, checkoutRoot)
+      },
+      message: {
+        text: 'Changed file not present in latest index'
+      }
+    }],
+    partialFingerprints: {
+      parallaxImpact: fingerprintForCoverageGap(report, filePath)
+    },
+    properties: {
+      reportId: report.id,
+      indexRunId: report.indexRunId,
+      changedPath: filePath,
+      reason: 'changed file not in index'
+    }
+  };
+}
+
+function contractBreakResultFor(
+  report: ImpactReport,
+  impact: CrossRepoImpact,
+  ruleIndex: Map<string, number>,
+  checkoutRoot: string | undefined
+): SarifResult {
+  const anchorPath = impact.provider.contractPath;
+  const consumer = consumerLabel(impact);
+  const change = contractChangeLabel(impact);
+  return {
+    ruleId: contractBreakRuleId,
+    ruleIndex: ruleIndex.get(contractBreakRuleId) ?? 0,
+    level: levelForConfidence(impact.confidence),
+    message: {
+      text: `Breaking contract change may affect ${consumer}: ${change}`
+    },
+    locations: [{
+      physicalLocation: {
+        artifactLocation: artifactLocation(anchorPath, checkoutRoot)
+      },
+      message: {
+        text: `Provider contract ${impact.provider.serviceName}:${impact.provider.contractPath}`
+      }
+    }],
+    partialFingerprints: {
+      parallaxImpact: fingerprintForContractBreak(impact)
+    },
+    properties: {
+      reportId: report.id,
+      indexRunId: report.indexRunId,
+      workspace: impact.workspace,
+      providerServiceName: impact.provider.serviceName,
+      providerContractPath: impact.provider.contractPath,
+      consumerServiceName: impact.consumer.serviceName,
+      consumerPath: impact.consumer.path,
+      confidence: impact.confidence,
+      changeKind: impact.change.kind,
+      ...(impact.change.method === undefined ? {} : { changeMethod: impact.change.method }),
+      ...(impact.change.path === undefined ? {} : { changePath: impact.change.path }),
+      ...(impact.change.previousEndpointId === undefined ? {} : {
+        previousEndpointId: impact.change.previousEndpointId
+      }),
+      evidenceFilePath: impact.evidence.filePath,
+      ...(impact.resources === undefined ? {} : { resources: impact.resources })
+    }
+  };
+}
+
+function adapterKnownGapResultFor(
+  report: ImpactReport,
+  knownGap: AdapterKnownGapEntry,
+  changedFiles: readonly string[],
+  ruleIndex: Map<string, number>,
+  checkoutRoot: string | undefined
+): SarifResult {
+  const anchorPath = changedFiles[0]!;
+  const relatedLocations = changedFiles.slice(1).map((changedFile, index) => ({
+    id: index + 1,
+    physicalLocation: {
+      artifactLocation: artifactLocation(changedFile, checkoutRoot)
+    },
+    message: {
+      text: 'Changed file in this analysis'
+    }
+  }));
+  return {
+    ruleId: adapterKnownGapRuleId,
+    ruleIndex: ruleIndex.get(adapterKnownGapRuleId) ?? 0,
+    level: 'note',
+    message: {
+      text: `Adapter known gap: ${knownGap.adapterId}: ${knownGap.gap}`
+    },
+    locations: [{
+      physicalLocation: {
+        artifactLocation: artifactLocation(anchorPath, checkoutRoot)
+      },
+      message: {
+        text: `${knownGap.adapterId} known gap: ${knownGap.gap}`
+      }
+    }],
+    ...(relatedLocations.length > 0 ? { relatedLocations } : {}),
+    partialFingerprints: {
+      parallaxImpact: fingerprintForAdapterKnownGap(knownGap, changedFiles)
+    },
+    properties: {
+      reportId: report.id,
+      indexRunId: report.indexRunId,
+      adapterId: knownGap.adapterId,
+      adapterVersion: knownGap.adapterVersion,
+      adapterStatus: knownGap.status,
+      languageIds: knownGap.languageIds,
+      confidence: knownGap.confidence,
+      knownGap: knownGap.gap,
+      knownGapIndex: knownGap.gapIndex,
+      anchorPath
+    }
+  };
+}
+
+function coverageGapFilesFor(report: ImpactReport): string[] {
+  const changedPaths = new Set(report.changedFiles.map(normalizeReportPath));
+  const coverageGapFiles = new Set<string>();
+  for (const affectedFile of report.affectedFiles) {
+    const normalizedPath = normalizeReportPath(affectedFile.path);
+    if (affectedFile.reason !== 'changed file not in index') continue;
+    if (!changedPaths.has(normalizedPath)) continue;
+    coverageGapFiles.add(normalizedPath);
+  }
+  return [...coverageGapFiles].sort();
+}
+
+function consumerLabel(impact: CrossRepoImpact): string {
+  return impact.consumer.serviceName
+    ? `${impact.consumer.serviceName}:${impact.consumer.path}`
+    : impact.consumer.path;
+}
+
+function contractChangeLabel(impact: CrossRepoImpact): string {
+  return [
+    impact.change.kind,
+    impact.change.method,
+    impact.change.path
+  ].filter((part): part is string => part !== undefined && part !== '').join(' ');
+}
+
+function verificationResultFor(
+  report: ImpactReport,
+  action: ImpactAction,
+  ruleIndex: Map<string, number>,
+  checkoutRoot: string | undefined
+): SarifResult {
+  const targetPath = action.target.path!;
+  return {
+    ruleId: verificationRuleId,
+    ruleIndex: ruleIndex.get(verificationRuleId) ?? 0,
+    level: 'note',
+    message: {
+      text: `Recommended verification: ${action.display}`
+    },
+    locations: [{
+      physicalLocation: {
+        artifactLocation: artifactLocation(targetPath, checkoutRoot)
+      },
+      message: {
+        text: action.display
+      }
+    }],
+    partialFingerprints: {
+      parallaxImpact: fingerprintForAction(action)
+    },
+    properties: {
+      reportId: report.id,
+      indexRunId: report.indexRunId,
+      actionKind: action.kind,
+      confidence: action.confidence,
+      targetPath,
+      display: action.display,
+      ...(action.runnerId === undefined ? {} : { runnerId: action.runnerId }),
+      ...(action.command === undefined ? {} : { command: action.command }),
+      ...(action.args === undefined ? {} : { args: action.args })
+    }
+  };
+}
+
+function adapterKnownGapEntries(report: ImpactReport): AdapterKnownGapEntry[] {
+  const entries: AdapterKnownGapEntry[] = [];
+  for (const adapter of report.adapterInsights ?? []) {
+    adapter.knownGaps.forEach((gap, gapIndex) => {
+      const normalizedGap = gap.trim();
+      if (!normalizedGap) return;
+      entries.push({
+        adapterId: adapter.id,
+        adapterVersion: adapter.version,
+        languageIds: adapter.languageIds,
+        status: adapter.status,
+        confidence: adapter.confidence,
+        gap: normalizedGap,
+        gapIndex
+      });
+    });
+  }
+  return entries;
 }
 
 function groupEvidenceByAffectedFile(
@@ -361,6 +710,56 @@ function fingerprintFor(affectedFile: AffectedFile, evidenceIds: readonly string
     confidence: affectedFile.confidence,
     relationPath: affectedFile.relationPath?.map(normalizeReportPath) ?? [],
     evidenceIds: [...evidenceIds].sort()
+  };
+  return createHash('sha256').update(JSON.stringify(payload)).digest('hex').slice(0, 32);
+}
+
+function fingerprintForCoverageGap(report: ImpactReport, filePath: string): string {
+  const payload = {
+    indexRunId: report.indexRunId,
+    path: normalizeReportPath(filePath),
+    reason: 'changed file not in index'
+  };
+  return createHash('sha256').update(JSON.stringify(payload)).digest('hex').slice(0, 32);
+}
+
+function fingerprintForContractBreak(impact: CrossRepoImpact): string {
+  const payload = {
+    workspace: impact.workspace,
+    provider: {
+      serviceName: impact.provider.serviceName,
+      contractPath: normalizeReportPath(impact.provider.contractPath)
+    },
+    consumer: {
+      serviceName: impact.consumer.serviceName,
+      path: impact.consumer.path
+    },
+    change: impact.change,
+    confidence: impact.confidence
+  };
+  return createHash('sha256').update(JSON.stringify(payload)).digest('hex').slice(0, 32);
+}
+
+function fingerprintForAdapterKnownGap(
+  knownGap: AdapterKnownGapEntry,
+  changedFiles: readonly string[]
+): string {
+  const payload = {
+    adapterId: knownGap.adapterId,
+    adapterVersion: knownGap.adapterVersion,
+    gap: knownGap.gap,
+    changedFiles: [...changedFiles].map(normalizeReportPath).sort()
+  };
+  return createHash('sha256').update(JSON.stringify(payload)).digest('hex').slice(0, 32);
+}
+
+function fingerprintForAction(action: ImpactAction): string {
+  const payload = {
+    path: action.target.path ? normalizeReportPath(action.target.path) : action.target.id,
+    kind: action.kind,
+    display: action.display,
+    command: action.command,
+    args: action.args ?? []
   };
   return createHash('sha256').update(JSON.stringify(payload)).digest('hex').slice(0, 32);
 }

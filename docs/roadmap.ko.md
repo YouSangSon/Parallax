@@ -36,7 +36,8 @@ cross-repo impact가 v0 상태. 사용자가 등록한 local repo 사이에서�
 
 - [ ] OpenAPI / GraphQL / Protobuf / AsyncAPI contract diff를 *nested schema* 단위까지 안정화
 - [ ] generated-client / event topology resolver를 heuristic 너머로
-- [ ] workspace catalog가 monorepo 내부 sub-package를 first-class로 인식
+- [x] workspace catalog가 monorepo 내부 npm/pnpm sub-package와 Nx project config를 first-class package/project member로 인식
+- [ ] package-manager workspace manifest를 넘어 catalog 가치가 있는 parseable source가 확인될 때만 추가 Nx inferred-project 또는 Turborepo task metadata 재검토
 - [x] 저장된 cross-repo breaking contract link를 primary analyze report, graph export, MCP payload, UI workbench에 표면화
 - [x] cross-repo link를 양방향으로 query할 수 있고 malformed, stale, orphan workspace row를 검증
 
@@ -58,8 +59,16 @@ MCP는 read-only로 안정화됐다. 다음은 agent 사용성을 깊게 보는 
 
 - [x] GitHub-native agent package: Copilot repository instruction, MCP 설정 snippet, PR 작업용 least-privilege "먼저 Parallax 실행" workflow 생성
 - [x] affected-file impact finding용 SARIF / code-scanning export와 SARIF 파일 생성을 담당하는 composite GitHub Action
-- [ ] contract break, adapter known-gap note, coverage gap, recommended verification action까지 SARIF coverage 확장
-- [ ] agent가 다음에 볼 file, symbol, contract, test, evidence, provenance, known-gap note를 rank하는 token-budgeted repo map / context card
+- [x] PR action wrapper가 `init` → `index` → `pr triage`를 실행하고, changed-file 또는 base/head diff discovery를 지원하며, SARIF 작성과 step summary append를 처리하되 SARIF upload는 명시적으로 남김
+- [x] cross-repo contract-break warning을 provider contract에 anchor한 SARIF result로 출력
+- [x] index coverage-gap warning을 changed file에 anchor한 SARIF result로 출력
+- [x] recommended verification action을 SARIF note result로 출력
+- [x] adapter known-gap note를 changed file에 anchor한 SARIF note result로 출력
+- [x] `parallax repo-map`과 MCP `parallax_repo_map`으로 노출되는 token-budgeted repo map / context card. changed root, affected file, test/docs/config/work artifact, evidence ref, verification action, resource, confidence, provenance, known gap, omitted count를 rank한다
+- [x] Dependency/PR triage dogfood lane: `parallax pr triage`가 GitHub write 없이 로컬 diff 분석, SARIF 출력, `--fail-on`, repo-map context를 묶는다
+- [x] 로컬 Git hook installer: `parallax install-hook`이 관리형 `pre-commit` / `pre-push` impact gate를 쓰고, `core.hooksPath`를 존중하며, `--force`가 없으면 기존 non-Parallax hook을 건너뛴다
+- [x] Deep-linkable UI/export: workbench URL이 선택한 영향 경로, 필터 텍스트, report-delta 정책 프리셋을 유지하고 toolbar가 JSON, affected-path CSV, PNG/SVG 영향 맵을 내보낸다
+- [x] SCIP import/export: `parallax scip import --file <index.scip or index.scip.json>`가 외부 indexer의 SCIP definition/reference edge를 최신 완료 index에 보강하고, `parallax scip export --file <index.scip.json>`가 SCIP 호환 JSON을 출력한다
 - [ ] `context_for_change`의 budget tuning (brief/standard/deep)을 사용 텔레메트리로 검증
 - [ ] context pack 결과의 hit/miss 측정 harness
 - [ ] write surface를 별도 권한 모델로 분리해 도입 검토 ([invariants.ko.md](invariants.ko.md) I-8 준수)
@@ -101,8 +110,11 @@ MCP는 read-only로 안정화됐다. 다음은 agent 사용성을 깊게 보는 
 - [x] 다언어 fixture 기반 deterministic bench harness
   - 현재 gate: `bench/impact-bench.ts`가 TypeScript/JavaScript, JVM/Spring Boot, Python, Go, Rust, OpenAPI, build manifest 고정 fixture를 만들고 relation recall/precision, affected-file recall, evidence/span coverage, adapter attribution, context-pack readiness, retrieval 품질을 채점한다. `npm run bench`, `npm test`, CI의 `npm run verify` gate에서 실행된다.
   - 현재 cross-repo gate: bench에는 W1 primary cross-repo consumer impact와 report graph edge가 계속 보이는지 확인하는 two-repo contract-impact fixture가 포함된다.
-- [x] full index, no-op incremental index, edited-file incremental index, analyze phase를 분리해 보여주는 별도 scale/perf bench
-  - 현재 도구: `npm run bench:perf`가 synthetic-repo generator 위에서 이 단계들을 측정하며, exact timing을 byte-for-byte CI 계약으로 만들지 않기 위해 `npm run verify` 밖에서 유지된다.
+  - 현재 contract-diff gate: bench에는 removed response required property, removed response optional property, added request required property, request enum-value removal, request format addition, response property type change, response nullable addition, response format change, response enum-value removal에 대한 paired OpenAPI v1/v2 quality case와 JSON Schema root-object 및 Avro top-level record required-property removal case가 포함되며, CI summary가 delta를 추적할 수 있도록 `contractDiffQuality`로 보고된다.
+  - 현재 co-change gate: bench에는 `src/alpha.ts`와 `src/beta.ts`가 반복해서 함께 바뀌는 작은 git-history fixture가 포함되며, CI summary가 partner와 affected-file delta를 추적할 수 있도록 `coChangeQuality`로 보고된다.
+  - 현재 trace-promotion gate: bench가 runtime에서 관측된 `src/beta.ts -> src/alpha.ts` edge를 ingest하고 `tracePromotionQuality`로 보고하므로, CI summary가 promotion과 proven-impact delta를 추적할 수 있다.
+- [x] full index, no-op incremental index, edited-file reindex, analyze phase를 분리해 보여주는 별도 scale/perf bench
+  - 현재 도구: `npm run bench:perf`가 synthetic-repo generator 위에서 이 단계들, 각 scan timing, `observed_peak_rss_mb`를 측정하며, timing/RSS를 byte-for-byte CI 계약으로 만들지 않기 위해 `npm run verify` 밖에서 유지된다. 표준 large-repo baseline command는 `npm run bench:perf -- --scales 10000,50000`이며, `docs/verification.ko.md`의 현재 local baseline은 green 10k/50k claim 대신 1k/2k row와 10k timeout limit를 기록한다.
 - [x] embedding 모델 / LLM provider 교차 시 recall 품질 회귀 detection
   - 현재 gate: deterministic bench가 모델별 recall@1과 cross-model isolation을 확인하는 semantic model matrix를 포함한다. live provider 호출에 의존하지 않고 embedding 모델 namespace 회귀를 잡는 offline gate이며, LLM provider의 네트워크 품질 평가는 CI 밖에 두고 provider contract는 offline test가 계속 검증한다.
 - [x] CI에서 매 PR마다 bench delta를 자동 리포트
@@ -114,6 +126,8 @@ MCP는 read-only로 안정화됐다. 다음은 agent 사용성을 깊게 보는 
 
 ## 다음 한 슬라이스만 고른다면
 
-`tests/`와 `bench/`에 이미 있는 fixture 위에서 core engine 기준 ROI가 가장 높은 것은 여전히 **정확도 (1)** 의 첫 항목 — *parser-backed TS/JS span* — 이다. 다른 모든 축이 evidence span 정밀도에 의존하기 때문이다.
-
-목표가 GitHub와 agent workflow에서의 adoption이라면 **Agent surface (4)** lane을 먼저 고른다: official GitHub Action + SARIF/code-scanning export, Copilot 설치 가이드, confidence/provenance/known-gap disclosure를 유지하는 token-budgeted repo map/context card. 이렇게 해야 기존 impact engine이 reviewer와 coding agent가 실제로 일하는 자리에서 보인다.
+실시간 작업 순서는 `PLAN.md`가 관리한다. 먼저 임시 dependency-audit 예외를
+기한 전에 제거하거나 대체한다. 다음 S1 slice는 `fileContentScope`와 별도로
+emitted-row ownership을 정의하고 강제해야 한다. 그 contract와 deterministic
+read count가 생기기 전까지 changed body는 full extraction을 유지한다. 위 정확도와
+agent-surface 항목은 후속 주제이며 현재 실행 지시와 경쟁하지 않는다.

@@ -43,6 +43,7 @@ export type AdapterCapability =
   | 'packages';
 
 export type AdapterSelectionMode = 'targeted' | 'catch-all';
+export type AdapterFileContentScope = 'full-index' | 'target-only';
 
 export interface AdapterManifestEntry {
   readonly order: number;
@@ -52,6 +53,7 @@ export interface AdapterManifestEntry {
   readonly confidence: Confidence;
   readonly knownGaps: readonly string[];
   readonly selectionMode: AdapterSelectionMode;
+  readonly fileContentScope: AdapterFileContentScope;
 }
 
 export type IndexEvent =
@@ -84,6 +86,7 @@ export interface SemanticAdapter {
   readonly confidence?: Confidence;
   readonly knownGaps?: readonly string[];
   readonly selectionMode?: AdapterSelectionMode;
+  readonly fileContentScope?: AdapterFileContentScope;
   supports(file: ScannedFile): boolean;
   start(ctx: ExtractCtx, files: readonly ScannedFile[]): Promise<AdapterRun> | AdapterRun;
 }

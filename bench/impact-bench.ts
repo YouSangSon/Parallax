@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -12,6 +13,8 @@ import {
   indexProject,
   initProject,
   initWorkspace,
+  ingestTraces,
+  queryCoChanges,
   resolveCrossRepoContracts
 } from '../src/index.js';
 import { searchContextForRepo } from '../src/mcp.js';
@@ -29,8 +32,11 @@ import { BUILD_SYSTEM_PACKAGE_ADAPTER_ID } from '../src/adapters/build-system-pa
 import { CONFIG_INFRA_SEMANTIC_ADAPTER_ID } from '../src/adapters/config-infra.js';
 
 const fixtureId = 'phase6b-multilanguage-v0';
-const schemaVersion = 4;
+const schemaVersion = 7;
 const crossRepoContractFixtureId = 'cross-repo-contract-impact-v0';
+const contractDiffQualityFixtureId = 'contract-diff-quality-v0';
+const coChangeQualityFixtureId = 'co-change-quality-v0';
+const tracePromotionQualityFixtureId = 'trace-promotion-quality-v0';
 const defaultOutputPath = '.parallax/bench/impact-bench-report.json';
 const regexAdapterId = MULTI_LANG_REGEX_ADAPTER_ID;
 const retrievalFixtureId = 'search-context-retrieval-v0';
@@ -39,7 +45,7 @@ const semanticModelA = 'bench-semantic-model-a';
 const semanticModelB = 'bench-semantic-model-b';
 
 export type ImpactBenchReport = {
-  schemaVersion: 2 | 3 | 4;
+  schemaVersion: 2 | 3 | 4 | 5 | 6 | 7;
   fixtureId: typeof fixtureId;
   summary: {
     passed: boolean;
@@ -66,6 +72,9 @@ export type ImpactBenchReport = {
     matchedAffectedFiles: string[];
   };
   crossRepoContracts: CrossRepoContractBench;
+  contractDiffQuality: ContractDiffQualityBench;
+  coChangeQuality: CoChangeQualityBench;
+  tracePromotionQuality: TracePromotionQualityBench;
   retrieval: RetrievalBenchReport;
   outputPath: string;
 };
@@ -201,6 +210,114 @@ type CrossRepoContractBench = {
   };
 };
 
+type ContractDiffQualityBench = {
+  fixtureId: typeof contractDiffQualityFixtureId;
+  summary: {
+    passed: boolean;
+    score: number;
+    expectedCases: number;
+    matchedCases: number;
+    expectedChanges: number;
+    matchedChanges: number;
+  };
+  cases: ContractDiffQualityCaseReport[];
+  missingChanges: string[];
+};
+
+type ContractDiffQualityCaseReport = {
+  id: string;
+  score: number;
+  expectedChanges: number;
+  matchedChanges: number;
+  expectedChangeKeys: string[];
+  matchedChangeKeys: string[];
+  missingChangeKeys: string[];
+};
+
+type ContractDiffQualityExpectedChange = {
+  kind: string;
+  classification: string;
+  schemaPath?: string;
+};
+
+type CoChangeQualityBench = {
+  fixtureId: typeof coChangeQualityFixtureId;
+  summary: {
+    passed: boolean;
+    score: number;
+    expectedPartners: number;
+    matchedPartners: number;
+    expectedAffectedFiles: number;
+    matchedAffectedFiles: number;
+  };
+  expectedPartners: string[];
+  matchedPartners: string[];
+  missingPartners: string[];
+  expectedAffectedFiles: string[];
+  matchedAffectedFiles: string[];
+  missingAffectedFiles: string[];
+};
+
+type TracePromotionQualityBench = {
+  fixtureId: typeof tracePromotionQualityFixtureId;
+  summary: {
+    passed: boolean;
+    score: number;
+    expectedPromotions: number;
+    matchedPromotions: number;
+    expectedProvenAffectedFiles: number;
+    matchedProvenAffectedFiles: number;
+    unmatchedEdges: number;
+  };
+  expectedPromotedEdges: string[];
+  matchedPromotedEdges: string[];
+  missingPromotedEdges: string[];
+  expectedProvenAffectedFiles: string[];
+  matchedProvenAffectedFiles: string[];
+  missingProvenAffectedFiles: string[];
+  unmatchedEdges: string[];
+};
+
+type ContractDiffQualityCaseSpec =
+  | {
+      id: string;
+      contractKind?: 'openapi';
+      current: ContractDiffBenchOpenApiOptions;
+      expectedChanges: ContractDiffQualityExpectedChange[];
+    }
+  | {
+      id: string;
+      contractKind: 'json-schema';
+      current: ContractDiffBenchJsonSchemaOptions;
+      expectedChanges: ContractDiffQualityExpectedChange[];
+    }
+  | {
+      id: string;
+      contractKind: 'avro';
+      current: ContractDiffBenchAvroOptions;
+      expectedChanges: ContractDiffQualityExpectedChange[];
+    };
+
+type ContractDiffBenchOpenApiOptions = {
+  requestRequired?: string[];
+  requestEmailFormat?: string;
+  requestRoleEnum?: string[];
+  responseRequired?: string[];
+  responseIdFormat?: string;
+  responseIdNullable?: boolean;
+  responseNameType?: string;
+  includeResponseStatus?: boolean;
+  responseStatusEnum?: string[];
+};
+
+type ContractDiffBenchJsonSchemaOptions = {
+  required?: string[];
+};
+
+type ContractDiffBenchAvroOptions = {
+  includeName?: boolean;
+};
+
 const retrievalQueries: readonly RetrievalQuerySpec[] = [
   {
     id: 'evidence-fts-policy',
@@ -226,6 +343,132 @@ const semanticRecallSpecs: readonly SemanticRecallSpec[] = [
     queryVector: int8Vector([0, 127, 0, 0]),
     expectedFactId: 'bench:model-b-policy',
     disallowedFactId: 'bench:model-foreign-b-policy'
+  }
+];
+
+const contractDiffQualityCases: readonly ContractDiffQualityCaseSpec[] = [
+  {
+    id: 'removed-response-required-property',
+    current: { responseRequired: ['id'] },
+    expectedChanges: [
+      {
+        kind: 'removed_response_required_property',
+        classification: 'breaking',
+        schemaPath: 'responses.200.body.required.name'
+      }
+    ]
+  },
+  {
+    id: 'json-schema-required-property-removal',
+    contractKind: 'json-schema',
+    current: { required: ['id'] },
+    expectedChanges: [
+      {
+        kind: 'removed_response_required_property',
+        classification: 'breaking',
+        schemaPath: '#.required.name'
+      }
+    ]
+  },
+  {
+    id: 'avro-required-field-removal',
+    contractKind: 'avro',
+    current: { includeName: false },
+    expectedChanges: [
+      {
+        kind: 'removed_response_required_property',
+        classification: 'breaking',
+        schemaPath: '#.required.name'
+      }
+    ]
+  },
+  {
+    id: 'removed-response-optional-property',
+    current: { includeResponseStatus: false },
+    expectedChanges: [
+      {
+        kind: 'removed_response_optional_property',
+        classification: 'non-breaking',
+        schemaPath: 'responses.200.body.properties.status'
+      }
+    ]
+  },
+  {
+    id: 'added-request-required-property',
+    current: { requestRequired: ['name', 'email'] },
+    expectedChanges: [
+      {
+        kind: 'added_request_required_property',
+        classification: 'breaking',
+        schemaPath: 'requestBody.required.email'
+      }
+    ]
+  },
+  {
+    id: 'removed-request-enum-value',
+    current: { requestRoleEnum: ['admin', 'member'] },
+    expectedChanges: [
+      {
+        kind: 'removed_request_property_enum_value',
+        classification: 'breaking',
+        schemaPath: 'requestBody.properties.role.enum.string:"viewer"'
+      }
+    ]
+  },
+  {
+    id: 'added-request-format',
+    current: { requestEmailFormat: 'email' },
+    expectedChanges: [
+      {
+        kind: 'changed_request_property_format',
+        classification: 'breaking',
+        schemaPath: 'requestBody.properties.email.format'
+      }
+    ]
+  },
+  {
+    id: 'changed-response-property-type',
+    current: { responseNameType: 'integer' },
+    expectedChanges: [
+      {
+        kind: 'changed_response_property_type',
+        classification: 'breaking',
+        schemaPath: 'responses.200.body.properties.name'
+      }
+    ]
+  },
+  {
+    id: 'changed-response-property-format',
+    current: { responseIdFormat: 'date-time' },
+    expectedChanges: [
+      {
+        kind: 'changed_response_property_format',
+        classification: 'breaking',
+        schemaPath: 'responses.200.body.properties.id.format'
+      }
+    ]
+  },
+  {
+    id: 'added-response-property-nullable',
+    current: { responseIdNullable: true },
+    expectedChanges: [
+      {
+        kind: 'added_response_property_nullable',
+        classification: 'breaking',
+        schemaPath: 'responses.200.body.properties.id.nullable'
+      }
+    ]
+  },
+  {
+    id: 'removed-response-enum-value',
+    current: { responseStatusEnum: ['active', 'pending'] },
+    expectedChanges: [
+      {
+        kind: 'removed_response_property_enum_value',
+        classification: 'breaking',
+        schemaPath: 'responses.200.body.properties.status.enum.string:"disabled"'
+      }
+    ]
   }
 ];
 
@@ -402,6 +645,9 @@ export async function runImpactBench(options: RunImpactBenchOptions = {}): Promi
       contextPackReadiness
     };
     const score = weightedScore(scores);
+    const contractDiffQuality = await runContractDiffQualityBench();
+    const coChangeQuality = await runCoChangeQualityBench();
+    const tracePromotionQuality = await runTracePromotionQualityBench();
     const passed =
       relationRecall >= 0.95 &&
       relationPrecision >= 0.95 &&
@@ -414,6 +660,9 @@ export async function runImpactBench(options: RunImpactBenchOptions = {}): Promi
       retrieval.summary.mrr === 1 &&
       retrieval.semanticModels?.summary.passed === true &&
       crossRepoContracts.summary.passed === true &&
+      contractDiffQuality.summary.passed === true &&
+      coChangeQuality.summary.passed === true &&
+      tracePromotionQuality.summary.passed === true &&
       score >= 0.9;
 
     const report: ImpactBenchReport = {
@@ -436,6 +685,9 @@ export async function runImpactBench(options: RunImpactBenchOptions = {}): Promi
         matchedAffectedFiles
       },
       crossRepoContracts,
+      contractDiffQuality,
+      coChangeQuality,
+      tracePromotionQuality,
       retrieval,
       outputPath: outputPathForReport
     };
@@ -721,6 +973,375 @@ async function runCrossRepoContractBench(): Promise<CrossRepoContractBench> {
   } finally {
     await rm(fixtureRoot, { recursive: true, force: true });
   }
+}
+
+async function runCoChangeQualityBench(): Promise<CoChangeQualityBench> {
+  const fixtureRoot = await mkdtemp(path.join(tmpdir(), 'impact-bench-co-change-'));
+  try {
+    await writeCoChangeBenchGitHistory(fixtureRoot);
+    await initProject({ repoRoot: fixtureRoot });
+    await indexProject({ repoRoot: fixtureRoot });
+
+    const changedFile = 'src/alpha.ts';
+    const expectedPartners = ['src/beta.ts'];
+    const coChanges = queryCoChanges(fixtureRoot, changedFile);
+    const report = await analyzeDiff({
+      repoRoot: fixtureRoot,
+      changedFiles: [changedFile],
+      persistReport: false,
+      readOnly: true
+    });
+
+    const matchedPartners = expectedPartners
+      .filter((expectedPath) =>
+        coChanges.partners.some((partner) =>
+          partner.path === expectedPath &&
+          partner.coChangeCount === 3 &&
+          partner.couplingScore === 1 &&
+          partner.confidence === 'heuristic'
+        )
+      )
+      .sort();
+    const expectedAffectedFiles = ['src/beta.ts'];
+    const matchedAffectedFiles = expectedAffectedFiles
+      .filter((expectedPath) =>
+        report.affectedFiles.some((file) =>
+          file.path === expectedPath && file.confidence === 'heuristic'
+        )
+      )
+      .sort();
+    const matched = matchedPartners.length + matchedAffectedFiles.length;
+    const expected = expectedPartners.length + expectedAffectedFiles.length;
+    const score = ratio(matched, expected);
+
+    return {
+      fixtureId: coChangeQualityFixtureId,
+      summary: {
+        passed: matched === expected,
+        score,
+        expectedPartners: expectedPartners.length,
+        matchedPartners: matchedPartners.length,
+        expectedAffectedFiles: expectedAffectedFiles.length,
+        matchedAffectedFiles: matchedAffectedFiles.length
+      },
+      expectedPartners,
+      matchedPartners,
+      missingPartners: expectedPartners.filter((expectedPath) => !matchedPartners.includes(expectedPath)),
+      expectedAffectedFiles,
+      matchedAffectedFiles,
+      missingAffectedFiles: expectedAffectedFiles.filter((expectedPath) =>
+        !matchedAffectedFiles.includes(expectedPath)
+      )
+    };
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+}
+
+async function runTracePromotionQualityBench(): Promise<TracePromotionQualityBench> {
+  const fixtureRoot = await mkdtemp(path.join(tmpdir(), 'impact-bench-trace-promotion-'));
+  try {
+    await writeCoChangeBenchGitHistory(fixtureRoot);
+    await initProject({ repoRoot: fixtureRoot });
+    await indexProject({ repoRoot: fixtureRoot });
+
+    const edge = { source: 'src/beta.ts', target: 'src/alpha.ts' };
+    const expectedPromotedEdges = [traceEdgeKey(edge)];
+    const summary = ingestTraces(fixtureRoot, [edge]);
+    const report = await analyzeDiff({
+      repoRoot: fixtureRoot,
+      changedFiles: ['src/alpha.ts'],
+      persistReport: false,
+      readOnly: true
+    });
+    const matchedPromotedEdges =
+      summary.promoted === expectedPromotedEdges.length && summary.unmatched.length === 0
+        ? expectedPromotedEdges
+        : [];
+    const expectedProvenAffectedFiles = ['src/beta.ts'];
+    const matchedProvenAffectedFiles = expectedProvenAffectedFiles
+      .filter((expectedPath) =>
+        report.affectedFiles.some((file) =>
+          file.path === expectedPath && file.confidence === 'proven'
+        )
+      )
+      .sort();
+    const matched = matchedPromotedEdges.length + matchedProvenAffectedFiles.length;
+    const expected = expectedPromotedEdges.length + expectedProvenAffectedFiles.length;
+    const score = ratio(matched, expected);
+    const unmatchedEdges = summary.unmatched.map(traceEdgeKey).sort();
+
+    return {
+      fixtureId: tracePromotionQualityFixtureId,
+      summary: {
+        passed: matched === expected && unmatchedEdges.length === 0,
+        score,
+        expectedPromotions: expectedPromotedEdges.length,
+        matchedPromotions: matchedPromotedEdges.length,
+        expectedProvenAffectedFiles: expectedProvenAffectedFiles.length,
+        matchedProvenAffectedFiles: matchedProvenAffectedFiles.length,
+        unmatchedEdges: unmatchedEdges.length
+      },
+      expectedPromotedEdges,
+      matchedPromotedEdges,
+      missingPromotedEdges: expectedPromotedEdges.filter((expectedEdge) =>
+        !matchedPromotedEdges.includes(expectedEdge)
+      ),
+      expectedProvenAffectedFiles,
+      matchedProvenAffectedFiles,
+      missingProvenAffectedFiles: expectedProvenAffectedFiles.filter((expectedPath) =>
+        !matchedProvenAffectedFiles.includes(expectedPath)
+      ),
+      unmatchedEdges
+    };
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+}
+
+function traceEdgeKey(edge: { source: string; target: string }): string {
+  return `${edge.source}->${edge.target}`;
+}
+
+async function writeCoChangeBenchGitHistory(repoRoot: string): Promise<void> {
+  git(repoRoot, ['init']);
+  git(repoRoot, ['config', 'user.email', 'test@example.com']);
+  git(repoRoot, ['config', 'user.name', 'Test']);
+  await mkdir(path.join(repoRoot, 'src'), { recursive: true });
+  for (let round = 1; round <= 3; round++) {
+    await writeFile(path.join(repoRoot, 'src/alpha.ts'), `export const alpha = ${round};\n`, 'utf8');
+    await writeFile(path.join(repoRoot, 'src/beta.ts'), `export const beta = ${round};\n`, 'utf8');
+    git(repoRoot, ['add', '-A']);
+    git(repoRoot, ['commit', '-m', `round ${round}`]);
+  }
+}
+
+function git(repoRoot: string, args: readonly string[]): void {
+  execFileSync('git', [...args], {
+    cwd: repoRoot,
+    stdio: ['ignore', 'ignore', 'ignore']
+  });
+}
+
+async function runContractDiffQualityBench(): Promise<ContractDiffQualityBench> {
+  const fixtureRoot = await mkdtemp(path.join(tmpdir(), 'impact-bench-contract-diff-'));
+  try {
+    const providerRoot = path.join(fixtureRoot, 'provider');
+    await mkdir(providerRoot, { recursive: true });
+    await writeFile(path.join(providerRoot, 'README.md'), 'provider\n', 'utf8');
+    await writeContractDiffBenchOpenApiJsonContract(providerRoot);
+    await writeContractDiffBenchJsonSchemaContract(providerRoot);
+    await writeContractDiffBenchAvroContract(providerRoot);
+
+    await initProject({ repoRoot: providerRoot });
+    await indexProject({ repoRoot: providerRoot });
+    initWorkspace({ repoRoot: providerRoot, name: 'platform', serviceName: 'users-api' });
+
+    const cases: ContractDiffQualityCaseReport[] = [];
+    for (const spec of contractDiffQualityCases) {
+      const contractPath = spec.contractKind === 'json-schema'
+        ? 'contracts/user.schema.json'
+        : spec.contractKind === 'avro'
+          ? 'contracts/user.avsc'
+          : 'contracts/openapi.json';
+      if (spec.contractKind === 'json-schema') {
+        await writeContractDiffBenchJsonSchemaContract(providerRoot, spec.current);
+      } else if (spec.contractKind === 'avro') {
+        await writeContractDiffBenchAvroContract(providerRoot, spec.current);
+      } else {
+        await writeContractDiffBenchOpenApiJsonContract(providerRoot, spec.current);
+      }
+      const result = analyzeContractDiff({
+        repoRoot: providerRoot,
+        workspaceName: 'platform',
+        providerServiceName: 'users-api',
+        contractPath,
+        persist: false
+      });
+      const actualKeys = new Set(result.changes.map(contractDiffChangeKey));
+      const expectedChangeKeys = spec.expectedChanges.map(contractDiffExpectedChangeKey).sort();
+      const matchedChangeKeys = expectedChangeKeys.filter((key) => actualKeys.has(key)).sort();
+      const missingChangeKeys = expectedChangeKeys.filter((key) => !actualKeys.has(key)).sort();
+      cases.push({
+        id: spec.id,
+        score: ratio(matchedChangeKeys.length, expectedChangeKeys.length),
+        expectedChanges: expectedChangeKeys.length,
+        matchedChanges: matchedChangeKeys.length,
+        expectedChangeKeys,
+        matchedChangeKeys,
+        missingChangeKeys
+      });
+    }
+
+    const expectedChanges = cases.reduce((total, item) => total + item.expectedChanges, 0);
+    const matchedChanges = cases.reduce((total, item) => total + item.matchedChanges, 0);
+    const matchedCases = cases.filter((item) => item.missingChangeKeys.length === 0).length;
+    const score = ratio(matchedChanges, expectedChanges);
+    return {
+      fixtureId: contractDiffQualityFixtureId,
+      summary: {
+        passed: matchedCases === cases.length && matchedChanges === expectedChanges,
+        score,
+        expectedCases: cases.length,
+        matchedCases,
+        expectedChanges,
+        matchedChanges
+      },
+      cases,
+      missingChanges: cases.flatMap((item) =>
+        item.missingChangeKeys.map((key) => `${item.id}: ${key}`)
+      ).sort()
+    };
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+}
+
+async function writeContractDiffBenchOpenApiJsonContract(
+  repoRoot: string,
+  options: ContractDiffBenchOpenApiOptions = {}
+): Promise<void> {
+  await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
+  const contract = {
+    openapi: '3.0.0',
+    info: {
+      title: 'Users API',
+      version: '1.0.0'
+    },
+    paths: {
+      '/api/users': {
+        get: {
+          operationId: 'listUsers',
+          responses: {
+            '200': {
+              description: 'ok',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    required: options.responseRequired ?? ['id', 'name'],
+                    properties: {
+                      id: {
+                        type: 'string',
+                        format: options.responseIdFormat ?? 'uuid',
+                        ...(options.responseIdNullable ? { nullable: true } : {})
+                      },
+                      name: { type: options.responseNameType ?? 'string' },
+                      ...(options.includeResponseStatus === false
+                        ? {}
+                        : {
+                          status: {
+                            type: 'string',
+                            enum: options.responseStatusEnum ?? ['active', 'disabled', 'pending']
+                          }
+                        })
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        post: {
+          operationId: 'createUser',
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: options.requestRequired ?? ['name'],
+                  properties: {
+                    name: { type: 'string' },
+                    email: {
+                      type: 'string',
+                      ...(options.requestEmailFormat !== undefined ? { format: options.requestEmailFormat } : {})
+                    },
+                    role: {
+                      type: 'string',
+                      enum: options.requestRoleEnum ?? ['admin', 'member', 'viewer']
+                    }
+                  }
+                }
+              }
+            }
+          },
+          responses: {
+            '201': {
+              description: 'created'
+            }
+          }
+        }
+      }
+    }
+  };
+  await writeFile(
+    path.join(repoRoot, 'contracts/openapi.json'),
+    `${JSON.stringify(contract, null, 2)}\n`,
+    'utf8'
+  );
+}
+
+async function writeContractDiffBenchJsonSchemaContract(
+  repoRoot: string,
+  options: ContractDiffBenchJsonSchemaOptions = {}
+): Promise<void> {
+  await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
+  const contract = {
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    $id: 'https://example.test/schemas/user',
+    type: 'object',
+    required: options.required ?? ['id', 'name'],
+    properties: {
+      id: { type: 'string' },
+      name: { type: 'string' },
+      status: { type: 'string' }
+    }
+  };
+  await writeFile(
+    path.join(repoRoot, 'contracts/user.schema.json'),
+    `${JSON.stringify(contract, null, 2)}\n`,
+    'utf8'
+  );
+}
+
+async function writeContractDiffBenchAvroContract(
+  repoRoot: string,
+  options: ContractDiffBenchAvroOptions = {}
+): Promise<void> {
+  await mkdir(path.join(repoRoot, 'contracts'), { recursive: true });
+  const fields: Array<Record<string, unknown>> = [
+    { name: 'id', type: 'string' }
+  ];
+  if (options.includeName !== false) {
+    fields.push({ name: 'name', type: 'string' });
+  }
+  await writeFile(
+    path.join(repoRoot, 'contracts/user.avsc'),
+    `${JSON.stringify({
+      type: 'record',
+      name: 'UserEvent',
+      namespace: 'example.events',
+      fields
+    }, null, 2)}\n`,
+    'utf8'
+  );
+}
+
+function contractDiffExpectedChangeKey(change: ContractDiffQualityExpectedChange): string {
+  return [
+    change.kind,
+    change.classification,
+    change.schemaPath ?? ''
+  ].join('|');
+}
+
+function contractDiffChangeKey(change: { kind: string; classification: string; schemaPath?: string }): string {
+  return [
+    change.kind,
+    change.classification,
+    change.schemaPath ?? ''
+  ].join('|');
 }
 
 async function runRetrievalBench(repoRoot: string): Promise<RetrievalBenchReport> {

@@ -36,7 +36,8 @@ cross-repo impact 还处于 v0 状态。仅在用户注册的 local repo 之间�
 
 - [ ] 将 OpenAPI / GraphQL / Protobuf / AsyncAPI 的 contract diff 稳定到 *nested schema* 粒度
 - [ ] 让 generated-client / event topology resolver 超越 heuristic
-- [ ] 让 workspace catalog 把 monorepo 内部的 sub-package 当作 first-class 来识别
+- [x] 让 workspace catalog 把 monorepo 内部的 npm/pnpm sub-package 与 Nx project config 当作 first-class package/project member 来识别
+- [ ] 只有当可解析 source 能提供 package-manager workspace manifest 之外的 catalog 价值时，才重新评估额外 Nx inferred-project 或 Turborepo task metadata
 - [x] 在 primary analyze report、graph export、MCP payload 和 UI workbench 中呈现已持久化的 cross-repo breaking contract link
 - [x] 让 cross-repo link 可双向查询，并验证 malformed、stale 或 orphan workspace row
 
@@ -58,8 +59,16 @@ MCP 已稳定为 read-only。接下来是深入审视 agent 可用性的阶段�
 
 - [x] GitHub-native agent package：生成 Copilot repository instructions、MCP 配置片段，以及用于 PR 工作的 least-privilege "先运行 Parallax" workflow
 - [x] 面向 affected-file impact finding 的 SARIF / code-scanning export，以及生成 SARIF 文件的 composite GitHub Action
-- [ ] 将 SARIF coverage 扩展到 contract break、adapter known-gap note、coverage gap 与 recommended verification action
-- [ ] Token-budgeted repo map / context card，对 agent 接下来应查看的 file、symbol、contract、test、evidence、provenance 与 known-gap note 排序
+- [x] PR action wrapper 运行 `init` → `index` → `pr triage`，支持 changed-file 或 base/head diff discovery，写出 SARIF 并追加 step summary，同时让 SARIF upload 保持显式
+- [x] 将 cross-repo contract-break warning 作为锚定到 provider contract 的 SARIF result 输出
+- [x] 将 index coverage-gap warning 作为锚定到 changed file 的 SARIF result 输出
+- [x] 将 recommended verification action 作为 SARIF note result 输出
+- [x] 将 adapter known-gap note 作为锚定到 changed file 的 SARIF note result 输出
+- [x] 通过 `parallax repo-map` 和 MCP `parallax_repo_map` 暴露 token-budgeted repo map / context card，对 changed root、affected file、test/docs/config/work artifact、evidence ref、verification action、resource、confidence、provenance、known gap 与 omitted count 排序
+- [x] Dependency/PR triage dogfood lane：`parallax pr triage` 在不写 GitHub 的前提下串起本地 diff 分析、SARIF 输出、`--fail-on` 与 repo-map context
+- [x] 本地 Git hook installer：`parallax install-hook` 写入托管的 `pre-commit` / `pre-push` impact gate，尊重 `core.hooksPath`，且没有 `--force` 时跳过已有的非 Parallax hook
+- [x] Deep-linkable UI/export：workbench URL 保留选中的影响路径、筛选文本与 report-delta 策略预设，toolbar 可导出 JSON、affected-path CSV 与 PNG/SVG 影响图
+- [x] SCIP import/export：`parallax scip import --file <index.scip or index.scip.json>` 将外部 indexer 的 SCIP definition/reference edge 增强到最新完成的 index，`parallax scip export --file <index.scip.json>` 输出 SCIP 兼容 JSON
 - [ ] 用使用 telemetry 验证 `context_for_change` 的 budget tuning (brief/standard/deep)
 - [ ] 用于测量 context pack 结果 hit/miss 的 harness
 - [ ] 研究将 write surface 拆分为独立权限模型后引入（遵循 [invariants.zh.md](invariants.zh.md) I-8）
@@ -101,8 +110,11 @@ MCP 已稳定为 read-only。接下来是深入审视 agent 可用性的阶段�
 - [x] 基于多语言 fixture 的 deterministic bench harness
   - 当前 gate：`bench/impact-bench.ts` 会构建固定的 TypeScript/JavaScript、JVM/Spring Boot、Python、Go、Rust、OpenAPI、build manifest fixture，并评分 relation recall/precision、affected-file recall、evidence/span coverage、adapter attribution、context-pack readiness 与 retrieval 质量。它由 `npm run bench`、`npm test` 以及 CI 的 `npm run verify` gate 执行。
   - 当前 cross-repo gate：bench 包含 two-repo contract-impact fixture，用来验证 W1 primary cross-repo consumer impact 与 report graph edge 仍然可见。
-- [x] 独立的 scale/perf bench，可分别报告 full index、no-op incremental index、edited-file incremental index 与 analyze phases，而不把精确耗时伪装成确定性契约
-  - 当前工具：`npm run bench:perf` 在 synthetic-repo generator 上测量这些阶段，并保持在 `npm run verify` 之外，因此这些时间数据是建议性的，而不是逐字节 CI 合同。
+  - 当前 contract-diff gate：bench 包含 removed response required property、removed response optional property、added request required property、request enum-value removal、request format addition、response property type change、response nullable addition、response format change、response enum-value removal 的 paired OpenAPI v1/v2 quality case，以及 JSON Schema root-object 和 Avro top-level record required-property removal case，并通过 `contractDiffQuality` 报告，方便 CI summary 跟踪 delta。
+  - 当前 co-change gate：bench 包含一个小型 git-history fixture，其中 `src/alpha.ts` 与 `src/beta.ts` 反复共同变更，并通过 `coChangeQuality` 报告，方便 CI summary 跟踪 partner 与 affected-file delta。
+  - 当前 trace-promotion gate：bench 会 ingest 一个运行时观测到的 `src/beta.ts -> src/alpha.ts` edge，并通过 `tracePromotionQuality` 报告，方便 CI summary 跟踪 promotion 与 proven-impact delta。
+- [x] 独立的 scale/perf bench，可分别报告 full index、no-op incremental index、edited-file reindex 与 analyze phases，而不把精确耗时伪装成确定性契约
+  - 当前工具：`npm run bench:perf` 在 synthetic-repo generator 上测量这些阶段、各 scan timing 和 `observed_peak_rss_mb`，并保持在 `npm run verify` 之外，因此 timing/RSS 是建议性的，而不是逐字节 CI 合同。标准 large-repo baseline command 是 `npm run bench:perf -- --scales 10000,50000`；`docs/verification.zh.md` 的当前 local baseline 记录了 1k/2k row 和 10k timeout limit，而不是 green 10k/50k claim。
 - [x] 在 embedding 模型 / LLM provider 交叉时对 recall 质量的回归 detection
   - 当前 gate：deterministic bench 现在包含 semantic model matrix，检查每个模型的 recall@1 与 cross-model isolation。它是一个不依赖 live provider 调用的 offline gate，用来捕捉 embedding 模型 namespace 回归；LLM provider 的网络质量评估仍放在 CI 之外，而 provider contract 继续由 offline test 覆盖。
 - [x] 在 CI 中每个 PR 自动报告 bench delta
@@ -114,6 +126,8 @@ MCP 已稳定为 read-only。接下来是深入审视 agent 可用性的阶段�
 
 ## 如果只挑下一个切片
 
-在 `tests/` 与 `bench/` 中已有的 fixture 之上，按 core engine 来看 ROI 最高的仍然是把**准确度 (1)** 的第一项 —— *parser-backed TS/JS span* —— 收尾。因为其他所有轴都依赖 evidence span 的精度。
-
-如果目标是 GitHub 与 agent workflow 中的 adoption，则应优先选择 **Agent surface (4)** lane：official GitHub Action + SARIF/code-scanning export、Copilot 安装指引，以及保留 confidence/provenance/known-gap disclosure 的 token-budgeted repo map/context card。这样现有 impact engine 才会出现在 reviewer 与 coding agent 实际工作的地方。
+实时执行顺序由 `PLAN.md` 管理。先在期限前移除或替换临时
+dependency-audit 例外。下一个 S1 切片必须在 `fileContentScope` 之外单独定义
+并强制 emitted-row ownership；在该 contract 与 deterministic read count 完成前，
+changed body 继续使用 full extraction。上面的准确度和 agent-surface 项目仍是
+后续主题，不与当前执行指令竞争。

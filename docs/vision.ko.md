@@ -80,5 +80,5 @@ Local-first가 토대 — 모든 데이터는 `<repo>/.parallax/impact.db`. 외�
 | 당신이 ... 라면 | 시작점 |
 |---|---|
 | 처음 진입하는 AI 에이전트/엔지니어 | [README.ko.md](../README.ko.md) → 이 파일 → [invariants.md](invariants.ko.md) |
-| 다음 작업을 찾는 contributor | [roadmap.ko.md](roadmap.ko.md) |
+| 다음 작업을 찾는 contributor | [Codex 탐색 가이드](CODEX-NAVIGATION-GUIDE.ko.md) → [roadmap.ko.md](roadmap.ko.md) |
 | 용어가 헷갈리는 사람 | [glossary.ko.md](glossary.ko.md) |

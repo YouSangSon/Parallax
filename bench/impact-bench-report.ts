@@ -6,8 +6,14 @@ import type { ImpactBenchReport } from './impact-bench.js';
 
 const defaultReportPath = '.parallax/bench/impact-bench-report.json';
 
-type LoadedBenchReport = Omit<ImpactBenchReport, 'crossRepoContracts'> & {
+type LoadedBenchReport = Omit<
+  ImpactBenchReport,
+  'crossRepoContracts' | 'contractDiffQuality' | 'coChangeQuality' | 'tracePromotionQuality'
+> & {
   crossRepoContracts?: ImpactBenchReport['crossRepoContracts'];
+  contractDiffQuality?: ImpactBenchReport['contractDiffQuality'];
+  coChangeQuality?: ImpactBenchReport['coChangeQuality'];
+  tracePromotionQuality?: ImpactBenchReport['tracePromotionQuality'];
 };
 
 type FormatOptions = {
@@ -77,6 +83,9 @@ export function formatBenchSummaryMarkdown(
 ): string {
   const baseline = options.baseline;
   const currentCrossRepoContracts = report.crossRepoContracts;
+  const currentContractDiffQuality = report.contractDiffQuality;
+  const currentCoChangeQuality = report.coChangeQuality;
+  const currentTracePromotionQuality = report.tracePromotionQuality;
   const metricRows = [
     metricRow('Overall score', report.summary.score, baseline?.summary.score),
     metricRow('Relation recall', report.scores.relationRecall, baseline?.scores.relationRecall),
@@ -94,6 +103,21 @@ export function formatBenchSummaryMarkdown(
       'Cross-repo contract impact',
       currentCrossRepoContracts.summary.score,
       baseline?.crossRepoContracts?.summary.score
+    )] : []),
+    ...(currentContractDiffQuality ? [metricRow(
+      'Contract-diff quality',
+      currentContractDiffQuality.summary.score,
+      baseline?.contractDiffQuality?.summary.score
+    )] : []),
+    ...(currentCoChangeQuality ? [metricRow(
+      'Co-change quality',
+      currentCoChangeQuality.summary.score,
+      baseline?.coChangeQuality?.summary.score
+    )] : []),
+    ...(currentTracePromotionQuality ? [metricRow(
+      'Trace-promotion quality',
+      currentTracePromotionQuality.summary.score,
+      baseline?.tracePromotionQuality?.summary.score
     )] : []),
     metricRow('Retrieval recall@5', report.retrieval.summary.recallAt5, baseline?.retrieval.summary.recallAt5),
     metricRow('Retrieval MRR', report.retrieval.summary.mrr, baseline?.retrieval.summary.mrr),
@@ -133,10 +157,69 @@ export function formatBenchSummaryMarkdown(
         currentCrossRepoContracts.summary.matchedGraphEdges,
         baseline?.crossRepoContracts?.summary.matchedGraphEdges
       )
+    ] : []),
+    ...(currentContractDiffQuality ? [
+      countRow(
+        'Contract-diff cases',
+        `${currentContractDiffQuality.summary.matchedCases}/${currentContractDiffQuality.summary.expectedCases}`,
+        currentContractDiffQuality.summary.matchedCases,
+        baseline?.contractDiffQuality?.summary.matchedCases
+      ),
+      countRow(
+        'Contract-diff changes',
+        `${currentContractDiffQuality.summary.matchedChanges}/${currentContractDiffQuality.summary.expectedChanges}`,
+        currentContractDiffQuality.summary.matchedChanges,
+        baseline?.contractDiffQuality?.summary.matchedChanges
+      )
+    ] : []),
+    ...(currentCoChangeQuality ? [
+      countRow(
+        'Co-change partners',
+        `${currentCoChangeQuality.summary.matchedPartners}/${currentCoChangeQuality.summary.expectedPartners}`,
+        currentCoChangeQuality.summary.matchedPartners,
+        baseline?.coChangeQuality?.summary.matchedPartners
+      ),
+      countRow(
+        'Co-change affected files',
+        `${currentCoChangeQuality.summary.matchedAffectedFiles}/${currentCoChangeQuality.summary.expectedAffectedFiles}`,
+        currentCoChangeQuality.summary.matchedAffectedFiles,
+        baseline?.coChangeQuality?.summary.matchedAffectedFiles
+      )
+    ] : []),
+    ...(currentTracePromotionQuality ? [
+      countRow(
+        'Trace promotions',
+        `${currentTracePromotionQuality.summary.matchedPromotions}/${currentTracePromotionQuality.summary.expectedPromotions}`,
+        currentTracePromotionQuality.summary.matchedPromotions,
+        baseline?.tracePromotionQuality?.summary.matchedPromotions
+      ),
+      countRow(
+        'Trace proven affected files',
+        `${currentTracePromotionQuality.summary.matchedProvenAffectedFiles}/${currentTracePromotionQuality.summary.expectedProvenAffectedFiles}`,
+        currentTracePromotionQuality.summary.matchedProvenAffectedFiles,
+        baseline?.tracePromotionQuality?.summary.matchedProvenAffectedFiles
+      ),
+      countRow(
+        'Trace unmatched edges',
+        String(currentTracePromotionQuality.summary.unmatchedEdges),
+        currentTracePromotionQuality.summary.unmatchedEdges,
+        baseline?.tracePromotionQuality?.summary.unmatchedEdges,
+        { lowerIsBetter: true }
+      )
     ] : [])
   ];
   const listSections = [
     ...(currentCrossRepoContracts ? [listSection('Missing cross-repo consumers', currentCrossRepoContracts.missingConsumerPaths)] : []),
+    ...(currentContractDiffQuality ? [listSection('Missing contract-diff changes', currentContractDiffQuality.missingChanges)] : []),
+    ...(currentCoChangeQuality ? [
+      listSection('Missing co-change partners', currentCoChangeQuality.missingPartners),
+      listSection('Missing co-change affected files', currentCoChangeQuality.missingAffectedFiles)
+    ] : []),
+    ...(currentTracePromotionQuality ? [
+      listSection('Missing trace promotions', currentTracePromotionQuality.missingPromotedEdges),
+      listSection('Missing trace proven affected files', currentTracePromotionQuality.missingProvenAffectedFiles),
+      listSection('Unmatched trace edges', currentTracePromotionQuality.unmatchedEdges)
+    ] : []),
     listSection('Missing relations', report.missingRelations),
     listSection('Unexpected relations', report.unexpectedRelations)
   ];
@@ -359,6 +442,139 @@ function assertBenchReport(value: unknown, label: string): asserts value is Impa
       label,
       'crossRepoContracts.graphEdges.matched'
     );
+  }
+  if (value.schemaVersion >= 5 || value.contractDiffQuality !== undefined) {
+    assertRecord(value.contractDiffQuality, label, 'contractDiffQuality');
+    assertString(value.contractDiffQuality.fixtureId, label, 'contractDiffQuality.fixtureId');
+    assertRecord(value.contractDiffQuality.summary, label, 'contractDiffQuality.summary');
+    assertBoolean(
+      value.contractDiffQuality.summary.passed,
+      label,
+      'contractDiffQuality.summary.passed'
+    );
+    for (const key of [
+      'score',
+      'expectedCases',
+      'matchedCases',
+      'expectedChanges',
+      'matchedChanges'
+    ]) {
+      assertNumber(value.contractDiffQuality.summary[key], label, `contractDiffQuality.summary.${key}`);
+    }
+    if (!Array.isArray(value.contractDiffQuality.cases)) {
+      throw new Error(`invalid bench report ${label}: expected contractDiffQuality.cases array`);
+    }
+    for (const [index, item] of value.contractDiffQuality.cases.entries()) {
+      assertRecord(item, label, `contractDiffQuality.cases[${index}]`);
+      assertString(item.id, label, `contractDiffQuality.cases[${index}].id`);
+      for (const key of ['score', 'expectedChanges', 'matchedChanges']) {
+        assertNumber(item[key], label, `contractDiffQuality.cases[${index}].${key}`);
+      }
+      assertStringArray(
+        item.expectedChangeKeys,
+        label,
+        `contractDiffQuality.cases[${index}].expectedChangeKeys`
+      );
+      assertStringArray(
+        item.matchedChangeKeys,
+        label,
+        `contractDiffQuality.cases[${index}].matchedChangeKeys`
+      );
+      assertStringArray(
+        item.missingChangeKeys,
+        label,
+        `contractDiffQuality.cases[${index}].missingChangeKeys`
+      );
+    }
+    assertStringArray(value.contractDiffQuality.missingChanges, label, 'contractDiffQuality.missingChanges');
+  }
+  if (value.schemaVersion >= 6 || value.coChangeQuality !== undefined) {
+    assertRecord(value.coChangeQuality, label, 'coChangeQuality');
+    assertString(value.coChangeQuality.fixtureId, label, 'coChangeQuality.fixtureId');
+    assertRecord(value.coChangeQuality.summary, label, 'coChangeQuality.summary');
+    assertBoolean(
+      value.coChangeQuality.summary.passed,
+      label,
+      'coChangeQuality.summary.passed'
+    );
+    for (const key of [
+      'score',
+      'expectedPartners',
+      'matchedPartners',
+      'expectedAffectedFiles',
+      'matchedAffectedFiles'
+    ]) {
+      assertNumber(value.coChangeQuality.summary[key], label, `coChangeQuality.summary.${key}`);
+    }
+    assertStringArray(value.coChangeQuality.expectedPartners, label, 'coChangeQuality.expectedPartners');
+    assertStringArray(value.coChangeQuality.matchedPartners, label, 'coChangeQuality.matchedPartners');
+    assertStringArray(value.coChangeQuality.missingPartners, label, 'coChangeQuality.missingPartners');
+    assertStringArray(
+      value.coChangeQuality.expectedAffectedFiles,
+      label,
+      'coChangeQuality.expectedAffectedFiles'
+    );
+    assertStringArray(
+      value.coChangeQuality.matchedAffectedFiles,
+      label,
+      'coChangeQuality.matchedAffectedFiles'
+    );
+    assertStringArray(
+      value.coChangeQuality.missingAffectedFiles,
+      label,
+      'coChangeQuality.missingAffectedFiles'
+    );
+  }
+  if (value.schemaVersion >= 7 || value.tracePromotionQuality !== undefined) {
+    assertRecord(value.tracePromotionQuality, label, 'tracePromotionQuality');
+    assertString(value.tracePromotionQuality.fixtureId, label, 'tracePromotionQuality.fixtureId');
+    assertRecord(value.tracePromotionQuality.summary, label, 'tracePromotionQuality.summary');
+    assertBoolean(
+      value.tracePromotionQuality.summary.passed,
+      label,
+      'tracePromotionQuality.summary.passed'
+    );
+    for (const key of [
+      'score',
+      'expectedPromotions',
+      'matchedPromotions',
+      'expectedProvenAffectedFiles',
+      'matchedProvenAffectedFiles',
+      'unmatchedEdges'
+    ]) {
+      assertNumber(value.tracePromotionQuality.summary[key], label, `tracePromotionQuality.summary.${key}`);
+    }
+    assertStringArray(
+      value.tracePromotionQuality.expectedPromotedEdges,
+      label,
+      'tracePromotionQuality.expectedPromotedEdges'
+    );
+    assertStringArray(
+      value.tracePromotionQuality.matchedPromotedEdges,
+      label,
+      'tracePromotionQuality.matchedPromotedEdges'
+    );
+    assertStringArray(
+      value.tracePromotionQuality.missingPromotedEdges,
+      label,
+      'tracePromotionQuality.missingPromotedEdges'
+    );
+    assertStringArray(
+      value.tracePromotionQuality.expectedProvenAffectedFiles,
+      label,
+      'tracePromotionQuality.expectedProvenAffectedFiles'
+    );
+    assertStringArray(
+      value.tracePromotionQuality.matchedProvenAffectedFiles,
+      label,
+      'tracePromotionQuality.matchedProvenAffectedFiles'
+    );
+    assertStringArray(
+      value.tracePromotionQuality.missingProvenAffectedFiles,
+      label,
+      'tracePromotionQuality.missingProvenAffectedFiles'
+    );
+    assertStringArray(value.tracePromotionQuality.unmatchedEdges, label, 'tracePromotionQuality.unmatchedEdges');
   }
   assertRecord(value.retrieval, label, 'retrieval');
   assertRecord(value.retrieval.summary, label, 'retrieval.summary');

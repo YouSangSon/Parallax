@@ -80,15 +80,34 @@ permissions:
   security-events: write
 steps:
   - uses: actions/checkout@v4
-  - run: npm install -g parallax
-  - run: parallax analyze --changed "src/api.ts" --sarif-output parallax.sarif --sarif-category parallax-pr --fail-on none
+    with:
+      fetch-depth: 0
+  - uses: YouSangSon/Parallax@main
+    with:
+      base: ${{ github.event.pull_request.base.sha }}
+      head: ${{ github.event.pull_request.head.sha }}
+      sarif-output: parallax.sarif
+      sarif-category: parallax-pr
+      fail-on: none
   - uses: github/codeql-action/upload-sarif@v3
     with:
       sarif_file: parallax.sarif
       category: parallax-pr
 ```
 
-Keep SARIF generation non-failing so the upload step still runs when findings exist. Add a separate `parallax analyze ... --fail-on proven` gate step if you want CI to fail on high-confidence impact.
+The action runs `parallax init`, `parallax index`, and `parallax pr triage`, writes the SARIF file, and appends the triage summary to the GitHub step summary. SARIF upload stays in your workflow so `security-events: write` remains explicit.
+
+Keep SARIF generation non-failing so the upload step still runs when findings exist. Set the action's `fail-on` input to `proven` or add a separate `parallax analyze ... --fail-on proven` gate step if you want CI to fail on high-confidence impact.
+
+Install a local Git hook when you want the same impact gate before commits or pushes:
+
+```bash
+parallax install-hook --hook pre-commit --fail-on proven
+parallax install-hook --hook pre-push --fail-on proven
+parallax install-hook --hook all --dry-run
+```
+
+The installer writes only the active Git hooks directory, respects `core.hooksPath`, skips existing non-Parallax hooks unless `--force` is supplied, and can be bypassed with `PARALLAX_SKIP_HOOK=1` or Git's `--no-verify`.
 
 Open the latest report in the local UI:
 
@@ -96,6 +115,23 @@ Open the latest report in the local UI:
 parallax ui
 parallax ui --report <report-id> --port 3717
 ```
+
+The UI keeps the selected impact path, filter, and policy preset in the URL. It can export the current workbench as JSON, affected-path CSV, or a PNG/SVG impact map from the toolbar.
+
+Bring in a SCIP precision layer after `parallax index` from an `index.scip` file emitted by a SCIP indexer:
+
+```bash
+parallax scip import --file index.scip
+
+# Pre-rendered JSON from the official SCIP CLI is also accepted:
+scip print --json index.scip > index.scip.json
+parallax scip import --file index.scip.json
+
+# Export Parallax's latest completed index as SCIP-compatible JSON:
+parallax scip export --file index.scip.json
+```
+
+The importer augments the latest completed Parallax index run with SCIP-derived definition/reference edges. Binary `index.scip` import uses the official `scip` CLI on `PATH`; JSON import and JSON export do not require the CLI at runtime. The explicitly selected `--file` may be any trusted local file. To preserve existing indexed file metadata and avoid live document-path races, document bodies come only from SCIP `Document.text` or the run's recorded clean Git commit. Textless documents already present in the latest index still import with symbol-only evidence; unverifiable textless, unindexed documents are skipped with a warning.
 
 For a worked tutorial that continues from the UI into MCP and CI guardrails, see [`docs/getting-started.md`](docs/getting-started.md).
 
@@ -113,6 +149,7 @@ For a worked tutorial that continues from the UI into MCP and CI guardrails, see
 | **Change analysis** | Analyzes `--changed` or `--base/--head` input via bounded multi-hop graph traversal |
 | **Evidence-first report** | Emits `changed`, `affected`, `actions`, `evidence`, `adapterInsights`, `warnings` as JSON/Markdown |
 | **Related-test inference** | Suggests likely-affected tests using imports, filename conventions, and adapter evidence |
+| **Verification planning** | Groups recommended actions into ranked repo-map commands with covered changed, affected, and target paths |
 | **Graph export** | Exports a saved report as Mermaid, JSON, or DOT |
 | **Coverage warnings** | Surfaces oversized-file skips, stale index, and adapter known-gaps in the report |
 
@@ -126,19 +163,21 @@ For a worked tutorial that continues from the UI into MCP and CI guardrails, see
 | **Markdown / work artifacts** | Classifies policy, proposal, PRD, and decision docs as first-class artifacts and links them to code |
 | **Config / Infra** | Indexes system/config candidates: shell, YAML, JSON, TOML, Dockerfile, Makefile, Terraform, CODEOWNERS, etc. |
 | **Package manifests & locks** | Manifest graph for `package.json`, `pom.xml`, `build.gradle(.kts)`, `go.mod`, `Cargo.toml`, `pyproject.toml`, plus npm `package-lock.json` transitive dependencies |
+| **SCIP import/export** | `parallax scip import --file <index.scip or index.scip.json>` augments the latest index with SCIP definition/reference edges; `parallax scip export --file <index.scip.json>` emits SCIP-compatible JSON |
 
 ### 🌐 Workspace & contracts
 
 | Feature | Description |
 | :--- | :--- |
-| **Workspace catalog** | Registers only the local repos a user has allowed in `.parallax/workspace.json`. No clone/network |
+| **Workspace catalog** | Registers only the local repos, explicit package directories, discovered npm/pnpm workspace packages, or Nx project configs a user has allowed in `.parallax/workspace.json`. No clone/network |
 | **Cross-repo resolver** | Stores provider endpoint ↔ consumer file links between registered repos |
-| **Contract diff** | Classifies OpenAPI, GraphQL, Protobuf, and AsyncAPI surface diffs as `breaking` / `non-breaking` / `unknown` |
-| **Consumer impact** | Links removed endpoints/operations, field removal/type changes, and added required request fields to known consumers |
+| **Contract diff** | Classifies OpenAPI, GraphQL, Protobuf, AsyncAPI, JSON Schema, and Avro surface diffs as `breaking` / `non-breaking` / `unknown`, including OpenAPI response optional property removals, response nullable additions, response format/enum changes, request format additions/changes, request enum-value removals, JSON Schema root-object changes, and Avro top-level record field changes |
+| **Consumer impact** | Links breaking removed endpoints/operations, required field removals, type/nullable/format/enum changes, added required request fields, request format additions/changes, and request enum-value removals to known consumers |
 | **Event topology hint** | Provides AsyncAPI producer/consumer direction and breaking provenance as a compact payload |
 
 ```bash
 parallax workspace init --name platform --service api
+parallax workspace discover-packages --name platform --json
 parallax workspace add-repo ../web --name platform --service web
 parallax workspace resolve-contracts --name platform --json
 parallax workspace contract-diff --contract openapi.yaml --name platform --json
@@ -192,7 +231,7 @@ parallax mcp serve
 | `parallax_analyze_diff` | Takes changed files and returns an impact report |
 | `parallax_context_for_change` | Returns a budget-fit context pack for a change |
 | `parallax_search_context` | Searches the latest index by keyword/path/symbol/relation/evidence |
-| `parallax_contract_diff` | Compares an OpenAPI contract against the indexed workspace baseline |
+| `parallax_contract_diff` | Compares a supported contract against the indexed workspace baseline |
 | `parallax_remember` / `parallax_recall` | Write/read agent memory facts |
 | `parallax_profile` / `parallax_trace` | Query an entity profile and its reasoning chain |
 
@@ -207,7 +246,7 @@ Registered tools are exposed through the MCP tool surface. Graph export is an MC
 | Principle | Detail |
 | :--- | :--- |
 | **Local-first** | All index and memory data is stored in the repo-local `.parallax/`. No external transfer |
-| **Explicit workspace** | Cross-repo covers only local repos the user registered. No clone/network |
+| **Explicit workspace** | Cross-repo covers only local repos or package directories the user registered. No clone/network |
 | **Redaction** | Secret-like strings are redacted before storage |
 | **Source-tree read-only by default** | MCP never edits source files; analysis/search tools, context-pack reuse, and MCP resource reads may append context-pack or telemetry rows in `.parallax/impact.db`, while explicit memory commands write facts |
 | **Deterministic output** | The same input yields the same report; reproducible in CI |
@@ -230,7 +269,7 @@ Key scripts:
 | `npm run build` | Compile TypeScript to `dist/` |
 | `npm run check` | Typecheck without emit |
 | `npm test` | Run the Node test runner suite via `tsx` |
-| `npm run bench` | Deterministic bench over multi-language, Spring Boot, contract, and package-manifest fixtures |
+| `npm run bench` | Deterministic bench over multi-language, Spring Boot, contract, co-change, trace, and package-manifest fixtures |
 | `npm run docs:lint` | Check tracked and untracked Markdown for forbidden content, trilingual parity, same-language links, and missing local `.md` targets |
 | `npm run verify` | Run the full source-checkout release gate |
 | `npm run test:mcp` | Verify MCP impact/context/memory/telemetry/path validation |
@@ -269,7 +308,7 @@ The detailed backlog is tracked against [`docs/roadmap.md`](docs/roadmap.md).
 | Area | State |
 | :--- | :--- |
 | **Full semantic analysis** | Not type-aware analysis for every language; check each adapter's confidence and known-gap |
-| **Contract depth** | Full generated-client usage graphs at GraphQL/Protobuf/AsyncAPI parser/LSP level are future work |
+| **Contract depth** | Full generated-client usage graphs at GraphQL/Protobuf/AsyncAPI parser/LSP level and full Avro named-type/schema-registry resolution are future work |
 | **Package resolution** | npm `package-lock.json` transitive dependencies are indexed; other lockfile ecosystems, semver impact, and execution-based resolvers are future work |
 | **Graph DB** | Out of the default product scope; can be extended as an optional projection from SQLite if needed |
 | **External writes** | Obsidian/GitHub/Jira write sync is not yet exposed on the MCP surface |

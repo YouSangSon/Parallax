@@ -11,12 +11,14 @@ export type InitResult = {
 export type IndexOptions = {
   repoRoot: string;
   maxFileBytes?: number;
+  perfObserver?: (phase: 'scan', ms: number) => void;
 };
 
 export type IndexResult = {
   indexRunId: number;
-  // 'incremental' when the prior completed run's graph rows for unchanged files
-  // were carried forward (only changed files re-extracted); 'full' otherwise.
+  // 'incremental' when Parallax can reuse prior index state: either by carrying
+  // unchanged graph rows forward or by returning a clean same-HEAD completed run.
+  // 'full' otherwise.
   mode: 'full' | 'incremental';
   filesIndexed: number;
   symbolsIndexed: number;
@@ -346,6 +348,119 @@ export type ContextPack = {
     coChangeLimit: number;
     coChangeTruncated: boolean;
   };
+  warnings?: string[];
+};
+
+export type RepoMapOptions = {
+  repoRoot: string;
+  changedFiles: string[];
+  query?: string;
+  budgetTokens?: number;
+  maxDepth?: number;
+  maxFanout?: number;
+};
+
+export type RepoMapPathItem = {
+  path: string;
+  reason: string;
+  confidence: Confidence;
+  resourceUri: string;
+  depth?: number;
+  relations?: string[];
+};
+
+export type RepoMapEvidenceRef = {
+  id: string;
+  file: string;
+  kind: string;
+  confidence: Confidence;
+  snippet: string;
+  resourceUri?: string;
+  startLine?: number;
+  endLine?: number;
+};
+
+export type RepoMapQueryMatch = {
+  entity: EntityRef;
+  score?: number;
+  reasons?: string[];
+  resourceUri: string;
+  evidence?: unknown[];
+};
+
+export type RepoMapVerificationPlanGroup = {
+  id: string;
+  rank: number;
+  strategy: 'direct-test-command';
+  packageRoot: string;
+  runnerId?: string;
+  command?: string;
+  args?: string[];
+  display: string;
+  confidence: Confidence;
+  targetPaths: string[];
+  coveredChangedFiles: string[];
+  coveredAffectedFiles: string[];
+  reasons: string[];
+  sourceActions: string[];
+  omittedTargetCount: number;
+};
+
+export type RepoMapVerificationPlan = {
+  generatedFrom: string[];
+  groups: RepoMapVerificationPlanGroup[];
+  omittedCounts: {
+    groups: number;
+    targetPaths: number;
+  };
+};
+
+export type RepoMap = {
+  version: 0;
+  kind: 'repo_map';
+  budget: {
+    requestedTokens: number;
+    estimatedTokens: number;
+    estimator: 'Math.ceil(text.length / 4)';
+    truncated: boolean;
+  };
+  indexRunId: number;
+  changedFiles: string[];
+  changedRoots: string[];
+  summary: string[];
+  affectedFiles: RepoMapPathItem[];
+  tests: RepoMapPathItem[];
+  docs: RepoMapPathItem[];
+  config: RepoMapPathItem[];
+  workArtifacts: ContextPackWorkArtifact[];
+  evidenceRefs: RepoMapEvidenceRef[];
+  verificationActions: ImpactAction[];
+  verificationPlan: RepoMapVerificationPlan;
+  resources: {
+    coverage: 'parallax://coverage/latest';
+    entities: string[];
+    evidence: string[];
+  };
+  query?: string;
+  queryMatches?: RepoMapQueryMatch[];
+  confidence: {
+    overall: Confidence;
+    provenance: string[];
+    knownGaps: string[];
+  };
+  omittedCounts: {
+    affectedFiles: number;
+    tests: number;
+    docs: number;
+    config: number;
+    workArtifacts: number;
+    evidenceRefs: number;
+    verificationActions: number;
+    queryMatches: number;
+    coChanges: number;
+    budgetItems: number;
+  };
+  knownGaps: string[];
   warnings?: string[];
 };
 

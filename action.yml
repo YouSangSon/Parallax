@@ -1,9 +1,18 @@
-name: Parallax Impact SARIF
-description: Generate a Parallax impact SARIF file for GitHub Code Scanning upload.
+name: Parallax PR Impact Triage
+description: Index a checkout, analyze a PR or changed-file list, and write a Parallax impact SARIF file.
 inputs:
   changed:
-    description: Comma-separated changed file list passed to parallax analyze.
-    required: true
+    description: Optional comma-separated changed file list. When omitted, base/head diff discovery is used.
+    required: false
+    default: ''
+  base:
+    description: Base git ref or SHA for PR diff discovery when changed is omitted.
+    required: false
+    default: ''
+  head:
+    description: Head git ref or SHA for PR diff discovery when changed is omitted.
+    required: false
+    default: HEAD
   sarif-output:
     description: Path to write the SARIF file.
     required: false
@@ -16,13 +25,64 @@ inputs:
     description: Confidence threshold for non-zero exit.
     required: false
     default: none
+  query:
+    description: Repo-map query used for PR triage context.
+    required: false
+    default: pull request impact tests docs contracts dependencies
+  budget:
+    description: Optional token budget for the printed repo map.
+    required: false
+    default: ''
 runs:
   using: composite
   steps:
     - shell: bash
       env:
         PARALLAX_CHANGED: ${{ inputs.changed }}
+        PARALLAX_BASE: ${{ inputs.base }}
+        PARALLAX_HEAD: ${{ inputs.head }}
         PARALLAX_SARIF_OUTPUT: ${{ inputs.sarif-output }}
         PARALLAX_SARIF_CATEGORY: ${{ inputs.sarif-category }}
         PARALLAX_FAIL_ON: ${{ inputs.fail-on }}
-      run: npx parallax analyze --changed "$PARALLAX_CHANGED" --sarif-output "$PARALLAX_SARIF_OUTPUT" --sarif-category "$PARALLAX_SARIF_CATEGORY" --fail-on "$PARALLAX_FAIL_ON"
+        PARALLAX_QUERY: ${{ inputs.query }}
+        PARALLAX_BUDGET: ${{ inputs.budget }}
+      run: |
+        set -euo pipefail
+        npx parallax init >/dev/null
+        npx parallax index >/dev/null
+        args=(
+          pr triage
+          --sarif-output "$PARALLAX_SARIF_OUTPUT"
+          --sarif-category "$PARALLAX_SARIF_CATEGORY"
+          --fail-on "$PARALLAX_FAIL_ON"
+          --query "$PARALLAX_QUERY"
+        )
+        if [[ -n "$PARALLAX_BUDGET" ]]; then
+          args+=(--budget "$PARALLAX_BUDGET")
+        fi
+        if [[ -n "$PARALLAX_CHANGED" ]]; then
+          args+=(--changed "$PARALLAX_CHANGED")
+        else
+          if [[ -z "$PARALLAX_BASE" ]]; then
+            echo "Parallax action requires either 'changed' or 'base' input." >&2
+            exit 2
+          fi
+          args+=(--base "$PARALLAX_BASE")
+          if [[ -n "$PARALLAX_HEAD" ]]; then
+            args+=(--head "$PARALLAX_HEAD")
+          fi
+        fi
+        summary_file=".parallax/pr-triage-summary.md"
+        mkdir -p "$(dirname "$summary_file")"
+        set +e
+        npx parallax "${args[@]}" | tee "$summary_file"
+        status=${PIPESTATUS[0]}
+        set -e
+        if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+          {
+            echo "## Parallax PR triage"
+            echo
+            cat "$summary_file"
+          } >> "$GITHUB_STEP_SUMMARY"
+        fi
+        exit "$status"

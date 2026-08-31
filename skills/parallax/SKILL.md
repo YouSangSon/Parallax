@@ -77,13 +77,14 @@ Or via the Claude Code CLI:
 claude mcp add --transport stdio parallax -- parallax mcp serve
 ```
 
-## MCP tools surfaced (23)
+## MCP tools surfaced (24)
 
 | Tool | Read-only? | What it does |
 |---|---|---|
 | `parallax_analyze_diff` | ❌ | Run impact analysis for a list of changed files |
 | `parallax_context_for_change` | ❌ | Return a budgeted compact context pack for changed files |
 | `parallax_search_context` | ❌ | Search latest indexed entities by keyword/path/symbol/relation/evidence and return ranked context with resource links |
+| `parallax_repo_map` | ✅ | Return a read-only token-budgeted repo map/context card with affected files, tests/docs/config/work artifacts, evidence refs, verification actions, resources, confidence, provenance, known gaps, and omitted counts |
 | `parallax_contract_diff` | ❌ | Compare a current OpenAPI contract file against the latest indexed workspace baseline and return compact breaking-change impact |
 | `parallax_cross_repo_consumers` | ✅ | Query the already synchronized workspace DB view for consumers of a provider service/contract/route |
 | `parallax_cross_repo_providers` | ✅ | Query the already synchronized workspace DB view for providers used by a consumer service/file |

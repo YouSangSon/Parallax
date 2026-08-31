@@ -80,15 +80,34 @@ permissions:
   security-events: write
 steps:
   - uses: actions/checkout@v4
-  - run: npm install -g parallax
-  - run: parallax analyze --changed "src/api.ts" --sarif-output parallax.sarif --sarif-category parallax-pr --fail-on none
+    with:
+      fetch-depth: 0
+  - uses: YouSangSon/Parallax@main
+    with:
+      base: ${{ github.event.pull_request.base.sha }}
+      head: ${{ github.event.pull_request.head.sha }}
+      sarif-output: parallax.sarif
+      sarif-category: parallax-pr
+      fail-on: none
   - uses: github/codeql-action/upload-sarif@v3
     with:
       sarif_file: parallax.sarif
       category: parallax-pr
 ```
 
-SARIF 생성은 실패하지 않게 두어야 finding이 있을 때도 upload step이 실행된다. 고신뢰 impact에서 CI를 실패시키고 싶다면 별도의 `parallax analyze ... --fail-on proven` gate step을 추가한다.
+이 action은 `parallax init`, `parallax index`, `parallax pr triage`를 실행하고 SARIF 파일을 쓴 뒤 triage 요약을 GitHub step summary에 추가한다. SARIF upload는 workflow에 남겨 `security-events: write` 권한을 명시적으로 유지한다.
+
+SARIF 생성은 실패하지 않게 두어야 finding이 있을 때도 upload step이 실행된다. 고신뢰 impact에서 CI를 실패시키고 싶다면 action의 `fail-on` 입력을 `proven`으로 바꾸거나 별도의 `parallax analyze ... --fail-on proven` gate step을 추가한다.
+
+commit이나 push 전에 같은 impact gate를 로컬 Git hook으로 실행하고 싶다면 hook을 설치한다.
+
+```bash
+parallax install-hook --hook pre-commit --fail-on proven
+parallax install-hook --hook pre-push --fail-on proven
+parallax install-hook --hook all --dry-run
+```
+
+installer는 활성 Git hooks 디렉터리에만 쓰고, `core.hooksPath`를 존중하며, `--force`가 없으면 기존 non-Parallax hook을 건너뛴다. 필요하면 `PARALLAX_SKIP_HOOK=1` 또는 Git의 `--no-verify`로 우회할 수 있다.
 
 로컬 UI로 최신 report를 바로 열 수 있다.
 
@@ -96,6 +115,23 @@ SARIF 생성은 실패하지 않게 두어야 finding이 있을 때도 upload st
 parallax ui
 parallax ui --report <report-id> --port 3717
 ```
+
+UI는 선택한 영향 경로, 필터, 정책 프리셋을 URL에 유지한다. toolbar에서 현재 workbench를 JSON, affected-path CSV, PNG/SVG 영향 맵으로 내보낼 수 있다.
+
+`parallax index` 이후 SCIP indexer가 만든 `index.scip`를 가져오면 SCIP 정밀도 레이어를 보강할 수 있다.
+
+```bash
+parallax scip import --file index.scip
+
+# 공식 SCIP CLI로 미리 변환한 JSON도 그대로 가져올 수 있다.
+scip print --json index.scip > index.scip.json
+parallax scip import --file index.scip.json
+
+# Parallax의 최신 완료 index를 SCIP 호환 JSON으로 내보낸다.
+parallax scip export --file index.scip.json
+```
+
+importer는 최신 완료 Parallax index run에 SCIP 기반 definition/reference edge를 추가한다. 바이너리 `index.scip` import는 `PATH`의 공식 `scip` CLI를 사용하고, JSON import/export는 실행 시점에 CLI가 필요 없다. 명시적으로 선택한 `--file`에는 신뢰하는 로컬 파일을 지정할 수 있다. 기존 indexed file metadata를 보존하고 live document-path race를 피하기 위해 document body는 SCIP `Document.text` 또는 해당 run에 기록된 clean Git commit에서만 읽는다. 최신 index에 이미 있는 textless document는 symbol-only evidence로 import하며, 검증할 수 없는 textless·unindexed document는 경고와 함께 건너뛴다.
 
 UI 다음에 MCP와 CI guardrail까지 이어지는 튜토리얼은 [`docs/getting-started.ko.md`](docs/getting-started.ko.md)를 참고하자.
 
@@ -113,6 +149,7 @@ UI 다음에 MCP와 CI guardrail까지 이어지는 튜토리얼은 [`docs/getti
 | **변경 분석** | `--changed` 또는 `--base/--head` 입력을 bounded multi-hop graph traversal로 분석 |
 | **증거 중심 report** | `changed`, `affected`, `actions`, `evidence`, `adapterInsights`, `warnings`를 JSON/Markdown으로 출력 |
 | **관련 테스트 추론** | import, filename convention, adapter evidence를 이용해 영향 가능성이 높은 테스트를 추천 |
+| **Verification planning** | 추천 action을 covered changed / affected / target path가 포함된 ranked repo-map command로 그룹화 |
 | **Graph export** | 저장된 report를 Mermaid, JSON, DOT으로 export |
 | **Coverage 경고** | oversized file skip, stale index, adapter known-gap을 report에 노출 |
 
@@ -126,19 +163,21 @@ UI 다음에 MCP와 CI guardrail까지 이어지는 튜토리얼은 [`docs/getti
 | **Markdown / work artifacts** | policy, proposal, PRD, decision 문서를 first-class artifact로 분류하고 코드와 연결 |
 | **Config / Infra** | shell, YAML, JSON, TOML, Dockerfile, Makefile, Terraform, CODEOWNERS 등 system/config 후보 인덱싱 |
 | **Package manifests** | `package.json`, `pom.xml`, `build.gradle(.kts)`, `go.mod`, `Cargo.toml`, `pyproject.toml` manifest graph |
+| **SCIP import/export** | `parallax scip import --file <index.scip or index.scip.json>`로 외부 indexer의 SCIP definition/reference edge를 최신 index에 보강하고, `parallax scip export --file <index.scip.json>`로 SCIP 호환 JSON을 출력 |
 
 ### 🌐 Workspace & contracts
 
 | 기능 | 설명 |
 | :--- | :--- |
-| **Workspace catalog** | `.parallax/workspace.json`에 사용자가 허용한 local repo만 등록. clone/network 없음 |
+| **Workspace catalog** | `.parallax/workspace.json`에 사용자가 허용한 local repo, 명시적 package directory, 발견된 npm/pnpm workspace package, 또는 Nx project config만 등록. clone/network 없음 |
 | **Cross-repo resolver** | 등록된 repo 사이의 provider endpoint ↔ consumer file link를 저장 |
-| **Contract diff** | OpenAPI, GraphQL, Protobuf, AsyncAPI surface diff를 `breaking` / `non-breaking` / `unknown`으로 분류 |
-| **Consumer impact** | removed endpoint/operation, field removal/type change, required request field 추가 등을 known consumer와 연결 |
+| **Contract diff** | OpenAPI, GraphQL, Protobuf, AsyncAPI surface diff를 `breaking` / `non-breaking` / `unknown`으로 분류하고, OpenAPI response optional property removal, response nullable addition, response format/enum change, request format addition/change, request enum-value removal도 감지 |
+| **Consumer impact** | breaking removed endpoint/operation, required field removal, type/nullable/format/enum change, required request field 추가, request format addition/change, request enum-value removal 등을 known consumer와 연결 |
 | **Event topology hint** | AsyncAPI producer/consumer 방향과 breaking provenance를 compact payload로 제공 |
 
 ```bash
 parallax workspace init --name platform --service api
+parallax workspace discover-packages --name platform --json
 parallax workspace add-repo ../web --name platform --service web
 parallax workspace resolve-contracts --name platform --json
 parallax workspace contract-diff --contract openapi.yaml --name platform --json

@@ -31,7 +31,7 @@ The `relations` table. `(source_entity_id, target_entity_id, kind, confidence, a
 The source span / command output / confidence basis that backs a relation. The audit trail for "why was this relation extracted."
 
 ### contract / endpoint / event
-The `contracts`, `cross_repo_links` tables. By modeling OpenAPI / protobuf / GraphQL / AsyncAPI as entities, it analyzes *cross-repo* impact (an API change in a provider repo → breakage in a consumer repo).
+The `contracts`, `cross_repo_links` tables. By modeling OpenAPI / protobuf / GraphQL / AsyncAPI / JSON Schema / Avro as entities, it analyzes *cross-repo* impact (an API change in a provider repo -> breakage in a consumer repo).
 
 ### workspace
 `workspaces`, `workspace_repos` — a logical unit that groups multiple repos into a single *product/organization boundary*. Not meaningful in a single repo.

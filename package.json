@@ -33,6 +33,7 @@
     "bench": "tsx bench/impact-bench.ts",
     "bench:report": "tsx bench/impact-bench-report.ts",
     "bench:perf": "tsx bench/impact-perf.ts",
+    "audit:dependencies": "node scripts/dependency-audit.js",
     "check": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test tests/**/*.test.ts",
     "test:fixtures": "npm test",
@@ -46,7 +47,7 @@
     "schemas:build": "tsx scripts/generate-report-schema.ts",
     "schemas:check": "tsx scripts/generate-report-schema.ts --check",
     "lint": "npm run check && npm run docs:lint && npm run schemas:check",
-    "verify": "npm run lint && npm run test:install-smoke && npm test && npm run test:dogfood && npm run bench && npm audit --audit-level=high"
+    "verify": "npm run lint && npm run test:install-smoke && npm test && npm run test:dogfood && npm run bench && npm run audit:dependencies"
   },
   "engines": {
     "node": ">=24.0.0"

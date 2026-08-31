@@ -127,7 +127,7 @@ Parallax expresses the same essence with a single SQLite file + the sqlite-vec e
 - Indexes TypeScript/JavaScript, Markdown work artifacts, config/infra files, package manifests, and broad multi-language source files through semantic adapters.
 - Produces bounded "changed files → affected files" reports with evidence, confidence labels, adapter insights, coverage warnings, and verification actions.
 - Tracks workspace catalogs and resolves local cross-repo contract links for registered repositories.
-- Classifies OpenAPI, GraphQL, Protobuf, and AsyncAPI contract diffs and reports impacted local consumers when links are known.
+- Classifies OpenAPI, GraphQL, Protobuf, AsyncAPI, JSON Schema, and Avro contract diffs and reports impacted local consumers when links are known.
 - Persists AI decisions and observations as content-addressable facts with time travel, branch fork/merge, explicit supersession, semantic recall, profile, trace, reflection, and branch GC.
 - Redacts secret-like strings before storage, embedding, and LLM reflection.
 - Exposes the same local database through CLI, MCP stdio, and the local UI workbench.

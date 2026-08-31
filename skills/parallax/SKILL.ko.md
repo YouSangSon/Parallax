@@ -77,13 +77,14 @@ MCP 클라이언트 설정에 추가한다:
 claude mcp add --transport stdio parallax -- parallax mcp serve
 ```
 
-## MCP tools surfaced (23)
+## MCP tools surfaced (24)
 
 | Tool | Read-only? | What it does |
 |---|---|---|
 | `parallax_analyze_diff` | ❌ | 변경된 파일 목록에 대해 impact analysis 실행 |
 | `parallax_context_for_change` | ❌ | 변경된 파일에 대한 budget이 적용된 compact context pack 반환 |
 | `parallax_search_context` | ❌ | keyword/path/symbol/relation/evidence로 최신 인덱싱된 entity를 검색하고, resource link와 함께 순위가 매겨진 context 반환 |
+| `parallax_repo_map` | ✅ | affected file, test/docs/config/work artifact, evidence ref, verification action, resource, confidence, provenance, known gap, omitted count가 담긴 read-only token-budgeted repo map/context card 반환 |
 | `parallax_contract_diff` | ❌ | 현재 OpenAPI contract 파일을 최신 인덱싱된 workspace baseline과 비교해 compact한 breaking-change impact 반환 |
 | `parallax_cross_repo_consumers` | ✅ | 이미 동기화된 workspace DB view에서 provider service/contract/route의 consumer를 질의 |
 | `parallax_cross_repo_providers` | ✅ | 이미 동기화된 workspace DB view에서 consumer service/file이 사용하는 provider를 질의 |

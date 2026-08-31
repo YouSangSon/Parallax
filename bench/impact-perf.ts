@@ -1,8 +1,9 @@
 #!/usr/bin/env tsx
 /**
- * S4 performance bench — measures full index, incremental index, and analyze
- * costs on a deterministic synthetic repo at increasing scales. This is
- * intentionally NOT part of `npm run verify`: timing and peak RSS are
+ * S4 performance bench — measures initial index, no-op incremental index,
+ * changed-file reindex, and analyze costs plus observed peak RSS on a
+ * deterministic synthetic repo at increasing scales. This is intentionally NOT
+ * part of `npm run verify`: timing and peak RSS are
  * non-deterministic, so they must not reach the byte-identical
  * `ImpactBenchReport`. Run it on demand to capture a baseline or, in CI, with a
  * generous `--max-ms-per-kfile` ceiling.
@@ -24,12 +25,15 @@ import { editSyntheticChangedFile, generateSyntheticRepo } from './synthetic-rep
 export type PerfRow = {
   files: number;
   fullIndexMs: number;
+  fullScanMs: number;
   noopIncrementalMs: number;
-  editIncrementalMs: number;
+  noopScanMs: number;
+  editReindexMs: number;
+  editScanMs: number;
   analyzeNoPersistMs: number;
   analyzePersistMs: number;
   affected: number;
-  rssMb: number;
+  observedPeakRssMb: number;
 };
 
 type Timed<T> = {
@@ -60,6 +64,19 @@ async function timed<T>(fn: () => Promise<T>): Promise<Timed<T>> {
   return { value, ms: performance.now() - start };
 }
 
+async function timedIndex(repoRoot: string): Promise<Timed<IndexResult> & { scanMs: number }> {
+  let scanMs = 0;
+  const timedResult = await timed(() =>
+    indexProject({
+      repoRoot,
+      perfObserver: (phase, ms) => {
+        if (phase === 'scan') scanMs += ms;
+      }
+    })
+  );
+  return { ...timedResult, scanMs };
+}
+
 function assertIncremental(result: IndexResult, label: string): void {
   if (result.mode !== 'incremental') {
     throw new Error(`${label} reindex expected mode === 'incremental', got ${result.mode}`);
@@ -71,39 +88,54 @@ async function measure(files: number): Promise<PerfRow> {
   try {
     const info = await generateSyntheticRepo(root, { files });
     await initProject({ repoRoot: root });
+    let observedPeakRssMb = rssMb();
 
-    const fullIndex = await timed(() => indexProject({ repoRoot: root }));
+    const fullIndex = await timedIndex(root);
+    observedPeakRssMb = Math.max(observedPeakRssMb, rssMb());
     if (fullIndex.value.mode !== 'full') {
       throw new Error(`initial index expected mode === 'full', got ${fullIndex.value.mode}`);
     }
 
-    const noopIncremental = await timed(() => indexProject({ repoRoot: root }));
+    const noopIncremental = await timedIndex(root);
+    observedPeakRssMb = Math.max(observedPeakRssMb, rssMb());
     assertIncremental(noopIncremental.value, 'no-op');
 
     await editSyntheticChangedFile(root, info);
-    const editIncremental = await timed(() => indexProject({ repoRoot: root }));
-    assertIncremental(editIncremental.value, 'single-file edit');
+    const editReindex = await timedIndex(root);
+    observedPeakRssMb = Math.max(observedPeakRssMb, rssMb());
+    if (editReindex.value.mode !== 'full') {
+      throw new Error(`single-file edit expected mode === 'full', got ${editReindex.value.mode}`);
+    }
 
     const analyzeNoPersist = await timed(() =>
       analyzeDiff({ repoRoot: root, changedFiles: [info.changedFile], persistReport: false })
     );
+    observedPeakRssMb = Math.max(observedPeakRssMb, rssMb());
     const analyzePersist = await timed(() =>
       analyzeDiff({ repoRoot: root, changedFiles: [info.changedFile] })
     );
+    observedPeakRssMb = Math.max(observedPeakRssMb, rssMb());
 
     return {
       files,
       fullIndexMs: fullIndex.ms,
+      fullScanMs: fullIndex.scanMs,
       noopIncrementalMs: noopIncremental.ms,
-      editIncrementalMs: editIncremental.ms,
+      noopScanMs: noopIncremental.scanMs,
+      editReindexMs: editReindex.ms,
+      editScanMs: editReindex.scanMs,
       analyzeNoPersistMs: analyzeNoPersist.ms,
       analyzePersistMs: analyzePersist.ms,
       affected: analyzePersist.value.affectedFiles.length,
-      rssMb: process.memoryUsage().rss / (1024 * 1024)
+      observedPeakRssMb
     };
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+}
+
+function rssMb(): number {
+  return process.memoryUsage.rss() / (1024 * 1024);
 }
 
 function msPerKfile(ms: number, files: number): number {
@@ -115,15 +147,18 @@ export function formatPerfTable(rows: readonly PerfRow[]): string {
     [
       'files',
       'full_index_ms',
+      'full_scan_ms',
       'noop_incremental_ms',
-      'edit_incremental_ms',
+      'noop_scan_ms',
+      'edit_reindex_ms',
+      'edit_scan_ms',
       'analyze_no_persist_ms',
       'analyze_persist_ms',
       'affected',
-      'rss_mb',
+      'observed_peak_rss_mb',
       'full_index_ms/kfile',
       'noop_incremental_ms/kfile',
-      'edit_incremental_ms/kfile',
+      'edit_reindex_ms/kfile',
       'analyze_no_persist_ms/kfile',
       'analyze_persist_ms/kfile'
     ].join('\t')
@@ -134,15 +169,18 @@ export function formatPerfTable(rows: readonly PerfRow[]): string {
       [
         row.files,
         row.fullIndexMs.toFixed(0),
+        row.fullScanMs.toFixed(1),
         row.noopIncrementalMs.toFixed(1),
-        row.editIncrementalMs.toFixed(1),
+        row.noopScanMs.toFixed(1),
+        row.editReindexMs.toFixed(1),
+        row.editScanMs.toFixed(1),
         row.analyzeNoPersistMs.toFixed(1),
         row.analyzePersistMs.toFixed(1),
         row.affected,
-        row.rssMb.toFixed(0),
+        row.observedPeakRssMb.toFixed(0),
         msPerKfile(row.fullIndexMs, row.files).toFixed(0),
         msPerKfile(row.noopIncrementalMs, row.files).toFixed(0),
-        msPerKfile(row.editIncrementalMs, row.files).toFixed(0),
+        msPerKfile(row.editReindexMs, row.files).toFixed(0),
         msPerKfile(row.analyzeNoPersistMs, row.files).toFixed(0),
         msPerKfile(row.analyzePersistMs, row.files).toFixed(0)
       ].join('\t')
@@ -171,7 +209,7 @@ async function main(): Promise<void> {
       worstIndexPerK,
       msPerKfile(row.fullIndexMs, row.files),
       msPerKfile(row.noopIncrementalMs, row.files),
-      msPerKfile(row.editIncrementalMs, row.files)
+      msPerKfile(row.editReindexMs, row.files)
     );
   }
 

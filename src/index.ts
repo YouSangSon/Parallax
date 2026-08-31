@@ -65,6 +65,7 @@ export { executeGraphQuery, parseGraphQuery } from './graph_query.js';
 export type { GraphQueryResult, ParsedGraphQuery } from './graph_query.js';
 export { queryCoChanges } from './co_change_query.js';
 export type { CoChangePartner, CoChangeQueryOptions, CoChangeQueryResult } from './co_change_query.js';
+export { buildRepoMap, estimateRepoMapTokens } from './repo_map.js';
 export {
   addParallaxMcpServer,
   installCopilotAgentPackage,
@@ -81,7 +82,19 @@ export type {
   PlannedCopilotPackageFile
 } from './agent_config.js';
 export {
+  installParallaxGitHooks,
+  planParallaxGitHooks
+} from './git_hooks.js';
+export type {
+  ParallaxGitHookAction,
+  ParallaxGitHookName,
+  ParallaxGitHookOptions,
+  ParallaxGitHookPlan,
+  PlannedParallaxGitHook
+} from './git_hooks.js';
+export {
   addWorkspaceRepo,
+  discoverWorkspacePackages,
   initWorkspace,
   listWorkspaces,
   loadWorkspaceCatalog,
@@ -90,6 +103,9 @@ export {
 } from './workspace.js';
 export type {
   AddWorkspaceRepoOptions,
+  DiscoveredWorkspacePackage,
+  DiscoverWorkspacePackagesOptions,
+  DiscoverWorkspacePackagesResult,
   InitWorkspaceOptions,
   InitWorkspaceResult,
   ListWorkspacesOptions,
@@ -127,6 +143,8 @@ export type {
 } from './reflection.js';
 export { impactReportToSarif } from './sarif.js';
 export type { SarifLog, SarifOptions } from './sarif.js';
+export { exportScipJson, importScipJson } from './scip.js';
+export type { ScipExportOptions, ScipExportResult, ScipImportOptions, ScipImportResult } from './scip.js';
 export { abandonBranch, gcBranches, restoreBranch } from './branch_gc.js';
 export { profileEntity } from './profile.js';
 export type { ProfileOptions, ProfileResult } from './profile.js';
@@ -175,6 +193,13 @@ export type {
   IndexResult,
   InitOptions,
   InitResult,
-  Lifecycle
+  Lifecycle,
+  RepoMap,
+  RepoMapEvidenceRef,
+  RepoMapOptions,
+  RepoMapPathItem,
+  RepoMapQueryMatch,
+  RepoMapVerificationPlan,
+  RepoMapVerificationPlanGroup
 } from './types.js';
 export type { McpContext } from './mcp.js';

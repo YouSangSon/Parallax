@@ -12,8 +12,12 @@ Most machine-oriented commands can print JSON through command-specific flags. `a
 | :--- | :--- |
 | `parallax init` | Create the local `.parallax/` store and a fresh database for the repo |
 | `parallax index [--max-file-bytes <n>]` | Scan the repo and extract the entity/relation graph; `--max-file-bytes` caps per-file scan size |
+| `parallax scip import --file <index.scip or index.scip.json>` | Import a SCIP binary index or JSON emitted by the official SCIP CLI, then augment the latest completed index with SCIP reference edges |
+| `parallax scip export [--file <index.scip.json>]` | Export the latest completed Parallax index as SCIP-compatible JSON, either to stdout or to a file |
 | `parallax reindex-vec [--model <hf-model>]` | Rebuild the sqlite-vec ANN index; `--model` selects the embedding model |
 | `parallax reembed [--model <hf-model>] [--all]` | Recompute fact embeddings; `--all` re-embeds every fact, otherwise only missing ones |
+
+`scip import` requires an existing completed Parallax index. Run `parallax scip import --file index.scip` to import a binary SCIP index through the official `scip` CLI on `PATH`, or import pre-rendered JSON with `parallax scip import --file index.scip.json` after `scip print --json index.scip > index.scip.json`. The explicitly selected `--file` may be any trusted local file. Import never re-reads live document paths: it uses SCIP `Document.text`, the recorded clean Git commit, or metadata already in the latest index; unverifiable textless, unindexed documents are skipped with a warning. `scip export` emits SCIP-compatible JSON from the latest completed index; writing binary `.scip` protobuf files is intentionally left out until users need it.
 
 ## Analysis
 
@@ -21,6 +25,9 @@ Most machine-oriented commands can print JSON through command-specific flags. `a
 | :--- | :--- |
 | `parallax analyze --changed <file[,file]> [--depth <n>] [--max-fanout <n>] [--json] [--sarif-output <path>]` | Analyze an explicit list of changed files against the latest index |
 | `parallax analyze --base <ref> [--head <ref>] [--depth <n>] [--max-fanout <n>] [--json] [--sarif-output <path>]` | Derive the changed file list from `git diff <base>...<head>` (default head `HEAD`) |
+| `parallax repo-map --changed <file[,file]> [--query <text>] [--budget <tokens>] [--json]` | Build a token-budgeted repo map/context card with changed roots, affected files, tests, docs, work artifacts, evidence refs, verification actions, a ranked verification plan, resources, confidence, provenance, known gaps, and omitted counts |
+| `parallax pr triage --base <ref> [--head <ref>] [--fail-on <level>] [--sarif-output <path>] [--query <text>] [--budget <tokens>]` | Run the local dependency/PR triage path: analyze the diff, write SARIF, and print a repo map |
+| `parallax install-hook [--hook pre-commit\|pre-push\|all] [--fail-on <level>] [--command <bin>] [--dry-run] [--force]` | Install local Git hooks that run Parallax impact gates before commits or pushes |
 | `parallax query "<cypher>"` | Run a read-only Cypher subset over the indexed graph and print JSON rows |
 | `parallax ingest-traces --file <traces.json>` | Promote relations matching observed runtime `source -> target` edges to `proven` confidence |
 
@@ -33,11 +40,22 @@ Flags:
 - `--depth` — maximum traversal depth for ripple computation.
 - `--max-fanout` — maximum fan-out per node during traversal.
 - `--json` — print the full report JSON instead of the summary, and skip writing the report to the store. The output validates against the published [report JSON Schema](report-schema.md).
-- `--sarif-output <path>` — write a pretty-printed SARIF 2.1.0 projection to a file for GitHub Code Scanning upload. Parent directories are created. This keeps the normal human summary on stdout and is mutually exclusive with `--json`.
+- `--sarif-output <path>` — write a pretty-printed SARIF 2.1.0 projection to a file for GitHub Code Scanning upload. The projection includes affected-file findings, index coverage-gap warnings, cross-repo contract-break warnings, recommended verification-action notes, and adapter known-gap notes. Parent directories are created. This keeps the normal human summary on stdout and is mutually exclusive with `--json`.
 - `--sarif-category <category>` — set the SARIF run automation id / GitHub Code Scanning category. Defaults to no category unless supplied by a wrapper such as the GitHub Action.
 - `--fail-on <level>` — control the exit code by confidence: `proven` / `inferred` / `heuristic` fail only when an affected file meets or exceeds that confidence; `any` (default) fails on any affected file; `none` never fails. Use in CI to gate on high-confidence impact only.
 
 By default (no `--json`) the report is persisted and a short summary is printed; the report path is shown when written.
+
+`repo-map` is a read-only planning surface for agents. It reuses the same impact analysis, context-pack ranking, indexed search, and `parallax://` resources as MCP; it does not create a new index. Its `verificationPlan` groups existing recommended actions by nearest `package.json` root and runner, emits copy-pasteable commands, and lists the changed / affected / target paths each group covers. The planner does not execute Nx, Bazel, or other external build tools. `--budget` is a token target estimated as `Math.ceil(text.length / 4)`, so the output discloses the requested budget, estimated tokens, truncation state, and omitted counts. `--query` adds ranked search-context matches from the existing index, and `--json` prints the full structured card.
+
+`pr triage` is a local wrapper for dependency-update and pull-request review. It accepts the same changed-file inputs as `analyze`, persists the impact report, writes SARIF to `.parallax/pr-triage.sarif` by default, applies `--fail-on`, and prints a repo map with a dependency-focused default query. It does not call GitHub, upload SARIF, checkout branches, or modify remote state. After you have a PR branch available locally, a typical Dependabot flow is:
+
+```bash
+parallax index
+parallax pr triage --base origin/main --head HEAD --fail-on proven
+```
+
+`install-hook` is an opt-in local installer. It writes executable `pre-commit` and/or `pre-push` hook files into the active Git hooks directory, including repositories that use `core.hooksPath`. The generated `pre-commit` hook gates the staged changed-file list from `git diff --cached`; the generated `pre-push` hook gates the pushed diff using Git's pre-push input first and falls back to `PARALLAX_BASE`, the upstream merge-base, or `origin/main`. Existing non-Parallax hooks are skipped unless `--force` is supplied; `--dry-run` prints the plan without writing. Use `PARALLAX_SKIP_HOOK=1` or Git's `--no-verify` to bypass a local hook intentionally.
 
 When the changed file is an indexed provider contract and the workspace already contains persisted `BREAKS_COMPATIBILITY_WITH` links, `analyze` also includes `crossRepoImpacts`. These entries identify the consumer service, consumer file, provider contract, breaking change, confidence, evidence snippet, and workspace resource URIs. `analyze` does not run contract diff automatically; refresh links first with `parallax workspace contract-diff` when the workspace is stale.
 
@@ -75,6 +93,7 @@ The `remember`/`recall` value passed via `--value` is parsed as JSON when possib
 | :--- | :--- |
 | `parallax workspace init [--name <name>] [--service <service>] [--force]` | Create or re-create the workspace catalog for this repo |
 | `parallax workspace add-repo <path> [--name <name>] [--service <service>] [--remote <url>]` | Register another local repo into the workspace catalog |
+| `parallax workspace discover-packages [--name <name>] [--json]` | Discover npm/pnpm workspace packages and Nx project configs, then sync them into the workspace catalog |
 | `parallax workspace list [--name <name>] [--json]` | List workspaces and their member repos |
 | `parallax workspace resolve-contracts [--name <name>] [--json]` | Resolve cross-repo provider/consumer contract links |
 | `parallax workspace contract-diff --contract <path> [--name <name>] [--provider <service>] [--provider-path <path>] [--json]` | Diff a contract file against the indexed workspace baseline |
@@ -84,7 +103,9 @@ The `remember`/`recall` value passed via `--value` is parsed as JSON when possib
 
 `workspace verify`, `workspace consumers`, and `workspace providers` read persisted links only. They do not run resolution or contract diff. Use `workspace resolve-contracts` to refresh `CONSUMES_HTTP_ENDPOINT` links and `workspace contract-diff` to refresh `BREAKS_COMPATIBILITY_WITH` links.
 
-`workspace add-repo` takes the repo path as a positional argument. Cross-repo coverage is limited to local repos the user explicitly registers — no clone or network access.
+`workspace add-repo` takes the repo path as a positional argument. Cross-repo coverage is limited to local repos the user explicitly registers — no clone or network access. A catalog entry may also point at an already indexed package directory inside the same monorepo; `resolve-contracts` reads the nearest parent Parallax database and scopes paths to that member.
+
+`workspace discover-packages` reads only local manifests: `package.json` `workspaces` arrays / `workspaces.packages`, `pnpm-workspace.yaml` `packages`, and Nx `project.json` or `package.json` `nx` project config when `nx.json` is present. It supports direct paths, `*`, `**`, leading `!` excludes, and simple `{apps,packages}` brace groups, then writes the discovered package/project directories into `.parallax/workspace.json` as member repos. When members are found, the root repo entry is replaced by those member entries to avoid duplicate same-monorepo links; catalog entries outside the current repo root are preserved. Turborepo package membership is covered through package-manager workspace manifests, while `turbo.json` task config is not treated as a catalog source. It does not run npm, pnpm, Nx, Turbo, installs, daemons, caches, or network calls.
 
 ## Diagnostics
 
@@ -108,7 +129,7 @@ The Copilot package command writes only under the explicit `--target <repo>` pat
 | :--- | :--- |
 | `parallax ui [--report <id>] [--port <n>]` | Start the local UI explorer; `--report` opens a specific report, `--port` sets the listen port |
 
-The UI runs until interrupted (`SIGINT`/`SIGTERM`); it prints its URL on startup.
+The UI runs until interrupted (`SIGINT`/`SIGTERM`); it prints its URL on startup. The workbench URL preserves the selected impact path, filter text, and report-delta policy preset, and the toolbar can export the current view as JSON, affected-path CSV, or a PNG/SVG impact map.
 
 ## Exit codes
 

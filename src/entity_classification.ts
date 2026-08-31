@@ -32,6 +32,7 @@ const languageByExtension = new Map<string, string>([
   ['.yaml', 'yaml'],
   ['.yml', 'yaml'],
   ['.json', 'json'],
+  ['.avsc', 'json'],
   ['.toml', 'toml'],
   ['.properties', 'properties'],
   ['.tf', 'terraform'],
@@ -75,7 +76,7 @@ export function isTestPath(relativePath: string): boolean {
     /(^|\/)(tests?|__tests__)\/|(^|\/)src\/test\//.test(relativePath) ||
     /(\.|-)(test|spec)\.[cm]?[tj]sx?$/.test(basename) ||
     /(?:Test|Tests|Spec)\.(?:java|kt)$/.test(basename) ||
-    /(?:^test_.*|.*_test)\.py$/.test(basename) ||
+    (basename.endsWith('.py') && (basename.startsWith('test_') || basename.endsWith('_test.py'))) ||
     /_test\.go$/.test(basename) ||
     /(?:_test|_spec)\.rs$/.test(basename)
   );
@@ -104,7 +105,21 @@ export function isObviousContractPath(relativePath: string): boolean {
   return (
     withoutExtension.includes('openapi') ||
     withoutExtension.includes('swagger') ||
-    withoutExtension.includes('asyncapi')
+    withoutExtension.includes('asyncapi') ||
+    basename.toLowerCase().endsWith('.avsc') ||
+    isJsonSchemaContractPath(relativePath)
+  );
+}
+
+export function isJsonSchemaContractPath(relativePath: string): boolean {
+  const basename = path.posix.basename(relativePath).toLowerCase();
+  const normalizedPath = relativePath.toLowerCase();
+  return (
+    basename.endsWith('.schema.json') ||
+    (
+      basename === 'schema.json' &&
+      /(^|\/)(api|apis|contracts?|schemas?)\//.test(normalizedPath)
+    )
   );
 }
 

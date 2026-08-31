@@ -14,6 +14,7 @@ adapter는 `SemanticAdapter` 인터페이스(`src/adapters/types.ts`)를 구현�
 - `confidence?` — adapter의 기본 confidence 라벨(생략 시 `unknown`으로 폴백).
 - `knownGaps?` — 이 adapter가 해석하지 *않는* 것에 대한 사람이 읽는 메모.
 - `selectionMode?` — 범위가 정해진 언어/파일 adapter의 기본값은 `targeted`, 마지막 fallback adapter는 `catch-all`.
+- `fileContentScope?` — 기본값은 `full-index`; adapter가 현재 `process(file)` 입력의 content만 필요로 하고 `ctx.indexedFiles` / `files`는 path-level context로만 쓸 때만 `target-only`를 설정한다.
 - `supports(file)` — 이 adapter가 파일을 처리하면 `true`를 반환.
 - `start(ctx, files)` — index run을 위한 `AdapterRun`(또는 `Promise<AdapterRun>`)을 반환.
 
@@ -28,6 +29,15 @@ orchestrator는 각 `EntityDescriptor`를 content-hash해 entity id를 계산하
 ## Capability
 
 `AdapterCapability`는 다음 중 하나다: `imports`, `exports`, `calls`, `references`, `types`, `symbols`, `docrefs`, `tests`, `packages`. adapter는 추출할 수 있는 부분집합을 선언해 coverage와 gap이 adapter별로 명시되게 한다.
+
+## 파일 content 범위
+
+`fileContentScope`는 adapter의 cross-file content 계약을 명시한다:
+
+- `full-index` — adapter가 `ctx.indexedFiles`, `files`, import resolution, package/lockfile discovery, 또는 다른 startup state를 통해 스캔된 어떤 파일의 content든 읽을 수 있다. source compatibility와 안전성을 위해 기본값이다.
+- `target-only` — adapter가 현재 `process(file)`에 전달된 파일 content만 읽는다. indexed path set은 reference resolution에 사용할 수 있지만, `start()` 중이나 target file을 처리하는 동안 다른 파일의 `content`를 읽으면 안 된다.
+
+구현을 확인한 뒤에만 `target-only`를 사용한다. 예를 들어 config/infra path-reference extraction은 indexed file path로 reference를 검증하지만 다른 indexed file content는 읽지 않는다. build-system/package와 TypeScript/JavaScript adapter는 lockfile/package catalog, import resolver, cross-file target을 indexed content에서 만들기 때문에 `full-index`로 유지한다.
 
 ## Evidence와 confidence (불변 원칙 I-10)
 
@@ -48,7 +58,7 @@ adapter는 registry(`src/adapters/registry.ts`)에 살며 `src/indexer.ts`의 `c
 
 registry는 이제 이 계약을 명시적으로 강제한다. `selectionMode`는 기존 source compatibility를 위해 선택 사항이며 생략하면 `targeted`다. 마지막 fallback coverage를 의도한 adapter만 `selectionMode = 'catch-all'`을 설정한다. `AdapterRegistry.register()`는 이미 등록된 catch-all adapter 뒤에 다른 adapter를 등록하려 하면 거부하며, error에는 새 adapter와 이를 막는 catch-all adapter의 이름이 모두 들어간다. 중복 `id` 검증은 여전히 먼저 실행되어 기존 중복 id error를 유지한다.
 
-adapter 등록을 검토하거나 테스트할 때는 `registry.manifest()`를 사용한다. 이 API는 등록 순서의 immutable snapshot을 반환한다. 각 entry에는 `order`, `id`, `version`, `capabilities`, `confidence`(기본값 `unknown`), `knownGaps`(기본값 빈 배열), `selectionMode`(기본값 `targeted`)가 포함된다. 호출자는 registry 상태를 변경하지 않고 이 정보를 검사할 수 있다.
+adapter 등록을 검토하거나 테스트할 때는 `registry.manifest()`를 사용한다. 이 API는 등록 순서의 immutable snapshot을 반환한다. 각 entry에는 `order`, `id`, `version`, `capabilities`, `confidence`(기본값 `unknown`), `knownGaps`(기본값 빈 배열), `selectionMode`(기본값 `targeted`), `fileContentScope`(기본값 `full-index`)가 포함된다. 호출자는 registry 상태를 변경하지 않고 이 정보를 검사할 수 있다.
 
 ## 버전 관리와 재추출
 
@@ -76,6 +86,7 @@ export class ExampleAdapter implements SemanticAdapter {
   readonly capabilities = capabilities;
   readonly confidence = 'heuristic';
   readonly selectionMode = 'targeted';
+  readonly fileContentScope = 'target-only';
   readonly knownGaps = ['only resolves a single literal import form'];
 
   supports(file: ScannedFile): boolean {
@@ -122,8 +133,9 @@ adapter를 추가하거나 바꾸기 전에:
 
 - 고유한 `id`를 사용하고, 추출 output이 바뀌면 `version`을 올린다.
 - 언어/파일별 adapter에는 `selectionMode = 'targeted'`를 선호하고, `catch-all`은 마지막 fallback adapter에만 사용한다.
+- adapter가 target-file content만 읽고 indexed file은 path metadata로만 쓰는 경우가 아니면 `fileContentScope = 'full-index'`를 유지한다.
 - 모든 targeted adapter를 catch-all adapter보다 앞에 등록한다.
-- focused test나 review note에서 `registry.manifest()`로 순서, capability, confidence, known gap, selection mode를 확인한다.
+- focused test나 review note에서 `registry.manifest()`로 순서, capability, confidence, known gap, selection mode, file content scope를 확인한다.
 - manifest가 heuristic 또는 불완전한 coverage를 드러낼 수 있도록 `knownGaps`를 최신으로 유지한다.
 
 ## 함께 보기

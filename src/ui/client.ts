@@ -11,6 +11,49 @@ export const UI_CLIENT_JS = `    const snapshot = JSON.parse(document.getElement
     function uiMessage(key, fallback) {
       return typeof uiMessages[key] === 'string' ? uiMessages[key] : fallback;
     }
+    function workbenchState() {
+      const current = new URL(window.location.href);
+      return {
+        report: current.searchParams.get('report') || snapshot.selectedReportId || '',
+        lang: current.searchParams.get('lang') || document.documentElement.lang || 'en',
+        path: current.searchParams.get('path') || document.body.dataset.selectedImpactPath || '',
+        filter: current.searchParams.get('filter') || input?.value?.trim() || '',
+        preset: current.searchParams.get('preset') || document.body.dataset.selectedPolicyPreset || ''
+      };
+    }
+    function writeWorkbenchState(updates, options = {}) {
+      if (!window.history?.replaceState) return;
+      const nextUrl = new URL(window.location.href);
+      nextUrl.pathname = '/';
+      for (const [key, value] of Object.entries(updates)) {
+        if (typeof value === 'string' && value.length > 0) {
+          nextUrl.searchParams.set(key, value);
+        } else {
+          nextUrl.searchParams.delete(key);
+        }
+      }
+      const search = nextUrl.searchParams.toString();
+      const nextLocation = nextUrl.pathname + (search ? '?' + search : '');
+      if (nextLocation !== window.location.pathname + window.location.search) {
+        if (options.replace) window.history.replaceState(null, '', nextLocation);
+        else window.history.pushState(null, '', nextLocation);
+      }
+      refreshLanguageLinks();
+    }
+    function refreshLanguageLinks() {
+      const state = workbenchState();
+      for (const link of document.querySelectorAll('.lang-link[data-lang]')) {
+        const lang = link.getAttribute('data-lang') || 'en';
+        const nextUrl = new URL(window.location.href);
+        nextUrl.pathname = '/';
+        if (state.report) nextUrl.searchParams.set('report', state.report);
+        nextUrl.searchParams.set('lang', lang);
+        if (state.path) nextUrl.searchParams.set('path', state.path);
+        if (state.filter) nextUrl.searchParams.set('filter', state.filter);
+        if (state.preset) nextUrl.searchParams.set('preset', state.preset);
+        link.setAttribute('href', nextUrl.pathname + '?' + nextUrl.searchParams.toString());
+      }
+    }
     function evidenceMatchesPath(evidence, path) {
       return evidence.file === path || evidence.subject?.path === path || (evidence.snippet || '').includes(path);
     }
@@ -64,6 +107,94 @@ export const UI_CLIENT_JS = `    const snapshot = JSON.parse(document.getElement
       if (displayValue === '--') return displayValue;
       if (/^[A-Za-z0-9_./:=@%+,-]+$/.test(displayValue) && !displayValue.startsWith('-')) return displayValue;
       return "'" + displayValue.replaceAll("'", "'\\\\''") + "'";
+    }
+    function exportFileBaseName(extension) {
+      const id = snapshot.selectedReport?.id || snapshot.selectedReportId || 'workbench';
+      return 'parallax-' + String(id).replace(/[^A-Za-z0-9._-]+/g, '-') + '.' + extension;
+    }
+    function downloadBlob(filename, type, content) {
+      const blob = content instanceof Blob ? content : new Blob([content], { type });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.style.display = 'none';
+      document.body.append(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    }
+    function csvCell(value) {
+      const text = String(value ?? '');
+      return '"' + text.replaceAll('"', '""') + '"';
+    }
+    function exportJson() {
+      const payload = {
+        state: workbenchState(),
+        generatedAt: snapshot.generatedAt,
+        repoRoot: snapshot.repoRoot,
+        report: snapshot.selectedReport,
+        graph: snapshot.graph,
+        comparison: snapshot.comparison
+      };
+      downloadBlob(exportFileBaseName('json'), 'application/json;charset=utf-8', JSON.stringify(payload, null, 2) + '\\n');
+    }
+    function exportCsv() {
+      const actionByPath = new Map(actionItems.map((action) => [action.target?.path, actionCommandText(action)]));
+      const header = ['path', 'confidence', 'depth', 'reason', 'evidence_count', 'verification_command'];
+      const rows = affectedFiles.map((item) => [
+        item.path,
+        item.confidence,
+        item.depth ?? '',
+        item.reason,
+        evidenceHitCount(item.path),
+        actionByPath.get(item.path) || ''
+      ]);
+      downloadBlob(exportFileBaseName('csv'), 'text/csv;charset=utf-8', [header, ...rows].map((row) => row.map(csvCell).join(',')).join('\\n') + '\\n');
+    }
+    function svgXmlForExport(svg) {
+      const clone = svg.cloneNode(true);
+      clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+      const styleText = document.querySelector('style')?.textContent || '';
+      if (styleText) {
+        const style = document.createElementNS('http://www.w3.org/2000/svg', 'style');
+        style.textContent = styleText;
+        clone.insertBefore(style, clone.firstChild);
+      }
+      return new XMLSerializer().serializeToString(clone);
+    }
+    async function exportPng() {
+      const svg = document.querySelector('.impact-svg');
+      if (!svg || !svg.querySelector('[data-impact-path]')) throw new Error('no impact map to export');
+      const xml = svgXmlForExport(svg);
+      const width = Number(svg.getAttribute('width')) || 760;
+      const height = Number(svg.getAttribute('height')) || 420;
+      const svgBlob = new Blob([xml], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(svgBlob);
+      try {
+        const image = new Image();
+        await new Promise((resolve, reject) => {
+          image.onload = resolve;
+          image.onerror = reject;
+          image.src = url;
+        });
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const context = canvas.getContext('2d');
+        if (!context) throw new Error('canvas unavailable');
+        context.fillStyle = '#fffdf4';
+        context.fillRect(0, 0, width, height);
+        context.drawImage(image, 0, 0, width, height);
+        const pngBlob = await new Promise((resolve, reject) => {
+          canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('png export failed')), 'image/png');
+        });
+        downloadBlob(exportFileBaseName('png'), 'image/png', pngBlob);
+      } catch {
+        downloadBlob(exportFileBaseName('svg'), 'image/svg+xml;charset=utf-8', xml);
+      } finally {
+        URL.revokeObjectURL(url);
+      }
     }
     function renderInspectorAction(path) {
       const target = document.getElementById('inspectorAction');
@@ -270,29 +401,36 @@ export const UI_CLIENT_JS = `    const snapshot = JSON.parse(document.getElement
         row.classList.toggle('related-evidence', isRelatedEvidence);
       }
       if (options.scroll) {
-        document.querySelector('.evidence-row.related-evidence, .impact-row.selected-impact')?.scrollIntoView({
+        document.querySelector('.evidence-row.related-evidence, .impact-path-main.selected-impact')?.scrollIntoView({
           block: 'nearest',
-          behavior: 'smooth'
+          behavior: scrollBehavior()
         });
       }
+      if (options.updateUrl !== false) writeWorkbenchState({ path });
     }
     for (const element of document.querySelectorAll('.selectable-impact[data-impact-path]')) {
       element.addEventListener('click', () => selectImpact(element.getAttribute('data-impact-path'), { scroll: true }));
+      if (element.tagName === 'BUTTON') continue;
       element.addEventListener('keydown', (event) => {
         if (event.key !== 'Enter' && event.key !== ' ') return;
         event.preventDefault();
         selectImpact(element.getAttribute('data-impact-path'), { scroll: true });
       });
     }
-    for (const element of document.querySelectorAll('.selectable-impact a, .selectable-impact button')) {
-      element.addEventListener('click', (event) => event.stopPropagation());
+    function scrollBehavior() {
+      return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
     }
-    input?.addEventListener('input', () => {
-      const query = input.value.trim().toLowerCase();
+    function applyFilter(queryText) {
+      const query = String(queryText || '').trim().toLowerCase();
       for (const row of document.querySelectorAll('.filterable > li')) {
         const text = (row.getAttribute('data-filter-text') || row.textContent || '').toLowerCase();
         row.classList.toggle('hidden', query.length > 0 && !text.includes(query));
       }
+    }
+    input?.addEventListener('input', () => {
+      const query = input.value.trim();
+      applyFilter(query);
+      writeWorkbenchState({ filter: query }, { replace: true });
     });
     document.getElementById('reportSelect')?.addEventListener('change', (event) => {
       const value = event.target.value;
@@ -300,6 +438,8 @@ export const UI_CLIENT_JS = `    const snapshot = JSON.parse(document.getElement
       const nextUrl = new URL(window.location.href);
       nextUrl.pathname = '/';
       nextUrl.searchParams.set('report', value);
+      nextUrl.searchParams.delete('path');
+      nextUrl.searchParams.delete('preset');
       window.location.href = nextUrl.pathname + '?' + nextUrl.searchParams.toString();
     });
     async function copyText(value) {
@@ -342,8 +482,62 @@ export const UI_CLIENT_JS = `    const snapshot = JSON.parse(document.getElement
         }, 1200);
       });
     }
+    function setButtonState(button, state, label) {
+      const original = button.dataset.originalText || button.textContent || '';
+      button.dataset.originalText = original;
+      button.textContent = label;
+      button.dataset.state = state;
+      window.setTimeout(() => {
+        button.textContent = original;
+        delete button.dataset.state;
+      }, 1200);
+    }
+    function wireToolbarButton(id, handler, successLabel = uiMessage('copyCopied', 'Copied')) {
+      const button = document.getElementById(id);
+      if (!button) return;
+      button.addEventListener('click', async () => {
+        try {
+          await handler();
+          setButtonState(button, 'copied', successLabel);
+        } catch {
+          setButtonState(button, 'failed', uiMessage('copyFailed', 'Copy failed'));
+        }
+      });
+    }
     for (const button of document.querySelectorAll('.copy-command[data-command]')) {
       wireCopyButton(button);
     }
-    const firstImpactPath = initialImpactPath();
-    if (firstImpactPath) selectImpact(firstImpactPath);`;
+    function selectPreset(preset, options = {}) {
+      if (!preset) return;
+      document.body.dataset.selectedPolicyPreset = preset;
+      for (const row of document.querySelectorAll('.delta-preset')) {
+        row.classList.toggle('selected-preset', row.querySelector('[data-policy-preset]')?.getAttribute('data-policy-preset') === preset);
+      }
+      if (options.updateUrl !== false) writeWorkbenchState({ preset });
+    }
+    for (const button of document.querySelectorAll('.delta-preset-select[data-policy-preset]')) {
+      button.addEventListener('click', () => selectPreset(button.getAttribute('data-policy-preset') || ''));
+    }
+    wireToolbarButton('copyLinkButton', () => copyText(window.location.href));
+    wireToolbarButton('exportJsonButton', exportJson, uiMessage('exportDone', 'Exported'));
+    wireToolbarButton('exportCsvButton', exportCsv, uiMessage('exportDone', 'Exported'));
+    wireToolbarButton('exportPngButton', exportPng, uiMessage('exportDone', 'Exported'));
+    function restoreWorkbenchState() {
+      const current = new URL(window.location.href);
+      const filter = current.searchParams.get('filter') || '';
+      const preset = current.searchParams.get('preset') || '';
+      const path = current.searchParams.get('path') || '';
+      if (input) input.value = filter;
+      applyFilter(filter);
+      if (preset) {
+        selectPreset(preset, { updateUrl: false });
+      } else {
+        delete document.body.dataset.selectedPolicyPreset;
+        for (const row of document.querySelectorAll('.delta-preset')) row.classList.remove('selected-preset');
+      }
+      const selectedPath = affectedFiles.some((item) => item.path === path) ? path : initialImpactPath();
+      if (selectedPath) selectImpact(selectedPath, { updateUrl: false });
+      refreshLanguageLinks();
+    }
+    window.addEventListener('popstate', restoreWorkbenchState);
+    restoreWorkbenchState();`;

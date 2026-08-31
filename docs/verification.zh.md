@@ -12,20 +12,31 @@ Parallax 分层验证正确性——快速的 unit suite、typecheck、docs lint
 | :--- | :--- | :--- |
 | `npm test` | 通过 `tsx --test` 对 `tests/**/*.test.ts` 运行 Node test runner | 任何变更后；默认的快速 suite |
 | `npm run check` | `tsc --noEmit` 类型检查，不产出文件 | commit 前；捕获类型回归 |
+| `npm run audit:dependencies` | 运行 fail-closed 的 high-severity dependency audit gate | commit / PR 前及 CI 中 |
 | `npm run lint` | 一起运行 `check` + `docs:lint` | commit / PR 前；完整的 static gate |
 | `npm run docs:lint` | 对 tracked/untracked Markdown 运行 `scripts/docs-lint.js`，包括本地 `.md` 链接目标 | 编辑任何文档后 |
 | `npm run verify` | 运行 canonical source-checkout release gate：lint、install smoke、fast tests、dogfood、bench 和 high-level audit | release 前和 CI |
 | `npm run build` | `tsc -p tsconfig.json`，编译到 `dist/` | 发布或 smoke 测试 CLI 前 |
 | `npm run bench` | 运行 `bench/impact-bench.ts`；accuracy 回归时以 non-zero 退出 | engine/adapter 变更后 |
 | `npm run bench:report` | 将最新 bench JSON 渲染为 Markdown，并可选地与 baseline report 比较 | `npm run bench` 后，或用于 CI summary |
-| `npm run bench:perf` | 运行 `bench/impact-perf.ts`；在合成 repo 上测量 full index、no-op incremental index、edited-file incremental index 与 analyze phase 耗时（非确定性，不在 `verify` 中） | 处理 indexing/traversal 性能时 |
+| `npm run bench:perf` | 运行 `bench/impact-perf.ts`；在合成 repo 上测量 full index、no-op incremental index、edited-file reindex、各 scan phase、analyze phase 耗时与 observed peak RSS（非确定性，不在 `verify` 中） | 处理 indexing/traversal 性能时 |
 | `npm run test:dogfood` | 对 Parallax 自身 source 进行索引并断言内部 graph 存活 | engine 变更后（indexer/adapters/analyzer/store/graph） |
 | `npm run test:mcp` | 运行 `tests/mcp.test.ts`（impact / context / memory / telemetry / 路径校验） | MCP surface 变更后 |
 | `npm run test:ui` | 运行 `tests/ui.test.ts`（UI 快照、服务器、JSON 资源端点） | UI 变更后 |
-| `npm run test:security` | 运行 `tests/security.test.ts`（路径包含约束 + 脱敏） | store / 路径 / 脱敏变更后 |
+| `npm run test:security` | 运行 `tests/security.test.ts`（路径包含约束、脱敏、dependency audit gate） | store / 路径 / 脱敏 / audit gate 变更后 |
 | `npm run test:install-smoke` | 先 `npm run build` 再 `node dist/src/cli.js --help` | 发布前，确认打包后的 CLI 能启动 |
 
-`test:fixtures` 是 `npm test` 的别名，`test:benchmark` 是 `npm run bench` 的别名。`npm run verify` 包含 `npm audit --audit-level=high`，所以最后的 audit 阶段依赖 npm registry 和网络可用性。
+`test:fixtures` 是 `npm test` 的别名，`test:benchmark` 是 `npm run bench` 的别名。`npm run verify` 包含 `npm run audit:dependencies`，所以最后的 audit 阶段依赖 npm registry 和网络可用性。
+
+Dependency gate 会放行 clean audit。在 2026-09-30 UTC 结束前，它也仅允许
+`GHSA-xcpc-8h2w-3j85` 与 `GHSA-f88m-g3jw-g9cj` 所报告的、精确 pin 住的
+`@huggingface/transformers` dependency tree，并输出醒目警告。过期、
+command/network 或 JSON 错误，以及 pin 住的 high/critical finding/advisory
+field 和 count、package path、severity、node、version 或 dependency edge
+的任何变化都会 fail closed。只有 low/moderate 的报告低于此 gate 的阈值。
+失败输出不会包含 raw npm
+content；需要 raw 诊断时，请在本地重新运行
+`npm audit --audit-level=high --json`。
 
 ## dogfood guard——真正的安全网
 
@@ -45,6 +56,22 @@ dogfood guard 填补了这个缺口。在每个 test 中，它：
 
 **教训：** green 的 `npm test` 必要但不充分。对 engine 的任何变更——indexer、adapters、analyzer、store、graph、cross-repo——都不能只靠 unit green，必须经过 dogfood 验证，因为 unit suite 可能 green 而真实 graph 已经损坏。
 
+## 增量正确性 gate
+
+当前 `IndexResult.mode = 'incremental'` 表示 indexed body 没有变化。任何
+indexed body 发生变化时，都会报告 `mode = 'full'` 并执行完整 extraction。
+仅凭 `fileContentScope` 不能授权 changed-only extraction：它约束读取范围，
+但不约束 emitted row 的 ownership。
+
+回归 oracle 位于 `tests/incremental-index-oracle.test.ts`。它包含仅修改
+`tsconfig.json` path alias 的 case，并要求 rerun graph 与同一 final tree 的
+fresh index 完全一致。Component test 还覆盖 target-only adapter 先 emit、
+随后移除 foreign-source relation 的 case。
+
+```bash
+node --import tsx --test tests/incremental-index-oracle.test.ts
+```
+
 ## accuracy bench
 
 `bench/impact-bench.ts` 构建一个固定的 multi-language fixture（TypeScript/JavaScript、JVM/Spring Boot、Python、Go、Rust、OpenAPI 契约与 build manifest），对其索引，并将所得 graph 与一组 pin 住的期望 relation 对照打分。它 pin 住：
@@ -60,7 +87,7 @@ runner 写出一份确定性 JSON 报告，当 suite 未通过时设置 non-zero
 - `tests/impact-bench.test.ts` 作为 `npm test` 的一部分运行 bench，并断言报告形态、pin 住的期望 relation 集合，以及 score/recall 阈值。
 - `npm run bench` 直接运行 `bench/impact-bench.ts`，并在任何 recall/score 回归时以 non-zero 退出——这是 CI 使用的形式。
 
-Deterministic bench 也包含 cross-repo contract-impact lane。该 lane 构建 two-repo workspace fixture，通过 `analyzeContractDiff` persist breaking contract link，然后检查 `analyzeDiff` 与 report-scoped graph export 是否仍暴露 expected `web:src/client.ts` consumer impact。该 lane 不会 reweight 历史 `summary.score`，而是通过 `crossRepoContracts.summary.passed` gate `summary.passed`。
+Deterministic bench 也包含 cross-repo、contract-diff、co-change 与 trace-promotion lane。cross-repo contract-impact lane 会构建 two-repo workspace fixture，通过 `analyzeContractDiff` persist breaking contract link，然后检查 `analyzeDiff` 与 report-scoped graph export 是否仍暴露 expected `web:src/client.ts` consumer impact。contract-diff quality lane 会运行 removed response required property、removed response optional property、added request required property、request enum-value removal、request format addition、response property type change、response nullable addition、response format change、response enum-value removal 的 paired OpenAPI v1/v2 fixture，以及 JSON Schema root-object 和 Avro top-level record required-property removal case，并通过 `contractDiffQuality` 报告 matched cases/changes。co-change quality lane 会构建一个小型 git-history fixture，其中 `src/alpha.ts` 与 `src/beta.ts` 反复共同变更，然后检查 `queryCoChanges` 与 `analyzeDiff` 是否都通过 `coChangeQuality` 将 `src/beta.ts` 暴露为 expected heuristic partner。trace-promotion lane 会 ingest 一个运行时观测到的 `src/beta.ts -> src/alpha.ts` edge，然后通过 `tracePromotionQuality` 验证被提升的 relation 会作为 proven impact 暴露。这些 lane 会 gate `summary.passed`，但不会 reweight 历史 `summary.score`。
 
 凡是触及 relation 抽取、排序或 retrieval 的变更之后，都运行 `npm run bench`。
 
@@ -68,14 +95,43 @@ Deterministic bench 也包含 cross-repo contract-impact lane。该 lane 构建 
 
 ## performance bench
 
-`bench/impact-perf.ts`（通过 `npm run bench:perf` 运行）在**确定性合成 repo**（`bench/synthetic-repo.ts`）上以递增规模测量 full index、no-op incremental index、edited-file incremental index 与 analyze 成本——一个 module hub 结构，改动 leaf 会波及所有 importer，从而压测 analyzer 的 reverse-dependency traversal。它与 accuracy bench 及 `npm run verify` **刻意分离**：耗时与 peak RSS 是非确定性的，绝不能进入字节一致的 `impact-bench-report.json`。用它来建立 baseline，或在处理 indexer/analyzer 时排查疑似回归；在 CI 中可对最差 index phase `/kfile` 成本使用宽松的 `--max-ms-per-kfile` ceiling 设闸。
+`bench/impact-perf.ts`（通过 `npm run bench:perf` 运行）在**确定性合成 repo**（`bench/synthetic-repo.ts`）上以递增规模测量 full index、no-op incremental index、edited-file reindex、各 scan phase 与 analyze 成本——一个 module hub 结构，改动 leaf 会波及所有 importer，从而压测 analyzer 的 reverse-dependency traversal。它与 accuracy bench 及 `npm run verify` **刻意分离**：耗时与 peak RSS 是非确定性的，绝不能进入字节一致的 `impact-bench-report.json`。用它来建立 baseline，或在处理 indexer/analyzer 时排查疑似回归；在 CI 中可对最差 index phase `/kfile` 成本使用宽松的 `--max-ms-per-kfile` ceiling 设闸。
 
 ```bash
 npm run bench:perf -- --scales 1000,10000        # 自定义规模
 npm run bench:perf -- --max-ms-per-kfile 2000    # 超过 ceiling 即失败
 ```
 
-输出表会分开显示 `full_index_ms`、`noop_incremental_ms`、`edit_incremental_ms`、`analyze_no_persist_ms`、`analyze_persist_ms` 以及对应的 `/kfile` 列。计时运行不在 verify 中，但合成 generator 和表格 formatter 由 `tests/synthetic-repo.test.ts` 在常规 verify 闸中守护。
+若要获得可比较的 large-repo baseline，请在 clean checkout 上使用 10k 与 50k 文件规模：
+
+```bash
+npm run bench:perf -- --scales 10000,50000
+```
+
+同时记录 command、commit、Node version、OS / hardware class，以及完整 output table。只有在已有项目 baseline 之后，才把 `--max-ms-per-kfile` 当作本地或 CI smoke ceiling；不要把 exact timing 或 RSS 接入 `npm run verify`。
+
+输出表会分开显示 `full_index_ms`、`full_scan_ms`、`noop_incremental_ms`、`noop_scan_ms`、`edit_reindex_ms`、`edit_scan_ms`、`analyze_no_persist_ms`、`analyze_persist_ms`、`observed_peak_rss_mb`，以及 total phase 对应的 `/kfile` 耗时列。Peak RSS 使用 Node 内置 RSS reading 在 phase 边界采样，因此是实用的趋势信号，而不是精确 allocator trace。计时运行不在 verify 中，但合成 generator 和表格 formatter 由 `tests/synthetic-repo.test.ts` 在常规 verify 闸中守护。
+
+### 当前本地 baseline
+
+于 2026-06-28 在 commit `f8f6060` 上采集，环境为 macOS Darwin 24.6.0、Apple M1 Max、10 CPU cores、32 GiB RAM、Node `v24.14.0`、npm `11.9.0`。
+
+此 historical table 早于 scan phase column，并保留当时的
+`edit_incremental_ms` 名称。Current output 将 changed-body phase 标为
+`edit_reindex_ms`；比较时请在当前 checkout 重新运行命令。
+
+命令：
+
+```bash
+npm run bench:perf -- --scales 1000,2000
+```
+
+| files | full_index_ms | noop_incremental_ms | edit_incremental_ms | analyze_no_persist_ms | analyze_persist_ms | affected | observed_peak_rss_mb | full_index_ms/kfile | noop_incremental_ms/kfile | edit_incremental_ms/kfile | analyze_no_persist_ms/kfile | analyze_persist_ms/kfile |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1000 | 5251 | 3655.8 | 3594.0 | 1947.0 | 1935.7 | 200 | 328 | 5251 | 3656 | 3594 | 1947 | 1936 |
+| 2000 | 17526 | 14266.0 | 14179.2 | 7688.0 | 7707.7 | 200 | 261 | 8763 | 7133 | 7090 | 3844 | 3854 |
+
+也尝试了标准 large-repo 命令 `npm run bench:perf -- --scales 10000`。在这台主机上约 20 分钟内没有输出表格，因此中断。由于 10k full-phase run 没能在本地限制内完成，未启动 50k run。在降低 analyzer/indexing 成本，或为 perf runner 增加 phase-split/progress mode 之前，请把此 baseline host 上的 10k/50k full-phase `bench:perf` 视为**尚不支持**。
 
 ## docs linter
 

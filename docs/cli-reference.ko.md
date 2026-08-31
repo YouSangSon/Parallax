@@ -12,8 +12,12 @@
 | :--- | :--- |
 | `parallax init` | repo의 로컬 `.parallax/` 저장소와 새 데이터베이스를 생성 |
 | `parallax index [--max-file-bytes <n>]` | repo를 스캔해 entity/relation graph를 추출; `--max-file-bytes`는 파일당 스캔 크기를 제한 |
+| `parallax scip import --file <index.scip or index.scip.json>` | SCIP binary index 또는 공식 SCIP CLI가 출력한 JSON을 가져와 최신 완료 index에 SCIP reference edge를 보강 |
+| `parallax scip export [--file <index.scip.json>]` | 최신 완료 Parallax index를 SCIP 호환 JSON으로 stdout 또는 파일에 내보냄 |
 | `parallax reindex-vec [--model <hf-model>]` | sqlite-vec ANN 인덱스를 재구축; `--model`은 embedding 모델을 선택 |
 | `parallax reembed [--model <hf-model>] [--all]` | fact embedding을 재계산; `--all`은 모든 fact를 재임베딩, 아니면 누락분만 |
+
+`scip import`는 완료된 Parallax index가 이미 있어야 한다. `parallax scip import --file index.scip`은 `PATH`의 공식 `scip` CLI를 통해 binary SCIP index를 가져오고, `scip print --json index.scip > index.scip.json`으로 미리 만든 JSON은 `parallax scip import --file index.scip.json`으로 가져온다. 명시적으로 선택한 `--file`에는 신뢰하는 로컬 파일을 지정할 수 있다. Import는 live document path를 다시 읽지 않고 SCIP `Document.text`, 기록된 clean Git commit, 또는 최신 index의 기존 metadata만 사용한다. 검증할 수 없는 textless·unindexed document는 경고와 함께 건너뛴다. `scip export`는 최신 완료 index에서 SCIP 호환 JSON을 만든다. binary `.scip` protobuf 작성은 실제 수요가 생길 때까지 의도적으로 제외한다.
 
 ## Analysis
 
@@ -21,6 +25,9 @@
 | :--- | :--- |
 | `parallax analyze --changed <file[,file]> [--depth <n>] [--max-fanout <n>] [--json] [--sarif-output <path>]` | 명시한 변경 파일 목록을 최신 index에 대해 분석 |
 | `parallax analyze --base <ref> [--head <ref>] [--depth <n>] [--max-fanout <n>] [--json] [--sarif-output <path>]` | `git diff <base>...<head>`(기본 head `HEAD`)에서 변경 파일 목록을 도출 |
+| `parallax repo-map --changed <file[,file]> [--query <text>] [--budget <tokens>] [--json]` | changed root, affected file, test, 문서, work artifact, evidence ref, verification action, ranked verification plan, resource, confidence, provenance, known gap, omitted count가 담긴 token-budgeted repo map/context card를 생성 |
+| `parallax pr triage --base <ref> [--head <ref>] [--fail-on <level>] [--sarif-output <path>] [--query <text>] [--budget <tokens>]` | 로컬 dependency/PR triage 경로 실행: diff 분석, SARIF 작성, repo map 출력 |
+| `parallax install-hook [--hook pre-commit\|pre-push\|all] [--fail-on <level>] [--command <bin>] [--dry-run] [--force]` | commit 또는 push 전에 Parallax impact gate를 실행하는 로컬 Git hook 설치 |
 | `parallax query "<cypher>"` | 인덱싱된 그래프에 읽기전용 Cypher 서브셋을 실행하고 JSON 행을 출력 |
 | `parallax ingest-traces --file <traces.json>` | 관측된 런타임 `source -> target` 엣지와 매칭되는 관계를 `proven` 신뢰도로 승격 |
 
@@ -33,11 +40,22 @@
 - `--depth` — ripple 계산의 최대 traversal 깊이.
 - `--max-fanout` — traversal 중 노드당 최대 fan-out.
 - `--json` — 요약 대신 전체 report JSON을 출력하고, report를 저장소에 쓰지 않는다. 출력은 발행된 [report JSON Schema](report-schema.ko.md)에 대해 검증된다.
-- `--sarif-output <path>` — GitHub Code Scanning upload용 SARIF 2.1.0 projection을 예쁘게 포맷한 JSON 파일로 쓴다. 부모 디렉터리는 생성된다. stdout에는 일반 human summary를 유지하며 `--json`과 함께 쓸 수 없다.
+- `--sarif-output <path>` — GitHub Code Scanning upload용 SARIF 2.1.0 projection을 예쁘게 포맷한 JSON 파일로 쓴다. projection에는 affected-file finding, index coverage-gap warning, cross-repo contract-break warning, recommended verification-action note, adapter known-gap note가 포함된다. 부모 디렉터리는 생성된다. stdout에는 일반 human summary를 유지하며 `--json`과 함께 쓸 수 없다.
 - `--sarif-category <category>` — SARIF run automation id / GitHub Code Scanning category를 설정한다. GitHub Action 같은 wrapper가 넘기지 않으면 category는 비워 둔다.
 - `--fail-on <level>` — 종료 코드를 confidence로 제어: `proven` / `inferred` / `heuristic`는 영향 파일이 해당 confidence 이상일 때만 실패; `any`(기본)는 영향 파일이 있으면 실패; `none`은 절대 실패하지 않음. CI에서 고신뢰 영향만 게이트할 때 사용.
 
 기본(`--json` 없음)에서는 report가 저장되고 짧은 요약이 출력되며, 기록 시 report 경로가 표시된다.
+
+`repo-map`은 agent를 위한 read-only planning surface다. MCP와 같은 impact analysis, context-pack ranking, indexed search, `parallax://` resource를 재사용하며 새 index를 만들지 않는다. `verificationPlan`은 기존 recommended action을 nearest `package.json` root와 runner별로 묶고, 복사 가능한 명령과 각 group이 커버하는 changed / affected / target path를 보여준다. planner는 Nx, Bazel 또는 다른 외부 build tool을 실행하지 않는다. `--budget`은 `Math.ceil(text.length / 4)`로 추정하는 token 목표이므로, 출력은 requested budget, estimated tokens, truncation 상태, omitted count를 공개한다. `--query`는 기존 index의 ranked search-context match를 추가하고, `--json`은 전체 structured card를 출력한다.
+
+`pr triage`는 dependency update와 pull request review를 위한 로컬 wrapper다. `analyze`와 같은 changed-file 입력을 받고, impact report를 저장하며, 기본적으로 `.parallax/pr-triage.sarif`에 SARIF를 쓰고, `--fail-on`을 적용한 뒤 dependency 중심 기본 query로 repo map을 출력한다. GitHub 호출, SARIF upload, branch checkout, remote 상태 변경은 하지 않는다. PR branch가 이미 로컬에 준비된 뒤의 일반적인 Dependabot 흐름:
+
+```bash
+parallax index
+parallax pr triage --base origin/main --head HEAD --fail-on proven
+```
+
+`install-hook`은 opt-in 로컬 installer다. 실행 가능한 `pre-commit` 또는 `pre-push` hook 파일을 활성 Git hooks 디렉터리에 쓰며, `core.hooksPath`를 쓰는 저장소도 지원한다. 생성된 `pre-commit` hook은 `git diff --cached`의 staged changed-file 목록을 gate하고, `pre-push` hook은 Git pre-push input으로 push diff를 먼저 계산한 뒤 `PARALLAX_BASE`, upstream merge-base, `origin/main` 순서로 fallback한다. 기존 non-Parallax hook은 `--force`가 없으면 건너뛰며, `--dry-run`은 쓰지 않고 계획만 출력한다. 의도적으로 우회할 때는 `PARALLAX_SKIP_HOOK=1` 또는 Git의 `--no-verify`를 사용한다.
 
 변경 파일이 인덱싱된 provider contract이고 workspace에 저장된 `BREAKS_COMPATIBILITY_WITH` link가 이미 있으면, `analyze`는 `crossRepoImpacts`도 포함한다. 각 항목은 consumer service, consumer file, provider contract, breaking change, confidence, evidence snippet, workspace resource URI를 식별한다. `analyze`는 contract diff를 자동 실행하지 않는다. workspace가 오래됐으면 먼저 `parallax workspace contract-diff`로 link를 갱신한다.
 
@@ -75,6 +93,7 @@
 | :--- | :--- |
 | `parallax workspace init [--name <name>] [--service <service>] [--force]` | 이 repo의 workspace catalog를 생성 또는 재생성 |
 | `parallax workspace add-repo <path> [--name <name>] [--service <service>] [--remote <url>]` | 다른 로컬 repo를 workspace catalog에 등록 |
+| `parallax workspace discover-packages [--name <name>] [--json]` | npm/pnpm workspace package와 Nx project config를 찾아 workspace catalog에 동기화 |
 | `parallax workspace list [--name <name>] [--json]` | workspace와 멤버 repo를 나열 |
 | `parallax workspace resolve-contracts [--name <name>] [--json]` | cross-repo provider/consumer contract link를 해석 |
 | `parallax workspace contract-diff --contract <path> [--name <name>] [--provider <service>] [--provider-path <path>] [--json]` | contract 파일을 인덱싱된 workspace baseline과 diff |
@@ -84,7 +103,9 @@
 
 `workspace verify`, `workspace consumers`, `workspace providers`는 저장된 link만 읽는다. resolution이나 contract diff를 실행하지 않는다. `CONSUMES_HTTP_ENDPOINT` link를 갱신하려면 `workspace resolve-contracts`를 사용하고, `BREAKS_COMPATIBILITY_WITH` link를 갱신하려면 `workspace contract-diff`를 사용한다.
 
-`workspace add-repo`는 repo 경로를 positional 인자로 받는다. cross-repo 범위는 사용자가 명시적으로 등록한 로컬 repo로 한정된다 — clone이나 네트워크 접근 없음.
+`workspace add-repo`는 repo 경로를 positional 인자로 받는다. cross-repo 범위는 사용자가 명시적으로 등록한 로컬 repo로 한정된다 — clone이나 네트워크 접근 없음. catalog entry는 같은 monorepo 안에서 이미 인덱싱된 package directory를 가리킬 수도 있으며, `resolve-contracts`는 가장 가까운 상위 Parallax DB를 읽고 path를 해당 member 기준으로 제한한다.
+
+`workspace discover-packages`는 로컬 manifest만 읽는다: `package.json`의 `workspaces` 배열 / `workspaces.packages`, `pnpm-workspace.yaml`의 `packages`, 그리고 `nx.json`이 있을 때 Nx `project.json` 또는 `package.json`의 `nx` project config. direct path, `*`, `**`, 선행 `!` exclude, 단순 `{apps,packages}` brace group을 지원하고, 발견한 package/project directory를 `.parallax/workspace.json`에 member repo로 기록한다. member가 발견되면 같은 monorepo link 중복을 피하기 위해 root repo entry를 member entry들로 대체하며, 현재 repo root 밖의 catalog entry는 보존한다. Turborepo package membership은 package-manager workspace manifest로 커버하고, `turbo.json` task config는 catalog source로 보지 않는다. npm, pnpm, Nx, Turbo, install, daemon, cache, network call은 실행하지 않는다.
 
 ## Diagnostics
 
@@ -108,7 +129,7 @@ Copilot package 명령은 명시한 `--target <repo>` 아래에만 쓴다. GitHu
 | :--- | :--- |
 | `parallax ui [--report <id>] [--port <n>]` | 로컬 UI explorer를 시작; `--report`는 특정 report를 열고, `--port`는 리슨 포트를 지정 |
 
-UI는 중단(`SIGINT`/`SIGTERM`)될 때까지 실행되며, 시작 시 URL을 출력한다.
+UI는 중단(`SIGINT`/`SIGTERM`)될 때까지 실행되며, 시작 시 URL을 출력한다. workbench URL은 선택한 영향 경로, 필터 텍스트, report-delta 정책 프리셋을 유지하고, toolbar에서 현재 view를 JSON, affected-path CSV, PNG/SVG 영향 맵으로 내보낼 수 있다.
 
 ## Exit code
 

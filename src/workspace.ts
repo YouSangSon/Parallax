@@ -1,5 +1,8 @@
-import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import type { Dirent } from 'node:fs';
 import path from 'node:path';
+
+import { parse as parseYaml } from 'yaml';
 
 import { DATA_DIR } from './branding.js';
 import { normalizeRepoRoot } from './security.js';
@@ -57,6 +60,25 @@ export type AddWorkspaceRepoOptions = {
   trustPolicy?: WorkspaceTrustPolicy;
 };
 
+export type DiscoverWorkspacePackagesOptions = {
+  repoRoot: string;
+  workspaceName?: string;
+};
+
+export type DiscoveredWorkspacePackage = {
+  localPath: string;
+  relativePath: string;
+  manifestPath: string;
+  serviceName: string;
+};
+
+export type DiscoverWorkspacePackagesResult = {
+  catalogPath: string;
+  workspace: WorkspaceSummary;
+  sources: string[];
+  packages: DiscoveredWorkspacePackage[];
+};
+
 export type SyncWorkspaceCatalogOptions = {
   repoRoot: string;
   file?: string;
@@ -86,6 +108,19 @@ type ResolvedCatalogRepo = {
 
 const WORKSPACE_SCHEMA_VERSION = 1;
 const DEFAULT_TRUST_POLICY: WorkspaceTrustPolicy = { readOnly: true };
+const IGNORED_DISCOVERY_DIRS = new Set([
+  '.git',
+  DATA_DIR,
+  'node_modules',
+  'dist',
+  'build',
+  'coverage',
+  '.cache',
+  '.nx',
+  '.turbo',
+  '.yarn',
+  '.pnpm-store'
+]);
 
 export function workspaceCatalogPath(repoRoot: string): string {
   return path.join(impactDir(normalizeRepoRoot(repoRoot)), 'workspace.json');
@@ -143,6 +178,58 @@ export function addWorkspaceRepo(options: AddWorkspaceRepoOptions): SyncWorkspac
 
   writeCatalog(catalogPath, { ...catalog, repos });
   return syncWorkspaceCatalog({ repoRoot, file: catalogPath });
+}
+
+export function discoverWorkspacePackages(options: DiscoverWorkspacePackagesOptions): DiscoverWorkspacePackagesResult {
+  const repoRoot = normalizeRepoRoot(options.repoRoot);
+  const catalogPath = workspaceCatalogPath(repoRoot);
+  if (!existsSync(catalogPath)) {
+    initWorkspace({
+      repoRoot,
+      ...(options.workspaceName !== undefined ? { name: options.workspaceName } : {})
+    });
+  }
+
+  const catalog = loadWorkspaceCatalog({ repoRoot, file: catalogPath });
+  if (options.workspaceName !== undefined && options.workspaceName !== catalog.name) {
+    throw new Error(`workspace catalog is named '${catalog.name}', not '${options.workspaceName}'`);
+  }
+
+  const workspaceDefinitions = readWorkspacePackageDefinitions(repoRoot);
+  const discovered = discoverWorkspacePackageMembers(repoRoot, workspaceDefinitions);
+  if (discovered.length > 0) {
+    const baseDir = path.dirname(catalogPath);
+    const existingByPath = new Map<string, WorkspaceCatalogRepo>();
+    for (const repo of catalog.repos) {
+      existingByPath.set(resolveWorkspaceRepoPath(baseDir, repo.localPath), repo);
+    }
+    const outsideRepos = catalog.repos.filter((repo) => {
+      const resolvedPath = resolveWorkspaceRepoPath(baseDir, repo.localPath);
+      return !isInsidePath(repoRoot, resolvedPath);
+    });
+    const packageRepos = discovered.map((member) => {
+      const existing = existingByPath.get(member.localPath);
+      return {
+        localPath: toPortableRelativePath(baseDir, member.localPath),
+        serviceName: existing?.serviceName ?? member.serviceName,
+        remoteUrl: existing?.remoteUrl ?? null,
+        trustPolicy: normalizeTrustPolicy(existing?.trustPolicy)
+      };
+    });
+    const repos = [...outsideRepos, ...packageRepos].sort((left, right) =>
+      resolveWorkspaceRepoPath(baseDir, left.localPath)
+        .localeCompare(resolveWorkspaceRepoPath(baseDir, right.localPath))
+    );
+    writeCatalog(catalogPath, { ...catalog, repos });
+  }
+
+  const synced = syncWorkspaceCatalog({ repoRoot, file: catalogPath });
+  return {
+    catalogPath,
+    workspace: synced.workspace,
+    sources: workspaceDefinitions.sources,
+    packages: discovered
+  };
 }
 
 export function syncWorkspaceCatalog(options: SyncWorkspaceCatalogOptions): SyncWorkspaceCatalogResult {
@@ -431,6 +518,312 @@ function readWorkspaceRepos(db: ReturnType<typeof openDatabase>, workspaceId: nu
   }));
 }
 
+type WorkspacePackageDefinitions = {
+  sources: string[];
+  patterns: string[];
+  includeNxProjects: boolean;
+};
+
+type DiscoveredWorkspacePackageMember = DiscoveredWorkspacePackage;
+
+function readWorkspacePackageDefinitions(repoRoot: string): WorkspacePackageDefinitions {
+  const sources: string[] = [];
+  const patterns: string[] = [];
+
+  const packageJsonPath = path.join(repoRoot, 'package.json');
+  if (existsSync(packageJsonPath)) {
+    const packageJson = parseJsonObject(packageJsonPath, 'package.json');
+    const npmPatterns = workspacePatternsFromPackageJson(packageJson.workspaces);
+    if (npmPatterns.length > 0) {
+      sources.push('package.json');
+      patterns.push(...npmPatterns);
+    }
+  }
+
+  const pnpmWorkspacePath = path.join(repoRoot, 'pnpm-workspace.yaml');
+  if (existsSync(pnpmWorkspacePath)) {
+    const parsed = parseYaml(readFileSync(pnpmWorkspacePath, 'utf8')) as unknown;
+    if (!isRecord(parsed)) {
+      throw new Error('pnpm-workspace.yaml must be a YAML object');
+    }
+    if (parsed.packages !== undefined) {
+      if (!Array.isArray(parsed.packages) || parsed.packages.some((item) => typeof item !== 'string')) {
+        throw new Error('pnpm-workspace.yaml packages must be an array of strings');
+      }
+      sources.push('pnpm-workspace.yaml');
+      patterns.push(...parsed.packages.map((item) => item.trim()).filter(Boolean));
+    }
+  }
+
+  const nxJsonPath = path.join(repoRoot, 'nx.json');
+  const includeNxProjects = existsSync(nxJsonPath);
+  if (includeNxProjects) {
+    parseJsonObject(nxJsonPath, 'nx.json');
+    sources.push('nx.json');
+  }
+
+  return { sources, patterns, includeNxProjects };
+}
+
+function workspacePatternsFromPackageJson(raw: unknown): string[] {
+  if (raw === undefined) return [];
+  if (Array.isArray(raw)) {
+    if (raw.some((item) => typeof item !== 'string')) {
+      throw new Error('package.json workspaces must be an array of strings');
+    }
+    return raw.map((item) => item.trim()).filter(Boolean);
+  }
+  if (isRecord(raw) && raw.packages !== undefined) {
+    if (!Array.isArray(raw.packages) || raw.packages.some((item) => typeof item !== 'string')) {
+      throw new Error('package.json workspaces.packages must be an array of strings');
+    }
+    return raw.packages.map((item) => item.trim()).filter(Boolean);
+  }
+  throw new Error('package.json workspaces must be an array or an object with packages');
+}
+
+function discoverWorkspacePackageMembers(
+  repoRoot: string,
+  definitions: WorkspacePackageDefinitions
+): DiscoveredWorkspacePackageMember[] {
+  const members = new Map<string, DiscoveredWorkspacePackageMember>();
+  for (const member of discoverPackageManifestMembers(repoRoot, definitions.patterns)) {
+    members.set(member.localPath, member);
+  }
+  if (definitions.includeNxProjects) {
+    for (const member of discoverNxProjectMembers(repoRoot)) {
+      if (!members.has(member.localPath)) {
+        members.set(member.localPath, member);
+      }
+    }
+  }
+  return [...members.values()].sort((left, right) => left.relativePath.localeCompare(right.relativePath));
+}
+
+function discoverPackageManifestMembers(
+  repoRoot: string,
+  patterns: readonly string[]
+): DiscoveredWorkspacePackageMember[] {
+  if (patterns.length === 0) return [];
+  const expandedPatterns = patterns.flatMap((pattern) => expandBracePatterns(pattern));
+  const includePatterns = expandedPatterns.filter((pattern) => !pattern.startsWith('!'));
+  const excludePatterns = expandedPatterns
+    .filter((pattern) => pattern.startsWith('!'))
+    .map((pattern) => pattern.slice(1));
+  const candidates = scanPackageManifestDirs(repoRoot);
+  const members = candidates
+    .filter((candidate) => candidate.relativePath !== '.')
+    .filter((candidate) => includePatterns.some((pattern) => workspaceGlobMatches(pattern, candidate.relativePath)))
+    .filter((candidate) => !excludePatterns.some((pattern) => workspaceGlobMatches(pattern, candidate.relativePath)))
+    .map((candidate) => {
+      const manifest = parseJsonObject(candidate.manifestPath, candidate.relativeManifestPath);
+      const packageName = typeof manifest.name === 'string' && manifest.name.trim() !== ''
+        ? manifest.name.trim()
+        : undefined;
+      return {
+        localPath: candidate.localPath,
+        relativePath: candidate.relativePath,
+        manifestPath: candidate.relativeManifestPath,
+        serviceName: packageName ?? path.basename(candidate.localPath)
+      };
+    });
+  members.sort((left, right) => left.relativePath.localeCompare(right.relativePath));
+  return members;
+}
+
+function discoverNxProjectMembers(repoRoot: string): DiscoveredWorkspacePackageMember[] {
+  const candidates = scanNxProjectConfigDirs(repoRoot);
+  const members = candidates
+    .filter((candidate) => candidate.relativePath !== '.')
+    .map((candidate) => {
+      const manifest = parseJsonObject(candidate.manifestPath, candidate.relativeManifestPath);
+      const configuredName = typeof manifest.name === 'string' && manifest.name.trim() !== ''
+        ? manifest.name.trim()
+        : undefined;
+      return {
+        localPath: candidate.localPath,
+        relativePath: candidate.relativePath,
+        manifestPath: candidate.relativeManifestPath,
+        serviceName: configuredName ?? path.basename(candidate.localPath)
+      };
+    });
+  members.sort((left, right) => left.relativePath.localeCompare(right.relativePath));
+  return members;
+}
+
+type PackageManifestCandidate = {
+  localPath: string;
+  relativePath: string;
+  manifestPath: string;
+  relativeManifestPath: string;
+};
+
+function scanPackageManifestDirs(repoRoot: string): PackageManifestCandidate[] {
+  const candidates: PackageManifestCandidate[] = [];
+  const visit = (dir: string): void => {
+    const relativePath = toPortableRelativePath(repoRoot, dir);
+    const manifestPath = path.join(dir, 'package.json');
+    if (existsSync(manifestPath)) {
+      candidates.push({
+        localPath: realpathSync(dir),
+        relativePath,
+        manifestPath,
+        relativeManifestPath: relativePath === '.' ? 'package.json' : `${relativePath}/package.json`
+      });
+    }
+
+    let entries: Dirent<string>[];
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
+      if (IGNORED_DISCOVERY_DIRS.has(entry.name)) continue;
+      visit(path.join(dir, entry.name));
+    }
+  };
+  visit(repoRoot);
+  return candidates.sort((left, right) => left.relativePath.localeCompare(right.relativePath));
+}
+
+function scanNxProjectConfigDirs(repoRoot: string): PackageManifestCandidate[] {
+  const candidates: PackageManifestCandidate[] = [];
+  const visit = (dir: string): void => {
+    const relativePath = toPortableRelativePath(repoRoot, dir);
+    const projectJsonPath = path.join(dir, 'project.json');
+    if (existsSync(projectJsonPath)) {
+      candidates.push({
+        localPath: realpathSync(dir),
+        relativePath,
+        manifestPath: projectJsonPath,
+        relativeManifestPath: relativePath === '.' ? 'project.json' : `${relativePath}/project.json`
+      });
+    } else {
+      const packageJsonPath = path.join(dir, 'package.json');
+      if (existsSync(packageJsonPath)) {
+        let packageJson: Record<string, unknown> | undefined;
+        try {
+          packageJson = parseJsonObject(packageJsonPath, relativePath === '.' ? 'package.json' : `${relativePath}/package.json`);
+        } catch {
+          packageJson = undefined;
+        }
+        if (packageJson !== undefined && isRecord(packageJson.nx)) {
+          candidates.push({
+            localPath: realpathSync(dir),
+            relativePath,
+            manifestPath: packageJsonPath,
+            relativeManifestPath: relativePath === '.' ? 'package.json' : `${relativePath}/package.json`
+          });
+        }
+      }
+    }
+
+    let entries: Dirent<string>[];
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
+      if (IGNORED_DISCOVERY_DIRS.has(entry.name)) continue;
+      visit(path.join(dir, entry.name));
+    }
+  };
+  visit(repoRoot);
+  return candidates.sort((left, right) => left.relativePath.localeCompare(right.relativePath));
+}
+
+function parseJsonObject(filePath: string, label: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(readFileSync(filePath, 'utf8')) as unknown;
+    if (!isRecord(parsed)) {
+      throw new Error('must be a JSON object');
+    }
+    return parsed;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`${label} parse failed: ${detail}`);
+  }
+}
+
+function expandBracePatterns(pattern: string): string[] {
+  const start = pattern.indexOf('{');
+  const end = pattern.indexOf('}', start + 1);
+  if (start < 0 || end < 0) return [pattern];
+  const before = pattern.slice(0, start);
+  const after = pattern.slice(end + 1);
+  return pattern
+    .slice(start + 1, end)
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .flatMap((item) => expandBracePatterns(`${before}${item}${after}`));
+}
+
+function workspaceGlobMatches(rawPattern: string, candidate: string): boolean {
+  const pattern = normalizeWorkspacePattern(rawPattern);
+  if (pattern === undefined) return false;
+  const patternSegments = pattern === '.' ? [] : pattern.split('/');
+  const candidateSegments = candidate === '.' ? [] : candidate.split('/');
+  return matchGlobSegments(patternSegments, candidateSegments, 0, 0);
+}
+
+function normalizeWorkspacePattern(rawPattern: string): string | undefined {
+  const pattern = rawPattern.trim().replace(/\\/g, '/').replace(/\/+$/, '');
+  if (!pattern || pattern.includes('\0')) return undefined;
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(pattern)) return undefined;
+  if (path.posix.isAbsolute(pattern)) return undefined;
+  const withoutDot = pattern.startsWith('./') ? pattern.slice(2) : pattern;
+  if (withoutDot === '') return '.';
+  return withoutDot.endsWith('/package.json')
+    ? withoutDot.slice(0, -'/package.json'.length) || '.'
+    : withoutDot;
+}
+
+function matchGlobSegments(
+  patternSegments: readonly string[],
+  candidateSegments: readonly string[],
+  patternIndex: number,
+  candidateIndex: number
+): boolean {
+  if (patternIndex === patternSegments.length) {
+    return candidateIndex === candidateSegments.length;
+  }
+  const segment = patternSegments[patternIndex]!;
+  if (segment === '**') {
+    for (let nextIndex = candidateIndex; nextIndex <= candidateSegments.length; nextIndex++) {
+      if (matchGlobSegments(patternSegments, candidateSegments, patternIndex + 1, nextIndex)) return true;
+    }
+    return false;
+  }
+  if (candidateIndex >= candidateSegments.length) return false;
+  return segmentGlobMatches(segment, candidateSegments[candidateIndex]!)
+    && matchGlobSegments(patternSegments, candidateSegments, patternIndex + 1, candidateIndex + 1);
+}
+
+function segmentGlobMatches(pattern: string, candidate: string): boolean {
+  let regex = '^';
+  for (let index = 0; index < pattern.length; index++) {
+    const char = pattern[index]!;
+    if (char === '*') {
+      regex += '[^/]*';
+    } else if (char === '?') {
+      regex += '[^/]';
+    } else {
+      regex += escapeRegExp(char);
+    }
+  }
+  regex += '$';
+  return new RegExp(regex).test(candidate);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&');
+}
+
 function parseTrustPolicy(raw: string): WorkspaceTrustPolicy {
   try {
     return normalizeTrustPolicy(JSON.parse(raw) as unknown);
@@ -483,6 +876,11 @@ function pruneWorkspaceRepos(db: ReturnType<typeof openDatabase>, workspaceId: n
     `DELETE FROM workspace_repos
      WHERE workspace_id = ? AND local_path NOT IN (${placeholders})`
   ).run(workspaceId, ...keepPaths);
+}
+
+function isInsidePath(rootPath: string, candidatePath: string): boolean {
+  const relative = path.relative(rootPath, candidatePath);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 }
 
 function toPortableRelativePath(fromDir: string, targetPath: string): string {

@@ -27,7 +27,7 @@ npm run verify
 | `npm test` | 빠른 unit/integration test 통과. | 모든 변경. |
 | `npm run test:dogfood` | Parallax가 자기 자신을 index하고 실제 dependency graph를 보존. | Engine 변경. |
 | `npm run bench` | Multi-language fixture recall, evidence, ranking, retrieval이 고정 기대치 안에 있음. | Adapter, analyzer, search, ranking, retrieval 변경. |
-| `npm audit --audit-level=high` | 현재 lockfile에 high-level dependency advisory가 없음. | Release와 CI. |
+| `npm run audit:dependencies` | Audit가 clean이거나 만료 전의 정확히 pin된 예외와 일치. | Release와 CI. |
 
 ## 문서 gate
 
@@ -47,7 +47,13 @@ npm run verify
 1. Direct dependency range가 꼭 바뀌어야 하는 경우가 아니라면 `package.json`이 그대로인지 확인한다.
 2. Direct/transitive package bump를 검토한다.
 3. `npm run test:install-smoke`를 실행한다.
-4. `npm audit --audit-level=high`를 실행한다.
+4. `npm run audit:dependencies`를 실행한다.
+
+임시 예외는 2026-09-30 UTC 이후 만료되며 `GHSA-xcpc-8h2w-3j85`와
+`GHSA-f88m-g3jw-g9cj`가 보고하는 정확히 lock된 `@huggingface/transformers`
+tree만 포함한다. Pin된 high/critical finding/advisory field와 count, package
+path, severity, node, version, dependency edge, command, network, JSON이 하나라도
+달라지면 release를 차단한다. Low/moderate-only finding은 이 gate보다 낮다.
 
 ## Engine-change gate
 

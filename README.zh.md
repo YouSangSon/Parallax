@@ -80,15 +80,34 @@ permissions:
   security-events: write
 steps:
   - uses: actions/checkout@v4
-  - run: npm install -g parallax
-  - run: parallax analyze --changed "src/api.ts" --sarif-output parallax.sarif --sarif-category parallax-pr --fail-on none
+    with:
+      fetch-depth: 0
+  - uses: YouSangSon/Parallax@main
+    with:
+      base: ${{ github.event.pull_request.base.sha }}
+      head: ${{ github.event.pull_request.head.sha }}
+      sarif-output: parallax.sarif
+      sarif-category: parallax-pr
+      fail-on: none
   - uses: github/codeql-action/upload-sarif@v3
     with:
       sarif_file: parallax.sarif
       category: parallax-pr
 ```
 
-SARIF 生成步骤应保持不失败，这样存在 findings 时 upload step 仍会运行。如需在高置信 impact 时让 CI 失败，请增加单独的 `parallax analyze ... --fail-on proven` gate step。
+该 action 会运行 `parallax init`、`parallax index` 和 `parallax pr triage`，写出 SARIF 文件，并把 triage 摘要追加到 GitHub step summary。SARIF upload 仍留在你的 workflow 中，从而让 `security-events: write` 权限保持显式。
+
+SARIF 生成步骤应保持不失败，这样存在 findings 时 upload step 仍会运行。如需在高置信 impact 时让 CI 失败，可将 action 的 `fail-on` 输入改为 `proven`，或增加单独的 `parallax analyze ... --fail-on proven` gate step。
+
+如果想在 commit 或 push 之前运行同样的 impact gate，可以安装本地 Git hook：
+
+```bash
+parallax install-hook --hook pre-commit --fail-on proven
+parallax install-hook --hook pre-push --fail-on proven
+parallax install-hook --hook all --dry-run
+```
+
+installer 只写入当前生效的 Git hooks 目录，尊重 `core.hooksPath`；没有 `--force` 时会跳过已有的非 Parallax hook。需要临时绕过时可用 `PARALLAX_SKIP_HOOK=1` 或 Git 的 `--no-verify`。
 
 用本地 UI 直接打开最新报告：
 
@@ -96,6 +115,23 @@ SARIF 生成步骤应保持不失败，这样存在 findings 时 upload step 仍
 parallax ui
 parallax ui --report <report-id> --port 3717
 ```
+
+UI 会把选中的影响路径、筛选词与策略预设保存在 URL 中。也可以在 toolbar 中将当前 workbench 导出为 JSON、affected-path CSV，或 PNG/SVG 影响图。
+
+运行 `parallax index` 后，可导入 SCIP indexer 生成的 `index.scip` 来补充 SCIP 精度层：
+
+```bash
+parallax scip import --file index.scip
+
+# 也可以导入官方 SCIP CLI 预先转换出的 JSON。
+scip print --json index.scip > index.scip.json
+parallax scip import --file index.scip.json
+
+# 将 Parallax 的最新完成 index 导出为 SCIP 兼容 JSON。
+parallax scip export --file index.scip.json
+```
+
+importer 会用 SCIP 的 definition/reference edge 增强最新完成的 Parallax index run。二进制 `index.scip` 导入会调用 `PATH` 中的官方 `scip` CLI；JSON 导入和 JSON 导出在运行时不需要 CLI。显式选择的 `--file` 可以是任意可信的本地文件。为了保留已有 indexed file metadata 并避免 live document-path race，document body 只来自 SCIP `Document.text` 或该 run 记录的 clean Git commit。最新 index 中已有的 textless document 仍会以 symbol-only evidence 导入；无法验证的 textless、unindexed document 会被跳过并给出警告。
 
 如果你想从 UI 继续走到 MCP 与 CI guardrail，可直接看 [`docs/getting-started.zh.md`](docs/getting-started.zh.md)。
 
@@ -113,6 +149,7 @@ parallax ui --report <report-id> --port 3717
 | **变更分析** | 通过有界的多跳图遍历分析 `--changed` 或 `--base/--head` 输入 |
 | **以证据为先的报告** | 以 JSON/Markdown 输出 `changed`、`affected`、`actions`、`evidence`、`adapterInsights`、`warnings` |
 | **相关测试推断** | 利用 import、文件名约定与 adapter 证据，推荐最可能受影响的测试 |
+| **Verification planning** | 将推荐 action 分组为 ranked repo-map command，并显示覆盖的 changed / affected / target path |
 | **图导出** | 将已保存的报告导出为 Mermaid、JSON 或 DOT |
 | **覆盖率告警** | 在报告中暴露 oversized 文件跳过、陈旧索引与 adapter 已知缺口 |
 
@@ -126,19 +163,21 @@ parallax ui --report <report-id> --port 3717
 | **Markdown / 工作产物** | 将 policy、proposal、PRD、decision 文档归类为一等 artifact 并与代码关联 |
 | **Config / 基础设施** | 索引 system/config 候选：shell、YAML、JSON、TOML、Dockerfile、Makefile、Terraform、CODEOWNERS 等 |
 | **包清单（manifest）** | 为 `package.json`、`pom.xml`、`build.gradle(.kts)`、`go.mod`、`Cargo.toml`、`pyproject.toml` 构建 manifest 图 |
+| **SCIP import/export** | `parallax scip import --file <index.scip or index.scip.json>` 将外部 indexer 的 SCIP definition/reference edge 增强到最新索引；`parallax scip export --file <index.scip.json>` 输出 SCIP 兼容 JSON |
 
 ### 🌐 工作区与契约（Workspace & contracts）
 
 | 功能 | 说明 |
 | :--- | :--- |
-| **工作区目录** | 仅在 `.parallax/workspace.json` 中登记用户允许的本地仓库。无 clone/网络 |
+| **工作区目录** | 仅在 `.parallax/workspace.json` 中登记用户允许的本地仓库、显式 package 目录、已发现的 npm/pnpm workspace package，或 Nx project config。无 clone/网络 |
 | **跨仓库解析器** | 在已登记的仓库之间存储 provider endpoint ↔ consumer 文件链接 |
-| **契约 diff** | 将 OpenAPI、GraphQL、Protobuf、AsyncAPI 的表层 diff 归类为 `breaking` / `non-breaking` / `unknown` |
-| **消费方影响** | 将被删除的 endpoint/operation、字段删除/类型变更、新增必填请求字段等与已知 consumer 关联 |
+| **契约 diff** | 将 OpenAPI、GraphQL、Protobuf、AsyncAPI 的表层 diff 归类为 `breaking` / `non-breaking` / `unknown`，并检测 OpenAPI response optional property removal、response nullable addition、response format/enum change、request format addition/change 与 request enum-value removal |
+| **消费方影响** | 将 breaking endpoint/operation 删除、required 字段删除、类型/nullable/format/enum 变更、新增必填请求字段、request format addition/change、request enum-value removal 等与已知 consumer 关联 |
 | **事件拓扑提示** | 以紧凑载荷提供 AsyncAPI 生产者/消费者方向与 breaking 溯源 |
 
 ```bash
 parallax workspace init --name platform --service api
+parallax workspace discover-packages --name platform --json
 parallax workspace add-repo ../web --name platform --service web
 parallax workspace resolve-contracts --name platform --json
 parallax workspace contract-diff --contract openapi.yaml --name platform --json

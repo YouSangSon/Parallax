@@ -186,7 +186,7 @@ class McpProcessClient {
 
   async request(method: string, params: unknown): Promise<JsonRpcMessage> {
     const id = this.nextId++;
-    const response = this.waitForResponse(id);
+    const response = this.waitForResponse(id, method);
     this.write({ jsonrpc: '2.0', id, method, params });
     return response;
   }
@@ -224,20 +224,21 @@ class McpProcessClient {
     }
   }
 
-  private async waitForResponse(id: string | number): Promise<JsonRpcMessage> {
-    const deadlineMs = 5_000;
+  private async waitForResponse(id: string | number, method: string): Promise<JsonRpcMessage> {
+    // Initialize includes cold tsx startup; subsequent RPCs retain their response deadline.
+    const deadlineMs = method === 'initialize' ? 30_000 : 5_000;
     const startedAt = Date.now();
     while (Date.now() - startedAt < deadlineMs) {
       const index = this.messages.findIndex((message) => message.id === id);
       if (index >= 0) return this.messages.splice(index, 1)[0]!;
-      const message = await this.readNext(deadlineMs - (Date.now() - startedAt));
+      const message = await this.readNext(deadlineMs - (Date.now() - startedAt), `${method} (${id})`);
       if (message.id === id) return message;
       this.messages.push(message);
     }
-    throw new Error(`timed out waiting for MCP response ${id}. stderr: ${this.stderr.trim()}`);
+    throw new Error(`timed out waiting for MCP ${method} response ${id}. stderr: ${this.stderr.trim()}`);
   }
 
-  private readNext(timeoutMs: number): Promise<JsonRpcMessage> {
+  private readNext(timeoutMs: number, request: string): Promise<JsonRpcMessage> {
     if (this.messages.length > 0) return Promise.resolve(this.messages.shift()!);
     return new Promise((resolve, reject) => {
       const waiter = (message: JsonRpcMessage) => {
@@ -247,7 +248,7 @@ class McpProcessClient {
       const timer = setTimeout(() => {
         const index = this.waiters.indexOf(waiter);
         if (index >= 0) this.waiters.splice(index, 1);
-        reject(new Error(`timed out waiting for MCP message. stderr: ${this.stderr.trim()}`));
+        reject(new Error(`timed out waiting for MCP ${request} message. stderr: ${this.stderr.trim()}`));
       }, Math.max(timeoutMs, 1));
       this.waiters.push(waiter);
     });

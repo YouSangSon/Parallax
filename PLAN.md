@@ -16,6 +16,10 @@ Continue the existing S1 queue after the completed portfolio/help slices:
    body/byte read counts before claiming a read reduction.
 3. Land independently verified units and update the existing portfolio owner.
 
+The read-count slice uses the existing scan observer and performance benchmark.
+It counts full-body reads and bounded samples separately, without changing CLI
+results or skipping any reads. This supplies the baseline for step 2.
+
 The first implementation leaves changed-body extraction conservative. Its
 ownership declaration alone is not a changed-only execution gate; diagnostic
 coverage and entity-version carry-forward also require equivalence checks.

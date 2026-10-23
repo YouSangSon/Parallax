@@ -26,6 +26,8 @@ Parallax 分层验证正确性——快速的 unit suite、typecheck、docs lint
 | `npm run test:security` | 运行 `tests/security.test.ts`（路径包含约束、脱敏、dependency audit gate） | store / 路径 / 脱敏 / audit gate 变更后 |
 | `npm run test:install-smoke` | 先 `npm run build` 再 `node dist/src/cli.js --help` | 发布前，确认打包后的 CLI 能启动 |
 
+`bench:perf` 还按 full/no-op/edit 输出 `*_scan_body_reads`、`*_scan_body_bytes`、`*_scan_sample_reads` 和 `*_scan_sample_bytes`。这些指标统计扫描器成功读取的次数及文件 API 返回的字节数，包括可识别但无适配器支持的文件，以及超限文件的有限样本读取。不包含 Git/元数据操作、自定义适配器的直接读取或设备/缓存 I/O。非 Git 仓库的 no-op 仍会读取正文；clean same-HEAD 复用不运行扫描器。完整 scan 的计数通过 `IndexOptions.perfObserver` 的可选第三个参数传入；失败的 scan 不提供计数。CLI/index 结果结构保持不变。
+
 `test:fixtures` 是 `npm test` 的别名，`test:benchmark` 是 `npm run bench` 的别名。`npm run verify` 包含 `npm run audit:dependencies`，所以最后的 audit 阶段依赖 npm registry 和网络可用性。
 
 Dependency gate 只放行 high/critical finding 为 0 且 exit code 为 0 的有效

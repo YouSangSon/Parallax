@@ -13,7 +13,7 @@
 ![mcp](https://img.shields.io/badge/MCP-stdio-14b8a6)
 ![license](https://img.shields.io/badge/license-MIT-3da639)
 
-[English](README.md) · [한국어](README.ko.md) · **中文**
+[한국어](README.ko.md) · [日本語](README.ja.md) · [English](README.md) · **中文**
 
 [🚀 快速开始](#-快速开始) · [✨ 主要功能](#-主要功能) · [🧱 核心概念](#-核心概念) · [🤖 MCP](#-mcp--agents) · [🔒 安全模型](#-安全模型) · [🗺️ Roadmap](#%EF%B8%8F-roadmap) · [📚 延伸阅读](#-延伸阅读)
 
@@ -34,13 +34,15 @@
 | 项目 | 要求 | 备注 |
 | :--- | :--- | :--- |
 | **Node.js** | `>=24.0.0` | 使用内置的 `node:sqlite`，可能出现 experimental 警告 |
-| **npm** | 以 package-lock 为准 | 用 `npm install` 搭建开发环境 |
+| **npm** | 以 package-lock 为准 | 用 `npm ci` 搭建开发环境 |
 | **仓库权限** | 本地读写 | 创建 `.parallax/` 目录与 SQLite DB |
 | **外部服务** | 核心 impact 流程无需 | 基于模型/LLM 的记忆整理仅在显式调用时使用 |
 
 ```bash
 # 1. 构建 Parallax
-npm install
+git clone https://github.com/YouSangSon/Parallax.git
+cd Parallax
+npm ci
 npm run build
 
 # 2. 将当前 checkout 的 CLI 链接到 PATH
@@ -162,7 +164,7 @@ importer 会用 SCIP 的 definition/reference edge 增强最新完成的 Paralla
 | **Python / Go / Rust** | 以 declaration/test 关系为主的轻量适配器 |
 | **Markdown / 工作产物** | 将 policy、proposal、PRD、decision 文档归类为一等 artifact 并与代码关联 |
 | **Config / 基础设施** | 索引 system/config 候选：shell、YAML、JSON、TOML、Dockerfile、Makefile、Terraform、CODEOWNERS 等 |
-| **包清单（manifest）** | 为 `package.json`、`pom.xml`、`build.gradle(.kts)`、`go.mod`、`Cargo.toml`、`pyproject.toml` 构建 manifest 图 |
+| **包清单与锁文件** | 为 `package.json`、`pom.xml`、`build.gradle(.kts)`、`go.mod`、`Cargo.toml`、`pyproject.toml` 构建 manifest 图，并索引 npm `package-lock.json`、`Cargo.lock`、`poetry.lock` 的传递依赖 |
 | **SCIP import/export** | `parallax scip import --file <index.scip or index.scip.json>` 将外部 indexer 的 SCIP definition/reference edge 增强到最新索引；`parallax scip export --file <index.scip.json>` 输出 SCIP 兼容 JSON |
 
 ### 🌐 工作区与契约（Workspace & contracts）
@@ -171,7 +173,7 @@ importer 会用 SCIP 的 definition/reference edge 增强最新完成的 Paralla
 | :--- | :--- |
 | **工作区目录** | 仅在 `.parallax/workspace.json` 中登记用户允许的本地仓库、显式 package 目录、已发现的 npm/pnpm workspace package，或 Nx project config。无 clone/网络 |
 | **跨仓库解析器** | 在已登记的仓库之间存储 provider endpoint ↔ consumer 文件链接 |
-| **契约 diff** | 将 OpenAPI、GraphQL、Protobuf、AsyncAPI 的表层 diff 归类为 `breaking` / `non-breaking` / `unknown`，并检测 OpenAPI response optional property removal、response nullable addition、response format/enum change、request format addition/change 与 request enum-value removal |
+| **契约 diff** | 将 OpenAPI、GraphQL、Protobuf、AsyncAPI、JSON Schema、Avro 的表层 diff 归类为 `breaking` / `non-breaking` / `unknown`，并检测 OpenAPI response optional property removal、response nullable addition、response format/enum change、request format addition/change、request enum-value removal、JSON Schema 根对象变更及 Avro 顶层 record 字段变更 |
 | **消费方影响** | 将 breaking endpoint/operation 删除、required 字段删除、类型/nullable/format/enum 变更、新增必填请求字段、request format addition/change、request enum-value removal 等与已知 consumer 关联 |
 | **事件拓扑提示** | 以紧凑载荷提供 AsyncAPI 生产者/消费者方向与 breaking 溯源 |
 
@@ -211,7 +213,7 @@ parallax profile --entity src/auth/session.ts
 | :--- | :--- |
 | **Impact graph** | 连接文件/符号/契约的有向图；通过有界遍历计算变更的波及 |
 | **Evidence** | 为每条关系附上其来源文件、行号与代码片段作为依据 |
-| **Confidence** | 以 proven / inferred / heuristic 三级标注证据可信度 |
+| **Confidence** | 以 proven / inferred / heuristic / unknown 标注证据可信度 |
 | **Context pack** | 将变更分析结果以便于智能体消费的小型 JSON 包交付 |
 | **Work artifact** | 将 policy、PRD、decision 等文档与代码关联的一等对象 |
 | **Adapter** | 按语言/格式划分的提取器，并报告自身的 confidence 与已知缺口 |
@@ -245,11 +247,11 @@ parallax mcp serve
 
 | 原则 | 内容 |
 | :--- | :--- |
-| **本地优先（Local-first）** | 所有索引与记忆数据都存储在仓库本地的 `.parallax/`，无外部传输 |
-| **显式工作区** | 跨仓库仅覆盖用户登记的本地仓库，无 clone/网络 |
+| **本地优先（Local-first）** | 核心 index/analyze 在仓库本地 `.parallax/` 存储数据。可选模型下载及配置的 reflection provider 可能使用网络 |
+| **显式工作区** | 跨仓库仅覆盖用户登记的本地仓库或 package 目录，无 clone/网络 |
 | **脱敏（Redaction）** | 类似密钥的字符串在存储前会被脱敏 |
 | **默认不改 source tree** | MCP 不会编辑 source file；analysis/search tool、context-pack 复用和 MCP resource read 可能在 `.parallax/impact.db` 中追加 context-pack 或 telemetry row，显式 memory 命令会写入 fact |
-| **确定性输出** | 相同输入产生相同报告，可在 CI 中复现 |
+| **可复现的核心** | 离线 fixture 验证静态影响结果；生成的 ID、时间戳及模型记忆不属于逐字节复现范围 |
 
 ---
 
@@ -269,8 +271,8 @@ npm run docs:lint
 | `npm run build` | 将 TypeScript 编译到 `dist/` |
 | `npm run check` | 仅类型检查，不产出文件 |
 | `npm test` | 通过 `tsx` 运行 Node test runner 套件 |
-| `npm run bench` | 基于多语言、Spring Boot、契约、包清单 fixture 的确定性 bench |
-| `npm run docs:lint` | 检查 tracked/untracked Markdown 中的禁止内容、trilingual parity、same-language link 与缺失的本地 `.md` target |
+| `npm run bench` | 基于多语言、Spring Boot、契约、co-change、trace、包清单 fixture 的确定性 bench |
+| `npm run docs:lint` | 检查 tracked/untracked Markdown 中的禁止内容、README 四语言与指南三语言对应、同语言链接及缺失的本地 `.md` target |
 | `npm run verify` | 在 source checkout 中运行完整 release gate |
 | `npm run test:mcp` | 验证 MCP impact/context/memory/telemetry/路径校验 |
 | `npm run test:security` | 验证路径包含约束与脱敏 |
@@ -294,7 +296,7 @@ npm run verify
 | **Accuracy** | 将 parser 支撑的 TS/JS span 扩展到更广的动态分发与高级类型关系 |
 | **JVM / Python / Go / Rust** | 把以 declaration 为主的适配器提升为 parser 支撑的调用/import 解析 |
 | **Workspace / Contract** | 稳定嵌套 schema diff；深化 generated-client/事件拓扑解析器 |
-| **Package / Build** | 基于 lockfile、传递依赖与 semver/range 的包图 |
+| **Package / Build** | 将 npm/Cargo/Poetry 锁文件覆盖扩展到其他生态及 semver/range 影响 |
 | **Agent surface** | context pack 的 budget 调优与 hit/miss 度量工具 |
 | **UI Explorer** | 在单一界面更直接地探索 changed → affected → evidence → action 流程 |
 | **Measurement** | fixture bench 增量与召回质量回归检测 |
@@ -308,8 +310,8 @@ npm run verify
 | 领域 | 状态 |
 | :--- | :--- |
 | **完整语义分析** | 并非对所有语言都做类型感知分析；需查看各 adapter 的 confidence 与已知缺口 |
-| **契约深度** | GraphQL/Protobuf/AsyncAPI 在 parser/LSP 级别的完整 generated-client 使用图属于后续工作 |
-| **包解析** | 目前以 manifest 为主；基于 lockfile/传递依赖/semver 执行的解析器属于后续工作 |
+| **契约深度** | GraphQL/Protobuf/AsyncAPI 在 parser/LSP 级别的完整 generated-client 使用图，以及完整 Avro named-type/schema-registry 解析属于后续工作 |
+| **包解析** | 已索引 npm `package-lock.json`、`Cargo.lock`、`poetry.lock` 传递依赖；其他锁文件生态、semver 影响和基于执行的解析器仍为后续工作 |
 | **图数据库** | 不在默认产品范围内；如需可作为从 SQLite 投影的可选能力扩展 |
 | **外部写入** | Obsidian/GitHub/Jira 写同步尚未暴露在 MCP 接口上 |
 | **代码修改** | Parallax 不直接修改代码；它为智能体提供影响范围与证据 |

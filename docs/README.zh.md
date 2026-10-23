@@ -1,6 +1,6 @@
 # Parallax — 文档
 
-[English](README.md) · [한국어](README.ko.md) · **中文**
+[한국어](README.ko.md) · [日本語](README.ja.md) · [English](README.md) · **中文**
 
 Parallax 是一个 local-first 的代码 impact 分析层——单个 SQLite 存储驱动 CLI、面向编码代理的 MCP 服务器和 UI explorer。本索引链接 `docs/` 中的主要 packaged guide。
 

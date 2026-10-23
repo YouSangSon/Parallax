@@ -11,8 +11,16 @@ from the suite's embedding stub.
 
 Packaged CLI and stdio MCP passed the session-change workflow. Live workbench
 inspection led to a two-rule CSS fix: preserve confidence badge backgrounds
-and darken heuristic text. Final canonical verification and desktop/mobile
+and darken heuristic text. PR #39's canonical verification and desktop/mobile
 contrast checks passed; see `GATES.md` for scope and limitations.
+
+Native browser follow-up closed the clipboard, file download, source new-tab
+and Back/Forward evidence gaps. Inspecting the saved PNG exposed a light
+canvas behind pale graph labels; the export now reuses the existing graph
+background variable. The corresponding native files and contrast evidence
+are retained with the portfolio records. The PNG follow-up's full local command
+failed on 13 deadline waits; all 13 passed in focused recovery, and the remaining
+dogfood, benchmark and audit commands passed separately, as recorded in `GATES.md`.
 
 Portfolio evidence is maintained separately in the resume repository under
 `자료수집/2026-10-23/parallax-portfolio/README.md`.

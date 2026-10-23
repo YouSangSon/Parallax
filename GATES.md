@@ -28,23 +28,40 @@ Evidence is current only when the command and result are recorded in this file. 
 - [x] Live browser: filter, selection, keyboard Enter/Tab and focus, history,
   policy selection, language, report selection, zero affected targets, missing
   report, source rendering, and reduced motion. Postman source escape returns
-  expected HTTP 400. JSON/CSV/PNG Blob payloads validated; download filesystem
-  and native new-tab handling are not observed by this driver. Clipboard write
-  is denied by the headless environment; the failure state is verified.
+  expected HTTP 400. The initial headless driver verified Blob payloads and
+  clipboard denial; a native Brave follow-up verified link/command clipboard
+  contents, actual JSON/CSV/PNG files, source opening in a new tab and returning
+  to the same report/language, and Back/Forward path/filter/preset restoration
+  with matching visible inspector content.
 - [x] Confidence badge regression reproduced at 1.93:1 proven / 2.32:1 heuristic
   on dark cards. Final computed contrast is 5.29:1 / 5.08:1. Desktop 1440px and
   mobile 390px screenshots inspected; mobile document/body have no horizontal
   overflow, with intentional contained metric/SVG scrolling.
 - [x] Final UI source `npm run verify` completed at 2026-10-23 05:52:42 UTC:
   lint/schema/build/install smoke, 697 tests, dogfood 2/2, bench 78/78, and audit.
-  Packaged runtime differs from the CLI/MCP-tested artifact only in UI styles.
+  That packaged runtime differed from the CLI/MCP-tested artifact only in UI
+  styles; the later PNG correction also changes the UI client.
+- [x] Actual PNG inspection exposed pale map headings on the hard-coded light
+  canvas. Export now uses the existing `--graph` background. Saved 760x580 PNG
+  pixels match `#263d32`; heading contrast improves from 1.74:1 / 1.33:1 to
+  6.58:1 / 8.63:1. Before/after files and native observations are preserved.
+- Follow-up `npm run verify` after the PNG change ended at 06:50:45 UTC with
+  lint/build/install smoke passing and 684/697 tests passing. Eleven MCP
+  response waits, one CLI child deadline and one SCIP fixture wait failed
+  while host load exceeded 200 on 10 logical CPUs. The full command did not
+  pass; its downstream dogfood/bench/audit commands were not reached.
+- [x] The 13 failed cases passed with test-file concurrency 1 and unchanged
+  deadlines. The unreached commands then passed separately: dogfood 2/2,
+  bench 78/78 expected relations and dependency audit, ending at 07:00:12 UTC.
+  This is scoped recovery evidence, not a successful full local command.
+  The final PR's checks own remote validation of its exact head.
 - [x] Advisory `npm run bench:perf -- --scales 200,1000` on macOS arm64 / M1 Max:
   1,000 synthetic files indexed in 4,957 ms; edited reindex 6,528 ms. Single run,
   sampled RSS, no production-performance claim or performance gate.
 - [x] Independent final security review found no P0–P2 issues in the dependency
   gate, tests, lockfile and documentation diff.
-- [x] PR #38 passed all five remote checks and merged to main as `27865fe`.
-  Subsequent UI landing is recorded by its PR checks and merge event.
+- [x] PR #38 and #39 passed all five remote checks and merged to main as
+  `27865fe` and `d4cac49`. Each later PR owns its checks and merge event.
 - Portfolio provenance, final landing and exact cleanup receipts are maintained
   in the resume evidence folder referenced by `CONTEXT.md`; no remote deployment
   or paid inference was performed.

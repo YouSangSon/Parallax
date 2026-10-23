@@ -183,7 +183,7 @@ export const UI_CLIENT_JS = `    const snapshot = JSON.parse(document.getElement
         canvas.height = height;
         const context = canvas.getContext('2d');
         if (!context) throw new Error('canvas unavailable');
-        context.fillStyle = '#fffdf4';
+        context.fillStyle = getComputedStyle(svg).getPropertyValue('--graph');
         context.fillRect(0, 0, width, height);
         context.drawImage(image, 0, 0, width, height);
         const pngBlob = await new Promise((resolve, reject) => {

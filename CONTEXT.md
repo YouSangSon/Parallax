@@ -14,8 +14,8 @@ inspection led to a two-rule CSS fix: preserve confidence badge backgrounds
 and darken heuristic text. Final canonical verification and desktop/mobile
 contrast checks passed; see `GATES.md` for scope and limitations.
 
-Portfolio evidence is owned by
-`/Users/yousang/Desktop/resume/자료수집/2026-10-23/parallax-portfolio/README.md`.
+Portfolio evidence is maintained separately in the resume repository under
+`자료수집/2026-10-23/parallax-portfolio/README.md`.
 Each PR's checks and merge record own remote landing evidence. Local workflow
 proof does not establish production adoption or paid-model savings. Selective
 indexing remains deferred under the existing emitted-row ownership gate.

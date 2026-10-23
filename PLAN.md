@@ -4,7 +4,25 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 `IMPROVEMENT_OPPORTUNITIES.md`; implementation plans live under
 `docs/superpowers/plans/`.
 
-## Active Loop
+## Portfolio Readiness Loop — 2026-10-23
+
+Continue from the PR #36 tree (`ab3c365`); preserve the completed milestone.
+The user authorized commit, push, PR and main merge after required gates.
+
+1. Replace the expired dependency exception with compatible locked fixes and an
+   unconditional high/critical audit gate; retain validation and secret-safe errors.
+2. Verify a clean install, the canonical `npm run verify`, and the actual default
+   local embedding model separately from stub-based tests.
+3. Exercise packaged CLI, MCP and workbench success/failure flows on an isolated
+   local demo. Record fixture accuracy and observed timings without claiming
+   production adoption, paid-model savings or general large-repository performance.
+4. Land verified units, preserve unrelated work, clean only owned test resources,
+   and save portfolio evidence in the existing resume evidence structure.
+
+Selective indexing and deeper language/contract features remain deferred under
+existing ownership gates; this loop makes the shipped product reviewable.
+
+## Prior Completed Loop
 
 - Completed checkpoint: S1 changed-content correctness now promotes every
   changed-body run to full extraction. Exact fresh-index oracles cover both
@@ -204,8 +222,8 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 
 ## Next
 
-1. Remove or replace the temporary dependency-audit exception before
-   2026-10-01T00:00:00Z; do not renew it silently.
+1. Complete the portfolio readiness gates above; the expired dependency exception
+   has been removed and compatible fixes are locked, pending final verification.
 2. Define emitted-row ownership before revisiting selective reads, then add
    deterministic file/byte read counts before making a performance claim.
 3. Keep deeper JSON Schema / Avro compatibility semantics behind S1 unless new

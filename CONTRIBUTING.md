@@ -44,9 +44,10 @@ npm run test:install-smoke
 npm run audit:dependencies
 ```
 
-The dependency audit gate accepts only the pinned, temporary exception printed
-by the command. It fails closed if the pinned high/critical findings or counts,
-lockfile versions or edges, network/command result, or expiry changes.
+The dependency audit gate requires a valid npm audit v2 report with no high or
+critical findings and exit code 0. Low/moderate findings remain permitted.
+It fails closed on inconsistent counts or exit status, malformed JSON, and
+command/network failures. Raw npm diagnostics are not printed by the gate.
 
 Even for documentation-only changes, please run at least the following.
 

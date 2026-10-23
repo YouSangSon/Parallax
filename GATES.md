@@ -2,7 +2,31 @@
 
 Evidence is current only when the command and result are recorded in this file. A focused pass proves only its named scope.
 
-## Active S1 Correctness Gate
+## Portfolio Readiness Gate — 2026-10-23
+
+- [x] Reproduced `npm run audit:dependencies` failure on the expired exception.
+  Raw audit: 6 high, 1 critical, 3 moderate; all reported fixes available.
+- [x] `npm audit fix` (no force/override) changed only the lockfile and reported
+  zero vulnerabilities. Direct dependency ranges are unchanged.
+- [x] Removed the exception; focused `tests/security.test.ts` passes 9/9,
+  including former-exception rejection, high/critical thresholds, malformed
+  reports, exit mismatches and secret-safe failures.
+- [x] Actual `computeEmbedding` smoke with default `Xenova/multilingual-e5-base`
+  q8 on macOS arm64 / Node 24.14.0 produced a nonzero 768-dimensional,
+  768-byte int8 vector; repeat input was identical. This is local CPU inference,
+  separate from the canonical suite's deterministic embedding stub.
+- [x] Clean `npm ci` and canonical `npm run verify` pass on Node 24.14.0 /
+  macOS arm64: lint/schema/build, 697/697 tests, dogfood 2/2, deterministic
+  bench 78/78 with no unexpected relations, and dependency audit. The run
+  completed 2026-10-23 05:34:38 UTC; test fixtures used an isolated TMPDIR.
+- [ ] Packaged CLI, stdio MCP and live workbench walkthrough, including errors,
+  empty state, keyboard navigation, exports and responsive display.
+- [x] Independent final security review found no P0–P2 issues in the dependency
+  gate, tests, lockfile and documentation diff.
+- [ ] Remote checks and authorized main merge.
+- [ ] Portfolio evidence and exact owned-resource/merged-branch cleanup.
+
+## Prior S1 Correctness Gate
 
 - [x] RED: `node --import tsx --test tests/incremental-index-oracle.test.ts`
   passed 3/4 and failed because a `tsconfig.json` alias-only edit did not update
@@ -39,7 +63,7 @@ conservative full-read/full-extraction path.
 - [x] `docs/CODEX-NAVIGATION-GUIDE.md` exists and matches current ownership/navigation.
 - [x] `npm run docs:lint` passes.
 
-## Dependency Audit Gate
+## Historical Dependency Audit Gate — superseded 2026-10-23
 
 - [x] `npm audit fix` refreshed only lockfile-resolved transitive packages and
   removed all six fixable high-severity findings.

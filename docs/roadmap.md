@@ -126,8 +126,8 @@ Without regression signals, there is no guarantee that every change works.
 
 ## If we had to pick just the next slice
 
-`PLAN.md` is the live queue. Remove or replace the temporary dependency-audit
-exception before its deadline. The next S1 slice must define and enforce
+`PLAN.md` is the live queue. The dependency-audit exception has been removed;
+current verification is recorded in `GATES.md`. The next S1 slice must define and enforce
 emitted-row ownership separately from `fileContentScope`; changed bodies remain
 on full extraction until that contract and deterministic read counts exist. The
 accuracy and agent-surface items above remain thematic follow-ons, not competing

@@ -126,8 +126,8 @@ MCP 已稳定为 read-only。接下来是深入审视 agent 可用性的阶段�
 
 ## 如果只挑下一个切片
 
-实时执行顺序由 `PLAN.md` 管理。先在期限前移除或替换临时
-dependency-audit 例外。下一个 S1 切片必须在 `fileContentScope` 之外单独定义
+实时执行顺序由 `PLAN.md` 管理。Dependency-audit 例外已移除，
+当前验证依据见 `GATES.md`。下一个 S1 切片必须在 `fileContentScope` 之外单独定义
 并强制 emitted-row ownership；在该 contract 与 deterministic read count 完成前，
 changed body 继续使用 full extraction。上面的准确度和 agent-surface 项目仍是
 后续主题，不与当前执行指令竞争。

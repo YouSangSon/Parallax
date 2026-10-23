@@ -28,15 +28,11 @@ Parallax 分层验证正确性——快速的 unit suite、typecheck、docs lint
 
 `test:fixtures` 是 `npm test` 的别名，`test:benchmark` 是 `npm run bench` 的别名。`npm run verify` 包含 `npm run audit:dependencies`，所以最后的 audit 阶段依赖 npm registry 和网络可用性。
 
-Dependency gate 会放行 clean audit。在 2026-09-30 UTC 结束前，它也仅允许
-`GHSA-xcpc-8h2w-3j85` 与 `GHSA-f88m-g3jw-g9cj` 所报告的、精确 pin 住的
-`@huggingface/transformers` dependency tree，并输出醒目警告。过期、
-command/network 或 JSON 错误，以及 pin 住的 high/critical finding/advisory
-field 和 count、package path、severity、node、version 或 dependency edge
-的任何变化都会 fail closed。只有 low/moderate 的报告低于此 gate 的阈值。
-失败输出不会包含 raw npm
-content；需要 raw 诊断时，请在本地重新运行
-`npm audit --audit-level=high --json`。
+Dependency gate 只放行 high/critical finding 为 0 且 exit code 为 0 的有效
+npm audit v2 report。只有 low/moderate 的报告仍可通过，不设例外 allowlist。
+High/critical finding、count 或 exit status 不一致、无效 JSON、command/network
+失败都会 fail closed。Gate 不输出 raw npm 诊断；需要原始诊断时，请在本地
+重新运行 `npm audit --audit-level=high --json`。
 
 ## dogfood guard——真正的安全网
 

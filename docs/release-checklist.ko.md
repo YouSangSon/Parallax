@@ -27,7 +27,7 @@ npm run verify
 | `npm test` | 빠른 unit/integration test 통과. | 모든 변경. |
 | `npm run test:dogfood` | Parallax가 자기 자신을 index하고 실제 dependency graph를 보존. | Engine 변경. |
 | `npm run bench` | Multi-language fixture recall, evidence, ranking, retrieval이 고정 기대치 안에 있음. | Adapter, analyzer, search, ranking, retrieval 변경. |
-| `npm run audit:dependencies` | Audit가 clean이거나 만료 전의 정확히 pin된 예외와 일치. | Release와 CI. |
+| `npm run audit:dependencies` | High/critical finding이 0개이고 exit code가 0인 유효한 npm audit v2 report. | Release와 CI. |
 
 ## 문서 gate
 
@@ -49,11 +49,12 @@ npm run verify
 3. `npm run test:install-smoke`를 실행한다.
 4. `npm run audit:dependencies`를 실행한다.
 
-임시 예외는 2026-09-30 UTC 이후 만료되며 `GHSA-xcpc-8h2w-3j85`와
-`GHSA-f88m-g3jw-g9cj`가 보고하는 정확히 lock된 `@huggingface/transformers`
-tree만 포함한다. Pin된 high/critical finding/advisory field와 count, package
-path, severity, node, version, dependency edge, command, network, JSON이 하나라도
-달라지면 release를 차단한다. Low/moderate-only finding은 이 gate보다 낮다.
+Dependency gate는 high/critical finding이 0개이고 exit code가 0인 유효한
+npm audit v2 report만 통과시킨다. Low/moderate-only report는 허용하며 예외
+allowlist는 없다. High/critical finding, count 또는 exit status 불일치,
+잘못된 JSON, command/network 실패는 fail-closed로 거부한다. Gate는 raw npm
+진단을 출력하지 않는다. Raw 진단이 필요하면 로컬에서
+`npm audit --audit-level=high --json`을 다시 실행한다.
 
 ## Engine-change gate
 

@@ -43,9 +43,9 @@ npm run test:install-smoke
 npm run audit:dependencies
 ```
 
-Dependency audit gate 只允许命令所显示的、pin 住的临时例外。Pin 住的
-high/critical finding 或 count、lockfile version/edge、network/command result
-或到期时间只要变化，就会 fail closed。
+Dependency audit gate 要求有效的 npm audit v2 report、零 high/critical finding
+和 exit code 0。Low/moderate finding 仍可通过，不再有例外。
+Count/exit 不一致、JSON 错误和 command/network 失败均拒绝通过，且不输出 raw 诊断。
 
 即使只改了文档，也请至少运行以下命令。
 

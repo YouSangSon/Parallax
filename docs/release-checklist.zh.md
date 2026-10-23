@@ -27,7 +27,7 @@ npm run verify
 | `npm test` | 快速 unit 和 integration test 通过。 | 每次变更。 |
 | `npm run test:dogfood` | Parallax 能 index 自己并保留真实 dependency graph。 | Engine 变更。 |
 | `npm run bench` | Multi-language fixture 的 recall、evidence、ranking 和 retrieval 保持在固定期望内。 | Adapter、analyzer、search、ranking 或 retrieval 变更。 |
-| `npm run audit:dependencies` | Audit clean，或与尚未过期且精确 pin 住的例外一致。 | Release 和 CI。 |
+| `npm run audit:dependencies` | 有效 npm audit v2 report，high/critical finding 为 0 且 exit code 为 0。 | Release 和 CI。 |
 
 ## 文档 gate
 
@@ -49,12 +49,11 @@ npm run verify
 3. 运行 `npm run test:install-smoke`。
 4. 运行 `npm run audit:dependencies`。
 
-临时例外在 2026-09-30 UTC 之后失效，且只覆盖
-`GHSA-xcpc-8h2w-3j85` 与 `GHSA-f88m-g3jw-g9cj` 所报告的、精确 lock 住的
-`@huggingface/transformers` tree。Pin 住的 high/critical finding/advisory field
-和 count、package path、severity、node、version、dependency edge、command、
-network 或 JSON 只要发生变化，就会阻止 release。只有 low/moderate 的 finding
-低于此 gate。
+Dependency gate 只放行 high/critical finding 为 0 且 exit code 为 0 的有效
+npm audit v2 report。只有 low/moderate 的报告仍可通过，不设例外 allowlist。
+High/critical finding、count 或 exit status 不一致、无效 JSON、command/network
+失败都会 fail closed。Gate 不输出 raw npm 诊断；需要原始诊断时，请在本地
+重新运行 `npm audit --audit-level=high --json`。
 
 ## Engine-change gate
 

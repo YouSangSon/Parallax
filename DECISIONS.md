@@ -1085,6 +1085,8 @@ Why:
 
 ## 2026-08-31: Time-Box The Unfixable High-Severity Dependency Findings
 
+Superseded on 2026-10-23 by "Remove The Temporary Dependency-Audit Exception" below.
+
 Decision: keep the compatible lockfile refresh that removes the fixable audit
 findings, then gate the four remaining high-severity nodes with a stdlib-only,
 exact-match exception that expires at `2026-10-01T00:00:00Z`. Compare only the
@@ -1125,3 +1127,20 @@ Why:
 - The existing server-rendered workbench and browser APIs already cover the
   required behavior; static regressions plus a live Playwright pass provide the
   bounded check without another production dependency.
+
+## 2026-10-23: Remove The Temporary Dependency-Audit Exception
+
+Decision: accept the compatible `npm audit fix` lockfile refresh and remove the
+expired exception rather than extend its deadline or maintain an allowlist.
+The gate requires a valid npm audit v2 report with zero high/critical findings
+and exit code 0; low/moderate findings remain below the threshold. Inconsistent
+counts or exit status, malformed JSON, and command/network failures fail closed.
+Raw npm diagnostics remain excluded from gate output.
+
+Why:
+- Compatible upstream fixes now exist. The lockfile-only refresh, without
+  `--force`, resolves Transformers 4.3.1, MCP SDK 1.32.1, sharp 0.35.5,
+  ONNX Runtime 1.30.0, adm-zip 0.6.1, and proxy-addr 2.0.8.
+- The refresh reported zero vulnerabilities. This supersedes the 2026-08-31
+  dependency-tree exception; it does not establish aggregate verification,
+  CI success, or real-model runtime compatibility; those require separate checks.

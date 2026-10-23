@@ -1,6 +1,6 @@
 # Parallax — Documentation
 
-**English** · [한국어](README.ko.md) · [中文](README.zh.md)
+[한국어](README.ko.md) · [日本語](README.ja.md) · **English** · [中文](README.zh.md)
 
 Parallax is a local-first code impact-analysis layer: a single SQLite store powers a CLI, an MCP server for coding agents, and a UI explorer. This index links the main packaged guides in `docs/`.
 

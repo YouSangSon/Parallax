@@ -43,7 +43,7 @@ cross-repo impact 还处于 v0 状态。仅在用户注册的 local repo 之间�
 
 ## 3. Package / Build 解析度
 
-package resolver 已覆盖常见生态的 manifest graph 与 npm lockfile transitive dependency。大多数非 npm lockfile ecosystem 和 semver impact 仍未完成。
+package resolver 已覆盖常见生态的 manifest graph，以及 npm、Cargo、Poetry lockfile 的传递依赖。其他锁文件生态和 semver 影响仍未完成。
 
 - [x] npm `package-lock.json` v2/v3 transitive 依赖图
   - 当前 gate：transitive package entry 会被索引为带 locked version 与 evidence span 的 lockfile-derived `DEPENDS_ON` package relation。

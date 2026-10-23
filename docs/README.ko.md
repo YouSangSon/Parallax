@@ -1,6 +1,6 @@
 # Parallax — 문서
 
-[English](README.md) · **한국어** · [中文](README.zh.md)
+**한국어** · [日本語](README.ja.md) · [English](README.md) · [中文](README.zh.md)
 
 Parallax는 local-first 코드 impact 분석 계층이다 — 단일 SQLite 저장소가 CLI, 코딩 에이전트용 MCP 서버, UI explorer를 구동한다. 이 인덱스는 `docs/`에 포함된 주요 packaged guide를 링크한다.
 

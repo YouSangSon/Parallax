@@ -13,7 +13,7 @@ Claude Code, Codex, Cursor 같은 에이전트가 코드를 고치기 전에<br/
 ![mcp](https://img.shields.io/badge/MCP-stdio-14b8a6)
 ![license](https://img.shields.io/badge/license-MIT-3da639)
 
-[English](README.md) · **한국어** · [中文](README.zh.md)
+**한국어** · [日本語](README.ja.md) · [English](README.md) · [中文](README.zh.md)
 
 [🚀 빠른 시작](#-빠른-시작) · [✨ 주요 기능](#-주요-기능) · [🧱 핵심 개념](#-핵심-개념) · [🤖 MCP](#-mcp--agents) · [🔒 안전 모델](#-안전-모델) · [🗺️ Roadmap](#%EF%B8%8F-roadmap) · [📚 더 읽기](#-더-읽기)
 
@@ -34,13 +34,15 @@ Claude Code, Codex, Cursor 같은 에이전트가 코드를 고치기 전에<br/
 | 항목 | 필요 조건 | 비고 |
 | :--- | :--- | :--- |
 | **Node.js** | `>=24.0.0` | Node built-in `node:sqlite` 사용. experimental warning이 보일 수 있음 |
-| **npm** | package-lock 기준 | `npm install`로 개발 환경 구성 |
+| **npm** | package-lock 기준 | `npm ci`로 개발 환경 구성 |
 | **저장소 권한** | 로컬 read/write | `.parallax/` 디렉터리와 SQLite DB 생성 |
 | **외부 서비스** | 기본 impact 경로는 불필요 | 모델/LLM 기반 memory 정리는 명시 실행 시에만 사용 |
 
 ```bash
 # 1. Parallax 빌드
-npm install
+git clone https://github.com/YouSangSon/Parallax.git
+cd Parallax
+npm ci
 npm run build
 
 # 2. 현재 checkout의 CLI를 PATH에 연결
@@ -162,7 +164,7 @@ UI 다음에 MCP와 CI guardrail까지 이어지는 튜토리얼은 [`docs/getti
 | **Python / Go / Rust** | declaration/test relation 중심 lightweight adapter |
 | **Markdown / work artifacts** | policy, proposal, PRD, decision 문서를 first-class artifact로 분류하고 코드와 연결 |
 | **Config / Infra** | shell, YAML, JSON, TOML, Dockerfile, Makefile, Terraform, CODEOWNERS 등 system/config 후보 인덱싱 |
-| **Package manifests** | `package.json`, `pom.xml`, `build.gradle(.kts)`, `go.mod`, `Cargo.toml`, `pyproject.toml` manifest graph |
+| **Package manifests & locks** | `package.json`, `pom.xml`, `build.gradle(.kts)`, `go.mod`, `Cargo.toml`, `pyproject.toml`의 manifest graph와 npm `package-lock.json`, `Cargo.lock`, `poetry.lock`의 전이 의존성을 인덱싱 |
 | **SCIP import/export** | `parallax scip import --file <index.scip or index.scip.json>`로 외부 indexer의 SCIP definition/reference edge를 최신 index에 보강하고, `parallax scip export --file <index.scip.json>`로 SCIP 호환 JSON을 출력 |
 
 ### 🌐 Workspace & contracts
@@ -171,7 +173,7 @@ UI 다음에 MCP와 CI guardrail까지 이어지는 튜토리얼은 [`docs/getti
 | :--- | :--- |
 | **Workspace catalog** | `.parallax/workspace.json`에 사용자가 허용한 local repo, 명시적 package directory, 발견된 npm/pnpm workspace package, 또는 Nx project config만 등록. clone/network 없음 |
 | **Cross-repo resolver** | 등록된 repo 사이의 provider endpoint ↔ consumer file link를 저장 |
-| **Contract diff** | OpenAPI, GraphQL, Protobuf, AsyncAPI surface diff를 `breaking` / `non-breaking` / `unknown`으로 분류하고, OpenAPI response optional property removal, response nullable addition, response format/enum change, request format addition/change, request enum-value removal도 감지 |
+| **Contract diff** | OpenAPI, GraphQL, Protobuf, AsyncAPI, JSON Schema, Avro surface diff를 `breaking` / `non-breaking` / `unknown`으로 분류하고, OpenAPI response optional property removal, response nullable addition, response format/enum change, request format addition/change, request enum-value removal, JSON Schema 루트 객체 변경, Avro 최상위 record field 변경도 감지 |
 | **Consumer impact** | breaking removed endpoint/operation, required field removal, type/nullable/format/enum change, required request field 추가, request format addition/change, request enum-value removal 등을 known consumer와 연결 |
 | **Event topology hint** | AsyncAPI producer/consumer 방향과 breaking provenance를 compact payload로 제공 |
 
@@ -211,7 +213,7 @@ parallax profile --entity src/auth/session.ts
 | :--- | :--- |
 | **Impact graph** | 파일/심벌/계약을 잇는 방향 그래프. 변경의 파급을 bounded traversal로 계산 |
 | **Evidence** | 모든 관계에 원본 파일·라인·snippet 근거를 붙인 것 |
-| **Confidence** | proven / inferred / heuristic 3단계로 evidence 신뢰도를 표기 |
+| **Confidence** | proven / inferred / heuristic / unknown으로 evidence 신뢰도를 표기 |
 | **Context pack** | 변경 분석 결과를 agent가 먹기 좋은 작은 JSON 묶음으로 제공 |
 | **Work artifact** | policy, PRD, decision 같은 문서를 코드와 연결한 1급 객체 |
 | **Adapter** | 언어·포맷별 추출기. confidence와 known-gap을 함께 보고 |
@@ -245,11 +247,11 @@ parallax mcp serve
 
 | 원칙 | 내용 |
 | :--- | :--- |
-| **Local-first** | 모든 인덱스와 memory는 repo-local `.parallax/`에 저장. 외부 전송 없음 |
-| **명시적 workspace** | cross-repo는 사용자가 등록한 local repo만. clone/network 없음 |
+| **Local-first** | 기본 index/analyze는 repo-local `.parallax/`에 저장. 선택적 모델 다운로드와 설정한 reflection provider는 네트워크를 사용할 수 있음 |
+| **명시적 workspace** | cross-repo는 사용자가 등록한 local repo 또는 package directory만. clone/network 없음 |
 | **Redaction** | secret-like 문자열은 저장 전 redaction |
 | **Source tree read-only 기본** | MCP는 source file을 수정하지 않음. analysis/search tool, context-pack 재사용, MCP resource read는 `.parallax/impact.db`에 context-pack 또는 telemetry row를 추가할 수 있고, 명시적 memory 명령은 fact를 기록 |
-| **결정론적 출력** | 같은 입력은 같은 report. CI에서 재현 가능 |
+| **재현 가능한 핵심 분석** | 오프라인 fixture로 정적 영향 분석 결과를 검증. 생성 ID·시각과 모델 기반 memory는 바이트 단위 재현 범위 밖 |
 
 ---
 
@@ -269,8 +271,8 @@ npm run docs:lint
 | `npm run build` | TypeScript를 `dist/`로 compile |
 | `npm run check` | emit 없이 typecheck |
 | `npm test` | Node test runner suite를 `tsx`로 실행 |
-| `npm run bench` | multi-language, Spring Boot, contract, package manifest fixture 기반 deterministic bench |
-| `npm run docs:lint` | tracked/untracked Markdown의 금지 콘텐츠, trilingual parity, same-language link, 누락된 local `.md` target 검사 |
+| `npm run bench` | multi-language, Spring Boot, contract, co-change, trace, package manifest fixture 기반 deterministic bench |
+| `npm run docs:lint` | tracked/untracked Markdown의 금지 콘텐츠, README 4개 언어·가이드 3개 언어 대응, 같은 언어 링크, 누락된 local `.md` target 검사 |
 | `npm run verify` | source checkout에서 전체 release gate 실행 |
 | `npm run test:mcp` | MCP impact/context/memory/telemetry/path validation 검증 |
 | `npm run test:security` | path containment와 redaction 검증 |
@@ -294,7 +296,7 @@ npm run verify
 | **Accuracy** | TS/JS parser-backed span을 더 넓은 dynamic dispatch와 advanced type relation으로 확장 |
 | **JVM / Python / Go / Rust** | declaration 중심 adapter를 parser-backed call/import resolution으로 승격 |
 | **Workspace / Contract** | nested schema diff 안정화, generated-client/event topology resolver depth 확대 |
-| **Package / Build** | lockfile, transitive dependency, semver/range 기반 package graph |
+| **Package / Build** | npm/Cargo/Poetry 외 생태계의 lockfile과 semver/range 영향 분석 확대 |
 | **Agent surface** | context pack budget tuning과 hit/miss 측정 harness |
 | **UI Explorer** | changed → affected → evidence → action 흐름을 한 화면에서 더 직접적으로 탐색 |
 | **Measurement** | fixture bench delta와 recall 품질 회귀 detection |
@@ -308,8 +310,8 @@ npm run verify
 | 영역 | 상태 |
 | :--- | :--- |
 | **Full semantic analysis** | 모든 언어의 type-aware analysis가 아니다. adapter별 confidence와 known-gap을 확인해야 함 |
-| **Contract depth** | GraphQL/Protobuf/AsyncAPI parser/LSP 수준의 full generated-client usage graph는 후속 |
-| **Package resolution** | 현재는 manifest 중심. lockfile/transitive/semver 실행 기반 resolver는 후속 |
+| **Contract depth** | GraphQL/Protobuf/AsyncAPI parser/LSP 수준의 전체 generated-client 사용 그래프와 Avro named-type/schema-registry 해석은 후속 작업 |
+| **Package resolution** | npm `package-lock.json`, `Cargo.lock`, `poetry.lock` 전이 의존성은 지원. 다른 lockfile 생태계, semver 영향, 실행 기반 resolver는 후속 작업 |
 | **Graph DB** | 기본 제품 범위가 아님. 필요하면 SQLite에서 optional projection으로 확장 |
 | **External writes** | Obsidian/GitHub/Jira write sync는 아직 MCP surface에 노출하지 않음 |
 | **Code modification** | Parallax는 코드를 직접 수정하지 않는다. agent에게 영향도와 근거를 제공한다 |

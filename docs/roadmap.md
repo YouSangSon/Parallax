@@ -43,7 +43,7 @@ Cross-repo impact is at a v0 state. It works only among the local repos the user
 
 ## 3. Package / Build resolution
 
-The package resolver now covers manifest graphs across common ecosystems and npm lockfile transitive dependencies. Most non-npm lockfile ecosystems and semver impact are still open.
+The package resolver covers manifest graphs across common ecosystems and npm, Cargo, and Poetry lockfile transitive dependencies. Other lockfile ecosystems and semver impact are still open.
 
 - [x] npm `package-lock.json` v2/v3 transitive dependency graph
   - Current gate: transitive package entries are indexed as lockfile-derived `DEPENDS_ON` package relations with locked versions and evidence spans.

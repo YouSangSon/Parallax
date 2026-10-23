@@ -56,11 +56,12 @@ function checkForbidden(file, content) {
   }
 }
 
-// --- Trilingual zone helpers ---
+// --- Translation zone helpers ---
 
 // A tracked *.md is in the trilingual zone if it is a root README/CONTRIBUTING/SECURITY,
 // lives under docs/ (excluding docs/assets/), or lives under skills/.
 function inTrilingualZone(file) {
+  if (isRootReadmeVariant(file)) return true;
   const rootDocs = ['README', 'CONTRIBUTING', 'SECURITY'];
   for (const name of rootDocs) {
     if ([`${name}.md`, `${name}.ko.md`, `${name}.zh.md`].includes(file)) return true;
@@ -71,7 +72,7 @@ function inTrilingualZone(file) {
 }
 
 function isRootReadmeVariant(file) {
-  return ['README.md', 'README.ko.md', 'README.zh.md'].includes(file);
+  return ['README.md', 'README.ko.md', 'README.ja.md', 'README.zh.md'].includes(file);
 }
 
 function isPackageVisibleMarkdown(file) {
@@ -82,20 +83,20 @@ function isPackageSurfaceMarkdownTarget(file) {
   return isRootReadmeVariant(file) || (file.startsWith('docs/') && !file.startsWith('docs/assets/'));
 }
 
-const LANG_SUFFIXES = ['.ko.md', '.zh.md'];
+const LANG_SUFFIXES = ['.ko.md', '.ja.md', '.zh.md'];
 
 function normalizeRepoPath(repoPath) {
   return repoPath.replace(/\\/g, '/');
 }
 
-// Returns { base, lang } where base strips the .ko/.zh infix before .md.
+// Returns { base, lang } where base strips a locale infix before .md.
 // Canonical "X.md" -> { base: "X.md", lang: "" }
 // "X.ko.md"        -> { base: "X.md", lang: "ko" }
 export function parseVariant(file) {
   file = normalizeRepoPath(file);
   for (const suffix of LANG_SUFFIXES) {
     if (file.endsWith(suffix)) {
-      const lang = suffix.slice(1, 3); // "ko" | "zh"
+      const lang = suffix.slice(1, 3); // "ko" | "ja" | "zh"
       const base = `${file.slice(0, -suffix.length)}.md`;
       return { base, lang };
     }
@@ -103,7 +104,7 @@ export function parseVariant(file) {
   return { base: file, lang: '' };
 }
 
-// For a base path "dir/X.md" returns the three sibling variant paths.
+// README entry points have four locales; detailed guides retain three.
 export function siblingPaths(base) {
   base = normalizeRepoPath(base);
   const dir = posix.dirname(base);
@@ -112,6 +113,7 @@ export function siblingPaths(base) {
   return {
     canonical: make('.md'),
     ko: make('.ko.md'),
+    ...(['README.md', 'docs/README.md'].includes(base) ? { ja: make('.ja.md') } : {}),
     zh: make('.zh.md')
   };
 }
@@ -131,10 +133,11 @@ function checkRequiredTrackedVariant(file, variantPath, missingReason) {
 function checkParity(zoneFiles) {
   for (const file of zoneFiles) {
     const { base } = parseVariant(file);
-    const { canonical, ko, zh } = siblingPaths(base);
+    const { canonical, ko, ja, zh } = siblingPaths(base);
     checkRequiredTrackedVariant(file, canonical, `orphan translation: canonical ${posix.basename(canonical)} is missing`);
     checkRequiredTrackedVariant(file, ko, `missing trilingual variant ${posix.basename(ko)}`);
     checkRequiredTrackedVariant(file, zh, `missing trilingual variant ${posix.basename(zh)}`);
+    if (ja) checkRequiredTrackedVariant(file, ja, `missing README translation ${posix.basename(ja)}`);
   }
 }
 
@@ -184,14 +187,14 @@ function* iterLinks(rawContent) {
 
 function checkSwitcher(file, content) {
   const { base } = parseVariant(file);
-  const { canonical, ko, zh } = siblingPaths(base);
+  const siblings = Object.values(siblingPaths(base));
   const targets = new Set();
   for (const { isImage, target } of iterLinks(content)) {
     if (isImage) continue;
     targets.add(posix.basename(target));
   }
-  // The file must link to its other two language variants (need not link to itself).
-  const required = [canonical, ko, zh].filter((p) => p !== file);
+  // Every other supported locale must be reachable from each entry point.
+  const required = siblings.filter((p) => p !== file);
   for (const sibling of required) {
     if (!targets.has(posix.basename(sibling))) {
       report(file, `missing switcher link to ${posix.basename(sibling)}`);
@@ -213,7 +216,7 @@ function checkSameLanguageLinks(file, content) {
   const own = siblingPaths(ownBase);
   // The file's own switcher links (English canonical + the other-language twin)
   // are always allowed; they are how a reader hops languages.
-  const ownSiblings = new Set([own.canonical, own.ko, own.zh]);
+  const ownSiblings = new Set(Object.values(own));
 
   for (const { isImage, target } of iterLinks(content)) {
     if (isImage) continue;

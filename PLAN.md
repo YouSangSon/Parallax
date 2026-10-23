@@ -224,13 +224,16 @@ existing ownership gates; this loop makes the shipped product reviewable.
 - Push policy: the user explicitly approved pushing this branch, opening PR #35,
   and merging it into `main` after all local and remote gates pass.
 
-## Next
+## Portfolio Completion and Deferred Work
 
-1. The dependency and UI portfolio gates have landed in PR #38 and #39.
-   PNG export landed in PR #40. The subsequent completion audit found a broken
-   main-only Scorecard action reference; follow its correction and exact main
-   run in `GATES.md`. Selective reads and deeper contracts remain deferred work.
-2. Define emitted-row ownership before revisiting selective reads, then add
+The portfolio readiness loop is complete. Dependency, UI and PNG corrections
+landed in PR #38–#40. PR #41 restored the main-only Scorecard workflow;
+`GATES.md` records the successful runs on its exact merge commit. Portfolio
+evidence and cleanup receipts remain in the owner location in `CONTEXT.md`.
+
+The following items are deferred beyond this completed loop:
+
+1. Define emitted-row ownership before revisiting selective reads, then add
    deterministic file/byte read counts before making a performance claim.
-3. Keep deeper JSON Schema / Avro compatibility semantics behind S1 unless new
+2. Keep deeper JSON Schema / Avro compatibility semantics behind S1 unless new
    evidence displaces the sequence.

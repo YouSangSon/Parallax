@@ -77,6 +77,12 @@ Evidence is current only when the command and result are recorded in this file. 
 - Local workflow semantic validation and documentation lint own the pre-merge
   evidence. The final PR checks and exact merge SHA's main workflow runs own
   remote evidence; PR success alone does not establish Scorecard execution.
+- [x] PR #41 merged as `6774e64` after all five PR checks passed. On that exact
+  main commit, CI `39937453188`, Security `39937453163`, CodeQL `39937453157`
+  and Scorecard `39937453174` completed successfully. CI's `npm run verify`
+  passed 697 tests, dogfood 2/2, bench 78/78 and the dependency audit. Scorecard
+  analysis, artifact/SARIF uploads and public result commit matching passed;
+  this does not mean zero advisory findings or complete control visibility.
 
 ## Prior S1 Correctness Gate
 

@@ -43,9 +43,9 @@ npm run test:install-smoke
 npm run audit:dependencies
 ```
 
-Dependency audit gate는 command가 출력하는 pin된 임시 예외만 허용한다.
-Pin된 high/critical finding 또는 count, lockfile version/edge,
-network/command result, 만료 시점이 바뀌면 fail closed한다.
+Dependency audit gate는 high/critical finding이 0개이고 exit code가 0인
+유효한 npm audit v2 report를 요구한다. Low/moderate는 허용하며 예외는 없다.
+Count/exit 불일치, JSON 오류, command/network 실패는 거부하고 raw 진단은 출력하지 않는다.
 
 문서만 바꾼 경우에도 최소한 아래는 실행해 주세요.
 

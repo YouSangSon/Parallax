@@ -51,117 +51,44 @@ const knownAuditReport = {
   }
 };
 
-const knownLockfile = {
-  packages: {
-    '': { dependencies: { '@huggingface/transformers': '^4.2.0' } },
-    'node_modules/@huggingface/transformers': {
-      version: '4.2.0', dependencies: { 'onnxruntime-node': '1.24.3', sharp: '^0.34.5' }
-    },
-    'node_modules/onnxruntime-node': { version: '1.24.3', dependencies: { 'adm-zip': '^0.5.16' } },
-    'node_modules/adm-zip': { version: '0.5.18' },
-    'node_modules/sharp': { version: '0.34.5' }
-  }
-};
-
 function auditResult(report: unknown = knownAuditReport, status = 1) {
   return { status, signal: null, stdout: JSON.stringify(report), stderr: '' };
 }
 
-test('dependency audit gate accepts only the pinned exception before expiry', () => {
-  assert.deepEqual(gateDependencyAudit({
-    auditResult: auditResult(),
-    lockfileText: JSON.stringify(knownLockfile),
-    now: new Date('2026-09-30T23:59:59.999Z')
-  }), { acceptedException: true });
-
-  const unrelatedMetadataChange = structuredClone(knownAuditReport);
-  unrelatedMetadataChange.metadata.dependencies.total = 999;
-  assert.deepEqual(gateDependencyAudit({
-    auditResult: auditResult(unrelatedMetadataChange),
-    lockfileText: JSON.stringify(knownLockfile),
-    now: new Date('2026-09-30T23:59:59.999Z')
-  }), { acceptedException: true });
-
-  const clean = structuredClone(knownAuditReport);
-  clean.vulnerabilities = {} as typeof clean.vulnerabilities;
-  clean.metadata.vulnerabilities = { info: 0, low: 0, moderate: 0, high: 0, critical: 0, total: 0 };
-  assert.deepEqual(gateDependencyAudit({
-    auditResult: auditResult(clean, 0),
-    lockfileText: '{}',
-    now: new Date('2027-01-01T00:00:00.000Z')
-  }), { acceptedException: false });
-
-  const moderateVulnerability = {
-    name: 'example', severity: 'moderate', isDirect: false, via: [], effects: [],
-    range: '*', nodes: ['node_modules/example'], fixAvailable: false
+test('dependency audit gate accepts clean and below-threshold reports', () => {
+  const clean = {
+    auditReportVersion: 2,
+    vulnerabilities: {},
+    metadata: { vulnerabilities: { info: 0, low: 0, moderate: 0, high: 0, critical: 0, total: 0 } }
   };
-  const moderateOnly = {
-    ...structuredClone(clean),
-    vulnerabilities: { example: moderateVulnerability },
-    metadata: {
-      ...structuredClone(clean.metadata),
-      vulnerabilities: { info: 0, low: 0, moderate: 1, high: 0, critical: 0, total: 1 }
-    }
-  };
-  assert.deepEqual(gateDependencyAudit({
-    auditResult: auditResult(moderateOnly, 0),
-    lockfileText: '{}',
-    now: new Date('2027-01-01T00:00:00.000Z')
-  }), { acceptedException: false });
-
-  const pinnedWithModerate = {
-    ...structuredClone(knownAuditReport),
-    vulnerabilities: {
-      ...structuredClone(knownAuditReport.vulnerabilities),
-      example: moderateVulnerability
-    },
-    metadata: {
-      ...structuredClone(knownAuditReport.metadata),
-      vulnerabilities: { info: 0, low: 0, moderate: 1, high: 4, critical: 0, total: 5 }
-    }
-  };
-  assert.deepEqual(gateDependencyAudit({
-    auditResult: auditResult(pinnedWithModerate),
-    lockfileText: JSON.stringify(knownLockfile),
-    now: new Date('2026-09-30T23:59:59.999Z')
-  }), { acceptedException: true });
+  assert.doesNotThrow(() => gateDependencyAudit({ auditResult: auditResult(clean, 0) }));
+  for (const severity of ['info', 'low', 'moderate'] as const) {
+    const report = {
+      ...clean,
+      vulnerabilities: { example: { name: 'example', severity } },
+      metadata: { vulnerabilities: { ...clean.metadata.vulnerabilities, [severity]: 1, total: 1 } }
+    };
+    assert.doesNotThrow(() => gateDependencyAudit({ auditResult: auditResult(report, 0) }));
+    assert.throws(() => gateDependencyAudit({ auditResult: auditResult(report, 1) }), /exited non-zero/);
+  }
 });
 
-test('dependency audit gate fails closed when the report, exception, or lock drifts', () => {
-  const cases: Array<[string, (report: typeof knownAuditReport, lock: typeof knownLockfile) => void]> = [
-    ['advisory', (report) => { report.vulnerabilities['adm-zip'].via[0]!.source = 1; }],
-    ['path', (report) => { report.vulnerabilities.sharp.nodes = ['node_modules/other/sharp']; }],
-    ['severity', (report) => { report.vulnerabilities.sharp.severity = 'critical'; }],
-    ['node set', (report) => { report.vulnerabilities.sharp.nodes.push('node_modules/other/sharp'); }],
-    ['onnxruntime-node range', (report) => { report.vulnerabilities['onnxruntime-node'].range = '<1.25.0'; }],
-    ['version', (_report, lock) => { lock.packages['node_modules/sharp'].version = '0.34.6'; }],
-    ['dependency edge', (_report, lock) => { lock.packages['node_modules/onnxruntime-node'].dependencies['adm-zip'] = '^0.6.0'; }]
-  ];
-
-  for (const [label, mutate] of cases) {
-    const report = structuredClone(knownAuditReport);
-    const lock = structuredClone(knownLockfile);
-    mutate(report, lock);
-    assert.throws(() => gateDependencyAudit({
-      auditResult: auditResult(report),
-      lockfileText: JSON.stringify(lock),
-      now: new Date('2026-09-30T23:59:59.999Z')
-    }), label);
+test('dependency audit gate rejects all high and critical findings, including the former exception', () => {
+  assert.throws(() => gateDependencyAudit({ auditResult: auditResult() }), /4 high and 0 critical/);
+  for (const severity of ['high', 'critical'] as const) {
+    const report = {
+      auditReportVersion: 2,
+      vulnerabilities: { example: { name: 'example', severity } },
+      metadata: { vulnerabilities: { info: 0, low: 0, moderate: 0, high: 0, critical: 0, [severity]: 1, total: 1 } }
+    };
+    assert.throws(() => gateDependencyAudit({ auditResult: auditResult(report) }), /vulnerabilities/);
+    assert.throws(() => gateDependencyAudit({ auditResult: auditResult(report, 0) }), /exited zero/);
   }
-
-  assert.throws(() => gateDependencyAudit({
-    auditResult: auditResult(),
-    lockfileText: JSON.stringify(knownLockfile),
-    now: new Date('2026-10-01T00:00:00.000Z')
-  }), /expired/);
 });
 
 test('dependency audit gate fails closed on command and JSON failures', () => {
-  const input = { lockfileText: JSON.stringify(knownLockfile), now: new Date('2026-09-01T00:00:00.000Z') };
-
   const secret = 'https://user:ghp_supersecret@registry.example.test/';
   assert.throws(() => gateDependencyAudit({
-    ...input,
     auditResult: { ...auditResult(), error: new Error(`spawn failed: ${secret}`) }
   }), (error) => {
     assert.ok(error instanceof Error);
@@ -169,13 +96,11 @@ test('dependency audit gate fails closed on command and JSON failures', () => {
     assert.doesNotMatch(error.message, /ghp_supersecret/);
     return true;
   });
-  assert.throws(() => gateDependencyAudit({ ...input, auditResult: auditResult(knownAuditReport, 2) }), /exit status 2/);
+  assert.throws(() => gateDependencyAudit({ auditResult: auditResult(knownAuditReport, 2) }), /exit status 2/);
   assert.throws(() => gateDependencyAudit({
-    ...input,
     auditResult: { ...auditResult(), status: null, signal: 'SIGTERM' }
   }), /signal SIGTERM/);
   assert.throws(() => gateDependencyAudit({
-    ...input,
     auditResult: auditResult({ error: { code: 'ENETWORK', summary: `registry unavailable: ${secret}` } })
   }), (error) => {
     assert.ok(error instanceof Error);
@@ -183,8 +108,8 @@ test('dependency audit gate fails closed on command and JSON failures', () => {
     assert.doesNotMatch(error.message, /ghp_supersecret|registry\.example/);
     return true;
   });
-  assert.throws(() => gateDependencyAudit({ ...input, auditResult: { ...auditResult(), stdout: '{' } }), /valid JSON/);
-  assert.throws(() => gateDependencyAudit({ ...input, auditResult: { ...auditResult(), stdout: '' } }), /no JSON/);
+  assert.throws(() => gateDependencyAudit({ auditResult: { ...auditResult(), stdout: '{' } }), /valid JSON/);
+  assert.throws(() => gateDependencyAudit({ auditResult: { ...auditResult(), stdout: '' } }), /no JSON/);
 
   const malformedReports = [
     { ...knownAuditReport, vulnerabilities: [] },
@@ -214,7 +139,6 @@ test('dependency audit gate fails closed on command and JSON failures', () => {
   ];
   for (const report of malformedReports) {
     assert.throws(() => gateDependencyAudit({
-      ...input,
       auditResult: auditResult(report as typeof knownAuditReport, 0)
     }), /malformed/);
   }

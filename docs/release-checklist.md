@@ -27,7 +27,7 @@ npm run verify
 | `npm test` | Fast unit and integration tests pass. | Every change. |
 | `npm run test:dogfood` | Parallax can index itself and preserve the real dependency graph. | Engine changes. |
 | `npm run bench` | Multi-language fixture recall, evidence, ranking, and retrieval stay within pinned expectations. | Adapter, analyzer, search, ranking, or retrieval changes. |
-| `npm run audit:dependencies` | Audit is clean or exactly matches the unexpired pinned exception. | Release and CI. |
+| `npm run audit:dependencies` | Valid npm audit v2 report with zero high/critical findings and exit code 0. | Release and CI. |
 
 ## Documentation gate
 
@@ -49,11 +49,12 @@ When `npm audit fix` changes `package-lock.json`:
 3. Run `npm run test:install-smoke`.
 4. Run `npm run audit:dependencies`.
 
-The temporary exception expires after 2026-09-30 UTC and covers only the exact
-locked `@huggingface/transformers` tree reported by `GHSA-xcpc-8h2w-3j85` and
-`GHSA-f88m-g3jw-g9cj`. Any pinned high/critical finding/advisory field or count,
-package path, severity, node, version, dependency-edge, command, network, or
-JSON drift blocks release. Low/moderate-only findings remain below this gate.
+The dependency gate requires a valid npm audit v2 report with zero high/critical
+findings and exit code 0. Low/moderate-only reports remain permitted; there is
+no exception allowlist. High/critical findings, inconsistent counts or exit
+status, malformed JSON, and command/network failures block the gate. Raw npm
+diagnostics are not printed; rerun `npm audit --audit-level=high --json` locally
+when raw diagnostics are needed.
 
 ## Engine-change gate
 

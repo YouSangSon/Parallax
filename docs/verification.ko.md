@@ -28,14 +28,11 @@ Parallax는 정확성을 여러 계층으로 검증한다 — 빠른 unit suite,
 
 `test:fixtures`는 `npm test`의 alias이고, `test:benchmark`는 `npm run bench`의 alias다. `npm run verify`에는 `npm run audit:dependencies`가 포함되므로 마지막 audit 단계는 npm registry와 network 상태에 의존한다.
 
-Dependency gate는 clean audit를 통과시킨다. 2026-09-30 UTC가 끝날 때까지는
-`GHSA-xcpc-8h2w-3j85`와 `GHSA-f88m-g3jw-g9cj`가 보고하는 정확히 pin된
-`@huggingface/transformers` dependency tree만 눈에 띄는 경고와 함께 허용한다.
-기한 만료, command/network 또는 JSON 오류, pin된 high/critical
-finding/advisory field와 count, package path, severity, node, version,
-dependency edge의 변경은 모두 fail-closed로 거부한다. Low/moderate-only
-report는 이 gate의 threshold보다 낮다. 실패 출력에는 raw npm content를
-포함하지 않는다. Raw 진단이 필요하면 로컬에서
+Dependency gate는 high/critical finding이 0개이고 exit code가 0인 유효한
+npm audit v2 report만 통과시킨다. Low/moderate-only report는 허용하며 예외
+allowlist는 없다. High/critical finding, count 또는 exit status 불일치,
+잘못된 JSON, command/network 실패는 fail-closed로 거부한다. Gate는 raw npm
+진단을 출력하지 않는다. Raw 진단이 필요하면 로컬에서
 `npm audit --audit-level=high --json`을 다시 실행한다.
 
 ## dogfood guard — 진짜 안전망

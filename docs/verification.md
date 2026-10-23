@@ -28,15 +28,12 @@ Every command below is an `npm run` script defined in `package.json`.
 
 `test:fixtures` is an alias for `npm test`, and `test:benchmark` is an alias for `npm run bench`. `npm run verify` includes `npm run audit:dependencies`, so its final audit stage depends on npm registry and network availability.
 
-The dependency gate passes a clean audit. Until the end of 2026-09-30 UTC, it
-also accepts only the exact pinned `@huggingface/transformers` dependency tree
-reported by `GHSA-xcpc-8h2w-3j85` and `GHSA-f88m-g3jw-g9cj`, with a prominent
-warning. It fails closed on expiry, command/network or JSON errors, and any
-change to the pinned high/critical finding/advisory fields and counts, package
-paths, severities, nodes, versions, or dependency edges. Low/moderate-only
-reports remain below this gate's threshold. Failure output excludes raw
-npm content; rerun
-`npm audit --audit-level=high --json` locally when raw diagnostics are needed.
+The dependency gate requires a valid npm audit v2 report with zero high/critical
+findings and exit code 0. Low/moderate-only reports remain permitted; there is
+no exception allowlist. High/critical findings, inconsistent counts or exit
+status, malformed JSON, and command/network failures block the gate. Raw npm
+diagnostics are not printed; rerun `npm audit --audit-level=high --json` locally
+when raw diagnostics are needed.
 
 ## The dogfood guard — the real safety net
 

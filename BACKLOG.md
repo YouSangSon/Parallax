@@ -4,8 +4,8 @@ Canonical detailed backlog: `IMPROVEMENT_OPPORTUNITIES.md`.
 
 ## Now
 
-1. Remove or replace the temporary dependency-audit exception before
-   2026-10-01T00:00:00Z.
+1. Complete the live portfolio walkthrough and landing gates in `PLAN.md`;
+   the dependency refresh and unconditional audit gate pass local verification.
 2. Before revisiting selective reads, define and enforce emitted-row ownership
    separately from `fileContentScope`.
 

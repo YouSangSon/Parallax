@@ -19,6 +19,9 @@ The user authorized commit, push, PR and main merge after required gates.
 4. Land verified units, preserve unrelated work, clean only owned test resources,
    and save portfolio evidence in the existing resume evidence structure.
 
+Local implementation and validation for this loop are complete in `GATES.md`.
+PR records and the resume evidence bundle own landing and cleanup receipts.
+
 Selective indexing and deeper language/contract features remain deferred under
 existing ownership gates; this loop makes the shipped product reviewable.
 

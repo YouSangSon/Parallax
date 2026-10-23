@@ -19,12 +19,35 @@ Evidence is current only when the command and result are recorded in this file. 
   macOS arm64: lint/schema/build, 697/697 tests, dogfood 2/2, deterministic
   bench 78/78 with no unexpected relations, and dependency audit. The run
   completed 2026-10-23 05:34:38 UTC; test fixtures used an isolated TMPDIR.
-- [ ] Packaged CLI, stdio MCP and live workbench walkthrough, including errors,
-  empty state, keyboard navigation, exports and responsive display.
+- [x] Packaged CLI session-change workflow: 19 commands with expected exits;
+  two failing tests become two passing tests after the recommended targets are
+  updated. Hand-labelled fixture: expected 4, found 5, missing 0, extra README
+  candidate 1. This is fixture evidence, not a general accuracy claim.
+- [x] Actual stdio MCP: initialize, 24 listed tools, analyze, context brief,
+  path-escape rejection, and unchanged source hashes.
+- [x] Live browser: filter, selection, keyboard Enter/Tab and focus, history,
+  policy selection, language, report selection, zero affected targets, missing
+  report, source rendering, and reduced motion. Postman source escape returns
+  expected HTTP 400. JSON/CSV/PNG Blob payloads validated; download filesystem
+  and native new-tab handling are not observed by this driver. Clipboard write
+  is denied by the headless environment; the failure state is verified.
+- [x] Confidence badge regression reproduced at 1.93:1 proven / 2.32:1 heuristic
+  on dark cards. Final computed contrast is 5.29:1 / 5.08:1. Desktop 1440px and
+  mobile 390px screenshots inspected; mobile document/body have no horizontal
+  overflow, with intentional contained metric/SVG scrolling.
+- [x] Final UI source `npm run verify` completed at 2026-10-23 05:52:42 UTC:
+  lint/schema/build/install smoke, 697 tests, dogfood 2/2, bench 78/78, and audit.
+  Packaged runtime differs from the CLI/MCP-tested artifact only in UI styles.
+- [x] Advisory `npm run bench:perf -- --scales 200,1000` on macOS arm64 / M1 Max:
+  1,000 synthetic files indexed in 4,957 ms; edited reindex 6,528 ms. Single run,
+  sampled RSS, no production-performance claim or performance gate.
 - [x] Independent final security review found no P0–P2 issues in the dependency
   gate, tests, lockfile and documentation diff.
-- [ ] Remote checks and authorized main merge.
-- [ ] Portfolio evidence and exact owned-resource/merged-branch cleanup.
+- [x] PR #38 passed all five remote checks and merged to main as `27865fe`.
+  Subsequent UI landing is recorded by its PR checks and merge event.
+- Portfolio provenance, final landing and exact cleanup receipts are maintained
+  in the resume evidence folder referenced by `CONTEXT.md`; no remote deployment
+  or paid inference was performed.
 
 ## Prior S1 Correctness Gate
 

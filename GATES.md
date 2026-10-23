@@ -66,6 +66,18 @@ Evidence is current only when the command and result are recorded in this file. 
   in the resume evidence folder referenced by `CONTEXT.md`; no remote deployment
   or paid inference was performed.
 
+## Main-only Scorecard Follow-up — 2026-10-23
+
+- Re-audit found that the successful PR checks did not cover the main-only
+  Scorecard workflow. Run `39917147939` failed during job setup because
+  `ossf/scorecard-action@v2` has no matching branch or tag; analysis never ran.
+- The action reference now pins the verified `v2.5.0` release commit. Existing
+  triggers, permissions, publication and upload steps are preserved. This pins
+  the action metadata, not the upstream container image's version tag.
+- Local workflow semantic validation and documentation lint own the pre-merge
+  evidence. The final PR checks and exact merge SHA's main workflow runs own
+  remote evidence; PR success alone does not establish Scorecard execution.
+
 ## Prior S1 Correctness Gate
 
 - [x] RED: `node --import tsx --test tests/incremental-index-oracle.test.ts`

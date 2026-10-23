@@ -19,8 +19,9 @@ The user authorized commit, push, PR and main merge after required gates.
 4. Land verified units, preserve unrelated work, clean only owned test resources,
    and save portfolio evidence in the existing resume evidence structure.
 
-Local implementation and validation for this loop are complete in `GATES.md`.
-PR records and the resume evidence bundle own landing and cleanup receipts.
+The dependency and badge corrections landed in PR #38 and #39. `GATES.md`
+records the native browser follow-up, PNG correction and scoped local recovery.
+PR records and the resume evidence bundle own final landing and cleanup receipts.
 
 Selective indexing and deeper language/contract features remain deferred under
 existing ownership gates; this loop makes the shipped product reviewable.
@@ -225,8 +226,9 @@ existing ownership gates; this loop makes the shipped product reviewable.
 
 ## Next
 
-1. Complete the portfolio readiness gates above; the expired dependency exception
-   has been removed and compatible fixes are locked, pending final verification.
+1. The dependency and UI portfolio gates have landed in PR #38 and #39.
+   Track the native browser follow-up and PNG export correction in `GATES.md`;
+   selective reads and deeper contracts below remain deferred work.
 2. Define emitted-row ownership before revisiting selective reads, then add
    deterministic file/byte read counts before making a performance claim.
 3. Keep deeper JSON Schema / Avro compatibility semantics behind S1 unless new

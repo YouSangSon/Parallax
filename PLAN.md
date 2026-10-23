@@ -227,8 +227,9 @@ existing ownership gates; this loop makes the shipped product reviewable.
 ## Next
 
 1. The dependency and UI portfolio gates have landed in PR #38 and #39.
-   Track the native browser follow-up and PNG export correction in `GATES.md`;
-   selective reads and deeper contracts below remain deferred work.
+   PNG export landed in PR #40. The subsequent completion audit found a broken
+   main-only Scorecard action reference; follow its correction and exact main
+   run in `GATES.md`. Selective reads and deeper contracts remain deferred work.
 2. Define emitted-row ownership before revisiting selective reads, then add
    deterministic file/byte read counts before making a performance claim.
 3. Keep deeper JSON Schema / Avro compatibility semantics behind S1 unless new

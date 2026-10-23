@@ -15,6 +15,7 @@ adapter는 `SemanticAdapter` 인터페이스(`src/adapters/types.ts`)를 구현�
 - `knownGaps?` — 이 adapter가 해석하지 *않는* 것에 대한 사람이 읽는 메모.
 - `selectionMode?` — 범위가 정해진 언어/파일 adapter의 기본값은 `targeted`, 마지막 fallback adapter는 `catch-all`.
 - `fileContentScope?` — 기본값은 `full-index`; adapter가 현재 `process(file)` 입력의 content만 필요로 하고 `ctx.indexedFiles` / `files`는 path-level context로만 쓸 때만 `target-only`를 설정한다.
+- `outputOwnership?` — 기본값은 `unrestricted`; `processed-file`은 아래의 파일별 출력 소유권 검사를 활성화한다.
 - `supports(file)` — 이 adapter가 파일을 처리하면 `true`를 반환.
 - `start(ctx, files)` — index run을 위한 `AdapterRun`(또는 `Promise<AdapterRun>`)을 반환.
 
@@ -39,6 +40,28 @@ orchestrator는 각 `EntityDescriptor`를 content-hash해 entity id를 계산하
 
 구현을 확인한 뒤에만 `target-only`를 사용한다. 예를 들어 config/infra path-reference extraction은 indexed file path로 reference를 검증하지만 다른 indexed file content는 읽지 않는다. build-system/package와 TypeScript/JavaScript adapter는 lockfile/package catalog, import resolver, cross-file target을 indexed content에서 만들기 때문에 `full-index`로 유지한다.
 
+## 출력 소유권
+
+현재 파일의 내용만 읽는다는 선언은 출력 행의 소유권을 보장하지 않는다.
+`outputOwnership = 'processed-file'`은 별도의 선택적 계약이다.
+
+- 명시적 entity와 relation source는 현재 `process(file)`의 경로와 파일 기반
+  entity kind(workflow/resource/contract 포함)를 사용한다. symbol, module,
+  package, external identity는 이 계약에서 지원하지 않는다.
+- relation target은 같은 경로의 파일 기반 entity이거나 다른 indexed file을
+  가리키는 `{ kind: 'file', path }`만 허용한다. 다른 파일 target의 metadata와
+  미인덱싱 placeholder는 거부한다.
+- 명시적 evidence와 diagnostic의 파일은 현재 파일이어야 한다. 파일 없는
+  diagnostic은 거부하며, relation evidence 생략 시 기존 현재 파일 fallback을 쓴다.
+- 입력은 복제 후 동결한다. 이벤트는 `structuredClone`이 가능해야 하며 검증 전에
+  복제하므로 generator나 dispose가 나중에 원본을 바꿔도 저장할 이벤트는 유지된다.
+  계약 위반이나 복제 실패 시 그래프를 반영하기 전에 실행을 실패 처리하고 감사 기록은 남긴다.
+
+처음에는 config/infra만 참여한다. 선언이 없는 adapter의 기존 동작은 유지한다.
+실행 시작 시 확정한 소유권 선언을 extractor signature에 포함하므로 파일 내용이
+같아도 선언이 바뀌면 다시 검증한다. 이 계약만으로 changed-only extraction을
+활성화하지 않는다. fresh-index 동등성과 읽기량 검증 전까지 변경된 내용은 전체 추출한다.
+
 ## Evidence와 confidence (불변 원칙 I-10)
 
 모든 relation은 `evidence` — source 파일, span, snippet — 와 confidence 라벨을 가져야 한다. `Confidence`는 네 단계다:
@@ -58,11 +81,11 @@ adapter는 registry(`src/adapters/registry.ts`)에 살며 `src/indexer.ts`의 `c
 
 registry는 이제 이 계약을 명시적으로 강제한다. `selectionMode`는 기존 source compatibility를 위해 선택 사항이며 생략하면 `targeted`다. 마지막 fallback coverage를 의도한 adapter만 `selectionMode = 'catch-all'`을 설정한다. `AdapterRegistry.register()`는 이미 등록된 catch-all adapter 뒤에 다른 adapter를 등록하려 하면 거부하며, error에는 새 adapter와 이를 막는 catch-all adapter의 이름이 모두 들어간다. 중복 `id` 검증은 여전히 먼저 실행되어 기존 중복 id error를 유지한다.
 
-adapter 등록을 검토하거나 테스트할 때는 `registry.manifest()`를 사용한다. 이 API는 등록 순서의 immutable snapshot을 반환한다. 각 entry에는 `order`, `id`, `version`, `capabilities`, `confidence`(기본값 `unknown`), `knownGaps`(기본값 빈 배열), `selectionMode`(기본값 `targeted`), `fileContentScope`(기본값 `full-index`)가 포함된다. 호출자는 registry 상태를 변경하지 않고 이 정보를 검사할 수 있다.
+adapter 등록을 검토하거나 테스트할 때는 `registry.manifest()`를 사용한다. 이 API는 등록 순서의 immutable snapshot을 반환한다. 각 entry에는 `order`, `id`, `version`, `capabilities`, `confidence`(기본값 `unknown`), `knownGaps`(기본값 빈 배열), `selectionMode`(기본값 `targeted`), `fileContentScope`(기본값 `full-index`), `outputOwnership`(기본값 `unrestricted`)가 포함된다. 호출자는 registry 상태를 변경하지 않고 이 정보를 검사할 수 있다.
 
 ## 버전 관리와 재추출
 
-각 index run은 모든 활성 adapter의 `id`와 `version`으로 구성된 `extractor_version` 시그니처를 기록한다. adapter의 `version`을 올리면 다음 `parallax index` run에서 그 기록된 시그니처가 바뀐다. adapter의 추출 출력이 바뀔 때마다 `version`을 올려, 실행이 adapter 버전을 가로질러 조용히 섞이지 않게 하자.
+각 index run은 모든 활성 adapter의 `id`, `version`, 확정된 `outputOwnership`과 indexer 의미 버전으로 구성된 `extractor_version` 시그니처를 기록한다. adapter의 `version`을 올리면 다음 `parallax index` run에서 그 기록된 시그니처가 바뀐다. adapter의 추출 출력이 바뀔 때마다 `version`을 올려, 실행이 adapter 버전을 가로질러 조용히 섞이지 않게 하자.
 
 ## 최소 예제
 

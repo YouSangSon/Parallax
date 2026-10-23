@@ -2,6 +2,34 @@
 
 Evidence is current only when the command and result are recorded in this file. A focused pass proves only its named scope.
 
+## S1 Output Ownership Gate — 2026-10-24
+
+- [x] Before implementation, the two focused regressions for foreign entity
+  rejection and unchanged legacy-to-owned transition failed with missing
+  expected rejection.
+- [x] `node --import tsx --test --test-concurrency=1
+  tests/adapter-output-ownership.test.ts tests/adapter_registry.test.ts
+  tests/config-infra-adapter.test.ts tests/incremental-index-oracle.test.ts`
+  passes 31/31; `tsc -p tsconfig.json --noEmit` passes. Cases cover invalid
+  ownership, preserved graph/current-state tables, declaration invalidation,
+  input isolation, post-yield/dispose mutation, config/infra and fresh-index
+  equivalence under the existing full-extraction policy.
+- [x] Independent data-integrity review found and addressed mutable event
+  references and non-file identity scope before delivery; final code review
+  found no blocking issue in this bounded contract.
+- Local canonical verification of the first head passed 663/713 tests; 48 MCP
+  waits, a CLI null child status and a SCIP startup marker wait failed. Serial
+  recovery was interrupted after repeated failures. Exact-head Linux CI passed
+  713/713, dogfood, benchmark and audit; this does not make the local run green.
+- [x] Phase diagnostics identified a 5,048 ms MCP initialize timeout before any
+  output, while completed initialization took 2,353–4,089 ms and later requests
+  2–324 ms. The bounded test harness now allows 30 seconds for initialize,
+  CLI child execution and SCIP startup markers; post-init RPCs retain 5 seconds
+  and the SCIP lock assertion is unchanged. The three affected failure cases
+  pass with file concurrency 1. This is test robustness, not a latency gain.
+- Canonical verification and exact-head remote checks remain required before
+  landing. No selective extraction or read-reduction claim is made by this unit.
+
 ## CLI Help Safety Gate — 2026-10-23
 
 - [x] Isolated CLI regression reproduced `index --help` returning an index

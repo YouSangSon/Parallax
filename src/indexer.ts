@@ -20,6 +20,7 @@ import { entityKindForPath, isJsonSchemaContractPath, languageIdForPath } from '
 import { readGitSnapshot, readIgnoredGitPaths, readTrackedGitPaths } from './git-snapshot.js';
 import { computeIndexDelta, type IndexDelta, type IndexRunFiles } from './index_delta.js';
 import type {
+  AdapterOutputOwnership,
   EntityDescriptor,
   ExtractCtx,
   IndexEvent,
@@ -580,7 +581,10 @@ async function indexProjectInternal(
     db.close();
     throw new Error('no adapter registered');
   }
-  const extractorVersion = extractorVersionFor(registeredAdapters);
+  const outputOwnership = new Map(registeredAdapters.map((adapter) =>
+    [adapter, adapter.outputOwnership ?? 'unrestricted'] as const
+  ));
+  const extractorVersion = extractorVersionFor(registeredAdapters, outputOwnership);
   const reusableCleanIndex = reuseCleanGitIndexIfUnchanged(
     db,
     repoId,
@@ -751,6 +755,7 @@ async function indexProjectInternal(
       indexedFiles,
       adapterGroups,
       adapterRunIds,
+      outputOwnership,
       fileAdapterByPath,
       isIncremental,
       changedSet,
@@ -808,6 +813,7 @@ async function collectAdapterEvents(input: {
   indexedFiles: readonly ScannedFile[];
   adapterGroups: readonly AdapterGroup[];
   adapterRunIds: ReadonlyMap<SemanticAdapter, number>;
+  outputOwnership: ReadonlyMap<SemanticAdapter, AdapterOutputOwnership>;
   fileAdapterByPath: ReadonlyMap<string, SemanticAdapter>;
   isIncremental: boolean;
   changedSet: ReadonlySet<string>;
@@ -823,12 +829,15 @@ async function collectAdapterEvents(input: {
     WHERE id = ?
   `);
   const events: CollectedIndexEvent[] = [];
+  const indexedPaths = new Set(input.indexedFiles.map((file) => file.relativePath));
   const completedFilePathsByAdapterId = new Map<string, Set<string>>();
   const completedAdapterRuns: Array<{ adapterId: string; adapterRunId: number }> = [];
   void input.fileAdapterByPath;
 
   for (let groupIndex = 0; groupIndex < input.adapterGroups.length; groupIndex++) {
-    const { adapter, files: adapterFiles } = input.adapterGroups[groupIndex]!;
+    const { adapter, files } = input.adapterGroups[groupIndex]!;
+    const ownsProcessedFile = input.outputOwnership.get(adapter) === 'processed-file';
+    const adapterFiles = ownsProcessedFile ? immutableIndexedFilesSnapshot(files) : files;
     const adapterRunId = input.adapterRunIds.get(adapter);
     if (adapterRunId === undefined) {
       throw new Error(`adapter run missing for ${adapter.id}`);
@@ -863,7 +872,10 @@ async function collectAdapterEvents(input: {
             completedFilePaths.add(file.relativePath);
             continue;
           }
-          for await (const event of run.process(file)) {
+          for await (const emitted of run.process(file)) {
+            // Isolate each yield before the generator or dispose can mutate it.
+            const event = ownsProcessedFile ? structuredClone(emitted) : emitted;
+            if (ownsProcessedFile) validateOutputOwnership(event, file, indexedPaths, adapter.id);
             if (event.kind === 'diagnostic') {
               recordDiagnostic(event, file, {
                 insertCoverage: input.insertCoverage,
@@ -910,6 +922,31 @@ async function collectAdapterEvents(input: {
   }
 
   return { events, completedFilePathsByAdapterId, completedAdapterRuns };
+}
+
+function validateOutputOwnership(
+  event: IndexEvent,
+  file: ScannedFile,
+  indexedPaths: ReadonlySet<string>,
+  adapterId: string
+): void {
+  const owns = (entity: EntityDescriptor) =>
+    entity.path === file.relativePath && fileEntityIdKinds.has(entity.kind);
+  let valid: boolean;
+  if (event.kind === 'entity') {
+    valid = owns(event.entity);
+  } else if (event.kind === 'diagnostic') {
+    valid = event.file === file.relativePath;
+  } else {
+    const { source, target, evidence } = event.relation;
+    const referencesIndexedFile = target.kind === 'file' && target.path !== undefined &&
+      indexedPaths.has(target.path) && Object.keys(target).every((key) => key === 'kind' || key === 'path');
+    valid = owns(source) && (owns(target) || referencesIndexedFile) &&
+      (evidence ?? []).every((item) => item.file === file.relativePath);
+  }
+  if (!valid) {
+    throw new Error(`adapter ${adapterId} violated processed-file output ownership for ${file.relativePath} (${event.kind})`);
+  }
 }
 
 function persistCollectedIndexRun(input: {
@@ -1374,8 +1411,11 @@ function languageIdsForSkippedAndUnsupported(
   ].sort();
 }
 
-function extractorVersionFor(adapters: readonly SemanticAdapter[]): string {
-  const semanticsRevision = 's1-changed-content-full-v1';
+function extractorVersionFor(
+  adapters: readonly SemanticAdapter[],
+  outputOwnership: ReadonlyMap<SemanticAdapter, AdapterOutputOwnership>
+): string {
+  const semanticsRevision = `s1-output-ownership-v1:${adapters.map((adapter) => outputOwnership.get(adapter)).join(',')}`;
   if (adapters.length === 1) {
     const adapter = adapters[0]!;
     return `${adapter.id}-${adapter.version}-${semanticsRevision}`;

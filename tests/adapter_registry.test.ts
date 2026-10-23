@@ -26,6 +26,7 @@ type AdapterOptions = {
   readonly knownGaps?: readonly string[];
   readonly selectionMode?: SemanticAdapter['selectionMode'];
   readonly fileContentScope?: SemanticAdapter['fileContentScope'];
+  readonly outputOwnership?: SemanticAdapter['outputOwnership'];
 };
 
 function makeAdapter(id: string, supportedLang: string, options: AdapterOptions = {}): SemanticAdapter {
@@ -37,6 +38,7 @@ function makeAdapter(id: string, supportedLang: string, options: AdapterOptions 
     ...(options.knownGaps !== undefined ? { knownGaps: options.knownGaps } : {}),
     ...(options.selectionMode !== undefined ? { selectionMode: options.selectionMode } : {}),
     ...(options.fileContentScope !== undefined ? { fileContentScope: options.fileContentScope } : {}),
+    ...(options.outputOwnership !== undefined ? { outputOwnership: options.outputOwnership } : {}),
     supports: (file) => file.language === supportedLang,
     start: (_ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun => ({
       async *process(_file: ScannedFile): AsyncIterable<IndexEvent> {
@@ -145,7 +147,8 @@ test('manifest returns adapter defaults, metadata, order, and immutable snapshot
       confidence: 'unknown',
       knownGaps: [],
       selectionMode: 'targeted',
-      fileContentScope: 'full-index'
+      fileContentScope: 'full-index',
+      outputOwnership: 'unrestricted'
     },
     {
       order: 1,
@@ -155,7 +158,8 @@ test('manifest returns adapter defaults, metadata, order, and immutable snapshot
       confidence: 'heuristic',
       knownGaps: ['does not resolve dynamic imports'],
       selectionMode: 'catch-all',
-      fileContentScope: 'full-index'
+      fileContentScope: 'full-index',
+      outputOwnership: 'unrestricted'
     }
   ]);
 
@@ -176,7 +180,8 @@ test('manifest returns adapter defaults, metadata, order, and immutable snapshot
     confidence: 'unknown',
     knownGaps: [],
     selectionMode: 'targeted',
-    fileContentScope: 'full-index'
+    fileContentScope: 'full-index',
+    outputOwnership: 'unrestricted'
   });
 });
 
@@ -208,7 +213,8 @@ test('default registry keeps the catch-all adapter registered last', () => {
       'language-specific parser adapters should replace this path for high-risk changes'
     ],
     selectionMode: 'catch-all',
-    fileContentScope: 'full-index'
+    fileContentScope: 'full-index',
+    outputOwnership: 'unrestricted'
   });
 });
 
@@ -236,4 +242,16 @@ test('default registry picks the parser-backed adapter over the catch-all for Ty
   const registry = createDefaultRegistry();
   const picked = registry.pickAdapter(makeFile('typescript', 'a.ts'));
   assert.strictEqual(picked?.id, TS_JS_SEMANTIC_ADAPTER_ID);
+});
+
+
+test('manifest exposes conservative output ownership and config infra opt-in', () => {
+  const registry = new AdapterRegistry();
+  registry.register(makeAdapter('owned', 'typescript', { outputOwnership: 'processed-file' }));
+  registry.register(makeAdapter('legacy', 'python'));
+  assert.deepEqual(registry.manifest().map((entry) => entry.outputOwnership), ['processed-file', 'unrestricted']);
+  assert.deepEqual(
+    createDefaultRegistry().manifest().filter((entry) => entry.outputOwnership === 'processed-file').map((entry) => entry.id),
+    [CONFIG_INFRA_SEMANTIC_ADAPTER_ID]
+  );
 });

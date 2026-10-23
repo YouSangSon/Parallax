@@ -15,6 +15,7 @@ An adapter implements the `SemanticAdapter` interface (`src/adapters/types.ts`):
 - `knownGaps?` — human-readable notes on what this adapter does *not* resolve.
 - `selectionMode?` — `targeted` by default for bounded language/file adapters, or `catch-all` for terminal fallback adapters.
 - `fileContentScope?` — `full-index` by default; set `target-only` only when the adapter needs content from the current `process(file)` input, and uses `ctx.indexedFiles` / `files` only for path-level context.
+- `outputOwnership?` — `unrestricted` by default; `processed-file` opts into the enforced file-owned output contract below.
 - `supports(file)` — returns `true` if this adapter handles the file.
 - `start(ctx, files)` — returns an `AdapterRun` (or a `Promise<AdapterRun>`) for the index run.
 
@@ -39,6 +40,31 @@ The orchestrator content-hashes each `EntityDescriptor` to compute its entity id
 
 Use `target-only` only after checking the implementation. For example, config/infra path-reference extraction uses indexed file paths to validate references but does not read other indexed file contents. Build-system/package and TypeScript/JavaScript adapters stay `full-index` because they build lockfile/package catalogs, import resolvers, and cross-file targets from indexed content.
 
+## Output ownership
+
+Reading only a target file does not prove that its emitted rows belong to that file.
+`outputOwnership = 'processed-file'` is a separate, opt-in contract:
+
+- Explicit entities and relation sources must use the current `process(file)` path
+  and a file-based entity kind (including workflow/resource/contract). Symbols,
+  modules, packages, and external identities are not supported by this contract.
+- A relation target may be file-based on that same path, or a bare
+  `{ kind: 'file', path }` reference to another indexed file. Foreign target metadata
+  and unindexed placeholders are rejected.
+- Every explicit evidence path and diagnostic file must be the current file.
+  Diagnostics without a file are rejected; omitted relation evidence still uses
+  the current file as fallback.
+- Inputs are frozen copies; yielded events must support `structuredClone` and are
+  snapshotted before validation. Later generator/dispose mutations cannot rewrite
+  an accepted event. A violation or clone failure fails the run before publishing
+  its graph, while retaining failed-run audit metadata.
+
+Only config/infra opts in initially. Undeclared adapters retain their existing
+unrestricted behavior. The resolved ownership declaration participates in the
+extractor signature, so changing it forces validation even for unchanged files.
+This contract does not yet enable changed-only extraction: changed bodies still
+use full extraction until fresh-index equivalence and read-count gates pass.
+
 ## Evidence and confidence (invariant I-10)
 
 Every relation should carry `evidence` — a source file, span, and snippet — and a confidence label. `Confidence` has four levels:
@@ -58,11 +84,11 @@ This makes registration order load-bearing. The default registry registers, in o
 
 The registry now makes that contract explicit. `selectionMode` is optional for source compatibility and defaults to `targeted`; adapters that intentionally serve as terminal fallback coverage set `selectionMode = 'catch-all'`. `AdapterRegistry.register()` rejects any adapter registered after an existing catch-all adapter, and the error names both the new adapter and the catch-all that blocks it. Duplicate `id` validation still runs first and keeps the existing duplicate-id error.
 
-Use `registry.manifest()` when reviewing or testing adapter registration. It returns an immutable snapshot in registration order. Each entry exposes `order`, `id`, `version`, `capabilities`, `confidence` (default `unknown`), `knownGaps` (default empty), `selectionMode` (default `targeted`), and `fileContentScope` (default `full-index`). Callers can inspect it without being able to mutate registry state.
+Use `registry.manifest()` when reviewing or testing adapter registration. It returns an immutable snapshot in registration order. Each entry exposes `order`, `id`, `version`, `capabilities`, `confidence` (default `unknown`), `knownGaps` (default empty), `selectionMode` (default `targeted`), `fileContentScope` (default `full-index`), and `outputOwnership` (default `unrestricted`). Callers can inspect it without being able to mutate registry state.
 
 ## Versioning and re-extraction
 
-Each index run records an `extractor_version` signature composed from every active adapter's `id` and `version`. Bumping an adapter's `version` changes that recorded signature on the next `parallax index` run. Bump `version` whenever an adapter's extraction output changes so runs are not silently mixed across adapter versions.
+Each index run records an `extractor_version` signature composed from every active adapter's `id`, `version`, resolved `outputOwnership`, and the indexer semantics revision. Bumping an adapter's `version` changes that recorded signature on the next `parallax index` run. Bump `version` whenever an adapter's extraction output changes so runs are not silently mixed across adapter versions.
 
 ## Minimal worked example
 

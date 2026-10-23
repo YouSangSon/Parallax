@@ -2,7 +2,9 @@
 
 [English](cli-reference.md) · **한국어** · [中文](cli-reference.zh.md)
 
-`parallax` CLI는 indexing, impact 분석, graph export, agent memory, workspace catalog, 진단, MCP 서버, UI로 들어가는 로컬 진입점이다. 모든 명령은 현재 작업 디렉터리의 repo를 대상으로 실행되며 `<repo>/.parallax/impact.db`를 읽고 쓴다. 내장 요약은 `parallax --help`(또는 `-h`)로 본다.
+`parallax` CLI는 indexing, impact 분석, graph export, agent memory, workspace catalog, 진단, MCP 서버, UI로 들어가는 로컬 진입점이다. 명령은 현재 작업 디렉터리의 repo를 사용하며 로컬 상태는 `<repo>/.parallax/impact.db`에 저장한다. 내장 요약은 `parallax --help`(또는 `-h`)로 본다.
+
+도움말은 다른 옵션보다 앞인 명령·하위 명령 바로 뒤에서도 사용할 수 있다: `parallax index --help`, `parallax workspace init -h`, `parallax mcp serve --help`. 같은 요약을 출력하고 명령 실행, DB 열기, 서버 시작 없이 종료한다. 그 뒤의 인자에 있는 도움말 형태의 토큰은 기존 옵션 값과 입력 검증 규칙을 따른다.
 
 대부분의 machine-oriented 명령은 command-specific flag로 JSON을 출력할 수 있다. `analyze`는 기본적으로 사람이 읽는 요약을 출력하고, `graph export`는 기본적으로 Mermaid 텍스트를 출력한다.
 

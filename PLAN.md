@@ -4,6 +4,17 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 `IMPROVEMENT_OPPORTUNITIES.md`; implementation plans live under
 `docs/superpowers/plans/`.
 
+## CLI Help Safety Follow-up — 2026-10-23
+
+The resumed usability check found that `index --help` started indexing.
+The bounded correction handles help before command imports at the root,
+immediately after a command, or immediately after a nested subcommand.
+Help must precede other options; existing option values and validation remain
+unchanged. Regression tests cover filesystem side effects, server entry points,
+literal help-looking values and malformed inputs. The final source must pass
+the canonical verification and PR checks before landing; the resume evidence
+owner in `CONTEXT.md` retains the run, merge and scoped cleanup receipts.
+
 ## Portfolio Readiness Loop — 2026-10-23
 
 Continue from the PR #36 tree (`ab3c365`); preserve the completed milestone.

@@ -2,6 +2,23 @@
 
 Evidence is current only when the command and result are recorded in this file. A focused pass proves only its named scope.
 
+## S1 Scanner Read Baseline — 2026-10-24
+
+- [x] The new counter regression failed before implementation because scan
+  observations had no read counts. After the change, the scan-metrics,
+  synthetic-repo and fresh-index oracle suites pass 10/10 with file concurrency
+  1; TypeScript no-emit check, docs lint and diff checks pass.
+- [x] `node --import tsx bench/impact-perf.ts --scales 20` reports 20 body
+  reads / 1,143 bytes for each full, non-git no-op and edited run. The fixture
+  produces 19 affected files. This proves the counters and unchanged read cost,
+  not a performance improvement or device I/O measurement.
+- [x] Independent review found no blocking issue. Counts include unsupported
+  recognized-language bodies and bounded samples, use raw returned byte sizes,
+  and leave `IndexResult`/CLI output unchanged. Clean same-HEAD reuse emits no
+  scan observation; failed scans do not publish a partial counter result.
+- Canonical verification and exact-head remote checks remain required before
+  landing. No selective extraction or read-skipping is enabled.
+
 ## S1 Output Ownership Gate — 2026-10-24
 
 - [x] Before implementation, the two focused regressions for foreign entity

@@ -26,6 +26,8 @@ Parallax는 정확성을 여러 계층으로 검증한다 — 빠른 unit suite,
 | `npm run test:security` | `tests/security.test.ts` 실행(path containment, redaction, dependency audit gate) | store / path / redaction / audit gate 변경 후 |
 | `npm run test:install-smoke` | `npm run build` 후 `node dist/src/cli.js --help` | 릴리스 전, 패키징된 CLI가 실행되는지 확인 |
 
+`bench:perf`는 full/no-op/edit 실행별 `*_scan_body_reads`, `*_scan_body_bytes`, `*_scan_sample_reads`, `*_scan_sample_bytes`도 출력한다. 스캐너가 성공적으로 읽은 횟수와 파일 API가 반환한 바이트 수이며, 어댑터가 지원하지 않는 인식 가능한 파일과 크기 제한을 넘긴 파일의 일부 읽기도 포함한다. Git·메타데이터 작업, 사용자 어댑터의 직접 읽기, 장치·캐시 I/O는 제외한다. Git이 없는 저장소의 no-op은 본문을 다시 읽고, clean same-HEAD 재사용은 스캐너를 실행하지 않는다. 완료된 scan의 계측값은 `IndexOptions.perfObserver`의 선택적 세 번째 인자로 전달하며, 실패한 scan에는 계측값이 없다. CLI/index 결과 형식은 그대로 유지한다.
+
 `test:fixtures`는 `npm test`의 alias이고, `test:benchmark`는 `npm run bench`의 alias다. `npm run verify`에는 `npm run audit:dependencies`가 포함되므로 마지막 audit 단계는 npm registry와 network 상태에 의존한다.
 
 Dependency gate는 high/critical finding이 0개이고 exit code가 0인 유효한

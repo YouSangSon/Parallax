@@ -11,7 +11,16 @@ export type InitResult = {
 export type IndexOptions = {
   repoRoot: string;
   maxFileBytes?: number;
-  perfObserver?: (phase: 'scan', ms: number) => void;
+  perfObserver?: (phase: 'scan', ms: number, reads?: IndexScanReads) => void;
+};
+
+// Successful scanner reads, not device I/O, Git metadata or custom-adapter reads.
+// The observer receives no counts if scanning throws; clean reuse does not scan.
+export type IndexScanReads = {
+  bodyReads: number;
+  bodyBytes: number;
+  sampleReads: number;
+  sampleBytes: number;
 };
 
 export type IndexResult = {

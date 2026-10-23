@@ -36,6 +36,7 @@ import type {
   EntityKind,
   IndexOptions,
   IndexResult,
+  IndexScanReads,
   RelationKind,
   ScannedFile
 } from './types.js';
@@ -61,6 +62,7 @@ type SkippedFile = {
 type ScanResult = {
   files: ScannedFile[];
   skipped: SkippedFile[];
+  reads: IndexScanReads;
 };
 
 type Statement = ReturnType<Db['prepare']>;
@@ -797,13 +799,15 @@ async function indexProjectInternal(
   }
 }
 
-function timeIndexPhase<T>(options: IndexOptions, phase: 'scan', fn: () => T): T {
+function timeIndexPhase(options: IndexOptions, phase: 'scan', fn: () => ScanResult): ScanResult {
   if (!options.perfObserver) return fn();
   const start = performance.now();
+  let result: ScanResult | undefined;
   try {
-    return fn();
+    result = fn();
+    return result;
   } finally {
-    options.perfObserver(phase, performance.now() - start);
+    options.perfObserver(phase, performance.now() - start, result?.reads);
   }
 }
 
@@ -2367,6 +2371,7 @@ function legacyEdgeKindFor(canonical: RelationKind): string {
 function scanFiles(repoRoot: string, maxFileBytes: number): ScanResult {
   const out: ScannedFile[] = [];
   const skipped: SkippedFile[] = [];
+  const reads: IndexScanReads = { bodyReads: 0, bodyBytes: 0, sampleReads: 0, sampleBytes: 0 };
   const walk = (dir: string) => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       if (entry.isDirectory()) {
@@ -2383,6 +2388,10 @@ function scanFiles(repoRoot: string, maxFileBytes: number): ScanResult {
       const size = statSync(absolutePath).size;
       if (size > maxFileBytes) {
         const contentSample = readContentSample(absolutePath, size);
+        if (contentSample) {
+          reads.sampleReads++;
+          reads.sampleBytes += contentSample.bytesRead;
+        }
         skipped.push({
           relativePath,
           language,
@@ -2396,7 +2405,10 @@ function scanFiles(repoRoot: string, maxFileBytes: number): ScanResult {
         });
         continue;
       }
-      const content = readFileSync(absolutePath, 'utf8');
+      const buffer = readFileSync(absolutePath);
+      reads.bodyReads++;
+      reads.bodyBytes += buffer.length;
+      const content = buffer.toString('utf8');
       out.push({
         absolutePath,
         relativePath,
@@ -2409,14 +2421,15 @@ function scanFiles(repoRoot: string, maxFileBytes: number): ScanResult {
   walk(repoRoot);
   return {
     files: out.sort((a, b) => a.relativePath.localeCompare(b.relativePath)),
-    skipped: skipped.sort((a, b) => a.relativePath.localeCompare(b.relativePath))
+    skipped: skipped.sort((a, b) => a.relativePath.localeCompare(b.relativePath)),
+    reads
   };
 }
 
 function readContentSample(
   absolutePath: string,
   fileSize: number
-): { content: string; hash: string } | undefined {
+): { content: string; hash: string; bytesRead: number } | undefined {
   const length = Math.min(fileSize, skippedFileContentSampleBytes);
   const buffer = Buffer.allocUnsafe(length);
   let fd: number | undefined;
@@ -2426,7 +2439,8 @@ function readContentSample(
     const content = buffer.subarray(0, bytesRead).toString('utf8');
     return {
       content,
-      hash: createHash('sha256').update(content).digest('hex')
+      hash: createHash('sha256').update(content).digest('hex'),
+      bytesRead
     };
   } catch {
     return undefined;

@@ -19,17 +19,20 @@ import { performance } from 'node:perf_hooks';
 import { pathToFileURL } from 'node:url';
 
 import { analyzeDiff, indexProject, initProject } from '../src/index.js';
-import type { IndexResult } from '../src/index.js';
+import type { IndexResult, IndexScanReads } from '../src/index.js';
 import { editSyntheticChangedFile, generateSyntheticRepo } from './synthetic-repo.js';
 
 export type PerfRow = {
   files: number;
   fullIndexMs: number;
   fullScanMs: number;
+  fullScanReads: IndexScanReads;
   noopIncrementalMs: number;
   noopScanMs: number;
+  noopScanReads: IndexScanReads;
   editReindexMs: number;
   editScanMs: number;
+  editScanReads: IndexScanReads;
   analyzeNoPersistMs: number;
   analyzePersistMs: number;
   affected: number;
@@ -64,17 +67,21 @@ async function timed<T>(fn: () => Promise<T>): Promise<Timed<T>> {
   return { value, ms: performance.now() - start };
 }
 
-async function timedIndex(repoRoot: string): Promise<Timed<IndexResult> & { scanMs: number }> {
+async function timedIndex(repoRoot: string): Promise<Timed<IndexResult> & { scanMs: number; scanReads: IndexScanReads }> {
   let scanMs = 0;
+  let scanReads: IndexScanReads = { bodyReads: 0, bodyBytes: 0, sampleReads: 0, sampleBytes: 0 };
   const timedResult = await timed(() =>
     indexProject({
       repoRoot,
-      perfObserver: (phase, ms) => {
-        if (phase === 'scan') scanMs += ms;
+      perfObserver: (phase, ms, reads) => {
+        if (phase === 'scan') {
+          scanMs += ms;
+          if (reads) scanReads = reads;
+        }
       }
     })
   );
-  return { ...timedResult, scanMs };
+  return { ...timedResult, scanMs, scanReads };
 }
 
 function assertIncremental(result: IndexResult, label: string): void {
@@ -120,10 +127,13 @@ async function measure(files: number): Promise<PerfRow> {
       files,
       fullIndexMs: fullIndex.ms,
       fullScanMs: fullIndex.scanMs,
+      fullScanReads: fullIndex.scanReads,
       noopIncrementalMs: noopIncremental.ms,
       noopScanMs: noopIncremental.scanMs,
+      noopScanReads: noopIncremental.scanReads,
       editReindexMs: editReindex.ms,
       editScanMs: editReindex.scanMs,
+      editScanReads: editReindex.scanReads,
       analyzeNoPersistMs: analyzeNoPersist.ms,
       analyzePersistMs: analyzePersist.ms,
       affected: analyzePersist.value.affectedFiles.length,
@@ -160,7 +170,10 @@ export function formatPerfTable(rows: readonly PerfRow[]): string {
       'noop_incremental_ms/kfile',
       'edit_reindex_ms/kfile',
       'analyze_no_persist_ms/kfile',
-      'analyze_persist_ms/kfile'
+      'analyze_persist_ms/kfile',
+      ...['full', 'noop', 'edit'].flatMap((phase) =>
+        ['body_reads', 'body_bytes', 'sample_reads', 'sample_bytes'].map((metric) => `${phase}_scan_${metric}`)
+      )
     ].join('\t')
   ];
 
@@ -182,7 +195,10 @@ export function formatPerfTable(rows: readonly PerfRow[]): string {
         msPerKfile(row.noopIncrementalMs, row.files).toFixed(0),
         msPerKfile(row.editReindexMs, row.files).toFixed(0),
         msPerKfile(row.analyzeNoPersistMs, row.files).toFixed(0),
-        msPerKfile(row.analyzePersistMs, row.files).toFixed(0)
+        msPerKfile(row.analyzePersistMs, row.files).toFixed(0),
+        ...[row.fullScanReads, row.noopScanReads, row.editScanReads].flatMap((reads) =>
+          [reads.bodyReads, reads.bodyBytes, reads.sampleReads, reads.sampleBytes]
+        )
       ].join('\t')
     );
   }

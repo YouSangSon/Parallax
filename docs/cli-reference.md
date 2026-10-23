@@ -2,7 +2,9 @@
 
 **English** · [한국어](cli-reference.ko.md) · [中文](cli-reference.zh.md)
 
-The `parallax` CLI is the local entry point to indexing, impact analysis, graph export, agent memory, the workspace catalog, diagnostics, the MCP server, and the UI. Every command runs against the repo in the current working directory and reads/writes `<repo>/.parallax/impact.db`. Run `parallax --help` (or `-h`) for the built-in summary.
+The `parallax` CLI is the local entry point to indexing, impact analysis, graph export, agent memory, the workspace catalog, diagnostics, the MCP server, and the UI. Commands use the repo in the current working directory, with local state in `<repo>/.parallax/impact.db`. Run `parallax --help` (or `-h`) for the built-in summary.
+
+Help also works immediately after a command or subcommand, before other options: `parallax index --help`, `parallax workspace init -h`, or `parallax mcp serve --help`. It prints the same summary and exits without running the command, opening the database, or starting a server. Help-looking tokens later in the arguments keep their existing option-value and validation behavior.
 
 Most machine-oriented commands can print JSON through command-specific flags. `analyze` defaults to a human summary, and `graph export` defaults to Mermaid text.
 

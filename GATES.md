@@ -2,6 +2,23 @@
 
 Evidence is current only when the command and result are recorded in this file. A focused pass proves only its named scope.
 
+## CLI Help Safety Gate — 2026-10-23
+
+- [x] Isolated CLI regression reproduced `index --help` returning an index
+  result instead of help. The initial harness heading mismatch was corrected
+  separately before recording this product failure.
+- [x] `node --import tsx --test tests/cli-help.test.ts` passes 2/2 after the
+  correction: 16 help prefixes exit without filesystem changes, including
+  UI/MCP servers and all five nested command families. Literal `-h`/`--help`
+  option values and missing-value, integer and invalid-subcommand errors retain
+  their existing behavior.
+- [x] Independent review caught an option-before-help validation regression;
+  the nested prefix guard now rejects option-prefixed subcommand tokens, with
+  explicit `workspace --name --help` and `scip --file -h` regressions.
+- The final PR checks and resume evidence bundle own canonical verification,
+  landing and cleanup results for this slice. No UI/runtime-model changes are
+  included, so prior browser and native embedding evidence retains its scope.
+
 ## Portfolio Readiness Gate — 2026-10-23
 
 - [x] Reproduced `npm run audit:dependencies` failure on the expired exception.

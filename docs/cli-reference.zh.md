@@ -2,7 +2,9 @@
 
 [English](cli-reference.md) · [한국어](cli-reference.ko.md) · **中文**
 
-`parallax` CLI 是进入 indexing、impact 分析、graph export、agent memory、workspace catalog、诊断、MCP 服务器与 UI 的本地入口。所有命令都针对当前工作目录中的 repo 运行，并读写 `<repo>/.parallax/impact.db`。运行 `parallax --help`（或 `-h`）查看内置摘要。
+`parallax` CLI 是进入 indexing、impact 分析、graph export、agent memory、workspace catalog、诊断、MCP 服务器与 UI 的本地入口。命令使用当前工作目录中的 repo，本地状态保存在 `<repo>/.parallax/impact.db`。运行 `parallax --help`（或 `-h`）查看内置摘要。
+
+也可以在命令或子命令之后、其他选项之前使用帮助参数，例如 `parallax index --help`、`parallax workspace init -h` 或 `parallax mcp serve --help`。它输出同一摘要后退出，不执行命令、不打开数据库，也不启动服务器。参数列表中更靠后的帮助形式标记仍遵循现有选项值与输入验证规则。
 
 大多数 machine-oriented 命令可通过 command-specific flag 输出 JSON。`analyze` 默认输出人类可读摘要，`graph export` 默认输出 Mermaid 文本。
 

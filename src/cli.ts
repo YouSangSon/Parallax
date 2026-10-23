@@ -11,7 +11,11 @@ async function main(): Promise<void> {
   const [command, ...args] = process.argv.slice(2);
   const repoRoot = process.cwd();
 
-  if (!command || command === '--help' || command === '-h') {
+  const helpFlags = ['--help', '-h'];
+  // Help precedes options so help-looking option values keep their existing meaning.
+  if (!command || helpFlags.includes(command) || helpFlags.includes(args[0] ?? '') ||
+      (['workspace', 'scip', 'pr', 'graph', 'mcp'].includes(command) &&
+       !args[0]?.startsWith('-') && helpFlags.includes(args[1] ?? ''))) {
     printHelp();
     return;
   }
@@ -996,6 +1000,9 @@ function parseGraphFormat(args: string[]): 'json' | 'mermaid' | 'dot' {
 
 function printHelp(): void {
   console.log(`${PACKAGE_NAME}
+
+Use --help or -h immediately after the command or subcommand, before other options.
+Help prints this summary without running the command.
 
 Commands:
   ${PACKAGE_NAME} init

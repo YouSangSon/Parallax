@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,6 +12,14 @@ const docsLintScript = fileURLToPath(new URL('../scripts/docs-lint.js', import.m
 const docsLintModuleUrl = new URL('../scripts/docs-lint.js', import.meta.url).href;
 
 type MarkdownFiles = Record<string, string>;
+
+function readmeFamily(prefix = ''): MarkdownFiles {
+  const names = ['README.ko.md', 'README.ja.md', 'README.md', 'README.zh.md'];
+  return Object.fromEntries(names.map((name) => [
+    `${prefix}${name}`,
+    `# Project\n\n${names.filter((other) => other !== name).map((other) => `[Language](${other})`).join(' · ')}\n`
+  ]));
+}
 type SecretSample = {
   name: string;
   docsLabel: string;
@@ -174,9 +182,7 @@ test('tracked docs cannot satisfy trilingual parity with only untracked variants
 test('package-visible docs cannot link to unpackaged skill Markdown', async () => {
   const repoRoot = await makeMarkdownRepo(
     {
-      'README.md': '# Root\n\n**English** · [한국어](README.ko.md) · [中文](README.zh.md)\n',
-      'README.ko.md': '# Root\n\n[English](README.md) · **한국어** · [中文](README.zh.md)\n',
-      'README.zh.md': '# Root\n\n[English](README.md) · [한국어](README.ko.md) · **中文**\n',
+      ...readmeFamily(),
       'docs/topic.md': [
         '# Topic',
         '',
@@ -204,9 +210,7 @@ test('package-visible docs cannot link to unpackaged skill Markdown', async () =
       'skills/parallax/SKILL.md': '# Skill\n'
     },
     [
-      'README.md',
-      'README.ko.md',
-      'README.zh.md',
+      ...Object.keys(readmeFamily()),
       'docs/topic.md',
       'docs/topic.ko.md',
       'docs/topic.zh.md',
@@ -246,10 +250,11 @@ test('repo-relative Markdown helpers keep POSIX paths for Windows-host-safe link
 test('docs-lint flags missing local image targets (markdown and HTML <img>), not present ones', async () => {
   const repoRoot = await makeMarkdownRepo(
     {
+      ...readmeFamily(),
       'README.md': [
         '# Root',
         '',
-        '**English** · [한국어](README.ko.md) · [中文](README.zh.md)',
+        '[한국어](README.ko.md) · [日本語](README.ja.md) · **English** · [中文](README.zh.md)',
         '',
         '<img src="docs/assets/present.png" alt="ok" width="100%">',
         '<img src="docs/assets/missing-html.png" alt="broken">',
@@ -258,11 +263,10 @@ test('docs-lint flags missing local image targets (markdown and HTML <img>), not
         'Documenting syntax in code is ignored: `![](code-only.png)` and `<img src="code-only2.png">`.',
         ''
       ].join('\n'),
-      'README.ko.md': '# Root\n\n[English](README.md) · **한국어** · [中文](README.zh.md)\n',
-      'README.zh.md': '# Root\n\n[English](README.md) · [한국어](README.ko.md) · **中文**\n',
+
       'docs/assets/present.png': 'PNGDATA'
     },
-    ['README.md', 'README.ko.md', 'README.zh.md', 'docs/assets/present.png']
+    [...Object.keys(readmeFamily()), 'docs/assets/present.png']
   );
 
   const result = runDocsLint(repoRoot);
@@ -291,4 +295,40 @@ test('docs-lint passes benign tracked and untracked Markdown', async () => {
 
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /docs-lint: OK/);
+});
+
+test('four-language README navigation allows English guides and enforces Japanese index links', async () => {
+  const files = { ...readmeFamily(), ...readmeFamily('docs/') };
+  files['docs/guide.md'] = '# Guide\n[한국어](guide.ko.md) · [中文](guide.zh.md)\n';
+  files['docs/guide.ko.md'] = '# Guide\n[English](guide.md) · [中文](guide.zh.md)\n';
+  files['docs/guide.zh.md'] = '# Guide\n[English](guide.md) · [한국어](guide.ko.md)\n';
+  files['README.ja.md'] += '\n[Docs](docs/README.ja.md) · [Guide (English)](docs/guide.md)\n';
+  const root = await makeMarkdownRepo(files, Object.keys(files));
+  try {
+    const valid = runDocsLint(root);
+    assert.equal(valid.status, 0, valid.stderr);
+    await writeFile(path.join(root, 'README.ja.md'), files['README.ja.md']!.replace('docs/README.ja.md', 'docs/README.md'));
+    const wrongLanguage = runDocsLint(root);
+    assert.notEqual(wrongLanguage.status, 0);
+    assert.match(wrongLanguage.stderr, /cross-language link leak/);
+    await writeFile(path.join(root, 'README.ja.md'), files['README.ja.md']!);
+    await writeFile(path.join(root, 'README.md'), files['README.md']!.replace('[Language](README.ja.md)', ''));
+    const missingSwitcher = runDocsLint(root);
+    assert.notEqual(missingSwitcher.status, 0);
+    assert.match(missingSwitcher.stderr, /missing switcher link to README\.ja\.md/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('Japanese README parity requires tracked translations', async () => {
+  const files = { ...readmeFamily(), ...readmeFamily('docs/') };
+  const root = await makeMarkdownRepo(files, Object.keys(files).filter((file) => !file.endsWith('.ja.md')));
+  try {
+    const result = runDocsLint(root);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /README\.ja\.md exists only as untracked and must be staged\/tracked/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

@@ -43,7 +43,7 @@ cross-repo impact가 v0 상태. 사용자가 등록한 local repo 사이에서�
 
 ## 3. Package / Build 해상도
 
-package resolver는 common ecosystem의 manifest graph와 npm lockfile transitive dependency를 다룬다. npm이 아닌 대부분의 lockfile ecosystem과 semver 영향 분석은 아직 남아 있다.
+package resolver는 주요 ecosystem의 manifest graph와 npm, Cargo, Poetry lockfile의 전이 의존성을 다룬다. 다른 lockfile ecosystem과 semver 영향 분석은 아직 남아 있다.
 
 - [x] npm `package-lock.json` v2/v3 transitive 의존성 그래프
   - 현재 gate: transitive package entry를 locked version과 evidence span이 있는 lockfile-derived `DEPENDS_ON` package relation으로 index한다.

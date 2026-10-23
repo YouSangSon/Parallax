@@ -13,7 +13,7 @@ indexes your repository locally and shows, with evidence, the code, tests, docs,
 ![mcp](https://img.shields.io/badge/MCP-stdio-14b8a6)
 ![license](https://img.shields.io/badge/license-MIT-3da639)
 
-**English** · [한국어](README.ko.md) · [中文](README.zh.md)
+[한국어](README.ko.md) · [日本語](README.ja.md) · **English** · [中文](README.zh.md)
 
 [🚀 Quick start](#-quick-start) · [✨ Features](#-features) · [🧱 Core concepts](#-core-concepts) · [🤖 MCP](#-mcp--agents) · [🔒 Safety model](#-safety-model) · [🗺️ Roadmap](#%EF%B8%8F-roadmap) · [📚 Read more](#-read-more)
 
@@ -34,13 +34,15 @@ indexes your repository locally and shows, with evidence, the code, tests, docs,
 | Item | Requirement | Notes |
 | :--- | :--- | :--- |
 | **Node.js** | `>=24.0.0` | Uses the built-in `node:sqlite`; an experimental warning may appear |
-| **npm** | per package-lock | `npm install` sets up the dev environment |
+| **npm** | per package-lock | `npm ci` sets up the dev environment |
 | **Repo permissions** | local read/write | Creates the `.parallax/` directory and SQLite DB |
 | **External services** | not needed for the core impact path | Model/LLM-based memory cleanup runs only when explicitly invoked |
 
 ```bash
 # 1. Build Parallax
-npm install
+git clone https://github.com/YouSangSon/Parallax.git
+cd Parallax
+npm ci
 npm run build
 
 # 2. Link the current checkout's CLI onto your PATH
@@ -162,7 +164,7 @@ For a worked tutorial that continues from the UI into MCP and CI guardrails, see
 | **Python / Go / Rust** | Lightweight adapter centered on declaration/test relations |
 | **Markdown / work artifacts** | Classifies policy, proposal, PRD, and decision docs as first-class artifacts and links them to code |
 | **Config / Infra** | Indexes system/config candidates: shell, YAML, JSON, TOML, Dockerfile, Makefile, Terraform, CODEOWNERS, etc. |
-| **Package manifests & locks** | Manifest graph for `package.json`, `pom.xml`, `build.gradle(.kts)`, `go.mod`, `Cargo.toml`, `pyproject.toml`, plus npm `package-lock.json` transitive dependencies |
+| **Package manifests & locks** | Manifest graph for `package.json`, `pom.xml`, `build.gradle(.kts)`, `go.mod`, `Cargo.toml`, `pyproject.toml`, plus npm `package-lock.json`, `Cargo.lock`, and `poetry.lock` transitive dependencies |
 | **SCIP import/export** | `parallax scip import --file <index.scip or index.scip.json>` augments the latest index with SCIP definition/reference edges; `parallax scip export --file <index.scip.json>` emits SCIP-compatible JSON |
 
 ### 🌐 Workspace & contracts
@@ -211,7 +213,7 @@ parallax profile --entity src/auth/session.ts
 | :--- | :--- |
 | **Impact graph** | A directed graph connecting files/symbols/contracts; computes a change's ripple via bounded traversal |
 | **Evidence** | Every relation carries its source file, line, and snippet as proof |
-| **Confidence** | Labels evidence trust in three levels: proven / inferred / heuristic |
+| **Confidence** | Labels evidence confidence as proven / inferred / heuristic / unknown |
 | **Context pack** | Delivers change-analysis results as a small JSON bundle that is easy for an agent to consume |
 | **Work artifact** | A first-class object linking docs like policy, PRD, and decision to code |
 | **Adapter** | A per-language/format extractor that reports its confidence and known-gaps |
@@ -245,11 +247,11 @@ Registered tools are exposed through the MCP tool surface. Graph export is an MC
 
 | Principle | Detail |
 | :--- | :--- |
-| **Local-first** | All index and memory data is stored in the repo-local `.parallax/`. No external transfer |
+| **Local-first** | The core index/analyze path stores data in repo-local `.parallax/`. Optional model downloads and configured reflection providers can use the network |
 | **Explicit workspace** | Cross-repo covers only local repos or package directories the user registered. No clone/network |
 | **Redaction** | Secret-like strings are redacted before storage |
 | **Source-tree read-only by default** | MCP never edits source files; analysis/search tools, context-pack reuse, and MCP resource reads may append context-pack or telemetry rows in `.parallax/impact.db`, while explicit memory commands write facts |
-| **Deterministic output** | The same input yields the same report; reproducible in CI |
+| **Reproducible core** | Offline fixtures check static impact results; generated IDs/timestamps and model-backed memory are outside byte-for-byte reproducibility |
 
 ---
 
@@ -270,7 +272,7 @@ Key scripts:
 | `npm run check` | Typecheck without emit |
 | `npm test` | Run the Node test runner suite via `tsx` |
 | `npm run bench` | Deterministic bench over multi-language, Spring Boot, contract, co-change, trace, and package-manifest fixtures |
-| `npm run docs:lint` | Check tracked and untracked Markdown for forbidden content, trilingual parity, same-language links, and missing local `.md` targets |
+| `npm run docs:lint` | Check tracked and untracked Markdown for forbidden content, four-language README parity, three-language guide parity, same-language links, and missing local `.md` targets |
 | `npm run verify` | Run the full source-checkout release gate |
 | `npm run test:mcp` | Verify MCP impact/context/memory/telemetry/path validation |
 | `npm run test:security` | Verify path containment and redaction |
@@ -294,7 +296,7 @@ npm run verify
 | **Accuracy** | Extend parser-backed TS/JS spans to broader dynamic dispatch and advanced type relations |
 | **JVM / Python / Go / Rust** | Promote declaration-centric adapters to parser-backed call/import resolution |
 | **Workspace / Contract** | Stabilize nested schema diff; deepen generated-client/event-topology resolver |
-| **Package / Build** | Broaden npm lockfile transitive graph support to other lockfiles and semver/range impact |
+| **Package / Build** | Extend npm/Cargo/Poetry lockfile coverage to other ecosystems and semver/range impact |
 | **Agent surface** | Context pack budget tuning and a hit/miss measurement harness |
 | **UI Explorer** | More direct single-screen exploration of the changed → affected → evidence → action flow |
 | **Measurement** | Fixture bench delta and recall-quality regression detection |
@@ -309,7 +311,7 @@ The detailed backlog is tracked against [`docs/roadmap.md`](docs/roadmap.md).
 | :--- | :--- |
 | **Full semantic analysis** | Not type-aware analysis for every language; check each adapter's confidence and known-gap |
 | **Contract depth** | Full generated-client usage graphs at GraphQL/Protobuf/AsyncAPI parser/LSP level and full Avro named-type/schema-registry resolution are future work |
-| **Package resolution** | npm `package-lock.json` transitive dependencies are indexed; other lockfile ecosystems, semver impact, and execution-based resolvers are future work |
+| **Package resolution** | npm `package-lock.json`, `Cargo.lock`, and `poetry.lock` transitive dependencies are indexed; other lockfile ecosystems, semver impact, and execution-based resolvers are future work |
 | **Graph DB** | Out of the default product scope; can be extended as an optional projection from SQLite if needed |
 | **External writes** | Obsidian/GitHub/Jira write sync is not yet exposed on the MCP surface |
 | **Code modification** | Parallax does not modify code directly; it gives agents impact and evidence |

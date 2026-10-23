@@ -785,7 +785,7 @@ export const UI_STYLES_MAIN = `    :root {
     }
     .confidence-proven { color: var(--green); border-color: #89b6a5; background: #eef8f3; }
     .confidence-inferred { color: var(--teal); border-color: #8bb8bc; background: #eef7f8; }
-    .confidence-heuristic { color: var(--amber); border-color: #d7b477; background: #fff6e7; }
+    .confidence-heuristic { color: #995b0f; border-color: #d7b477; background: #fff6e7; }
     .confidence-low { color: var(--red); border-color: #d9a0a0; background: #fff1f0; }
     .freshness-current { color: var(--green); border-color: #89b6a5; background: #eef8f3; }
     .freshness-stale { color: var(--red); border-color: #d9a0a0; background: #fff1f0; }
@@ -1289,7 +1289,6 @@ export const UI_STYLES_MAIN = `    :root {
       border: 1px solid rgba(168, 202, 186, 0.25);
       border-radius: 999px;
       padding: 2px 6px;
-      background: rgba(255, 253, 244, 0.08);
       font-size: 10px;
       font-style: normal;
       font-weight: 900;

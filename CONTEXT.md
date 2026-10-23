@@ -4,18 +4,21 @@
 
 ## Current Portfolio Loop — 2026-10-23
 
-Base: PR #36 / `ab3c365`. Work continues on
-`codex/parallax-portfolio-readiness` with no pre-existing working-tree edits.
-The expired audit exception reproduced a release failure. A compatible
-lockfile-only dependency refresh now reports zero vulnerabilities; the gate
-rejects all high/critical findings. Focused security tests pass 9/9 and the
-real default E5 q8 model produces a repeatable 768-byte/768-dimensional vector
-on local macOS arm64. Clean install and canonical verification pass (697 tests,
-2 dogfood tests, 78/78 bench relations, zero audit findings). The packed CLI and
-stdio MCP also passed the session-change demo. Live UI inspection found low
-contrast on unselected confidence badges; that bounded follow-up, remote PR
-checks and portfolio evidence remain pending.
-See `PLAN.md` for scope and `GATES.md` for current verification.
+The dependency remediation landed as PR #38 / `27865fe`: compatible locked
+updates remove all audit findings, and high/critical findings are rejected
+without an exception. Native local E5 q8 inference was verified separately
+from the suite's embedding stub.
+
+Packaged CLI and stdio MCP passed the session-change workflow. Live workbench
+inspection led to a two-rule CSS fix: preserve confidence badge backgrounds
+and darken heuristic text. Final canonical verification and desktop/mobile
+contrast checks passed; see `GATES.md` for scope and limitations.
+
+Portfolio evidence is owned by
+`/Users/yousang/Desktop/resume/자료수집/2026-10-23/parallax-portfolio/README.md`.
+Each PR's checks and merge record own remote landing evidence. Local workflow
+proof does not establish production adoption or paid-model savings. Selective
+indexing remains deferred under the existing emitted-row ownership gate.
 
 ## Prior Completed State
 

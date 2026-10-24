@@ -80,6 +80,10 @@ Publication failures roll back all graph writes before recording a failed run.
 An extractor/semantics revision change forces a full rebuild; external SCIP/trace
 augmentation must be reapplied after that rebuild.
 
+SQL transactions/savepoints own rollback. Unconsumed manual recovery snapshots
+and per-row capture reads/maps were removed; input/event copies, admission and
+failure audit remain. No latency or RSS improvement was measured for this cleanup.
+
 ```bash
 node --import tsx --test tests/incremental-index-oracle.test.ts
 ```

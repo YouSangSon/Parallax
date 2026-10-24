@@ -62,6 +62,18 @@ Evidence is current only when the command and result are recorded in this file. 
 - Canonical verification of the carry correction and exact-head remote checks remain required before
   landing. No selective extraction or read-reduction claim is made by this unit.
 
+## Dependency Refresh — 2026-10-25
+
+- The resumed PR's security job rejected two high findings in body-parser and
+  zod. A fresh npm audit reproduced both; the old zero-findings receipt does not
+  establish the current registry state.
+- Compatible `npm audit fix --package-lock-only --ignore-scripts` changes only
+  body-parser 2.3.0 to 2.4.0, iconv-lite 0.7.2 to 0.7.3 and zod 4.3.6 to 4.6.7.
+  Direct ranges, overrides and the fail-closed audit policy are unchanged.
+- A clean native Node 24.14.0 `npm ci` completed with zero vulnerabilities.
+  Canonical verification with the refreshed dependencies and exact-head CI remain
+  required; prior passes with the old lockfile are retained as distinct evidence.
+
 ## CLI Help Safety Gate — 2026-10-23
 
 - [x] Isolated CLI regression reproduced `index --help` returning an index

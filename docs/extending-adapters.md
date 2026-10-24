@@ -65,6 +65,12 @@ extractor signature, so changing it forces validation even for unchanged files.
 This contract does not yet enable changed-only extraction: changed bodies still
 use full extraction until fresh-index equivalence and read-count gates pass.
 
+Neither declaration proves process-order independence. A run-local counter emitted
+in each file's own metadata gives B the value 2 after A, but 1 when processing only
+B, without reading another body or emitting another file's rows. Selective replay
+needs a separate explicit proof of file independence; changed-body full fallback
+continues to preserve stateful processing and startup context.
+
 ## Evidence and confidence (invariant I-10)
 
 Every relation should carry `evidence` — a source file, span, and snippet — and a confidence label. `Confidence` has four levels:

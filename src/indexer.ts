@@ -587,15 +587,21 @@ async function indexProjectInternal(
     [adapter, adapter.outputOwnership ?? 'unrestricted'] as const
   ));
   const extractorVersion = extractorVersionFor(registeredAdapters, outputOwnership);
-  const reusableCleanIndex = reuseCleanGitIndexIfUnchanged(
-    db,
-    repoId,
-    repoRoot,
-    gitSnapshot.commitSha,
-    gitSnapshot.isDirty,
-    extractorVersion,
-    options.maxFileBytes
-  );
+  let reusableCleanIndex: IndexResult | null;
+  try {
+    reusableCleanIndex = reuseCleanGitIndexIfUnchanged(
+      db,
+      repoId,
+      repoRoot,
+      gitSnapshot.commitSha,
+      gitSnapshot.isDirty,
+      extractorVersion,
+      options.maxFileBytes
+    );
+  } catch (error) {
+    db.close();
+    throw error;
+  }
   if (reusableCleanIndex) {
     db.close();
     return reusableCleanIndex;
@@ -1026,6 +1032,7 @@ function persistCollectedIndexRun(input: {
       "SELECT id, head_tx_id FROM branches WHERE name = 'main'"
     ).get() as { id: string; head_tx_id: string | null } | undefined;
     if ((currentRun?.id ?? null) !== (input.priorRun?.runId ?? null) ||
+        (currentRun !== undefined && currentRun.id >= input.indexRunId) ||
         !currentBranch || currentBranch.id !== input.mainBranch.id ||
         currentBranch.head_tx_id !== input.mainBranch.head_tx_id) {
       throw new Error('index publication baseline changed; retry indexing');
@@ -1469,21 +1476,23 @@ function reuseCleanGitIndexIfUnchanged(
   maxFileBytes: number | undefined
 ): IndexResult | null {
   if (!commitSha || isDirty || maxFileBytes !== undefined) return null;
-  const prior = db
-    .prepare(
-      `SELECT id
-       FROM index_runs
-       WHERE repo_id = ? AND status = 'completed'
-         AND extractor_version = ?
-         AND git_commit_sha = ?
-         AND git_is_dirty = 0
-       ORDER BY id DESC
-       LIMIT 1`
-    )
-    .get(repoId, extractorVersion, commitSha) as { id: number } | undefined;
-  if (!prior) return null;
-  if (!indexRunFitsDefaultScanLimit(db, repoId, repoRoot, prior.id)) return null;
-  return loadIndexResultForRun(db, repoId, prior.id);
+  // Keep the candidate and its mutable cohort rows in one reader snapshot.
+  db.exec('BEGIN DEFERRED');
+  try {
+    const prior = db.prepare(
+      `SELECT id, extractor_version, git_commit_sha, git_is_dirty
+       FROM index_runs WHERE repo_id = ? AND status = 'completed'
+       ORDER BY id DESC LIMIT 1`
+    ).get(repoId) as {
+      id: number; extractor_version: string; git_commit_sha: string | null; git_is_dirty: number | null;
+    } | undefined;
+    if (!prior || prior.extractor_version !== extractorVersion ||
+        prior.git_commit_sha !== commitSha || prior.git_is_dirty !== 0) return null;
+    if (!indexRunFitsDefaultScanLimit(db, repoId, repoRoot, prior.id)) return null;
+    return loadIndexResultForRun(db, repoId, prior.id);
+  } finally {
+    if (db.isTransaction) db.exec('ROLLBACK');
+  }
 }
 
 function indexRunFitsDefaultScanLimit(

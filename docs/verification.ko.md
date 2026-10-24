@@ -87,8 +87,9 @@ Full index도 나중에 시작한 작업이 먼저 끝나면, 늦게 끝난 옛 
 
 `persistCollectedIndexRun`은 `BEGIN IMMEDIATE` 직후, 어떤 graph/transaction도 쓰기
 전에 현재 최신 completed run ID(없으면 null)와 main branch ID/head를 계획 때 값과
-정확히 비교한다. 하나라도 다르면 `index publication baseline changed; retry indexing`
-오류로 거부한다. 기존 catch는 자기 run의 실패 audit만 남기고, 새 graph·version·head를
+정확히 비교한다. 스캔 중 더 큰 ID의 run이 먼저 완료되면, 스캔 뒤 읽은 기준이
+같아도 옛 ID로 행을 되돌릴 수 있으므로 최신 completed ID는 자기 ID보다 작아야 한다.
+하나라도 어긋나면 `index publication baseline changed; retry indexing` 오류로 거부한다. 기존 catch는 자기 run의 실패 audit만 남기고, 새 graph·version·head를
 발행하지 않는다. 실행 중인 adapter를 자동 재시도하지 않으므로 파일이 안정된 뒤
 명령을 다시 실행한다. clean same-HEAD의 기존 읽기 전용 재사용은 바뀌지 않는다.
 
@@ -113,6 +114,40 @@ baseline의 full 역완료, adapter 실행 중 memory head 변경을 다룬다. 
 동일 cohort의 선행 SCIP import는 잠금 안에서 읽는 no-op carry에 포함되지만, full
 재구축은 기존대로 augmentation을 다시 적용해야 한다. 이 guard는 파일시스템 snapshot이나
 여러 SQL로 나뉜 trace writer 전체의 원자성을 보장하지 않는다.
+
+### Clean Git 캐시와 현재 cohort
+
+완료 run ID는 과거 실행 기록이고 `files` 등 canonical graph 행은 최신 실행으로
+옮겨진다. Clean A를 만든 뒤 본문을 수정해 dirty B를 인덱싱하고 `git restore`로
+A의 파일을 되돌려도, A의 행이 DB에 다시 생기지는 않는다. HEAD가 같다는 이유로
+과거 clean A를 고르면 A의 ID와 0인 live-row 카운터가 함께 반환될 수 있다.
+
+`reuseCleanGitIndexIfUnchanged`는 최신 completed row 하나를 먼저 고른 뒤 그 row의
+extractor version·HEAD·clean bit를 검사한다. 조건이 맞는 과거 run을 검색하지 않는다.
+Miss이면 기존 scan/delta 경로가 현재 본문을 확인해 필요한 재구축을 수행한다.
+복구된 새 clean cohort는 다음 실행부터 다시 읽기 없이 재사용한다. 빈 저장소도
+유효하므로 0개 파일 자체를 cache miss 조건으로 삼지는 않는다.
+
+후보를 고른 뒤 files·coverage·카운터를 여러 SQL로 읽는 동안 다른 프로세스가
+행을 새 cohort로 옮길 수도 있다. 따라서 후보 선택부터 마지막 결과 조회까지
+`BEGIN DEFERRED`의 짧은 읽기 snapshot으로 묶고 hit·miss·예외 모두 종료한다.
+현재 WAL 설정에서는 writer slot을 차지하지 않는다. Snapshot 시작 등 치명적 오류가
+기존 failed-run catch 전에 발생해도 호출자가 DB를 닫는다. 읽기 snapshot만 종료하는
+`ROLLBACK`은 graph 변경 실패나 새 failed index run의 생성이라는 뜻이 아니다.
+
+이 선택은 위 [SQLite transaction 원문](https://www.sqlite.org/lang_transaction.html)과
+발행 직전에 기준을 확인하는 원리를 재사용한다. 새 schema·global mutation epoch·전체
+과거 graph 복사는 필요하지 않다. `tests/incremental-index-oracle.test.ts`의 원격 회귀는
+A→dirty B→restore A→fresh-full 동등성→새 clean 재사용과, 후보 조회 사이 실제 별도 CLI
+writer가 no-op cohort를 발행하는 순서를 검증한다. 후자는 reader가 한 DB 시점의
+기존 ID와 nonzero 카운터를 함께 반환하고 실제 latest는 child run임을 대조한다.
+읽기 시작 실패 시 DB close도 강제로 확인한다. 스캔 observer 안에서 실제 child를 먼저
+완료시킨 별도 순서도 검증한다. 더 작은 parent ID의 발행을 거부하고 child graph와 다음
+clean 재사용을 유지해야 한다. 로컬에서는 이 DB 검사를 실행하지 않는다.
+
+보장 범위는 조회 중 후보와 행의 일관성이다. 반환 직후에도 해당 run이 계속 최신이거나
+Git·파일시스템 전체가 하나의 snapshot이라는 보장은 아니다. 본문 생략 범위도 기존의
+clean same-HEAD 재사용이며, 변경 파일만 읽는 selective scanner는 아직 활성화하지 않는다.
 
 ### 파일 읽기 경쟁 조건과 자원 한계
 

@@ -61,6 +61,11 @@ orchestrator 对每个 `EntityDescriptor` 做 content-hash 来计算其 entity i
 这尚未启用 changed-only extraction；fresh-index 等价性与读取量门禁通过前，
 内容变更仍执行完整提取。
 
+这两个声明也不证明处理顺序独立性。若 run 内计数器写入各文件自己的 metadata，
+完整 A→B 处理时 B 为 2，只处理 B 时为 1；没有读取其他正文或写入其他文件行，
+结果仍会变化。选择性重放还需要单独明确并证明文件独立性；目前 changed-body
+full fallback 继续保留有状态处理与 startup context。
+
 ## Evidence 与 confidence（不变量 I-10）
 
 每个 relation 都应携带 `evidence`——一个 source 文件、span 与 snippet——以及一个 confidence 标签。`Confidence` 有四个级别：

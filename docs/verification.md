@@ -81,11 +81,20 @@ node --import tsx --test tests/incremental-index-oracle.test.ts
 Before any publication writes, the index transaction rechecks the exact planned
 latest completed run ID (including null) and main branch ID/head. A mismatch
 fails with `index publication baseline changed; retry indexing`; no automatic
-adapter retry occurs. This prevents overlapping no-op carries and out-of-order
+adapter retry occurs. The completed ID must also be lower than this run's ID,
+preventing a run overtaken during scanning from moving rows to an older cohort. This prevents overlapping no-op carries and out-of-order
 full completion from replacing the current graph/head. The deterministic database
 oracles run in existing remote CI under the shared-machine policy. This is not a
 filesystem snapshot or an atomicity guarantee for every graph writer. The
 [decision and concept reference](verification.ko.md#겹친-인덱싱의-발행-기준) describe the scope.
+
+Clean same-HEAD reuse considers only the latest completed cohort, then checks its
+extractor/HEAD/clean fields. Candidate, file/coverage checks and counters share one
+short SQLite read snapshot, released on hit, miss or failure. Fatal reuse errors
+close the database before propagating. This prevents historical and mixed-cohort
+results without rejecting valid empty repositories. The remote oracle includes a
+real child CLI writer; the guarantee is one DB read point, not continuing freshness
+or a Git/filesystem snapshot. See the [Korean rationale](verification.ko.md#clean-git-캐시와-현재-cohort).
 
 Scanner checks and bounded body/sample reads share one open descriptor. Body
 allocation is limited to its checked size; short reads are completed, while EOF,

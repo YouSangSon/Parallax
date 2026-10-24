@@ -79,10 +79,18 @@ node --import tsx --test tests/incremental-index-oracle.test.ts
 在发布任何 graph/transaction 之前，写入事务会重新核对计划时的最新 completed
 run ID（包括 null）和 main branch ID/head。不一致时返回
 `index publication baseline changed; retry indexing`，不自动重试 adapter。
+当前 completed ID 还必须小于本次 run ID，避免扫描期间被超越的旧 run 将行移回较小 cohort。
 这防止并发 no-op carry 与逆序完成的 full index 覆盖当前 graph/head。
 共享机器策略下，确定性数据库 oracle 在现有远程 CI 执行。这不保证 filesystem
 snapshot 或所有 graph writer 的原子性。范围与概念参考见
 [韩语说明](verification.ko.md#겹친-인덱싱의-발행-기준)。
+
+Clean same-HEAD 复用只选择最新 completed cohort，再检查 extractor/HEAD/clean
+字段。候选、file/coverage 检查和计数在一个短 SQLite 读取 snapshot 中完成，
+hit、miss、异常都结束事务；致命错误传播前关闭数据库。有效空仓库仍可复用。
+远程 oracle 使用真实 child CLI writer。保证范围是同一 DB 读取时点，不保证
+返回后仍是最新，也不是 Git/filesystem snapshot。见
+[韩语原理](verification.ko.md#clean-git-캐시와-현재-cohort)。
 
 Scanner 在同一已打开的 descriptor 上检查并限制正文/sample 读取。正文分配量不超过
 已检查的大小；短读取会继续，EOF、大小或修改时间变化则使扫描失败。Linux/macOS

@@ -62,6 +62,12 @@ orchestrator는 각 `EntityDescriptor`를 content-hash해 entity id를 계산하
 같아도 선언이 바뀌면 다시 검증한다. 이 계약만으로 changed-only extraction을
 활성화하지 않는다. fresh-index 동등성과 읽기량 검증 전까지 변경된 내용은 전체 추출한다.
 
+두 선언은 처리 순서 독립성도 보장하지 않는다. 예를 들어 `start()`에서 순번을 0으로
+두고 `process()`마다 증가시켜 자기 entity metadata에 쓰면, 전체 A→B 처리에서 B는 2,
+B만 처리하면 1이다. 다른 본문을 읽거나 다른 파일 행을 쓰지 않아도 결과가 달라진다.
+선택 실행에는 파일별 재실행의 독립성을 별도로 명시·입증해야 한다. 현재는 순서와
+startup context가 영향을 주는 adapter까지 보존하도록 changed-body full fallback을 유지한다.
+
 ## Evidence와 confidence (불변 원칙 I-10)
 
 모든 relation은 `evidence` — source 파일, span, snippet — 와 confidence 라벨을 가져야 한다. `Confidence`는 네 단계다:

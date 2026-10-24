@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import childProcess, { execFileSync } from 'node:child_process';
 import { createRequire, syncBuiltinESMExports } from 'node:module';
 import { DatabaseSync } from 'node:sqlite';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -768,4 +768,58 @@ for (const hidden of hiddenGitInputs) {
       }
     });
   }
+}
+
+for (const forced of [false, true]) {
+  test(`Git cache shallow deepen: ${forced ? 'explicit CLI byte limit refreshes' : 'default cache must refresh'} history-derived graph`, async () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'parallax-hidden-history-'));
+    const origin = path.join(root, 'origin');
+    const clone = path.join(root, 'clone');
+    const git = (cwd: string, ...args: string[]) => execFileSync('git', [
+      '-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false', ...args
+    ], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10_000 });
+    const commit = () => {
+      git(origin, 'add', '.');
+      git(origin, '-c', 'user.name=Parallax Test', '-c', 'user.email=parallax@example.invalid',
+        'commit', '-m', 'synthetic co-change history');
+    };
+    try {
+      mkdirSync(origin);
+      git(origin, 'init', '-b', 'main');
+      writeFileSync(path.join(origin, '.gitignore'), '.parallax/\n');
+      for (const value of [1, 2, 3]) {
+        writeFileSync(path.join(origin, 'a.ts'), `export const a = ${value};\n`);
+        writeFileSync(path.join(origin, 'b.ts'), `export const b = ${value};\n`);
+        commit();
+      }
+      writeFileSync(path.join(origin, 'note.txt'), 'latest commit changes neither source\n');
+      commit();
+      git(root, '-c', 'protocol.file.allow=always', 'clone', '--depth=1', pathToFileURL(origin).href, clone);
+      const beforeGit = readGitSnapshot(clone);
+      const beforeTree = git(clone, 'rev-parse', 'HEAD^{tree}');
+      const bodies = ['a.ts', 'b.ts'].map((name) => readFileSync(path.join(clone, name), 'utf8'));
+      await indexProject({ repoRoot: clone });
+      assert.equal(snapshotGraph(clone).relations.filter((row) => row.kind === 'CO_CHANGES').length, 0);
+      git(clone, '-c', 'protocol.file.allow=always', 'fetch', '--unshallow');
+      assert.equal(git(clone, 'rev-parse', '--is-shallow-repository').trim(), 'false');
+      assert.equal(git(clone, 'status', '--porcelain').trim(), '');
+      assert.equal(git(clone, 'rev-parse', 'HEAD^{tree}'), beforeTree);
+      assert.deepEqual(readGitSnapshot(clone), beforeGit);
+      assert.deepEqual(['a.ts', 'b.ts'].map((name) => readFileSync(path.join(clone, name), 'utf8')), bodies);
+
+      await indexProject({ repoRoot: origin });
+      const oracle = snapshotGraph(origin);
+      assert.equal(oracle.relations.filter((row) => row.kind === 'CO_CHANGES').length, 2,
+        'fresh full extraction must observe both directed co-change relations');
+      if (forced) {
+        const child = indexWithChildCli(clone);
+        assert.equal(child.status, 0, child.error?.message ?? child.stderr.slice(-1000));
+      } else {
+        await indexProject({ repoRoot: clone });
+      }
+      assert.deepEqual(snapshotGraph(clone), oracle);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 }

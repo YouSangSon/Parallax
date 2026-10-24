@@ -82,6 +82,11 @@ co-change 갱신도 runtime trace로 높인 신뢰도를 유지한다. 저장 �
 모두 롤백한 뒤 실패한 실행을 기록한다. Extractor/semantics revision이 바뀌면 전체
 재구축하므로, 외부 SCIP/trace 정보는 재구축 후 다시 적용해야 한다.
 
+실제 복구는 SQL 쓰기 트랜잭션과 co-change savepoint가 담당한다. 결과를 소비하지
+않던 수동 `CurrentStateSnapshot`과 행별 capture 조회·Map 복사는 제거했다.
+입력 동결·yield 이벤트 복사, 발행 기준 검사와 실패 audit은 유지한다.
+이는 중복 작업을 없앤 정리이며 latency·RSS 개선률을 측정한 결과는 아니다.
+
 ```bash
 node --import tsx --test tests/incremental-index-oracle.test.ts
 ```

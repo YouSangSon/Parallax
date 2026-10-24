@@ -2,6 +2,20 @@
 
 Evidence is current only when the command and result are recorded in this file. A focused pass proves only its named scope.
 
+## S1 Recovery Bookkeeping Removal — 2026-10-25
+
+- [x] Static call-path review found no caller of private `restore()`; its seven
+  capture SELECTs only filled maps consumed by that dead method. All live
+  capture sites were already inside the publication transaction/savepoint.
+- [x] Removed 447 source lines and eight capture call sites, with no added source
+  lines. Exact AST comparison preserves public exported functions, extractor
+  identity, immutable input snapshots, writer rollback and clean-reuse snapshot.
+  Public types, schema and existing tests are unchanged; `npm run check` passes.
+- Independent final integrity review found no blocker. Existing rollback,
+  cohort and saved-report oracles remain mandatory in remote Release; no local
+  DB/integration/full suite or new implementation-mirroring test was run.
+  No latency/RSS improvement claim is made.
+
 ## Audit Setup Reliability — 2026-10-25
 
 - Main #46 and #48 Security installs failed in the ONNX lifecycle download
@@ -13,7 +27,9 @@ Evidence is current only when the command and result are recorded in this file. 
   unchanged. Registry and Release download failures remain possible.
 - [x] YAML parsing and an exact object-diff assertion confirm only the audit
   install command changed. No local dependency installation/full suite ran.
-  Final exact-head Security and Release checks remain the landing gate.
+  PR #49 final head `2034986` passed all five checks, including Security audit
+  and normal Release install, 739/739, dogfood 2/2 and bench/audit. It merged as
+  `f4dc665` with exact source/main tree equality. Main-run receipts are separate.
 
 ## S1 Current-Cohort Clean Reuse — 2026-10-25
 

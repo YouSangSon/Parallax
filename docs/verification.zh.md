@@ -77,6 +77,10 @@ co-change 刷新也会保留 runtime trace 提升的置信度。写入失败时�
 更改，再记录失败的运行。Extractor/semantics revision 变化会触发完整重建；
 外部 SCIP/trace 信息需要在重建后重新应用。
 
+回滚由 SQL transaction/savepoint 负责。已删除无人消费的手动恢复 snapshot 与逐行
+capture 查询/Map 复制；输入/事件复制、发布校验与失败 audit 保留。这不是 latency
+或 RSS 改善率的测量结果。
+
 ```bash
 node --import tsx --test tests/incremental-index-oracle.test.ts
 ```

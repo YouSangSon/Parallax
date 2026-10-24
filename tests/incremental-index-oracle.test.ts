@@ -401,3 +401,23 @@ test('unchanged carry-forward preserves imported SCIP graph with contracts', asy
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+
+test('overlapping no-op indexes preserve the published cohort and reject stale publication', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'parallax-overlapping-noop-'));
+  try {
+    writeChain(root);
+    await indexProject({ repoRoot: root });
+    const before = snapshotGraph(root);
+    assert.ok(before.files.length > 0, 'fixture must have a nonempty published graph');
+    const results = await Promise.allSettled([
+      indexProject({ repoRoot: root }),
+      indexProject({ repoRoot: root })
+    ]);
+    assert.deepEqual(snapshotGraph(root), before, 'a stale carry must not publish an empty cohort');
+    assert.equal(results.filter((r) => r.status === 'fulfilled').length, 1);
+    assert.equal(results.filter((r) => r.status === 'rejected').length, 1);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

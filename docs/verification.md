@@ -37,6 +37,12 @@ status, malformed JSON, and command/network failures block the gate. Raw npm
 diagnostics are not printed; rerun `npm audit --audit-level=high --json` locally
 when raw diagnostics are needed.
 
+The Security audit job installs frozen dependencies with `npm ci --ignore-scripts`:
+native lifecycle downloads are unnecessary for its metadata audit. Lock mismatch
+checks and the fail-closed audit command remain; Release retains normal `npm ci`
+and full runtime verification. This does not eliminate registry or Release network
+failures. See [npm's option contract](https://docs.npmjs.com/cli/v11/commands/npm-ci/#ignore-scripts).
+
 ## The dogfood guard — the real safety net
 
 `tests/dogfood.integration.ts` is the most important layer to understand. It exists because a green unit suite once coexisted with a totally broken internal dependency graph: real NodeNext `./x.js` imports collapsed to `external_entity`, so a heavily imported module reported **zero** code dependents while every unit test stayed green. The unit suite simply did not look at the real engine output the way a user does.

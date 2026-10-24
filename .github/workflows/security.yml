@@ -46,7 +46,8 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        # Audit needs package metadata; Release gate validates runtime installation.
+        run: npm ci --ignore-scripts
 
       - name: Audit (high severity gate)
         run: npm run audit:dependencies

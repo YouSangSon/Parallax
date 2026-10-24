@@ -37,6 +37,15 @@ allowlist는 없다. High/critical finding, count 또는 exit status 불일치,
 진단을 출력하지 않는다. Raw 진단이 필요하면 로컬에서
 `npm audit --audit-level=high --json`을 다시 실행한다.
 
+Security workflow의 audit 준비 설치는 `npm ci --ignore-scripts`를 사용한다.
+취약점 검사는 dependency metadata와 registry 보고서를 대조하므로 ONNX 등 native
+설치 script가 필요하지 않다. `npm ci`의 lock 불일치 실패와 고정된 tree 설치는 유지하고,
+high/critical·명령 실패·JSON 검증 gate도 바꾸지 않는다. 실제 native 설치와 전체 실행
+검증은 Release gate의 일반 `npm ci`가 담당한다.
+[npm ci 공식 설명](https://docs.npmjs.com/cli/v11/commands/npm-ci/#ignore-scripts)을 기준으로
+감사 job에만 범위를 제한한다. 이 선택은 registry 통신이나 Release 설치의 네트워크
+실패까지 없애지는 않는다.
+
 ## dogfood guard — 진짜 안전망
 
 `tests/dogfood.integration.ts`는 반드시 이해해야 할 가장 중요한 계층이다. 이것이 존재하는 이유는, 과거에 green unit suite가 완전히 망가진 내부 의존성 graph와 공존했기 때문이다 — 실제 NodeNext `./x.js` import가 `external_entity`로 무너져, 많이 import되는 모듈이 코드 의존자(dependent)를 **0**으로 보고했는데도 모든 unit test가 green이었다. unit suite는 사용자가 보는 방식으로 실제 engine 출력을 보지 않았던 것이다.

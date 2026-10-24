@@ -5,6 +5,8 @@ import path from 'node:path';
 import { test } from 'node:test';
 
 import { importScipJson, indexProject, initProject } from '../src/index.js';
+import { remember } from '../src/agent_memory.js';
+import type { ScannedFile } from '../src/types.js';
 import { AdapterRegistry } from '../src/adapters/registry.js';
 import { indexProjectWithRegistryForTest } from '../src/indexer.js';
 import { normalizeRepoRoot } from '../src/security.js';
@@ -417,7 +419,126 @@ test('overlapping no-op indexes preserve the published cohort and reject stale p
     assert.deepEqual(snapshotGraph(root), before, 'a stale carry must not publish an empty cohort');
     assert.equal(results.filter((r) => r.status === 'fulfilled').length, 1);
     assert.equal(results.filter((r) => r.status === 'rejected').length, 1);
+    const rejected = results.find((r) => r.status === 'rejected');
+    assert.ok(rejected?.status === 'rejected' && rejected.reason instanceof Error);
+    assert.match(rejected.reason.message, /publication baseline changed.*retry/);
+    assertFailedRunsUnpublished(root);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+
+function pausableRegistry() {
+  let pauseNext = false;
+  let entered!: () => void;
+  let release!: () => void;
+  const started = new Promise<void>((resolve) => { entered = resolve; });
+  const released = new Promise<void>((resolve) => { release = resolve; });
+  const registry = new AdapterRegistry();
+  registry.register({
+    id: 'publication-oracle', version: '1', capabilities: [],
+    supports: (file) => file.language === 'typescript',
+    async start() {
+      if (pauseNext) {
+        pauseNext = false;
+        entered();
+        await released;
+      }
+      return { async *process(file: ScannedFile) {
+        yield { kind: 'entity' as const, entity: {
+          kind: 'file' as const, path: file.relativePath, metadata: { captured: file.content }
+        } };
+      } };
+    }
+  });
+  return { registry, started, release, pause: () => { pauseNext = true; } };
+}
+
+for (const withBaseline of [false, true]) {
+  test(`an older full index cannot overwrite a later completion (baseline=${withBaseline})`, async () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'parallax-overlapping-full-'));
+    const paused = pausableRegistry();
+    let completion: Promise<unknown> | undefined;
+    try {
+      writeFileSync(path.join(root, 'a.ts'), 'export const a = 1;\n');
+      if (withBaseline) await indexProjectWithRegistryForTest({ repoRoot: root }, paused.registry);
+      writeFileSync(path.join(root, 'a.ts'), 'export const a = 2;\n');
+      paused.pause();
+      completion = indexProjectWithRegistryForTest({ repoRoot: root }, paused.registry)
+        .then(() => null, (error: unknown) => error);
+      await Promise.race([paused.started, completion.then((error) => {
+        throw error ?? new Error('index finished before adapter start');
+      })]);
+      writeFileSync(path.join(root, 'a.ts'), 'export const a = 3;\n');
+      const newer = await indexProjectWithRegistryForTest({ repoRoot: root }, paused.registry);
+      const published = snapshotGraph(root);
+      assert.ok(published.files.length > 0);
+      paused.release();
+      const failure = await completion;
+      assert.deepEqual(snapshotGraph(root), published, 'late completion must preserve the newer graph');
+      assert.ok(failure instanceof Error);
+      assert.match(failure.message, /publication baseline changed.*retry/);
+      assertFailedRunsUnpublished(root);
+      const db = openDatabase(root, { readOnly: true });
+      try {
+        assert.equal(latestCompletedIndexRun(db, getRepoId(db, root)), newer.indexRunId);
+        assert.equal(db.prepare("SELECT count(*) AS n FROM index_runs WHERE status = 'running'").get()?.n, 0);
+      } finally { db.close(); }
+    } finally {
+      paused.release();
+      await completion;
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+}
+
+test('an index cannot discard a memory head published while its adapter is running', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'parallax-overlapping-memory-'));
+  const paused = pausableRegistry();
+  let completion: Promise<unknown> | undefined;
+  try {
+    writeFileSync(path.join(root, 'a.ts'), 'export const a = 1;\n');
+    await indexProjectWithRegistryForTest({ repoRoot: root }, paused.registry);
+    writeFileSync(path.join(root, 'a.ts'), 'export const a = 2;\n');
+    paused.pause();
+    completion = indexProjectWithRegistryForTest({ repoRoot: root }, paused.registry)
+      .then(() => null, (error: unknown) => error);
+    await Promise.race([paused.started, completion.then((error) => {
+        throw error ?? new Error('index finished before adapter start');
+      })]);
+    const db = openDatabase(root);
+    let memoryHead: string;
+    try {
+      memoryHead = remember(db, { entity: 'file:a.ts', attribute: 'observed', value: 'keep' }, null).txId;
+    } finally { db.close(); }
+    const published = snapshotGraph(root);
+    paused.release();
+    const failure = await completion;
+    assert.deepEqual(snapshotGraph(root), published);
+    assert.ok(failure instanceof Error);
+    assert.match(failure.message, /publication baseline changed.*retry/);
+    assertFailedRunsUnpublished(root);
+    const after = openDatabase(root, { readOnly: true });
+    try {
+      assert.equal(after.prepare("SELECT head_tx_id FROM branches WHERE name = 'main'").get()?.head_tx_id, memoryHead);
+    } finally { after.close(); }
+  } finally {
+    paused.release();
+    await completion;
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+
+function assertFailedRunsUnpublished(root: string): void {
+  const db = openDatabase(root, { readOnly: true });
+  try {
+    assert.equal(db.prepare("SELECT count(*) AS n FROM index_runs WHERE status = 'failed'").get()?.n, 1);
+    for (const table of ['files', 'entity_versions', 'contract_versions', 'relations', 'transactions']) {
+      assert.equal(db.prepare(`SELECT count(*) AS n FROM ${table}
+        WHERE index_run_id IN (SELECT id FROM index_runs WHERE status = 'failed')`).get()?.n,
+      0, `failed publication leaked ${table}`);
+    }
+  } finally { db.close(); }
+}

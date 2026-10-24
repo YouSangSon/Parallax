@@ -77,6 +77,43 @@ co-change 갱신도 runtime trace로 높인 신뢰도를 유지한다. 저장 �
 node --import tsx --test tests/incremental-index-oracle.test.ts
 ```
 
+### 겹친 인덱싱의 발행 기준
+
+SQL 쓰기를 차례대로 실행해도, 잠금을 얻기 전에 계산한 결과의 기준이 최신이라는
+뜻은 아니다. 예를 들어 A와 B가 같은 완료 run R0를 읽고 no-op을 계산하면,
+A가 행을 R1로 옮긴 뒤 B는 R0에서 옮길 graph를 찾지 못해 빈 R2를 발행할 수 있다.
+Full index도 나중에 시작한 작업이 먼저 끝나면, 늦게 끝난 옛 작업이 최신 cohort와
+맞지 않는 행과 memory head를 덮을 수 있다.
+
+`persistCollectedIndexRun`은 `BEGIN IMMEDIATE` 직후, 어떤 graph/transaction도 쓰기
+전에 현재 최신 completed run ID(없으면 null)와 main branch ID/head를 계획 때 값과
+정확히 비교한다. 하나라도 다르면 `index publication baseline changed; retry indexing`
+오류로 거부한다. 기존 catch는 자기 run의 실패 audit만 남기고, 새 graph·version·head를
+발행하지 않는다. 실행 중인 adapter를 자동 재시도하지 않으므로 파일이 안정된 뒤
+명령을 다시 실행한다. clean same-HEAD의 기존 읽기 전용 재사용은 바뀌지 않는다.
+
+| 대안 | 판단 |
+| --- | --- |
+| adapter 시작 전부터 쓰기 잠금 보유 | 비동기 작업 내내 다른 writer를 막고 같은 프로세스의 동기 SQLite 대기와 충돌할 수 있다 |
+| 발행 시 baseline 대조 | 기존 짧은 쓰기 트랜잭션을 유지하며 오래된 계산만 거부한다 |
+| DB 전체 mutation epoch 도입 | 모든 writer와 schema를 바꿔야 하므로 이번 index/head 경쟁에는 필요하지 않다 |
+
+원리 참고는 [SQLite transaction](https://www.sqlite.org/lang_transaction.html#deferred_immediate_and_exclusive_transactions)의
+writer admission과, Codex `970111f`의
+[`Session::replace_compacted_history`](https://github.com/openai/codex/blob/970111f6cb62cc02fe36a82ea7d71b37a2889c97/codex-rs/core/src/session/mod.rs#L4387)다.
+Codex의 Prefix 교체 분기는 준비한 요약을 설치하기 직전 state lock 안에서 history generation·길이·인증
+owner를 검증하고 맞지 않으면 교체하지 않는다. Parallax는 이 발행 직전 재검증 원리를
+DB의 완료 cohort와 branch head에 맞췄다. 인증·요약·자동 fallback 구조나 코드를
+옮기지 않았으며 Codex 테스트는 실행하지 않았다. 전체 source version 확인 범위는
+아래 파일 읽기 참고와 같다.
+
+`tests/incremental-index-oracle.test.ts`의 결정적 순서 검사는 동시 no-op, 기존/없는
+baseline의 full 역완료, adapter 실행 중 memory head 변경을 다룬다. 강화된 로컬 자원
+정책에 따라 이 DB oracle은 기존 원격 CI에서 실행하고 로컬에서는 type/lint만 검사한다.
+동일 cohort의 선행 SCIP import는 잠금 안에서 읽는 no-op carry에 포함되지만, full
+재구축은 기존대로 augmentation을 다시 적용해야 한다. 이 guard는 파일시스템 snapshot이나
+여러 SQL로 나뉜 trace writer 전체의 원자성을 보장하지 않는다.
+
 ### 파일 읽기 경쟁 조건과 자원 한계
 
 경로는 파일의 이름이며, 열린 파일 descriptor는 실제로 연 파일을 가리킨다.

@@ -2,6 +2,24 @@
 
 Evidence is current only when the command and result are recorded in this file. A focused pass proves only its named scope.
 
+## S1 Publication Admission — 2026-10-25
+
+- [x] Remote `npm run verify` at regression-only `6a643420` failed 1/732:
+  the new overlapping no-op oracle observed an empty latest graph. The other
+  731 tests passed; this failed run did not reach later canonical stages.
+- [x] Before graph/version/transaction writes, publication now checks the exact
+  planned completed run ID (including null) and main branch ID/head while holding
+  the SQLite writer slot. A mismatch rejects the stale run with a retry message;
+  no automatic adapter replay or long-lived adapter transaction is added.
+- [x] Local `npm run lint` (type/docs/schema) passes; after the independent
+  review's barrier-cleanup correction, `npm run check` passes again. No local
+  database/integration/full-suite execution was performed for this slice.
+- Independent data-integrity review found no remaining production/test blocker.
+  The added remote oracles cover overlapping no-op, full reverse completion with
+  and without a baseline, and memory-head movement during adapter startup.
+  Exact-head mandatory remote checks remain the landing gate. This does not
+  establish filesystem snapshots or atomicity of all trace writer statements.
+
 ## S1 Scanner Read Baseline — 2026-10-24
 
 - [x] The new counter regression failed before implementation because scan
@@ -18,8 +36,11 @@ Evidence is current only when the command and result are recorded in this file. 
   recognized-language bodies and bounded samples, use raw returned byte sizes,
   and leave `IndexResult`/CLI output unchanged. Clean same-HEAD reuse emits no
   scan observation; failed scans do not publish a partial counter result.
-- Canonical verification and exact-head remote checks remain required before
-  landing. No selective extraction or read-skipping is enabled.
+- [x] PR #46 final head `845343a` passed remote `npm run verify`: 731/731,
+  dogfood 2/2, bench and audit. All five PR checks and all four main workflows at
+  `7a05f81` succeeded. Main Security's first install timed out in the upstream
+  ONNX download; only that failed job was rerun at the same SHA and succeeded.
+  No selective extraction or read-skipping is enabled.
 - PR #46's first CodeQL summary rejected a stat(path)/readFile(path) race.
   A tiny filesystem-only fixture reproduced path replacement bypassing the
   checked size and same-file growth. The first replacement fixture also removed
@@ -31,7 +52,7 @@ Evidence is current only when the command and result are recorded in this file. 
   growth, short reads and read-error descriptor cleanup. Local full verification
   was cancelled on the finding; under the revised user goal only lightweight
   local checks and the existing mandatory remote CI may establish this slice.
-  CodeQL clearance and final exact-head CI remain required. Windows execution
+  Final CodeQL clearance and exact-head CI passed as recorded above. Windows execution
   and atomic parent-directory snapshots are outside the proven boundary.
   Initial open failure fails the scan; optional sample-read failure after opening
   preserves a skip. Independent final security review found no blocker.

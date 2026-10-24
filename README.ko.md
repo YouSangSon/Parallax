@@ -2,7 +2,7 @@
 
 # 🛰️ Parallax
 
-**Give coding agents a local map of what a change can break.**
+**코딩 에이전트에게 변경이 미칠 영향을 보여주는 로컬 코드 지도.**
 
 Claude Code, Codex, Cursor 같은 에이전트가 코드를 고치기 전에<br/>
 저장소를 로컬에서 인덱싱하고, 변경 파일이 건드릴 수 있는 코드·테스트·문서·계약을 증거와 함께 보여주는 impact intelligence 도구.
@@ -26,6 +26,8 @@ Claude Code, Codex, Cursor 같은 에이전트가 코드를 고치기 전에<br/
 > **왜 필요한가** — AI coding 도구는 빠르지만, `auth.ts`의 함수 하나를 바꿨을 때 어떤 테스트·consumer·정책 문서가 같이 흔들리는지 매번 추측한다. Parallax는 repo-local `.parallax/impact.db`에 코드 그래프와 agent memory를 저장해, 에이전트가 변경 전에 “무엇이 왜 영향받는지”를 작은 context pack으로 확인하게 만든다.
 
 ---
+
+**실제 파일 재검증:** `assume-unchanged`·`skip-worktree`, 줄바꿈 변환이나 clean filter를 사용한 뒤에는 Git이 clean이어도 캐시가 파일 변경을 놓칠 수 있습니다. `parallax index --max-file-bytes 1000000`으로 기본 1 MB 한도를 유지하며 캐시를 건너뛰고 실제 파일을 다시 확인할 수 있습니다. [추적 중인 회귀](https://github.com/YouSangSon/Parallax/pull/51).
 
 ## 🚀 빠른 시작
 

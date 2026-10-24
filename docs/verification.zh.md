@@ -61,7 +61,7 @@ dogfood guard 填补了这个缺口。在每个 test 中，它：
 
 ## 增量正确性 gate
 
-当前 `IndexResult.mode = 'incremental'` 表示 indexed body 没有变化。任何
+当前 `IndexResult.mode = 'incremental'` 表示 indexed body 没有变化。当 scanner 确认
 indexed body 发生变化时，都会报告 `mode = 'full'` 并执行完整 extraction。
 仅凭 `fileContentScope` 不能授权 changed-only extraction：它约束读取范围，
 但不约束 emitted row 的 ownership。
@@ -100,6 +100,11 @@ hit、miss、异常都结束事务；致命错误传播前关闭数据库。有�
 远程 oracle 使用真实 child CLI writer。保证范围是同一 DB 读取时点，不保证
 返回后仍是最新，也不是 Git/filesystem snapshot。见
 [韩语原理](verification.ko.md#clean-git-캐시와-현재-cohort)。
+
+Git flag、内容正规化与残留 stat cache 可能使 clean-HEAD 复用漏掉正文变化。
+这一已知缺口由 [draft #51](https://github.com/YouSangSon/Parallax/pull/51) 跟踪。
+使用 `parallax index --max-file-bytes 1000000` 保留默认 1 MB 上限并跳过 clean 复用，
+重新核对实际文件 hash/路径。这是重新验证的临时方法，不代表新缓存证明或选择性正文读取。
 
 Scanner 在同一已打开的 descriptor 上检查并限制正文/sample 读取。正文分配量不超过
 已检查的大小；短读取会继续，EOF、大小或修改时间变化则使扫描失败。Linux/macOS

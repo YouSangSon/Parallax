@@ -4,6 +4,8 @@
 
 Parallax is a local-first code impact-analysis layer: a single SQLite store powers a CLI, an MCP server for coding agents, and a UI explorer. This index links the main packaged guides in `docs/`.
 
+**Rechecking actual files:** After Git index flags (`assume-unchanged` or `skip-worktree`) or content normalization, clean-HEAD reuse can miss working-tree changes. Run `parallax index --max-file-bytes 1000000` to bypass reuse and recheck actual files with the default 1 MB limit. [Tracked regressions](https://github.com/YouSangSon/Parallax/pull/51).
+
 ## Getting started
 
 | Document | Contents |

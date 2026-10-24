@@ -94,6 +94,22 @@ EOF·크기·수정 시각이 달라지면 결과를 저장하지 않고 실패�
 | descriptor에 `readFile` 적용 | 같은 파일이어도 검사 후 커지면 읽기·할당량이 늘 수 있다 |
 | 검사한 크기만 descriptor에서 읽기 | 작은 반복문과 재검사가 필요하지만 읽기·할당 상한을 유지한다 |
 
+개념 참고는 OpenAI Codex의 로컬 커밋 `970111f6cb62cc02fe36a82ea7d71b37a2889c97`의
+[`local_file_system_read.rs::read_file`](https://github.com/openai/codex/blob/970111f6cb62cc02fe36a82ea7d71b37a2889c97/codex-rs/exec-server/src/local_file_system_read.rs)다.
+Codex는 열린 파일의 metadata와 실제 읽기 양쪽에 상한을 적용하고, 비동기 호출 취소를
+청크 사이에서 확인한다. 참고 범위는 descriptor와 실제 읽기량을 함께 제한하는 원리다.
+Parallax는 기존 동기 스캐너와 기본 1 MB 제한에 맞춰, 검사한 크기만 읽고 변경 시
+실패하는 방식으로 구현했다. 예를 들어 16바이트 파일이 검사 후 216바이트가 되면
+16바이트까지만 읽고 graph에 반영하지 않는다. 이를 작은 파일시스템 회귀 검사로 확인한다.
+
+다른 대안인 Codex의
+[`no_follow/unix.rs::open_entry_sync`](https://github.com/openai/codex/blob/970111f6cb62cc02fe36a82ea7d71b37a2889c97/codex-rs/exec-server/src/no_follow/unix.rs)는
+디렉터리 descriptor를 기준으로 각 요소를 `openat`한다. 부모 경로 보호에는 더 적합하지만,
+Node의 현재 표준 API 경계를 넘어 native 구성요소와 플랫폼별 유지 비용이 필요해
+이번 단위에서는 채택하지 않았다. Codex의 큰 파일용 취소 계층도 동기 스캐너에 옮기지 않았다.
+코드는 차용하지 않았으며, 소스 비교를 성능 비교나 자체 발명의 근거로 사용하지 않는다.
+참고 checkout은 깨끗했고 원격 최신 버전 여부와 Codex 테스트 실행은 확인하지 않았다.
+
 Linux/macOS에서는 `O_NOFOLLOW`와 `O_NONBLOCK`으로 leaf symlink·FIFO 교체도
 방어한다. 해당 flag가 없는 플랫폼은 읽기 전 leaf의 일반 파일 여부와 dev/ino를
 열린 descriptor와 대조한다. Windows 실행 검증과 부모 디렉터리까지 포함한

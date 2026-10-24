@@ -86,6 +86,9 @@ failure fails the scan. Platforms lacking no-follow validate leaf identity befor
 reading. This is not an atomic parent-directory/filesystem snapshot, and Windows
 execution is unverified. `tests/scanner.test.ts` exercises these filesystem-only
 boundaries without starting a database or server.
+The concept reference is Codex's descriptor-bound, capped
+[file reader at commit 970111f](https://github.com/openai/codex/blob/970111f6cb62cc02fe36a82ea7d71b37a2889c97/codex-rs/exec-server/src/local_file_system_read.rs).
+Parallax adapts the principle to its synchronous scanner; no source code is copied.
 
 ## The accuracy bench
 

@@ -82,6 +82,9 @@ Scanner 在同一已打开的 descriptor 上检查并限制正文/sample 读取�
 可选 sample 读取失败仍保留 skipped 状态，但最初打开文件失败会使整个扫描失败。
 这不保证父目录或整个 filesystem 的原子 snapshot，Windows 执行也尚未验证。
 `tests/scanner.test.ts` 只验证文件系统边界，不启动数据库或服务器。
+概念参考为 Codex 在
+[970111f 提交中的 descriptor 限量读取](https://github.com/openai/codex/blob/970111f6cb62cc02fe36a82ea7d71b37a2889c97/codex-rs/exec-server/src/local_file_system_read.rs)；
+Parallax 将这一原理用于现有同步 scanner，没有复制原始代码。
 
 ## accuracy bench
 

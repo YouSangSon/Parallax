@@ -15,6 +15,7 @@ adapter 实现 `SemanticAdapter` 接口（`src/adapters/types.ts`）：
 - `knownGaps?` — 关于此 adapter *不*解析什么的人类可读说明。
 - `selectionMode?` — 有边界的语言/文件 adapter 默认是 `targeted`，最后的 fallback adapter 使用 `catch-all`。
 - `fileContentScope?` — 默认是 `full-index`；只有当 adapter 只需要当前 `process(file)` 输入的 content，并且只把 `ctx.indexedFiles` / `files` 当作 path-level context 时，才设置为 `target-only`。
+- `outputOwnership?` — 默认是 `unrestricted`；`processed-file` 启用下述文件输出归属校验。
 - `supports(file)` — 若此 adapter 处理该文件则返回 `true`。
 - `start(ctx, files)` — 为该 index run 返回一个 `AdapterRun`（或 `Promise<AdapterRun>`）。
 
@@ -39,6 +40,27 @@ orchestrator 对每个 `EntityDescriptor` 做 content-hash 来计算其 entity i
 
 只有检查实现后才使用 `target-only`。例如 config/infra path-reference extraction 用 indexed file path 校验 reference，但不读取其他 indexed file content。build-system/package 与 TypeScript/JavaScript adapter 会从 indexed content 构建 lockfile/package catalog、import resolver 与 cross-file target，因此保持 `full-index`。
 
+## 输出归属
+
+仅读取当前文件，并不能证明输出行属于该文件。
+`outputOwnership = 'processed-file'` 是单独的可选契约：
+
+- 显式 entity 和 relation source 必须使用当前 `process(file)` 路径及基于文件的
+  entity kind（包含 workflow/resource/contract）。暂不支持 symbol、module、
+  package 或 external identity。
+- relation target 可以是同一路径的文件实体，或指向另一个已索引文件的纯
+  `{ kind: 'file', path }` 引用。拒绝其他文件 target 的 metadata 和未索引占位实体。
+- 显式 evidence 与 diagnostic 的文件必须是当前文件。拒绝无文件 diagnostic；
+  relation evidence 缺省时仍使用当前文件作为 fallback。
+- 输入先复制再冻结。事件必须支持 `structuredClone`，并在校验前复制，防止
+  generator 或 dispose 后续修改已接受的事件。违规或复制失败会在发布图之前
+  使本次运行失败，同时保留失败审计记录。
+
+初期只有 config/infra 启用。未声明的 adapter 保持原有行为。运行开始时确定的
+归属声明参与 extractor signature，因此即使内容未变，更改声明也会重新校验。
+这尚未启用 changed-only extraction；fresh-index 等价性与读取量门禁通过前，
+内容变更仍执行完整提取。
+
 ## Evidence 与 confidence（不变量 I-10）
 
 每个 relation 都应携带 `evidence`——一个 source 文件、span 与 snippet——以及一个 confidence 标签。`Confidence` 有四个级别：
@@ -58,11 +80,11 @@ adapter 存放于 registry（`src/adapters/registry.ts`），由 `src/indexer.ts
 
 registry 现在显式强制这项契约。`selectionMode` 为了 source compatibility 是可选字段，省略时默认为 `targeted`；只有刻意作为最后 fallback coverage 的 adapter 才设置 `selectionMode = 'catch-all'`。如果已经存在 catch-all adapter，`AdapterRegistry.register()` 会拒绝在它之后注册任何 adapter，error 会同时命名新 adapter 与阻挡它的 catch-all adapter。重复 `id` 校验仍然先运行，并保留既有的重复 id error。
 
-审查或测试 adapter 注册时使用 `registry.manifest()`。它按注册顺序返回一个 immutable snapshot。每个 entry 暴露 `order`、`id`、`version`、`capabilities`、`confidence`（默认 `unknown`）、`knownGaps`（默认空数组）、`selectionMode`（默认 `targeted`）和 `fileContentScope`（默认 `full-index`）。调用方可以检查这些信息，但不能改变 registry 状态。
+审查或测试 adapter 注册时使用 `registry.manifest()`。它按注册顺序返回一个 immutable snapshot。每个 entry 暴露 `order`、`id`、`version`、`capabilities`、`confidence`（默认 `unknown`）、`knownGaps`（默认空数组）、`selectionMode`（默认 `targeted`）和 `fileContentScope`（默认 `full-index`）及 `outputOwnership`（默认 `unrestricted`）。调用方可以检查这些信息，但不能改变 registry 状态。
 
 ## 版本管理与重新提取
 
-每次 index run 都会记录一个由所有活跃 adapter 的 `id` 与 `version` 组成的 `extractor_version` 签名。提升某 adapter 的 `version` 会在下一次 `parallax index` run 中改变该记录的签名。每当 adapter 的提取输出改变时就提升 `version`，以免运行在 adapter 版本之间被悄悄混淆。
+每次 index run 都会记录由所有活跃 adapter 的 `id`、`version`、已确定的 `outputOwnership` 及 indexer 语义版本组成的 `extractor_version` 签名。提升某 adapter 的 `version` 会在下一次 `parallax index` run 中改变该记录的签名。每当 adapter 的提取输出改变时就提升 `version`，以免运行在 adapter 版本之间被悄悄混淆。
 
 ## 最小示例
 

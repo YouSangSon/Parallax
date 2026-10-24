@@ -2,6 +2,61 @@
 
 Evidence is current only when the command and result are recorded in this file. A focused pass proves only its named scope.
 
+## S1 Output Ownership Gate — 2026-10-24
+
+- [x] Before implementation, the two focused regressions for foreign entity
+  rejection and unchanged legacy-to-owned transition failed with missing
+  expected rejection.
+- [x] `node --import tsx --test --test-concurrency=1
+  tests/adapter-output-ownership.test.ts tests/adapter_registry.test.ts
+  tests/config-infra-adapter.test.ts tests/incremental-index-oracle.test.ts`
+  passes 31/31; `tsc -p tsconfig.json --noEmit` passes. Cases cover invalid
+  ownership, preserved graph/current-state tables, declaration invalidation,
+  input isolation, post-yield/dispose mutation, config/infra and fresh-index
+  equivalence under the existing full-extraction policy.
+- [x] Independent data-integrity review found and addressed mutable event
+  references and non-file identity scope before delivery; final code review
+  found no blocking issue in this bounded contract.
+- Local canonical verification of the first head passed 663/713 tests; 48 MCP
+  waits, a CLI null child status and a SCIP startup marker wait failed. Serial
+  recovery was interrupted after repeated failures. Exact-head Linux CI passed
+  713/713, dogfood, benchmark and audit; this does not make the local run green.
+- [x] Phase diagnostics identified a 5,048 ms MCP initialize timeout before any
+  output, while completed initialization took 2,353–4,089 ms and later requests
+  2–324 ms. The bounded test harness now allows 30 seconds for initialize,
+  CLI child execution and SCIP startup markers; post-init RPCs retain 5 seconds
+  and the SCIP lock assertion is unchanged. The three affected failure cases
+  pass with file concurrency 1. This is test robustness, not a latency gain.
+- The pre-carry head `394ede7` subsequently passed local canonical verification:
+  715/715 tests, dogfood 2/2, benchmark and audit; all five remote checks passed.
+- [x] Six no-op oracles reproduced loss of descriptor metadata, file/global
+  diagnostics, custom contract versions and foreign placeholders, including a
+  SCIP-augmented cohort. Separate regressions reproduced trace confidence
+  downgrade and SQL rollback masked by a duplicate snapshot restore.
+- [x] No-op carry now copies versions/diagnostics and keeps scanner skips fresh;
+  cloned external adapter audits and remapped relation ownership let SCIP
+  reimport remove vanished rows. Runtime-proven co-change confidence survives.
+  Publication failure leaves graph/version/fact/branch rows unchanged and records
+  a failed index run. Focused ownership/registry/config/oracle/trace tests pass
+  39/39 and typecheck passes. The semantics revision forces one full rebuild;
+  external SCIP/trace augmentation must be reapplied after a full rebuild.
+- [x] Clean same-HEAD reuse, dirty no-op startup skipping and one-time revision
+  rebuilding pass 3/3. Independent final data-integrity review found no blocker.
+- Canonical verification of the carry correction and exact-head remote checks remain required before
+  landing. No selective extraction or read-reduction claim is made by this unit.
+
+## Dependency Refresh — 2026-10-25
+
+- The resumed PR's security job rejected two high findings in body-parser and
+  zod. A fresh npm audit reproduced both; the old zero-findings receipt does not
+  establish the current registry state.
+- Compatible `npm audit fix --package-lock-only --ignore-scripts` changes only
+  body-parser 2.3.0 to 2.4.0, iconv-lite 0.7.2 to 0.7.3 and zod 4.3.6 to 4.6.7.
+  Direct ranges, overrides and the fail-closed audit policy are unchanged.
+- A clean native Node 24.14.0 `npm ci` completed with zero vulnerabilities.
+  Canonical verification with the refreshed dependencies and exact-head CI remain
+  required; prior passes with the old lockfile are retained as distinct evidence.
+
 ## CLI Help Safety Gate — 2026-10-23
 
 - [x] Isolated CLI regression reproduced `index --help` returning an index

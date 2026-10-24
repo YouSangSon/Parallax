@@ -13,7 +13,8 @@ function runCli(repoRoot: string, args: string[]) {
   return spawnSync(process.execPath, ['--import', require.resolve('tsx'), cli, ...args], {
     cwd: repoRoot,
     encoding: 'utf8',
-    timeout: 10_000,
+    // Each invocation includes a cold TypeScript loader and CLI startup.
+    timeout: 30_000,
     env: { ...process.env, PARALLAX_EMBEDDING_MODEL: 'stub-sha256' }
   });
 }
@@ -32,7 +33,7 @@ test('CLI help exits before command side effects', async (t) => {
   ];
   for (const args of cases) {
     const result = runCli(repoRoot, args);
-    assert.equal(result.status, 0, `${args.join(' ')}: ${result.stderr}; signal=${result.signal}`);
+    assert.equal(result.status, 0, `${args.join(' ')}: ${result.stderr}; error=${(result.error as NodeJS.ErrnoException | undefined)?.code}: ${result.error?.message}; signal=${result.signal}`);
     assert.match(result.stdout, /Commands:\n/, args.join(' '));
     assert.deepEqual(await readdir(repoRoot), ['sentinel.txt'], args.join(' '));
     assert.equal(await readFile(path.join(repoRoot, 'sentinel.txt'), 'utf8'), 'unchanged\n');
@@ -43,7 +44,7 @@ test('CLI help-looking option values remain data or validation errors', async (t
   const repoRoot = await mkdtemp(path.join(tmpdir(), 'parallax-cli-help-values-'));
   t.after(() => rm(repoRoot, { recursive: true, force: true }));
   const init = runCli(repoRoot, ['init']);
-  assert.equal(init.status, 0, init.stderr);
+  assert.equal(init.status, 0, `${init.stderr}; error=${(init.error as NodeJS.ErrnoException | undefined)?.code}: ${init.error?.message}; signal=${init.signal}`);
 
   const remember = runCli(repoRoot, [
     'remember', '--entity', 'file:example.ts', '--attribute', 'flag', '--value', '-h',

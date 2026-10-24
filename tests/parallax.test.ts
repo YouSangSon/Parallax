@@ -4587,7 +4587,7 @@ test('indexer semantics revision forces one rebuild of a pre-fix completed cohor
     const db = new DatabaseSync(databasePath(repoRoot));
     try {
       db.prepare('UPDATE index_runs SET extractor_version = ? WHERE id = ?').run(
-        `${adapterId}-1`,
+        `${adapterId}-1-s1-output-ownership-v1:unrestricted`,
         first.indexRunId
       );
     } finally {
@@ -4598,6 +4598,9 @@ test('indexer semantics revision forces one rebuild of a pre-fix completed cohor
     assert.equal(first.mode, 'full');
     assert.equal(second.mode, 'full');
     assert.equal(startCalls, 2);
+    const third = await indexProjectWithRegistryForTest({ repoRoot }, registry);
+    assert.equal(third.mode, 'incremental');
+    assert.equal(startCalls, 2, 'the revised cohort must rebuild only once');
   } finally {
     await rm(repoRoot, { recursive: true, force: true });
   }

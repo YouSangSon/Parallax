@@ -88,7 +88,9 @@ function initGitRepo(repoRoot: string): void {
 }
 
 async function waitForFile(filePath: string): Promise<void> {
-  for (let attempt = 0; attempt < 200; attempt += 1) {
+  // Both markers follow a cold child startup; the lock assertion has its own wait.
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
     try {
       await access(filePath);
       return;

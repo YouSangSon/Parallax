@@ -41,6 +41,7 @@ export class ConfigInfraSemanticAdapter implements SemanticAdapter {
   readonly capabilities = capabilities;
   readonly confidence = 'heuristic';
   readonly fileContentScope = 'target-only';
+  readonly outputOwnership = 'processed-file';
   readonly knownGaps = [
     'path-reference inference does not fully evaluate workflow, Dockerfile, or Terraform execution semantics',
     'computed paths, templated variables, and generated config are only partially visible'

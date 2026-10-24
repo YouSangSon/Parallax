@@ -4,6 +4,24 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 `IMPROVEMENT_OPPORTUNITIES.md`; implementation plans live under
 `docs/superpowers/plans/`.
 
+## S1 Output Ownership and Selective Reads — 2026-10-24
+
+Continue the existing S1 queue after the completed portfolio/help slices:
+
+1. Enforce opt-in `processed-file` output ownership before graph publication.
+   Keep legacy adapters unrestricted; config/infra is the first file-based
+   participant. Snapshot inputs/events and include ownership in cache identity.
+   Preserve no-op versions, diagnostics, contracts and external relation/audit
+   ownership before selective execution; publication remains one SQL transaction.
+2. Prove a bounded selective path against fresh full-index output, including
+   edits, path-set changes, startup context and saved reports. Record actual
+   body/byte read counts before claiming a read reduction.
+3. Land independently verified units and update the existing portfolio owner.
+
+The first implementation leaves changed-body extraction conservative. Its
+ownership declaration alone is not a changed-only execution gate; diagnostic
+coverage and entity-version carry-forward also require equivalence checks.
+
 ## CLI Help Safety Follow-up — 2026-10-23
 
 The resumed usability check found that `index --help` started indexing.

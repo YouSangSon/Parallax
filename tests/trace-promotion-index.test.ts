@@ -7,6 +7,7 @@ import { test } from 'node:test';
 
 import { analyzeDiff, indexProject, initProject } from '../src/index.js';
 import { ingestTraces } from '../src/trace_promotion.js';
+import { openDatabase } from '../src/store.js';
 
 // End-to-end: a heuristic git co-change relation is upgraded to `proven` once a
 // runtime trace confirms the edge. Proves trace ingestion raises confidence and
@@ -49,6 +50,28 @@ test('ingestTraces promotes a heuristic co-change relation to proven', async () 
     const betaAfter = after.affectedFiles.find((file) => file.path === 'src/beta.ts');
     assert.ok(betaAfter, 'expected beta as a dependent after ingestion');
     assert.equal(betaAfter.confidence, 'proven');
+
+    const rerun = await indexProject({ repoRoot, maxFileBytes: 1_000_000 });
+    assert.equal(rerun.mode, 'incremental');
+    const afterRerun = await analyzeDiff({ repoRoot, changedFiles: ['src/alpha.ts'] });
+    assert.equal(afterRerun.affectedFiles.find((file) => file.path === 'src/beta.ts')?.confidence, 'proven');
+
+    const db = openDatabase(repoRoot);
+    try {
+      const graphState = () => Object.fromEntries([
+        'files', 'entities', 'entity_versions', 'relations', 'relation_evidence',
+        'evidence', 'edges', 'symbols', 'contracts', 'contract_versions',
+        'facts', 'fact_provenance', 'transactions', 'transaction_parents', 'branches'
+      ].map((table) => [table, db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all()]));
+      const beforeFailure = graphState();
+      db.exec(`CREATE TRIGGER fail_completed_index BEFORE UPDATE OF status ON index_runs
+        WHEN NEW.status = 'completed' BEGIN SELECT RAISE(ABORT, 'forced publication failure'); END`);
+      await assert.rejects(indexProject({ repoRoot, maxFileBytes: 1_000_000 }), /forced publication failure/);
+      assert.deepEqual(graphState(), beforeFailure, 'publication failure must roll back the entire graph');
+      assert.equal(db.prepare('SELECT status FROM index_runs ORDER BY id DESC LIMIT 1').get()?.status, 'failed');
+    } finally {
+      db.close();
+    }
   } finally {
     rmSync(repoRoot, { recursive: true, force: true });
   }

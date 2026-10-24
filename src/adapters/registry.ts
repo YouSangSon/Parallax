@@ -26,7 +26,8 @@ function manifestEntryFor(adapter: SemanticAdapter, order: number): AdapterManif
     confidence: adapter.confidence ?? 'unknown',
     knownGaps: Object.freeze([...(adapter.knownGaps ?? [])]),
     selectionMode: selectionModeFor(adapter),
-    fileContentScope: fileContentScopeFor(adapter)
+    fileContentScope: fileContentScopeFor(adapter),
+    outputOwnership: adapter.outputOwnership ?? 'unrestricted'
   };
   return Object.freeze(entry);
 }

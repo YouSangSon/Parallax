@@ -71,6 +71,13 @@ B, without reading another body or emitting another file's rows. Selective repla
 needs a separate explicit proof of file independence; changed-body full fallback
 continues to preserve stateful processing and startup context.
 
+The pure config/infra selection tests compare full, reversed and single-file
+processing with unreadable context bodies/hashes, including an edited target.
+They also show that removing an indexed path changes an unchanged Dockerfile's
+relations. This is bounded adapter-event evidence, not a general independence
+declaration or a persisted graph/saved-report oracle. Path-set changes still
+require invalidation; runtime selective extraction remains disabled.
+
 ## Evidence and confidence (invariant I-10)
 
 Every relation should carry `evidence` — a source file, span, and snippet — and a confidence label. `Confidence` has four levels:

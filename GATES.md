@@ -2,6 +2,19 @@
 
 Evidence is current only when the command and result are recorded in this file. A focused pass proves only its named scope.
 
+## Config/Infra Selection Contract — 2026-10-25
+
+- [x] `node --import tsx --test --test-concurrency=1 tests/config-infra-selection.test.ts`:
+  3/3 pure cases pass without DB, services, filesystem fixtures or model access.
+  Exact emitted events agree for full/reversed/single-file processing and an
+  edited target, while context content/hash getters throw on access.
+- [x] Removing an indexed target path changes an unchanged Dockerfile's output;
+  path-set invalidation is required. Nonempty target/evidence assertions prevent
+  vacuous equality. Product code, schema and adapter declarations are unchanged.
+- This is bounded event-level evidence. General adapter independence,
+  persisted graph/saved-report equivalence and selective runtime extraction
+  remain unproven; changed-body full fallback stays active.
+
 ## Git Cache Input Validity — Open, 2026-10-25
 
 - [x] Draft #51 regression head `2245d4b` failed 7/753 remote tests: all seven

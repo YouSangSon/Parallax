@@ -35,6 +35,11 @@ The first implementation leaves changed-body extraction conservative. Its
 ownership declaration alone is not a changed-only execution gate; diagnostic
 coverage and entity-version carry-forward also require equivalence checks.
 
+Config/infra now has pure event-level selection checks for full/reversed/single
+processing, edited targets and path-set invalidation with unreadable context
+bodies/hashes. These bounded fixtures do not enable selective runtime execution
+or replace the persisted fresh-index/saved-report gates.
+
 The active input-validity follow-up is draft PR #51. Pure Git probes show that
 clean status and unchanged HEAD can coexist with changed decoded source after
 index flags, normalization or retained stat-cache history. Current-state checks

@@ -66,6 +66,12 @@ orchestrator 对每个 `EntityDescriptor` 做 content-hash 来计算其 entity i
 结果仍会变化。选择性重放还需要单独明确并证明文件独立性；目前 changed-body
 full fallback 继续保留有状态处理与 startup context。
 
+config/infra 的纯选择测试禁止读取 context 正文和 hash，比较完整、逆序、单文件
+处理以及已修改 target 的事件。测试也确认：移除一个 indexed path 会改变正文未变的
+Dockerfile 关系。这只是有限的 adapter 事件证据，不是通用独立性声明，也不能替代
+持久化 graph 或 saved-report oracle。路径集合变化仍须使缓存失效；runtime
+选择性提取仍未启用。
+
 ## Evidence 与 confidence（不变量 I-10）
 
 每个 relation 都应携带 `evidence`——一个 source 文件、span 与 snippet——以及一个 confidence 标签。`Confidence` 有四个级别：

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import childProcess, { execFileSync } from 'node:child_process';
-import { syncBuiltinESMExports } from 'node:module';
+import { createRequire, syncBuiltinESMExports } from 'node:module';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -597,11 +597,7 @@ test('clean reuse reads one coherent cohort while another process publishes a ne
     t.mock.method(childProcess, 'execFileSync', (...args: unknown[]) => {
       if (!moved && args[0] === 'git' && Array.isArray(args[1]) && args[1].join(' ') === 'ls-files -z') {
         moved = true;
-        const child = childProcess.spawnSync(process.execPath, [
-          fileURLToPath(new URL('../dist/src/cli.js', import.meta.url)),
-          'index', '--max-file-bytes', '1000000'
-        ], { cwd: root, encoding: 'utf8', timeout: 30_000,
-          env: { ...process.env, PARALLAX_EMBEDDING_MODEL: 'stub-sha256', PARALLAX_REFLECTION_MODEL: 'stub' } });
+        const child = indexWithChildCli(root);
         if (child.status !== 0) {
           childFailure = child.error?.message ?? child.stderr;
         } else {
@@ -651,6 +647,41 @@ test('a fatal clean-reuse snapshot error closes the database before returning fa
   } finally {
     t.mock.restoreAll();
     if (failedDb?.isOpen) failedDb.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+
+function indexWithChildCli(root: string) {
+  return childProcess.spawnSync(process.execPath, [
+    '--import', createRequire(import.meta.url).resolve('tsx'),
+    fileURLToPath(new URL('../src/cli.ts', import.meta.url)),
+    'index', '--max-file-bytes', '1000000'
+  ], { cwd: root, encoding: 'utf8', timeout: 30_000,
+    env: { ...process.env, PARALLAX_EMBEDDING_MODEL: 'stub-sha256', PARALLAX_REFLECTION_MODEL: 'stub' } });
+}
+
+test('a run overtaken during scan cannot move a newer completed cohort to its older ID', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'parallax-preplan-overtake-'));
+  let child: ReturnType<typeof indexWithChildCli> | undefined;
+  try {
+    writeChain(root);
+    initOracleGitRepo(root);
+    const failure = await indexProject({ repoRoot: root, perfObserver: () => {
+      child = indexWithChildCli(root);
+    } }).then(() => null, (error: unknown) => error);
+    assert.ok(child);
+    assert.equal(child.status, 0, child.error?.message ?? child.stderr);
+    const winner = JSON.parse(child.stdout) as { indexRunId: number; filesIndexed: number };
+    assert.ok(winner.filesIndexed > 0);
+    assert.ok(snapshotGraph(root).files.length > 0, 'pre-plan overtaking must not empty the latest cohort');
+    assert.ok(failure instanceof Error, 'a lower-ID run cannot publish using a newer completed baseline');
+    assert.match(failure.message, /publication baseline changed.*retry/);
+    assertFailedRunsUnpublished(root);
+    const reused = await indexProject({ repoRoot: root });
+    assert.equal(reused.indexRunId, winner.indexRunId);
+    assert.equal(reused.filesIndexed, winner.filesIndexed);
+  } finally {
     rmSync(root, { recursive: true, force: true });
   }
 });

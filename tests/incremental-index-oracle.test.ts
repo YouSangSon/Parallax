@@ -3,7 +3,7 @@ import childProcess, { execFileSync } from 'node:child_process';
 import { createRequire, syncBuiltinESMExports } from 'node:module';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -13,6 +13,7 @@ import { remember } from '../src/agent_memory.js';
 import type { ScannedFile } from '../src/types.js';
 import { AdapterRegistry } from '../src/adapters/registry.js';
 import { indexProjectWithRegistryForTest } from '../src/indexer.js';
+import { readGitSnapshot } from '../src/git-snapshot.js';
 import { normalizeRepoRoot } from '../src/security.js';
 import { getRepoId, latestCompletedIndexRun, openDatabase } from '../src/store.js';
 
@@ -685,3 +686,86 @@ test('a run overtaken during scan cannot move a newer completed cohort to its ol
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+
+const hiddenGitInputs = [
+  'assume-unchanged', 'skip-worktree', 'active-autocrlf', 'active-text-eol',
+  'unsafe-baseline-then-clear', 'temporary-autocrlf', 'removed-same-length-filter'
+] as const;
+
+for (const hidden of hiddenGitInputs) {
+  for (const forced of [false, true]) {
+    test(`Git cache ${hidden}: ${forced ? 'explicit CLI byte limit revalidates' : 'default cache must revalidate'} bodies`, async () => {
+      const root = mkdtempSync(path.join(tmpdir(), 'parallax-hidden-git-'));
+      const fresh = mkdtempSync(path.join(tmpdir(), 'parallax-hidden-fresh-'));
+      const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' });
+      try {
+        writeChain(root);
+        writeChain(fresh);
+        if (hidden === 'active-text-eol') {
+          for (const dir of [root, fresh]) writeFileSync(path.join(dir, '.gitattributes'), '*.ts text eol=lf\n');
+        }
+        initOracleGitRepo(root);
+        git('config', 'core.autocrlf', 'false');
+        const first = await indexProject({ repoRoot: root });
+        const leaf = path.join(root, 'src/leaf.ts');
+        const original = readFileSync(leaf, 'utf8');
+        let priorId = first.indexRunId;
+        const isEol = ['active-autocrlf', 'active-text-eol', 'temporary-autocrlf'].includes(hidden);
+        const changed = isEol ? original.replace(/\n/g, '\r\n') : original.replace('return 1', 'return 2');
+        if (hidden === 'assume-unchanged' || hidden === 'unsafe-baseline-then-clear') {
+          git('update-index', '--assume-unchanged', 'src/leaf.ts');
+        } else if (hidden === 'skip-worktree') {
+          git('update-index', '--skip-worktree', 'src/leaf.ts');
+        }
+        writeFileSync(leaf, changed);
+        if (hidden === 'active-autocrlf') git('config', 'core.autocrlf', 'true');
+        if (isEol || hidden === 'removed-same-length-filter') {
+          // Keep mtime older than the index so Git's racy-entry check is not the oracle.
+          const old = new Date('2000-01-01T00:00:00Z');
+          utimesSync(leaf, old, old);
+          if (hidden === 'temporary-autocrlf') {
+            git('-c', 'core.autocrlf=true', 'add', 'src/leaf.ts');
+          } else if (hidden === 'removed-same-length-filter') {
+            const attrs = path.join(root, '.git/info/attributes');
+            writeFileSync(attrs, 'src/leaf.ts filter=probe\n');
+            const filter = "node -e \"let s='';process.stdin.setEncoding('utf8');process.stdin.on('data',c=>s+=c);process.stdin.on('end',()=>process.stdout.write(s.replace(/return 2/g,'return 1')));\"";
+            git('config', 'filter.probe.clean', filter);
+            git('add', 'src/leaf.ts');
+            git('config', '--unset', 'filter.probe.clean');
+            rmSync(attrs);
+          } else {
+            git('add', 'src/leaf.ts');
+          }
+        }
+        if (hidden === 'unsafe-baseline-then-clear') {
+          const unsafe = await indexProject({ repoRoot: root, maxFileBytes: 1_000_000 });
+          assert.equal(unsafe.mode, 'full');
+          priorId = unsafe.indexRunId;
+          writeFileSync(leaf, original);
+          git('update-index', '--no-assume-unchanged', 'src/leaf.ts');
+        }
+        const observedGit = readGitSnapshot(root);
+        assert.equal(observedGit.commitSha, git('rev-parse', 'HEAD').trim());
+        assert.equal(observedGit.isDirty, false, 'fixture must hide its raw input change from Git status');
+        assert.equal(git('write-tree').trim(), git('rev-parse', 'HEAD^{tree}').trim());
+        writeFileSync(path.join(fresh, 'src/leaf.ts'), readFileSync(leaf));
+        let result;
+        if (forced) {
+          const child = indexWithChildCli(root);
+          assert.equal(child.status, 0, child.error?.message ?? child.stderr.slice(-1000));
+          result = JSON.parse(child.stdout) as Awaited<ReturnType<typeof indexProject>>;
+        } else {
+          result = await indexProject({ repoRoot: root });
+        }
+        assert.notEqual(result.indexRunId, priorId, 'raw input changes require a new extraction cohort');
+        assert.equal(result.mode, 'full');
+        await indexProject({ repoRoot: fresh });
+        assert.deepEqual(snapshotGraph(root), snapshotGraph(fresh));
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+        rmSync(fresh, { recursive: true, force: true });
+      }
+    });
+  }
+}

@@ -1032,6 +1032,7 @@ function persistCollectedIndexRun(input: {
       "SELECT id, head_tx_id FROM branches WHERE name = 'main'"
     ).get() as { id: string; head_tx_id: string | null } | undefined;
     if ((currentRun?.id ?? null) !== (input.priorRun?.runId ?? null) ||
+        (currentRun !== undefined && currentRun.id >= input.indexRunId) ||
         !currentBranch || currentBranch.id !== input.mainBranch.id ||
         currentBranch.head_tx_id !== input.mainBranch.head_tx_id) {
       throw new Error('index publication baseline changed; retry indexing');

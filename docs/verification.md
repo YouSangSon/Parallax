@@ -81,7 +81,8 @@ node --import tsx --test tests/incremental-index-oracle.test.ts
 Before any publication writes, the index transaction rechecks the exact planned
 latest completed run ID (including null) and main branch ID/head. A mismatch
 fails with `index publication baseline changed; retry indexing`; no automatic
-adapter retry occurs. This prevents overlapping no-op carries and out-of-order
+adapter retry occurs. The completed ID must also be lower than this run's ID,
+preventing a run overtaken during scanning from moving rows to an older cohort. This prevents overlapping no-op carries and out-of-order
 full completion from replacing the current graph/head. The deterministic database
 oracles run in existing remote CI under the shared-machine policy. This is not a
 filesystem snapshot or an atomicity guarantee for every graph writer. The

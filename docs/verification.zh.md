@@ -79,6 +79,7 @@ node --import tsx --test tests/incremental-index-oracle.test.ts
 在发布任何 graph/transaction 之前，写入事务会重新核对计划时的最新 completed
 run ID（包括 null）和 main branch ID/head。不一致时返回
 `index publication baseline changed; retry indexing`，不自动重试 adapter。
+当前 completed ID 还必须小于本次 run ID，避免扫描期间被超越的旧 run 将行移回较小 cohort。
 这防止并发 no-op carry 与逆序完成的 full index 覆盖当前 graph/head。
 共享机器策略下，确定性数据库 oracle 在现有远程 CI 执行。这不保证 filesystem
 snapshot 或所有 graph writer 的原子性。范围与概念参考见

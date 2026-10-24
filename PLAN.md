@@ -22,7 +22,9 @@ Continue the existing S1 queue after the completed portfolio/help slices:
    so overlapping runs cannot publish an obsolete carry/full result.
 2. Prove a bounded selective path against fresh full-index output, including
    edits, path-set changes, startup context and saved reports. Record actual
-   body/byte read counts before claiming a read reduction.
+   body/byte read counts before claiming a read reduction. Target-only reads and
+   processed-file output ownership still need a process-order independence proof;
+   a run-local counter is a valid counterexample to treating those flags as enough.
 3. Land independently verified units and update the existing portfolio owner.
 
 The read-count slice uses the existing scan observer and performance benchmark.

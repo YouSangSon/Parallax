@@ -8,6 +8,11 @@ Evidence is current only when the command and result are recorded in this file. 
   2/737 tests: restoring clean HEAD selected a historical cohort, and a real
   child CLI writer moved rows between candidate/count queries. The other
   735 tests passed; later canonical stages were not reached.
+- [x] The independent review found a pre-plan overtaking schedule even after
+  the first cache fix passed 738/738. Regression-only `b5e6d1c` reproduced it:
+  738/739 passed; only the actual child-CLI scan-observer schedule failed with
+  an empty latest cohort. Publication also rejects a completed ID greater than
+  or equal to its own, preserving cohort publication order without a new epoch.
 - Reuse now selects the latest completed row before testing cache fields and
   reads candidate/files/coverage/counters in one short DEFERRED snapshot.
   Hit/miss/error releases it; fatal reuse errors close the caller's DB.

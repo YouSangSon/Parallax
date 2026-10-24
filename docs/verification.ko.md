@@ -87,8 +87,9 @@ Full index도 나중에 시작한 작업이 먼저 끝나면, 늦게 끝난 옛 
 
 `persistCollectedIndexRun`은 `BEGIN IMMEDIATE` 직후, 어떤 graph/transaction도 쓰기
 전에 현재 최신 completed run ID(없으면 null)와 main branch ID/head를 계획 때 값과
-정확히 비교한다. 하나라도 다르면 `index publication baseline changed; retry indexing`
-오류로 거부한다. 기존 catch는 자기 run의 실패 audit만 남기고, 새 graph·version·head를
+정확히 비교한다. 스캔 중 더 큰 ID의 run이 먼저 완료되면, 스캔 뒤 읽은 기준이
+같아도 옛 ID로 행을 되돌릴 수 있으므로 최신 completed ID는 자기 ID보다 작아야 한다.
+하나라도 어긋나면 `index publication baseline changed; retry indexing` 오류로 거부한다. 기존 catch는 자기 run의 실패 audit만 남기고, 새 graph·version·head를
 발행하지 않는다. 실행 중인 adapter를 자동 재시도하지 않으므로 파일이 안정된 뒤
 명령을 다시 실행한다. clean same-HEAD의 기존 읽기 전용 재사용은 바뀌지 않는다.
 
@@ -140,7 +141,9 @@ Miss이면 기존 scan/delta 경로가 현재 본문을 확인해 필요한 재�
 A→dirty B→restore A→fresh-full 동등성→새 clean 재사용과, 후보 조회 사이 실제 별도 CLI
 writer가 no-op cohort를 발행하는 순서를 검증한다. 후자는 reader가 한 DB 시점의
 기존 ID와 nonzero 카운터를 함께 반환하고 실제 latest는 child run임을 대조한다.
-읽기 시작 실패 시 DB close도 강제로 확인한다. 로컬에서는 이 DB 검사를 실행하지 않는다.
+읽기 시작 실패 시 DB close도 강제로 확인한다. 스캔 observer 안에서 실제 child를 먼저
+완료시킨 별도 순서도 검증한다. 더 작은 parent ID의 발행을 거부하고 child graph와 다음
+clean 재사용을 유지해야 한다. 로컬에서는 이 DB 검사를 실행하지 않는다.
 
 보장 범위는 조회 중 후보와 행의 일관성이다. 반환 직후에도 해당 run이 계속 최신이거나
 Git·파일시스템 전체가 하나의 snapshot이라는 보장은 아니다. 본문 생략 범위도 기존의

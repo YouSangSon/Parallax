@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import childProcess, { execFileSync } from 'node:child_process';
+import { syncBuiltinESMExports } from 'node:module';
+import { fileURLToPath } from 'node:url';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -542,3 +545,86 @@ function assertFailedRunsUnpublished(root: string): void {
     }
   } finally { db.close(); }
 }
+
+
+function initOracleGitRepo(root: string): void {
+  execFileSync('git', ['init', '-b', 'main'], { cwd: root, stdio: 'ignore' });
+  execFileSync('git', ['add', '.'], { cwd: root });
+  execFileSync('git', ['-c', 'user.name=Parallax Test', '-c', 'user.email=parallax@example.com',
+    'commit', '-m', 'baseline'], { cwd: root, stdio: 'ignore' });
+}
+
+test('restoring clean HEAD after a dirty index rebuilds the current cohort before reuse', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'parallax-restored-head-'));
+  const fresh = mkdtempSync(path.join(tmpdir(), 'parallax-restored-fresh-'));
+  try {
+    writeChain(root);
+    writeChain(fresh);
+    initOracleGitRepo(root);
+    const first = await indexProject({ repoRoot: root });
+    writeFileSync(path.join(root, 'src/leaf.ts'), 'export function foo() { return 2; }\n');
+    const dirty = await indexProject({ repoRoot: root });
+    assert.equal(dirty.mode, 'full');
+    assert.notEqual(dirty.indexRunId, first.indexRunId);
+    execFileSync('git', ['restore', 'src/leaf.ts'], { cwd: root });
+    const restored = await indexProject({ repoRoot: root });
+    assert.notEqual(restored.indexRunId, first.indexRunId, 'historical clean rows no longer own the current graph');
+    assert.equal(restored.mode, 'full');
+    assert.equal(restored.filesIndexed, first.filesIndexed);
+    await indexProject({ repoRoot: fresh });
+    assert.deepEqual(snapshotGraph(root), snapshotGraph(fresh));
+    const reused = await indexProject({ repoRoot: root });
+    assert.equal(reused.indexRunId, restored.indexRunId);
+    assert.equal(reused.mode, 'incremental');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(fresh, { recursive: true, force: true });
+  }
+});
+
+test('clean reuse reads one coherent cohort while another process publishes a new run', async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), 'parallax-reuse-snapshot-'));
+  try {
+    writeChain(root);
+    initOracleGitRepo(root);
+    const first = await indexProject({ repoRoot: root });
+    assert.ok(first.filesIndexed > 0);
+    const original = childProcess.execFileSync;
+    let moved = false;
+    let childRunId: number | undefined;
+    let childFailure: string | undefined;
+    t.mock.method(childProcess, 'execFileSync', (...args: unknown[]) => {
+      if (!moved && args[0] === 'git' && Array.isArray(args[1]) && args[1].join(' ') === 'ls-files -z') {
+        moved = true;
+        const child = childProcess.spawnSync(process.execPath, [
+          fileURLToPath(new URL('../dist/src/cli.js', import.meta.url)),
+          'index', '--max-file-bytes', '1000000'
+        ], { cwd: root, encoding: 'utf8', timeout: 30_000,
+          env: { ...process.env, PARALLAX_EMBEDDING_MODEL: 'stub-sha256', PARALLAX_REFLECTION_MODEL: 'stub' } });
+        if (child.status !== 0) {
+          childFailure = child.error?.message ?? child.stderr;
+        } else {
+          try { childRunId = JSON.parse(child.stdout).indexRunId as number; }
+          catch (error) { childFailure = String(error); }
+        }
+      }
+      return Reflect.apply(original, childProcess, args);
+    });
+    syncBuiltinESMExports();
+    let scanned = false;
+    const reused = await indexProject({ repoRoot: root, perfObserver: () => { scanned = true; } });
+    assert.equal(moved, true, 'writer must run after candidate selection');
+    assert.equal(childFailure, undefined);
+    assert.ok(childRunId !== undefined && childRunId > first.indexRunId);
+    assert.equal(scanned, false, 'the fixture must exercise reuse, not fall back to scanning');
+    assert.equal(reused.indexRunId, first.indexRunId);
+    assert.equal(reused.filesIndexed, first.filesIndexed, 'cohort movement must not mix an old ID with empty live rows');
+    const db = openDatabase(root, { readOnly: true });
+    try { assert.equal(latestCompletedIndexRun(db, getRepoId(db, root)), childRunId); }
+    finally { db.close(); }
+  } finally {
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+    rmSync(root, { recursive: true, force: true });
+  }
+});

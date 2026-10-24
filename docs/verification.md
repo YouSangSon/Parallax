@@ -65,6 +65,13 @@ The regression oracle is `tests/incremental-index-oracle.test.ts`. It includes a
 index of the same final tree. The component tests also cover a target-only
 adapter that emits a foreign-source relation and later removes it.
 
+Unchanged runs preserve entity/contract versions, adapter diagnostics and imported
+SCIP relations, while scanner skips are refreshed. Reimporting SCIP replaces its
+carried relations, and co-change refresh keeps runtime-promoted confidence.
+Publication failures roll back all graph writes before recording a failed run.
+An extractor/semantics revision change forces a full rebuild; external SCIP/trace
+augmentation must be reapplied after that rebuild.
+
 ```bash
 node --import tsx --test tests/incremental-index-oracle.test.ts
 ```

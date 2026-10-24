@@ -11,6 +11,8 @@ Continue the existing S1 queue after the completed portfolio/help slices:
 1. Enforce opt-in `processed-file` output ownership before graph publication.
    Keep legacy adapters unrestricted; config/infra is the first file-based
    participant. Snapshot inputs/events and include ownership in cache identity.
+   Preserve no-op versions, diagnostics, contracts and external relation/audit
+   ownership before selective execution; publication remains one SQL transaction.
 2. Prove a bounded selective path against fresh full-index output, including
    edits, path-set changes, startup context and saved reports. Record actual
    body/byte read counts before claiming a read reduction.

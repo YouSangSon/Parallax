@@ -4,7 +4,9 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 
-import { indexProject, initProject } from '../src/index.js';
+import { importScipJson, indexProject, initProject } from '../src/index.js';
+import { AdapterRegistry } from '../src/adapters/registry.js';
+import { indexProjectWithRegistryForTest } from '../src/indexer.js';
 import { normalizeRepoRoot } from '../src/security.js';
 import { getRepoId, latestCompletedIndexRun, openDatabase } from '../src/store.js';
 
@@ -26,6 +28,8 @@ type GraphSnapshot = {
   evidence: Array<Record<string, unknown>>;
   edges: Array<Record<string, unknown>>;
   symbols: Array<Record<string, unknown>>;
+  contracts: Array<Record<string, unknown>>;
+  contractVersions: Array<Record<string, unknown>>;
 };
 
 // Snapshot every table the incremental carry-forward mutates, modulo the columns
@@ -105,6 +109,12 @@ function snapshotGraph(root: string): GraphSnapshot {
        ORDER BY f.path, s.semantic_id`
     )
     .all(repoId, runId) as Array<Record<string, unknown>>;
+  const contracts = db.prepare(`SELECT id, kind, service_name, path, display_name, metadata_json
+    FROM contracts WHERE repo_id = ? ORDER BY id`).all(repoId) as Array<Record<string, unknown>>;
+  const contractVersions = db.prepare(`SELECT contract_id, content_hash, schema_version,
+      compatibility_json, breaking_change_summary FROM contract_versions
+    WHERE index_run_id = ? ORDER BY contract_id`).all(runId) as Array<Record<string, unknown>>;
+  db.close();
   return {
     files,
     coverage,
@@ -114,7 +124,9 @@ function snapshotGraph(root: string): GraphSnapshot {
     relationEvidence,
     evidence,
     edges,
-    symbols
+    symbols,
+    contracts,
+    contractVersions
   };
 }
 
@@ -278,5 +290,114 @@ test('changing full-index context forces a full extraction and matches a fresh i
   } finally {
     rmSync(incrementalRoot, { recursive: true, force: true });
     rmSync(fullRoot, { recursive: true, force: true });
+  }
+});
+
+for (const output of ['entity', 'file diagnostic', 'global diagnostic', 'contract', 'foreign placeholder'] as const) {
+  test(`unchanged carry-forward preserves ${output} while refreshing skipped coverage`, async () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'parallax-carry-parity-'));
+    const fresh = mkdtempSync(path.join(tmpdir(), 'parallax-carry-fresh-'));
+    try {
+      const makeFiles = (dir: string, unsupported: string) => {
+        writeFileSync(path.join(dir, 'a#diagnostic:literal.ts'), 'export const a = 1;\n');
+        if (output === 'contract') writeFileSync(path.join(dir, 'schema.proto'), 'syntax = "proto3";\n');
+        writeFileSync(path.join(dir, 'unsupported.py'), unsupported);
+      };
+      makeFiles(root, 'pass\n');
+      makeFiles(fresh, 'x'.repeat(200));
+      const registry = new AdapterRegistry();
+      registry.register({
+        id: 'carry-oracle', version: '1', capabilities: ['references'],
+        ...(['global diagnostic', 'foreign placeholder'].includes(output) ? {} : { outputOwnership: 'processed-file' as const }),
+        supports: (file) => file.language === 'typescript' || file.language === 'protobuf',
+        start: () => ({ async *process(file) {
+          if (output === 'contract') {
+            if (file.language === 'protobuf') yield { kind: 'entity', entity: {
+              kind: 'contract', path: file.relativePath, displayName: 'Custom contract',
+              metadata: { serviceName: 'custom-service', schemaVersion: 'v2', compatibility: { marker: 'preserve' } }
+            } };
+            return;
+          }
+          if (output === 'foreign placeholder') {
+            yield { kind: 'relation', relation: {
+              source: { kind: 'file', path: file.relativePath },
+              target: { kind: 'contract', path: 'external.proto' }, kind: 'DEPENDS_ON'
+            } };
+            return;
+          }
+          if (output === 'entity') {
+            yield { kind: 'entity', entity: { kind: 'file', path: file.relativePath, metadata: { marker: 'preserve' } } };
+          } else {
+            yield { kind: 'diagnostic', level: 'warn', message: 'persistent warning',
+              ...(output === 'file diagnostic' ? { file: file.relativePath } : {}) };
+          }
+        } })
+      });
+      await indexProjectWithRegistryForTest({ repoRoot: root, maxFileBytes: 100 }, registry);
+      writeFileSync(path.join(root, 'unsupported.py'), 'x'.repeat(200));
+      const rerun = await indexProjectWithRegistryForTest({ repoRoot: root, maxFileBytes: 100 }, registry);
+      await indexProjectWithRegistryForTest({ repoRoot: fresh, maxFileBytes: 100 }, registry);
+      assert.equal(rerun.mode, 'incremental');
+      const warnings = (dir: string) => {
+        const db = openDatabase(dir, { readOnly: true });
+        try {
+          return db.prepare(`SELECT adapter_id, error_summary FROM adapter_runs
+            WHERE index_run_id = (SELECT max(id) FROM index_runs WHERE status = 'completed')
+            ORDER BY adapter_id`).all();
+        } finally { db.close(); }
+      };
+      assert.deepEqual(warnings(root), warnings(fresh));
+      assert.deepEqual(snapshotGraph(root), snapshotGraph(fresh));
+      await indexProjectWithRegistryForTest({ repoRoot: root, maxFileBytes: 100 }, registry);
+      assert.deepEqual(warnings(root), warnings(fresh));
+      assert.deepEqual(snapshotGraph(root), snapshotGraph(fresh), 'a second carry must preserve the same output');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(fresh, { recursive: true, force: true });
+    }
+  });
+}
+
+test('unchanged carry-forward preserves imported SCIP graph with contracts', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'parallax-carry-scip-'));
+  try {
+    const source = 'const value = greet();\n';
+    const target = 'export function greet() {}\n';
+    writeFileSync(path.join(root, 'app.ts'), source);
+    writeFileSync(path.join(root, 'api.ts'), target);
+    writeFileSync(path.join(root, 'schema.proto'), 'syntax = "proto3";\n');
+    await initProject({ repoRoot: root });
+    await indexProject({ repoRoot: root });
+    const symbol = 'test npm demo 1.0.0 api.ts/greet().';
+    const file = path.join(root, '.parallax', 'fixture.scip.json');
+    writeFileSync(file, JSON.stringify({ documents: [
+      { relativePath: 'api.ts', language: 'typescript', text: target,
+        occurrences: [{ range: [0, 16, 21], symbol, symbolRoles: 1 }],
+        symbols: [{ symbol, displayName: 'greet', kind: 'Function' }] },
+      { relativePath: 'app.ts', language: 'typescript', text: source,
+        occurrences: [{ range: [0, 14, 19], symbol, symbolRoles: 8 }] }
+    ] }));
+    const imported = importScipJson({ repoRoot: root, file });
+    assert.ok(imported.relationsImported > 0, 'fixture must import relations');
+    const before = snapshotGraph(root);
+    const rerun = await indexProject({ repoRoot: root });
+    assert.equal(rerun.mode, 'incremental');
+    assert.deepEqual(snapshotGraph(root), before);
+    const replacement = { documents: [
+      { relativePath: 'api.ts', language: 'typescript', text: target, occurrences: [], symbols: [] },
+      { relativePath: 'app.ts', language: 'typescript', text: source, occurrences: [] }
+    ] };
+    writeFileSync(file, JSON.stringify(replacement));
+    const reimported = importScipJson({ repoRoot: root, file });
+    assert.equal(reimported.relationsImported, 0);
+    const db = openDatabase(root, { readOnly: true });
+    try {
+      assert.equal(db.prepare('SELECT count(*) AS n FROM relations WHERE adapter_run_id = ?')
+        .get(reimported.adapterRunId)?.n, 0, 'reimport must remove vanished carried SCIP relations');
+      assert.equal(db.prepare(`SELECT count(*) AS n FROM relations r JOIN adapter_runs a ON a.id = r.adapter_run_id
+        WHERE a.adapter_id = 'scip-import'`).get()?.n, 0);
+    } finally { db.close(); }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });

@@ -36,6 +36,11 @@ High/critical finding、count 或 exit status 不一致、无效 JSON、command/
 失败都会 fail closed。Gate 不输出 raw npm 诊断；需要原始诊断时，请在本地
 重新运行 `npm audit --audit-level=high --json`。
 
+Security audit job 使用 `npm ci --ignore-scripts` 安装固定依赖，metadata 审计不需要
+native lifecycle 下载。lock 不一致检查及 fail-closed audit 命令仍保留；Release
+继续普通 `npm ci` 与完整运行验证。这不消除 registry 或 Release 网络失败。
+参见 [npm 选项契约](https://docs.npmjs.com/cli/v11/commands/npm-ci/#ignore-scripts)。
+
 ## dogfood guard——真正的安全网
 
 `tests/dogfood.integration.ts` 是最需要理解的一层。它之所以存在，是因为过去 green unit suite 曾与一个彻底损坏的内部依赖 graph 共存：真实的 NodeNext `./x.js` import 坍缩为 `external_entity`，使一个被大量 import 的模块报告了**零**个代码依赖者（dependent），而所有 unit test 仍然 green。unit suite 根本没有像用户那样去看真实的 engine 输出。

@@ -2,6 +2,19 @@
 
 Evidence is current only when the command and result are recorded in this file. A focused pass proves only its named scope.
 
+## Audit Setup Reliability — 2026-10-25
+
+- Main #46 and #48 Security installs failed in the ONNX lifecycle download
+  before reaching vulnerability assessment. #48 recorded ENETUNREACH/timeout;
+  the same source tree passed normal install/full verification/audit in Release.
+- The audit job alone uses `npm ci --ignore-scripts`. Frozen dependency/lock
+  validation and the fail-closed high/critical/JSON/command gate remain intact.
+  Gitleaks, workflow triggers/permissions and normal Release installation are
+  unchanged. Registry and Release download failures remain possible.
+- [x] YAML parsing and an exact object-diff assertion confirm only the audit
+  install command changed. No local dependency installation/full suite ran.
+  Final exact-head Security and Release checks remain the landing gate.
+
 ## S1 Current-Cohort Clean Reuse — 2026-10-25
 
 - [x] Regression-only `74101645` failed remote `npm run verify` in exactly
@@ -17,8 +30,11 @@ Evidence is current only when the command and result are recorded in this file. 
   reads candidate/files/coverage/counters in one short DEFERRED snapshot.
   Hit/miss/error releases it; fatal reuse errors close the caller's DB.
   This changes no extraction output or empty-repository semantics.
-- Exact-head mandatory remote CI owns the database oracles and final gate;
-  local execution is limited to type/docs/schema and diff checks.
+- [x] Final head `54da882` passed 739/739, dogfood 2/2, bench/audit and all
+  five PR checks. PR #48 merged as `ee21205` with source/main tree equality.
+  Main Release also passed; its separate Security install failure is retained
+  under the audit setup follow-up above. Local execution was limited to
+  type/docs/schema and diff checks; no local DB/integration suite ran.
 
 ## S1 Publication Admission — 2026-10-25
 

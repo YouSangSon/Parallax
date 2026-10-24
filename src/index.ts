@@ -191,6 +191,7 @@ export type {
   IndexCoverageItem,
   IndexOptions,
   IndexResult,
+  IndexScanReads,
   InitOptions,
   InitResult,
   Lifecycle,

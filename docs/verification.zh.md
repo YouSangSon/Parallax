@@ -26,6 +26,8 @@ Parallax 分层验证正确性——快速的 unit suite、typecheck、docs lint
 | `npm run test:security` | 运行 `tests/security.test.ts`（路径包含约束、脱敏、dependency audit gate） | store / 路径 / 脱敏 / audit gate 变更后 |
 | `npm run test:install-smoke` | 先 `npm run build` 再 `node dist/src/cli.js --help` | 发布前，确认打包后的 CLI 能启动 |
 
+`bench:perf` 还按 full/no-op/edit 输出 `*_scan_body_reads`、`*_scan_body_bytes`、`*_scan_sample_reads` 和 `*_scan_sample_bytes`。这些指标统计扫描器成功读取的次数及文件 API 返回的字节数，包括可识别但无适配器支持的文件，以及超限文件的有限样本读取。不包含 Git/元数据操作、自定义适配器的直接读取或设备/缓存 I/O。非 Git 仓库的 no-op 仍会读取正文；clean same-HEAD 复用不运行扫描器。完整 scan 的计数通过 `IndexOptions.perfObserver` 的可选第三个参数传入；失败的 scan 不提供计数。CLI/index 结果结构保持不变。
+
 `test:fixtures` 是 `npm test` 的别名，`test:benchmark` 是 `npm run bench` 的别名。`npm run verify` 包含 `npm run audit:dependencies`，所以最后的 audit 阶段依赖 npm registry 和网络可用性。
 
 Dependency gate 只放行 high/critical finding 为 0 且 exit code 为 0 的有效
@@ -73,6 +75,16 @@ co-change 刷新也会保留 runtime trace 提升的置信度。写入失败时�
 ```bash
 node --import tsx --test tests/incremental-index-oracle.test.ts
 ```
+
+Scanner 在同一已打开的 descriptor 上检查并限制正文/sample 读取。正文分配量不超过
+已检查的大小；短读取会继续，EOF、大小或修改时间变化则使扫描失败。Linux/macOS
+使用 no-follow 与 nonblocking flag；缺少 no-follow 的平台在读取前校验 leaf identity。
+可选 sample 读取失败仍保留 skipped 状态，但最初打开文件失败会使整个扫描失败。
+这不保证父目录或整个 filesystem 的原子 snapshot，Windows 执行也尚未验证。
+`tests/scanner.test.ts` 只验证文件系统边界，不启动数据库或服务器。
+概念参考为 Codex 在
+[970111f 提交中的 descriptor 限量读取](https://github.com/openai/codex/blob/970111f6cb62cc02fe36a82ea7d71b37a2889c97/codex-rs/exec-server/src/local_file_system_read.rs)；
+Parallax 将这一原理用于现有同步 scanner，没有复制原始代码。
 
 ## accuracy bench
 

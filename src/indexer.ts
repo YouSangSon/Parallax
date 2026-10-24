@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { closeSync, openSync, readFileSync, readdirSync, readSync, statSync } from 'node:fs';
+import { closeSync, constants as fsConstants, fstatSync, lstatSync, openSync, readdirSync, readSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 
@@ -36,6 +36,7 @@ import type {
   EntityKind,
   IndexOptions,
   IndexResult,
+  IndexScanReads,
   RelationKind,
   ScannedFile
 } from './types.js';
@@ -61,6 +62,7 @@ type SkippedFile = {
 type ScanResult = {
   files: ScannedFile[];
   skipped: SkippedFile[];
+  reads: IndexScanReads;
 };
 
 type Statement = ReturnType<Db['prepare']>;
@@ -797,13 +799,15 @@ async function indexProjectInternal(
   }
 }
 
-function timeIndexPhase<T>(options: IndexOptions, phase: 'scan', fn: () => T): T {
+function timeIndexPhase(options: IndexOptions, phase: 'scan', fn: () => ScanResult): ScanResult {
   if (!options.perfObserver) return fn();
   const start = performance.now();
+  let result: ScanResult | undefined;
   try {
-    return fn();
+    result = fn();
+    return result;
   } finally {
-    options.perfObserver(phase, performance.now() - start);
+    options.perfObserver(phase, performance.now() - start, result?.reads);
   }
 }
 
@@ -2294,9 +2298,11 @@ function legacyEdgeKindFor(canonical: RelationKind): string {
   return canonical;
 }
 
-function scanFiles(repoRoot: string, maxFileBytes: number): ScanResult {
+// Internal export keeps filesystem unit checks independent of database indexing.
+export function scanFiles(repoRoot: string, maxFileBytes: number): ScanResult {
   const out: ScannedFile[] = [];
   const skipped: SkippedFile[] = [];
+  const reads: IndexScanReads = { bodyReads: 0, bodyBytes: 0, sampleReads: 0, sampleBytes: 0 };
   const walk = (dir: string) => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       if (entry.isDirectory()) {
@@ -2310,60 +2316,90 @@ function scanFiles(repoRoot: string, maxFileBytes: number): ScanResult {
       const relativePath = toRelativePath(repoRoot, absolutePath);
       const language = languageIdForPath(relativePath);
       if (!language) continue;
-      const size = statSync(absolutePath).size;
-      if (size > maxFileBytes) {
-        const contentSample = readContentSample(absolutePath, size);
-        skipped.push({
+      const noFollow = typeof fsConstants.O_NOFOLLOW === 'number';
+      const flags = fsConstants.O_RDONLY |
+        (noFollow ? fsConstants.O_NOFOLLOW : 0) |
+        (typeof fsConstants.O_NONBLOCK === 'number' ? fsConstants.O_NONBLOCK : 0);
+      const fd = openSync(absolutePath, flags);
+      try {
+        const checked = fstatSync(fd, { bigint: true });
+        if (!checked.isFile()) throw new Error(`not a regular file: ${relativePath}`);
+        if (!noFollow) {
+          // Platforms without O_NOFOLLOW must validate leaf identity before reading.
+          const leaf = lstatSync(absolutePath, { bigint: true });
+          if (!leaf.isFile() || leaf.dev !== checked.dev || leaf.ino !== checked.ino) {
+            throw new Error(`file changed while scanning: ${relativePath}`);
+          }
+        }
+        const size = Number(checked.size);
+        if (size > maxFileBytes) {
+          const contentSample = readContentSample(fd, size);
+          if (contentSample) {
+            reads.sampleReads++;
+            reads.sampleBytes += contentSample.bytesRead;
+          }
+          skipped.push({
+            relativePath,
+            language,
+            reason: `file exceeds maxFileBytes (${size} > ${maxFileBytes})`,
+            ...(contentSample
+              ? { contentSample: contentSample.content, contentSampleHash: contentSample.hash }
+              : {})
+          });
+          continue;
+        }
+        // Bound allocation and reads to the approved size even if the file grows.
+        const buffer = Buffer.allocUnsafe(size);
+        let offset = 0;
+        while (offset < size) {
+          const n = readSync(fd, buffer, offset, size - offset, offset);
+          if (n === 0) break;
+          offset += n;
+        }
+        const after = fstatSync(fd, { bigint: true });
+        if (offset !== size || after.size !== checked.size ||
+            after.mtimeNs !== checked.mtimeNs || after.ctimeNs !== checked.ctimeNs) {
+          throw new Error(`file changed while scanning: ${relativePath}`);
+        }
+        reads.bodyReads++;
+        reads.bodyBytes += offset;
+        const content = buffer.toString('utf8');
+        out.push({
+          absolutePath,
           relativePath,
-          language,
-          reason: `file exceeds maxFileBytes (${size} > ${maxFileBytes})`,
-          ...(contentSample
-            ? {
-                contentSample: contentSample.content,
-                contentSampleHash: contentSample.hash
-              }
-            : {})
+          content,
+          hash: createHash('sha256').update(content).digest('hex'),
+          language
         });
-        continue;
+      } finally {
+        closeSync(fd);
       }
-      const content = readFileSync(absolutePath, 'utf8');
-      out.push({
-        absolutePath,
-        relativePath,
-        content,
-        hash: createHash('sha256').update(content).digest('hex'),
-        language
-      });
     }
   };
   walk(repoRoot);
   return {
     files: out.sort((a, b) => a.relativePath.localeCompare(b.relativePath)),
-    skipped: skipped.sort((a, b) => a.relativePath.localeCompare(b.relativePath))
+    skipped: skipped.sort((a, b) => a.relativePath.localeCompare(b.relativePath)),
+    reads
   };
 }
 
 function readContentSample(
-  absolutePath: string,
+  fd: number,
   fileSize: number
-): { content: string; hash: string } | undefined {
+): { content: string; hash: string; bytesRead: number } | undefined {
   const length = Math.min(fileSize, skippedFileContentSampleBytes);
   const buffer = Buffer.allocUnsafe(length);
-  let fd: number | undefined;
   try {
-    fd = openSync(absolutePath, 'r');
     const bytesRead = readSync(fd, buffer, 0, length, 0);
     const content = buffer.subarray(0, bytesRead).toString('utf8');
     return {
       content,
-      hash: createHash('sha256').update(content).digest('hex')
+      hash: createHash('sha256').update(content).digest('hex'),
+      bytesRead
     };
   } catch {
     return undefined;
-  } finally {
-    if (fd !== undefined) {
-      closeSync(fd);
-    }
   }
 }
 

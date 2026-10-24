@@ -26,6 +26,8 @@ Every command below is an `npm run` script defined in `package.json`.
 | `npm run test:security` | Runs `tests/security.test.ts` (path containment, redaction, dependency audit gate) | After store / path / redaction / audit-gate changes |
 | `npm run test:install-smoke` | `npm run build` then `node dist/src/cli.js --help` | Before release, to confirm the packaged CLI launches |
 
+`bench:perf` also reports `*_scan_body_reads`, `*_scan_body_bytes`, `*_scan_sample_reads` and `*_scan_sample_bytes` for full/no-op/edit runs. These count successful scanner reads and bytes returned by the file API, including recognized files that no adapter supports and bounded samples of oversized files. They exclude Git/metadata work, custom-adapter reads and device/cache I/O. A non-git no-op still reads bodies; a clean same-HEAD reuse does not run the scanner. `IndexOptions.perfObserver` receives these counts as an optional third argument after a completed scan; a failed scan has no counts. The CLI/index result shape is unchanged.
+
 `test:fixtures` is an alias for `npm test`, and `test:benchmark` is an alias for `npm run bench`. `npm run verify` includes `npm run audit:dependencies`, so its final audit stage depends on npm registry and network availability.
 
 The dependency gate requires a valid npm audit v2 report with zero high/critical
@@ -75,6 +77,18 @@ augmentation must be reapplied after that rebuild.
 ```bash
 node --import tsx --test tests/incremental-index-oracle.test.ts
 ```
+
+Scanner checks and bounded body/sample reads share one open descriptor. Body
+allocation is limited to its checked size; short reads are completed, while EOF,
+size or modification-time changes fail the scan. Linux/macOS use no-follow and
+nonblocking flags. Optional sample-read failures retain the skip; initial open
+failure fails the scan. Platforms lacking no-follow validate leaf identity before
+reading. This is not an atomic parent-directory/filesystem snapshot, and Windows
+execution is unverified. `tests/scanner.test.ts` exercises these filesystem-only
+boundaries without starting a database or server.
+The concept reference is Codex's descriptor-bound, capped
+[file reader at commit 970111f](https://github.com/openai/codex/blob/970111f6cb62cc02fe36a82ea7d71b37a2889c97/codex-rs/exec-server/src/local_file_system_read.rs).
+Parallax adapts the principle to its synchronous scanner; no source code is copied.
 
 ## The accuracy bench
 

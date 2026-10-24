@@ -2,6 +2,41 @@
 
 Evidence is current only when the command and result are recorded in this file. A focused pass proves only its named scope.
 
+## S1 Scanner Read Baseline — 2026-10-24
+
+- [x] The new counter regression failed before implementation because scan
+  observations had no read counts. After the change, the scan-metrics,
+  synthetic-repo and fresh-index oracle suites pass 10/10 with file concurrency
+  1; TypeScript no-emit check, docs lint and diff checks pass.
+- [x] Integration with the corrected no-op carry passes 16/16 focused cases.
+  The repeated 20-file probe retains the same deterministic read/byte counts.
+- [x] `node --import tsx bench/impact-perf.ts --scales 20` reports 20 body
+  reads / 1,143 bytes for each full, non-git no-op and edited run. The fixture
+  produces 19 affected files. This proves the counters and unchanged read cost,
+  not a performance improvement or device I/O measurement.
+- [x] Independent review found no blocking issue. Counts include unsupported
+  recognized-language bodies and bounded samples, use raw returned byte sizes,
+  and leave `IndexResult`/CLI output unchanged. Clean same-HEAD reuse emits no
+  scan observation; failed scans do not publish a partial counter result.
+- Canonical verification and exact-head remote checks remain required before
+  landing. No selective extraction or read-skipping is enabled.
+- PR #46's first CodeQL summary rejected a stat(path)/readFile(path) race.
+  A tiny filesystem-only fixture reproduced path replacement bypassing the
+  checked size and same-file growth. The first replacement fixture also removed
+  a pending directory entry; that harness issue was corrected before recording
+  the product failure. Both logs remain separate.
+- [x] Reads now share one checked regular-file descriptor and allocate at most
+  its approved body size. Eight filesystem-only cases pass, covering raw/empty/oversize
+  counts, optional sample failure, symlink replacement, path replacement,
+  growth, short reads and read-error descriptor cleanup. Local full verification
+  was cancelled on the finding; under the revised user goal only lightweight
+  local checks and the existing mandatory remote CI may establish this slice.
+  CodeQL clearance and final exact-head CI remain required. Windows execution
+  and atomic parent-directory snapshots are outside the proven boundary.
+  Initial open failure fails the scan; optional sample-read failure after opening
+  preserves a skip. Independent final security review found no blocker.
+  Typecheck, schema drift, documentation lint and diff checks pass.
+
 ## S1 Output Ownership Gate — 2026-10-24
 
 - [x] Before implementation, the two focused regressions for foreign entity
@@ -42,8 +77,10 @@ Evidence is current only when the command and result are recorded in this file. 
   external SCIP/trace augmentation must be reapplied after a full rebuild.
 - [x] Clean same-HEAD reuse, dirty no-op startup skipping and one-time revision
   rebuilding pass 3/3. Independent final data-integrity review found no blocker.
-- Canonical verification of the carry correction and exact-head remote checks remain required before
-  landing. No selective extraction or read-reduction claim is made by this unit.
+- [x] Final head `2607ea4` passed canonical verification after the dependency
+  refresh: 721/721, dogfood 2/2, benchmark and audit; all five PR checks passed.
+  PR #44 merged as `5876ee1`, with source/main tree equality verified.
+  No selective extraction or read-reduction claim is made by this unit.
 
 ## Dependency Refresh — 2026-10-25
 
@@ -53,9 +90,9 @@ Evidence is current only when the command and result are recorded in this file. 
 - Compatible `npm audit fix --package-lock-only --ignore-scripts` changes only
   body-parser 2.3.0 to 2.4.0, iconv-lite 0.7.2 to 0.7.3 and zod 4.3.6 to 4.6.7.
   Direct ranges, overrides and the fail-closed audit policy are unchanged.
-- A clean native Node 24.14.0 `npm ci` completed with zero vulnerabilities.
-  Canonical verification with the refreshed dependencies and exact-head CI remain
-  required; prior passes with the old lockfile are retained as distinct evidence.
+- [x] Clean native Node 24.14.0 `npm ci` completed with zero vulnerabilities.
+  Canonical verification and exact-head CI passed at `2607ea4` before PR #44
+  landed; the pre-patch command's audit failure is retained separately.
 
 ## CLI Help Safety Gate — 2026-10-23
 

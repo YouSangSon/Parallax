@@ -66,6 +66,12 @@ indexed body 发生变化时，都会报告 `mode = 'full'` 并执行完整 extr
 fresh index 完全一致。Component test 还覆盖 target-only adapter 先 emit、
 随后移除 foreign-source relation 的 case。
 
+无变化的运行保留 entity/contract 版本、adapter 诊断和导入的 SCIP 关系，
+同时刷新 scanner 的 skipped 状态。重新导入 SCIP 会替换之前的关系，
+co-change 刷新也会保留 runtime trace 提升的置信度。写入失败时先回滚全部 graph
+更改，再记录失败的运行。Extractor/semantics revision 变化会触发完整重建；
+外部 SCIP/trace 信息需要在重建后重新应用。
+
 ```bash
 node --import tsx --test tests/incremental-index-oracle.test.ts
 ```

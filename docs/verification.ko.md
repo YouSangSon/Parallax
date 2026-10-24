@@ -67,6 +67,12 @@ alias만 바꾼 case를 포함하며, rerun graph가 같은 final tree의 fresh 
 동일해야 한다. Component test는 target-only adapter가 다른 source의 relation을
 emit한 뒤 제거하는 case도 검증한다.
 
+변경 없는 실행은 entity/contract 버전, adapter 진단과 SCIP 관계를 보존하고,
+scanner의 skipped 상태만 새로 반영한다. SCIP 재import는 이전 관계를 교체하며,
+co-change 갱신도 runtime trace로 높인 신뢰도를 유지한다. 저장 실패는 graph 쓰기를
+모두 롤백한 뒤 실패한 실행을 기록한다. Extractor/semantics revision이 바뀌면 전체
+재구축하므로, 외부 SCIP/trace 정보는 재구축 후 다시 적용해야 한다.
+
 ```bash
 node --import tsx --test tests/incremental-index-oracle.test.ts
 ```

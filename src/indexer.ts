@@ -788,7 +788,7 @@ async function indexProjectInternal(
 
     return result;
   } catch (error) {
-    currentStateSnapshot.restore();
+    // Persistence already rolls back atomically; retain only the failed-run audit.
     failRunningAdapterRuns(db, indexRunId, error instanceof Error ? error.message : String(error));
     db.prepare("UPDATE index_runs SET status = ?, finished_at = datetime('now') WHERE id = ?").run(
       'failed',
@@ -972,6 +972,9 @@ function persistCollectedIndexRun(input: {
   memoryTs: string;
   currentStateSnapshot: CurrentStateSnapshot;
 }): IndexResult {
+  if (input.delta.mode === 'incremental' && input.delta.changed.length > 0) {
+    throw new Error('carry-forward requires unchanged indexed content');
+  }
   const stmts = prepareStatements(input.db);
   const persistCtx: Omit<PersistContext, 'adapterRunId' | 'adapterId'> = {
     stmts,
@@ -1033,15 +1036,7 @@ function persistCollectedIndexRun(input: {
         .run(input.memoryTxId, input.mainBranch.head_tx_id);
     }
 
-    const changedPaths = new Set(input.delta.changed);
-    const filesToReplay =
-      input.delta.mode === 'incremental'
-        ? input.indexedFiles.filter(
-            (file) =>
-              changedPaths.has(file.relativePath) ||
-              entityKindForPath(file.relativePath, file.language) === 'contract'
-          )
-        : input.indexedFiles;
+    const filesToReplay = input.delta.mode === 'incremental' ? [] : input.indexedFiles;
     for (const file of filesToReplay) {
       input.currentStateSnapshot.captureFile(file.relativePath);
       stmts.upsertFile.run(input.repoId, file.relativePath, file.language, file.hash, input.indexRunId);
@@ -1116,28 +1111,32 @@ function persistCollectedIndexRun(input: {
       );
     }
 
-    // Carry unchanged files' extraction rows into this run's cohort after replaying
-    // changed-file events, so vanished rows for changed files remain on the prior run.
+    // Only unchanged indexed content may carry the prior extraction cohort.
     if (input.delta.mode === 'incremental' && input.priorRun) {
       carryForwardUnchanged(
         input.db,
         input.repoId,
         input.priorRun.runId,
-        input.indexRunId,
-        input.delta.changed
+        input.indexRunId
       );
     }
 
     if (coChangeRunId !== null) {
       input.db.exec('SAVEPOINT s2_co_change_graph');
       try {
+        // Refresh git evidence without downgrading runtime proof on unchanged files.
+        const carriedProof = input.delta.mode === 'incremental' ? input.db.prepare(`
+          SELECT 1 FROM relations WHERE repo_id = ? AND index_run_id = ?
+            AND source_entity_id = ? AND target_entity_id = ?
+            AND kind = 'CO_CHANGES' AND confidence = 'proven'`) : undefined;
         for (const pair of coChangePairs) {
           insertCanonicalRelation({
             repoId: input.repoId,
             sourceEntityId: fileEntityId(pair.source),
             targetEntityId: fileEntityId(pair.target),
             kind: 'CO_CHANGES',
-            confidence: 'heuristic',
+            confidence: carriedProof?.get(input.repoId, input.indexRunId,
+              fileEntityId(pair.source), fileEntityId(pair.target)) ? 'proven' : 'heuristic',
             provenance: `co-change:${pair.coChangeCount}:${pair.couplingScore.toFixed(2)}`,
             adapterRunId: coChangeRunId,
             indexRunId: input.indexRunId,
@@ -1419,7 +1418,7 @@ function extractorVersionFor(
   adapters: readonly SemanticAdapter[],
   outputOwnership: ReadonlyMap<SemanticAdapter, AdapterOutputOwnership>
 ): string {
-  const semanticsRevision = `s1-output-ownership-v1:${adapters.map((adapter) => outputOwnership.get(adapter)).join(',')}`;
+  const semanticsRevision = `s1-output-ownership-carry-v2:${adapters.map((adapter) => outputOwnership.get(adapter)).join(',')}`;
   if (adapters.length === 1) {
     const adapter = adapters[0]!;
     return `${adapter.id}-${adapter.version}-${semanticsRevision}`;
@@ -1621,129 +1620,60 @@ function parseStringArray(value: string): string[] {
   }
 }
 
-// Carry an unchanged file's extraction-produced rows from the prior completed
-// run into the new run's cohort. Attribution is inverted — bump everything still
-// on the prior run EXCEPT rows owned by a changed file — so the parameter list
-// stays small (changed files are few) and a changed file's vanished old rows are
-// correctly left stranded on the prior run. Wrapped in a SAVEPOINT so a
-// mid-statement failure cannot half-move the graph.
-//
-// Known divergence (intentional): a carried relation keeps the prior run's
-// `adapter_run_id` rather than the current run's. This is invisible — nothing
-// reads `relations.adapter_run_id` (adapter confidence/knownGaps are read from
-// `adapter_runs` by `index_run_id` directly), and no GC path deletes
-// `index_runs`/`adapter_runs`, so the FK never dangles. Re-mapping it would add
-// risk for zero observable benefit; revisit only if a reader of that column or a
-// run-deleting GC is introduced.
+// No-op runs preserve extraction output exactly; scanner skips are freshly written.
+// Audit ownership moves with relations so later SCIP imports can replace old rows.
 function carryForwardUnchanged(
   db: Db,
   repoId: number,
   priorRunId: number,
-  newRunId: number,
-  changedPaths: readonly string[]
+  newRunId: number
 ): void {
-  const placeholders = changedPaths.map(() => '?').join(', ');
-  // `NOT IN (empty)` is always true in SQLite, so a no-changed run (identical
-  // re-index) still carries every row forward, which is exactly right.
-  const notInChanged = changedPaths.length > 0 ? `IN (${placeholders})` : null;
+  db.prepare(`UPDATE files SET index_run_id = ?
+    WHERE repo_id = ? AND index_run_id = ?`).run(newRunId, repoId, priorRunId);
 
-  db.exec('SAVEPOINT s1_carry_forward');
-  try {
-    db.prepare(
-      `UPDATE files SET index_run_id = ?
-       WHERE repo_id = ? AND index_run_id = ?
-         ${notInChanged ? `AND path NOT ${notInChanged}` : ''}`
-    ).run(newRunId, repoId, priorRunId, ...changedPaths);
+  db.prepare(`INSERT INTO index_coverage (index_run_id, adapter_id, path, language_id, status, reason)
+    SELECT ?, adapter_id, path, language_id, status, reason FROM index_coverage
+    WHERE index_run_id = ? AND (status = 'indexed' OR
+      (status = 'skipped' AND (reason GLOB 'diagnostic warning: *' OR reason GLOB 'diagnostic error: *')))
+    ON CONFLICT(index_run_id, adapter_id, path) DO NOTHING`).run(newRunId, priorRunId);
 
-    db.prepare(
-      `UPDATE index_coverage SET index_run_id = ?
-       WHERE index_run_id = ? AND status = 'indexed'
-         ${notInChanged ? `AND path NOT ${notInChanged}` : ''}`
-    ).run(newRunId, priorRunId, ...changedPaths);
+  db.prepare(`UPDATE entities SET updated_index_run_id = ?
+    WHERE repo_id = ? AND updated_index_run_id = ?`).run(newRunId, repoId, priorRunId);
 
-    db.prepare(
-      `UPDATE entities SET updated_index_run_id = ?
-       WHERE repo_id = ? AND updated_index_run_id = ?
-         ${notInChanged ? `AND (path IS NULL OR path NOT ${notInChanged})` : ''}`
-    ).run(newRunId, repoId, priorRunId, ...changedPaths);
+  db.prepare(`INSERT INTO entity_versions (entity_id, index_run_id, content_hash, location_json, state)
+    SELECT entity_id, ?, content_hash, location_json, state FROM entity_versions
+    WHERE index_run_id = ?`).run(newRunId, priorRunId);
 
-    // File entity versions use the same canonical shape as the full-index file
-    // loop. Changed-file events may have inserted unchanged endpoints as
-    // placeholders first, so replace those rows before copying symbol versions.
-    db.prepare(
-      `INSERT OR REPLACE INTO entity_versions (entity_id, index_run_id, content_hash, location_json, state)
-       SELECT e.id, ?, f.content_hash, json_object('path', f.path), 'active'
-       FROM files f
-       INNER JOIN entities e ON e.repo_id = f.repo_id AND e.id = ('file:' || f.path)
-       WHERE f.repo_id = ? AND f.index_run_id = ?
-         ${notInChanged ? `AND f.path NOT ${notInChanged}` : ''}`
-    ).run(newRunId, repoId, newRunId, ...changedPaths);
+  db.prepare(`INSERT INTO contract_versions (id, contract_id, index_run_id, content_hash,
+      schema_version, compatibility_json, breaking_change_summary, created_at)
+    SELECT contract_id || ':' || ?, contract_id, ?, content_hash,
+      schema_version, compatibility_json, breaking_change_summary, created_at
+    FROM contract_versions WHERE index_run_id = ?`).run(newRunId, newRunId, priorRunId);
 
-    // entity_versions is keyed by (entity_id, index_run_id) — one row per run, not
-    // re-stamped in place. Copy the prior run's non-file rows into the new run for
-    // entities not owned by a changed file. Changed entities are re-written by
-    // extraction, so the insert mainly preserves unchanged symbol versions.
-    db.prepare(
-      `INSERT OR IGNORE INTO entity_versions (entity_id, index_run_id, content_hash, location_json, state)
-       SELECT ev.entity_id, ?, ev.content_hash, ev.location_json, ev.state
-       FROM entity_versions ev
-       WHERE ev.index_run_id = ?
-         AND ev.entity_id NOT LIKE 'file:%'
-         ${
-           notInChanged
-             ? `AND ev.entity_id NOT IN (SELECT id FROM entities WHERE repo_id = ? AND path ${notInChanged})`
-             : ''
-         }`
-    ).run(newRunId, priorRunId, ...(notInChanged ? [repoId, ...changedPaths] : []));
+  db.prepare(`INSERT INTO adapter_runs (index_run_id, adapter_id, adapter_version, language_ids,
+      confidence, known_gaps_json, status, started_at, finished_at, error_summary)
+    SELECT ?, adapter_id, adapter_version, language_ids, confidence, known_gaps_json,
+      status, started_at, finished_at, error_summary FROM adapter_runs WHERE index_run_id = ?
+    ON CONFLICT(index_run_id, adapter_id) DO UPDATE SET error_summary = excluded.error_summary
+      WHERE adapter_runs.status = 'completed'`).run(newRunId, priorRunId);
 
-    db.prepare(
-      `UPDATE relations SET index_run_id = ?
-       WHERE repo_id = ? AND index_run_id = ?
-         ${
-           notInChanged
-             ? `AND source_entity_id NOT IN (SELECT id FROM entities WHERE repo_id = ? AND path ${notInChanged})`
-             : ''
-         }`
-    ).run(newRunId, repoId, priorRunId, ...(notInChanged ? [repoId, ...changedPaths] : []));
+  db.prepare(`UPDATE relations SET index_run_id = ?, adapter_run_id = COALESCE((
+      SELECT current.id FROM adapter_runs prior JOIN adapter_runs current
+        ON current.adapter_id = prior.adapter_id AND current.index_run_id = ?
+      WHERE prior.id = relations.adapter_run_id), adapter_run_id)
+    WHERE repo_id = ? AND index_run_id = ?`).run(newRunId, newRunId, repoId, priorRunId);
 
-    db.prepare(
-      `UPDATE relation_evidence SET index_run_id = ?
-       WHERE repo_id = ? AND index_run_id = ?
-         ${notInChanged ? `AND file_path NOT ${notInChanged}` : ''}`
-    ).run(newRunId, repoId, priorRunId, ...changedPaths);
+  db.prepare(`UPDATE relation_evidence SET index_run_id = ?
+    WHERE repo_id = ? AND index_run_id = ?`).run(newRunId, repoId, priorRunId);
 
-    db.prepare(
-      `UPDATE evidence SET index_run_id = ?
-       WHERE repo_id = ? AND index_run_id = ?
-         ${notInChanged ? `AND file_path NOT ${notInChanged}` : ''}`
-    ).run(newRunId, repoId, priorRunId, ...changedPaths);
+  db.prepare(`UPDATE evidence SET index_run_id = ?
+    WHERE repo_id = ? AND index_run_id = ?`).run(newRunId, repoId, priorRunId);
 
-    db.prepare(
-      `UPDATE edges SET index_run_id = ?
-       WHERE repo_id = ? AND index_run_id = ?
-         ${
-           notInChanged
-             ? `AND source_file_id NOT IN (SELECT id FROM files WHERE repo_id = ? AND path ${notInChanged})`
-             : ''
-         }`
-    ).run(newRunId, repoId, priorRunId, ...(notInChanged ? [repoId, ...changedPaths] : []));
+  db.prepare(`UPDATE edges SET index_run_id = ?
+    WHERE repo_id = ? AND index_run_id = ?`).run(newRunId, repoId, priorRunId);
 
-    db.prepare(
-      `UPDATE symbols SET index_run_id = ?
-       WHERE index_run_id = ?
-         ${
-           notInChanged
-             ? `AND file_id NOT IN (SELECT id FROM files WHERE repo_id = ? AND path ${notInChanged})`
-             : ''
-         }`
-    ).run(newRunId, priorRunId, ...(notInChanged ? [repoId, ...changedPaths] : []));
-
-    db.exec('RELEASE SAVEPOINT s1_carry_forward');
-  } catch (error) {
-    db.exec('ROLLBACK TO SAVEPOINT s1_carry_forward');
-    db.exec('RELEASE SAVEPOINT s1_carry_forward');
-    throw error;
-  }
+  db.prepare(`UPDATE symbols SET index_run_id = ?
+    WHERE index_run_id = ?`).run(newRunId, priorRunId);
 }
 
 function prepareStatements(db: Db): PreparedStatements {

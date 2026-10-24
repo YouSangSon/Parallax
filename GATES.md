@@ -44,7 +44,22 @@ Evidence is current only when the command and result are recorded in this file. 
   CLI child execution and SCIP startup markers; post-init RPCs retain 5 seconds
   and the SCIP lock assertion is unchanged. The three affected failure cases
   pass with file concurrency 1. This is test robustness, not a latency gain.
-- Canonical verification and exact-head remote checks remain required before
+- The pre-carry head `394ede7` subsequently passed local canonical verification:
+  715/715 tests, dogfood 2/2, benchmark and audit; all five remote checks passed.
+- [x] Six no-op oracles reproduced loss of descriptor metadata, file/global
+  diagnostics, custom contract versions and foreign placeholders, including a
+  SCIP-augmented cohort. Separate regressions reproduced trace confidence
+  downgrade and SQL rollback masked by a duplicate snapshot restore.
+- [x] No-op carry now copies versions/diagnostics and keeps scanner skips fresh;
+  cloned external adapter audits and remapped relation ownership let SCIP
+  reimport remove vanished rows. Runtime-proven co-change confidence survives.
+  Publication failure leaves graph/version/fact/branch rows unchanged and records
+  a failed index run. Focused ownership/registry/config/oracle/trace tests pass
+  39/39 and typecheck passes. The semantics revision forces one full rebuild;
+  external SCIP/trace augmentation must be reapplied after a full rebuild.
+- [x] Clean same-HEAD reuse, dirty no-op startup skipping and one-time revision
+  rebuilding pass 3/3. Independent final data-integrity review found no blocker.
+- Canonical verification of the carry correction and exact-head remote checks remain required before
   landing. No selective extraction or read-reduction claim is made by this unit.
 
 ## CLI Help Safety Gate — 2026-10-23

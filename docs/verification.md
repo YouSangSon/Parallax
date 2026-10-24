@@ -78,6 +78,15 @@ augmentation must be reapplied after that rebuild.
 node --import tsx --test tests/incremental-index-oracle.test.ts
 ```
 
+Before any publication writes, the index transaction rechecks the exact planned
+latest completed run ID (including null) and main branch ID/head. A mismatch
+fails with `index publication baseline changed; retry indexing`; no automatic
+adapter retry occurs. This prevents overlapping no-op carries and out-of-order
+full completion from replacing the current graph/head. The deterministic database
+oracles run in existing remote CI under the shared-machine policy. This is not a
+filesystem snapshot or an atomicity guarantee for every graph writer. The
+[decision and concept reference](verification.ko.md#겹친-인덱싱의-발행-기준) describe the scope.
+
 Scanner checks and bounded body/sample reads share one open descriptor. Body
 allocation is limited to its checked size; short reads are completed, while EOF,
 size or modification-time changes fail the scan. Linux/macOS use no-follow and

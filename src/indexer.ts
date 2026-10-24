@@ -1018,6 +1018,18 @@ function persistCollectedIndexRun(input: {
       : null;
 
   withIndexWriteTransaction(input.db, () => {
+    // The writer lock cannot validate a plan collected before another publication.
+    const currentRun = input.db.prepare(
+      "SELECT id FROM index_runs WHERE repo_id = ? AND status = 'completed' ORDER BY id DESC LIMIT 1"
+    ).get(input.repoId) as { id: number } | undefined;
+    const currentBranch = input.db.prepare(
+      "SELECT id, head_tx_id FROM branches WHERE name = 'main'"
+    ).get() as { id: string; head_tx_id: string | null } | undefined;
+    if ((currentRun?.id ?? null) !== (input.priorRun?.runId ?? null) ||
+        !currentBranch || currentBranch.id !== input.mainBranch.id ||
+        currentBranch.head_tx_id !== input.mainBranch.head_tx_id) {
+      throw new Error('index publication baseline changed; retry indexing');
+    }
     input.db
       .prepare(
         'INSERT OR IGNORE INTO transactions (id, parent_tx_id, branch_id, ts, agent, index_run_id) VALUES (?, ?, ?, ?, ?, ?)'

@@ -4,6 +4,11 @@ Source of truth for the active improvement loop. Detailed backlog lives in
 `IMPROVEMENT_OPPORTUNITIES.md`; implementation plans live under
 `docs/superpowers/plans/`.
 
+The 2026-10-25 goal keeps local validation to bounded unit/reproduction cases,
+type/build/lint checks; existing remote CI owns required full verification.
+Any my-cloud smoke requires current resource, shared-lock and provider-billed
+traffic checks before transfer or execution; no Nebula VM is used for Parallax.
+
 ## S1 Output Ownership and Selective Reads — 2026-10-24
 
 Continue the existing S1 queue after the completed portfolio/help slices:

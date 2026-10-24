@@ -20,6 +20,22 @@ Evidence is current only when the command and result are recorded in this file. 
   scan observation; failed scans do not publish a partial counter result.
 - Canonical verification and exact-head remote checks remain required before
   landing. No selective extraction or read-skipping is enabled.
+- PR #46's first CodeQL summary rejected a stat(path)/readFile(path) race.
+  A tiny filesystem-only fixture reproduced path replacement bypassing the
+  checked size and same-file growth. The first replacement fixture also removed
+  a pending directory entry; that harness issue was corrected before recording
+  the product failure. Both logs remain separate.
+- [x] Reads now share one checked regular-file descriptor and allocate at most
+  its approved body size. Eight filesystem-only cases pass, covering raw/empty/oversize
+  counts, optional sample failure, symlink replacement, path replacement,
+  growth, short reads and read-error descriptor cleanup. Local full verification
+  was cancelled on the finding; under the revised user goal only lightweight
+  local checks and the existing mandatory remote CI may establish this slice.
+  CodeQL clearance and final exact-head CI remain required. Windows execution
+  and atomic parent-directory snapshots are outside the proven boundary.
+  Initial open failure fails the scan; optional sample-read failure after opening
+  preserves a skip. Independent final security review found no blocker.
+  Typecheck, schema drift, documentation lint and diff checks pass.
 
 ## S1 Output Ownership Gate — 2026-10-24
 

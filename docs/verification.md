@@ -78,6 +78,15 @@ augmentation must be reapplied after that rebuild.
 node --import tsx --test tests/incremental-index-oracle.test.ts
 ```
 
+Scanner checks and bounded body/sample reads share one open descriptor. Body
+allocation is limited to its checked size; short reads are completed, while EOF,
+size or modification-time changes fail the scan. Linux/macOS use no-follow and
+nonblocking flags. Optional sample-read failures retain the skip; initial open
+failure fails the scan. Platforms lacking no-follow validate leaf identity before
+reading. This is not an atomic parent-directory/filesystem snapshot, and Windows
+execution is unverified. `tests/scanner.test.ts` exercises these filesystem-only
+boundaries without starting a database or server.
+
 ## The accuracy bench
 
 `bench/impact-bench.ts` builds a fixed multi-language fixture (TypeScript/JavaScript, JVM/Spring Boot, Python, Go, Rust, OpenAPI contracts, and build manifests), indexes it, and scores the resulting graph against a pinned set of expected relations. It pins:

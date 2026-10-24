@@ -76,6 +76,13 @@ co-change 刷新也会保留 runtime trace 提升的置信度。写入失败时�
 node --import tsx --test tests/incremental-index-oracle.test.ts
 ```
 
+Scanner 在同一已打开的 descriptor 上检查并限制正文/sample 读取。正文分配量不超过
+已检查的大小；短读取会继续，EOF、大小或修改时间变化则使扫描失败。Linux/macOS
+使用 no-follow 与 nonblocking flag；缺少 no-follow 的平台在读取前校验 leaf identity。
+可选 sample 读取失败仍保留 skipped 状态，但最初打开文件失败会使整个扫描失败。
+这不保证父目录或整个 filesystem 的原子 snapshot，Windows 执行也尚未验证。
+`tests/scanner.test.ts` 只验证文件系统边界，不启动数据库或服务器。
+
 ## accuracy bench
 
 `bench/impact-bench.ts` 构建一个固定的 multi-language fixture（TypeScript/JavaScript、JVM/Spring Boot、Python、Go、Rust、OpenAPI 契约与 build manifest），对其索引，并将所得 graph 与一组 pin 住的期望 relation 对照打分。它 pin 住：

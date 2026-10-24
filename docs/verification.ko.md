@@ -77,6 +77,35 @@ co-change 갱신도 runtime trace로 높인 신뢰도를 유지한다. 저장 �
 node --import tsx --test tests/incremental-index-oracle.test.ts
 ```
 
+### 파일 읽기 경쟁 조건과 자원 한계
+
+경로는 파일의 이름이며, 열린 파일 descriptor는 실제로 연 파일을 가리킨다.
+`stat(path)`로 크기를 검사한 뒤 `readFile(path)`로 다시 열면 그 사이 경로가
+다른 파일로 교체될 수 있다. 스캐너는 한 번 연 descriptor에서 일반 파일 여부와
+크기를 검사하고, 그 크기만 할당해 읽는다. 짧은 읽기는 남은 부분을 이어 읽고,
+EOF·크기·수정 시각이 달라지면 결과를 저장하지 않고 실패한다. 큰 파일의 sample도
+같은 descriptor에서 최대 4,096바이트만 읽으며, 실패해도 descriptor를 닫는다.
+열린 파일의 sample 읽기 오류는 기존처럼 생략하지만, 파일 자체를 열지 못하면
+크기를 추정해 건너뛰지 않고 스캔을 실패 처리한다.
+
+| 방법 | 선택에 영향을 준 한계 |
+| --- | --- |
+| 경로를 검사한 뒤 다시 열기 | 교체된 파일을 읽어 크기 제한을 우회할 수 있다 |
+| descriptor에 `readFile` 적용 | 같은 파일이어도 검사 후 커지면 읽기·할당량이 늘 수 있다 |
+| 검사한 크기만 descriptor에서 읽기 | 작은 반복문과 재검사가 필요하지만 읽기·할당 상한을 유지한다 |
+
+Linux/macOS에서는 `O_NOFOLLOW`와 `O_NONBLOCK`으로 leaf symlink·FIFO 교체도
+방어한다. 해당 flag가 없는 플랫폼은 읽기 전 leaf의 일반 파일 여부와 dev/ino를
+열린 descriptor와 대조한다. Windows 실행 검증과 부모 디렉터리까지 포함한
+원자적 filesystem snapshot은 제공하지 않는다. Counter는 syscall 횟수가 아니라
+성공한 본문/sample 읽기 작업 수와 실제 반환 바이트다.
+
+구현은 `src/indexer.ts`의 `scanFiles`/`readContentSample`, 작은 실패 재현은
+`tests/scanner.test.ts`가 소유한다. 파일 교체·동일 파일 증가·짧은 읽기·읽기 오류와
+descriptor 종료를 확인하며 DB·서버를 띄우지 않는다.
+[Node 24 파일 API와 플랫폼별 flag](https://nodejs.org/download/release/v24.14.0/docs/api/fs.html#file-open-constants)를
+기준으로 한다. 일반적인 파일 수정 중 스캔이 실패하면 파일이 안정된 뒤 다시 실행한다.
+
 ## accuracy bench
 
 `bench/impact-bench.ts`는 고정된 multi-language fixture(TypeScript/JavaScript, JVM/Spring Boot, Python, Go, Rust, OpenAPI contract, build manifest)를 만들어 인덱싱하고, 그 결과 graph를 pin된 기대 relation 집합과 대조해 채점한다. pin하는 항목:

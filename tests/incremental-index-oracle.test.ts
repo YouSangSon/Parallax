@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import childProcess, { execFileSync } from 'node:child_process';
 import { syncBuiltinESMExports } from 'node:module';
+import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -625,6 +626,31 @@ test('clean reuse reads one coherent cohort while another process publishes a ne
   } finally {
     t.mock.restoreAll();
     syncBuiltinESMExports();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+
+test('a fatal clean-reuse snapshot error closes the database before returning failure', async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), 'parallax-reuse-failure-'));
+  let failedDb: DatabaseSync | undefined;
+  try {
+    writeChain(root);
+    initOracleGitRepo(root);
+    const original = DatabaseSync.prototype.exec;
+    t.mock.method(DatabaseSync.prototype, 'exec', function(this: DatabaseSync, sql: string) {
+      if (sql === 'BEGIN DEFERRED') {
+        failedDb = this;
+        throw new Error('injected read snapshot failure');
+      }
+      return Reflect.apply(original, this, [sql]);
+    });
+    await assert.rejects(indexProject({ repoRoot: root }), /injected read snapshot failure/);
+    assert.ok(failedDb);
+    assert.equal(failedDb.isOpen, false, 'reuse fails before the normal failed-run catch');
+  } finally {
+    t.mock.restoreAll();
+    if (failedDb?.isOpen) failedDb.close();
     rmSync(root, { recursive: true, force: true });
   }
 });

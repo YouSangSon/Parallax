@@ -84,6 +84,13 @@ run ID（包括 null）和 main branch ID/head。不一致时返回
 snapshot 或所有 graph writer 的原子性。范围与概念参考见
 [韩语说明](verification.ko.md#겹친-인덱싱의-발행-기준)。
 
+Clean same-HEAD 复用只选择最新 completed cohort，再检查 extractor/HEAD/clean
+字段。候选、file/coverage 检查和计数在一个短 SQLite 读取 snapshot 中完成，
+hit、miss、异常都结束事务；致命错误传播前关闭数据库。有效空仓库仍可复用。
+远程 oracle 使用真实 child CLI writer。保证范围是同一 DB 读取时点，不保证
+返回后仍是最新，也不是 Git/filesystem snapshot。见
+[韩语原理](verification.ko.md#clean-git-캐시와-현재-cohort)。
+
 Scanner 在同一已打开的 descriptor 上检查并限制正文/sample 读取。正文分配量不超过
 已检查的大小；短读取会继续，EOF、大小或修改时间变化则使扫描失败。Linux/macOS
 使用 no-follow 与 nonblocking flag；缺少 no-follow 的平台在读取前校验 leaf identity。

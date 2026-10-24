@@ -64,7 +64,7 @@ The default suite globs `tests/**/*.test.ts`. The guard is named `tests/dogfood.
 ## Incremental correctness gate
 
 `IndexResult.mode = 'incremental'` currently means no indexed body changed. Any
-changed indexed body reports `mode = 'full'` and uses full extraction. The
+scanner-observed changed indexed body reports `mode = 'full'` and uses full extraction. The
 `fileContentScope` contract alone cannot authorize changed-only extraction: it
 constrains reads, not ownership of emitted rows.
 
@@ -105,6 +105,12 @@ close the database before propagating. This prevents historical and mixed-cohort
 results without rejecting valid empty repositories. The remote oracle includes a
 real child CLI writer; the guarantee is one DB read point, not continuing freshness
 or a Git/filesystem snapshot. See the [Korean rationale](verification.ko.md#clean-git-캐시와-현재-cohort).
+
+Git flags, content normalization and retained stat-cache history can hide actual
+body changes from clean-HEAD reuse. This known gap is tracked in [draft #51](https://github.com/YouSangSon/Parallax/pull/51).
+Use `parallax index --max-file-bytes 1000000` to keep the default 1 MB bound and
+bypass clean reuse, rechecking actual file hashes/paths. This is a revalidation
+workaround, not proof of a new cache or selective body reading.
 
 Scanner checks and bounded body/sample reads share one open descriptor. Body
 allocation is limited to its checked size; short reads are completed, while EOF,

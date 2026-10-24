@@ -4,6 +4,8 @@
 
 Parallax 是一个 local-first 的代码 impact 分析层——单个 SQLite 存储驱动 CLI、面向编码代理的 MCP 服务器和 UI explorer。本索引链接 `docs/` 中的主要 packaged guide。
 
+**重新检查实际文件：** 使用过 Git 的 `assume-unchanged`、`skip-worktree`、换行转换或 clean filter 后，即使 Git 显示 clean，缓存仍可能漏掉文件变化。运行 `parallax index --max-file-bytes 1000000`，即可保留默认 1 MB 上限、跳过缓存复用并重新检查实际文件。[跟踪中的回归](https://github.com/YouSangSon/Parallax/pull/51)。
+
 ## 快速上手
 
 | 文档 | 内容 |

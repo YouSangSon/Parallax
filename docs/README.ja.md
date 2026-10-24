@@ -6,6 +6,8 @@ Parallax は、ローカル優先のコード変更影響分析レイヤーで�
 
 詳細ガイドは現在、英語・韓国語・中国語で提供しています。以下は英語版へのリンクです。
 
+**実ファイルの再検証:** Git の `assume-unchanged`・`skip-worktree`、改行変換や clean filter を使った後は、Git が clean でもキャッシュがファイルの変更を見逃すことがあります。`parallax index --max-file-bytes 1000000` は既定の 1 MB 上限を保ち、キャッシュの再利用を避けて実ファイルを再検証します。[追跡中の回帰](https://github.com/YouSangSon/Parallax/pull/51)。
+
 ## はじめに
 
 | ドキュメント | 内容 |

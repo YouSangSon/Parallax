@@ -35,6 +35,15 @@ The first implementation leaves changed-body extraction conservative. Its
 ownership declaration alone is not a changed-only execution gate; diagnostic
 coverage and entity-version carry-forward also require equivalence checks.
 
+The active input-validity follow-up is draft PR #51. Pure Git probes show that
+clean status and unchanged HEAD can coexist with changed decoded source after
+index flags, normalization or retained stat-cache history. Current-state checks
+and a prior-input marker alone are insufficient. Before enabling new read skips,
+choose and validate evidence binding the captured scanner inputs to the current
+files, including metadata/timestamp ambiguity. No schema change is implemented.
+The existing explicit default byte limit provides a forced body-recheck path;
+README guidance records this while the failing cache regressions remain unmerged.
+
 ## CLI Help Safety Follow-up — 2026-10-23
 
 The resumed usability check found that `index --help` started indexing.

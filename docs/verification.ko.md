@@ -67,7 +67,7 @@ dogfood guard는 그 틈을 메운다. 각 test에서:
 ## 증분 정확성 gate
 
 현재 `IndexResult.mode = 'incremental'`은 indexed body 변경이 없다는 뜻이다.
-indexed body가 하나라도 바뀌면 `mode = 'full'`을 보고하고 전체 extraction을
+scanner가 indexed body 변경을 확인하면 `mode = 'full'`을 보고하고 전체 extraction을
 사용한다. `fileContentScope`만으로 changed-only extraction을 허용할 수는 없다.
 이 계약은 read 범위만 제한하며 emitted row의 ownership은 제한하지 않는다.
 
@@ -162,6 +162,18 @@ clean 재사용을 유지해야 한다. 로컬에서는 이 DB 검사를 실행�
 보장 범위는 조회 중 후보와 행의 일관성이다. 반환 직후에도 해당 run이 계속 최신이거나
 Git·파일시스템 전체가 하나의 snapshot이라는 보장은 아니다. 본문 생략 범위도 기존의
 clean same-HEAD 재사용이며, 변경 파일만 읽는 selective scanner는 아직 활성화하지 않는다.
+
+### Git clean과 실제 본문 변경
+
+Git의 assume-unchanged/skip-worktree, 줄바꿈·clean filter 정규화 및 그 뒤 남은
+stat cache는 실제 본문 변경을 clean 상태로 숨길 수 있다. 현재 clean-HEAD cache는
+이 경우 stale 결과를 반환할 수 있으며, 수정은 [draft #51](https://github.com/YouSangSon/Parallax/pull/51)에서
+실패 재현과 함께 추적한다. 현재 설정만 검사하거나 이전 입력 marker만 저장하는
+대안은 정규화 뒤 설정을 제거한 사례까지 해결하지 못하므로 아직 적용하지 않았다.
+
+실제 파일을 다시 읽어야 할 때는 `parallax index --max-file-bytes 1000000`을 사용한다.
+기본 1 MB 한도를 명시하면 기존 clean cache를 건너뛰고 본문 hash/경로를 재검사한다.
+이 우회는 새 캐시 유효성 증명이 아니며, 변경 파일만 읽는 최적화도 아니다.
 
 ### 파일 읽기 경쟁 조건과 자원 한계
 

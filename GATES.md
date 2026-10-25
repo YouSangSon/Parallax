@@ -4,6 +4,24 @@ Evidence is current only when the command and result are recorded in this file. 
 
 ## Config/Infra Selection Contract — 2026-10-25
 
+- [x] The approved my-cloud measurement used the PR #55 / `5fc6cba` package,
+  verified artifact/module hashes, a nonblocking shared process lock, and actual
+  cgroup limits of one CPU and 1 GiB. Provider-billed usage was below the agreed
+  hold threshold; delayed aggregation and unconfirmed overage blocking remain
+  separate limitations. No host installation, credentials or Docker permissions
+  were changed. See [observations](docs/verification.md#config-extraction-observations).
+- [x] All three profile phases returned full extraction, 23 body reads and three
+  nonempty config process samples. The enclosing runner later failed an optional
+  help assertion: the CLI prints `Commands:`, not `Usage`. Its valid profile
+  output is retained; the full profile was not repeated to repair that assertion.
+- [x] A separate narrow run checked CLI help exit 0, invalid observer invocation
+  exit 2, both expected messages and no fixture residue. It exited 0. Locked npm
+  install used disabled lifecycle scripts; default embeddings and a general
+  installed-package workflow were not tested on this VM.
+- [x] Ordinary/failure cleanup and a forced service-timeout cleanup were observed.
+  Final checks found all owned units inactive, owned execution paths absent,
+  no Node process and the shared lock available. Original shared resources stay
+  outside this cleanup scope. Selective runtime extraction remains deferred.
 - PR #54's persisted full/reversed and stateful-fallback gates passed 771/771,
   dogfood 2/2, benchmark/audit, all five PR checks and all four main workflows.
 - The config extraction observer uses a small non-Git fixture and the existing

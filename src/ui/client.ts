@@ -492,7 +492,7 @@ export const UI_CLIENT_JS = `    const snapshot = JSON.parse(document.getElement
         delete button.dataset.state;
       }, 1200);
     }
-    function wireToolbarButton(id, handler, successLabel = uiMessage('copyCopied', 'Copied')) {
+    function wireToolbarButton(id, handler, successLabel = uiMessage('copyCopied', 'Copied'), failureLabel = uiMessage('copyFailed', 'Copy failed')) {
       const button = document.getElementById(id);
       if (!button) return;
       button.addEventListener('click', async () => {
@@ -500,7 +500,7 @@ export const UI_CLIENT_JS = `    const snapshot = JSON.parse(document.getElement
           await handler();
           setButtonState(button, 'copied', successLabel);
         } catch {
-          setButtonState(button, 'failed', uiMessage('copyFailed', 'Copy failed'));
+          setButtonState(button, 'failed', failureLabel);
         }
       });
     }
@@ -519,9 +519,9 @@ export const UI_CLIENT_JS = `    const snapshot = JSON.parse(document.getElement
       button.addEventListener('click', () => selectPreset(button.getAttribute('data-policy-preset') || ''));
     }
     wireToolbarButton('copyLinkButton', () => copyText(window.location.href));
-    wireToolbarButton('exportJsonButton', exportJson, uiMessage('exportDone', 'Exported'));
-    wireToolbarButton('exportCsvButton', exportCsv, uiMessage('exportDone', 'Exported'));
-    wireToolbarButton('exportPngButton', exportPng, uiMessage('exportDone', 'Exported'));
+    wireToolbarButton('exportJsonButton', exportJson, uiMessage('exportDone', 'Exported'), uiMessage('exportFailed', 'Export failed'));
+    wireToolbarButton('exportCsvButton', exportCsv, uiMessage('exportDone', 'Exported'), uiMessage('exportFailed', 'Export failed'));
+    wireToolbarButton('exportPngButton', exportPng, uiMessage('exportDone', 'Exported'), uiMessage('exportFailed', 'Export failed'));
     function restoreWorkbenchState() {
       const current = new URL(window.location.href);
       const filter = current.searchParams.get('filter') || '';

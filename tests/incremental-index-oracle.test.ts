@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import childProcess, { execFileSync } from 'node:child_process';
 import { createRequire, syncBuiltinESMExports } from 'node:module';
 import { DatabaseSync } from 'node:sqlite';
@@ -768,6 +769,46 @@ for (const hidden of hiddenGitInputs) {
       }
     });
   }
+}
+
+for (const forced of [false, true]) {
+  test(`actual inputs survive mutable supports hashes (explicit byte limit=${forced})`, async () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'parallax-input-binding-'));
+    const fresh = mkdtempSync(path.join(tmpdir(), 'parallax-input-binding-fresh-'));
+    const before = 'export const value = 1;\n';
+    const after = 'export const value = 2;\n';
+    const registry = new AdapterRegistry();
+    registry.register({
+      id: 'mutable-supports-input', version: '1', capabilities: [],
+      supports: (file) => {
+        file.hash = createHash('sha256').update(after).digest('hex');
+        return file.language === 'typescript';
+      },
+      start: () => ({ async *process(file) {
+        yield { kind: 'diagnostic', level: 'warn', file: file.relativePath, message: file.content };
+      } })
+    });
+    try {
+      writeFileSync(path.join(root, 'a.ts'), before);
+      writeFileSync(path.join(root, '.gitignore'), '.parallax/\n');
+      initOracleGitRepo(root);
+      await indexProjectWithRegistryForTest({ repoRoot: root }, registry);
+      execFileSync('git', ['update-index', '--assume-unchanged', 'a.ts'], { cwd: root });
+      writeFileSync(path.join(root, 'a.ts'), after);
+      assert.equal(readGitSnapshot(root).isDirty, false);
+      writeFileSync(path.join(fresh, 'a.ts'), after);
+      await indexProjectWithRegistryForTest({ repoRoot: fresh }, registry);
+      const oracle = snapshotGraph(fresh);
+      assert.ok(oracle.coverage.some((row) => String(row.reason).includes('value = 2')));
+      const rerun = await indexProjectWithRegistryForTest({ repoRoot: root,
+        ...(forced ? { maxFileBytes: 1_000_000 } : {}) }, registry);
+      assert.deepEqual(snapshotGraph(root), oracle);
+      assert.equal(rerun.mode, 'full');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(fresh, { recursive: true, force: true });
+    }
+  });
 }
 
 for (const forced of [false, true]) {

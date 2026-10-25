@@ -37,11 +37,18 @@ coverage and entity-version carry-forward also require equivalence checks.
 
 Config/infra has pure event-level selection checks for full/reversed/single
 processing, edited targets and path-set invalidation with unreadable context
-bodies/hashes. The next remote persisted oracles compare reversed full processing
+bodies/hashes. Persisted oracles compare reversed full processing
 with fresh full graphs and saved reports after target edits and path removal.
 A stateful adapter with both scope flags must still process every file after an
-edit: its run-local ordinal changes an owned relation. These tests do not enable
-selective runtime execution or prove a general adapter independence contract.
+edit: its run-local ordinal changes an owned relation. These persisted gates
+passed in PR #54; they do not enable selective runtime execution or prove a
+general adapter independence contract.
+
+Before adding a general flag or selective carry SQL, use the bounded config
+extraction observer in `docs/verification.md` to measure processing windows
+against total index cost. Local checks cover only its pure wrapper/type/docs;
+the actual timing run waits for the approved VM's access/resource/traffic gates.
+The small non-Git fixture does not cover Git history or large-repo performance.
 
 The input-validity slice in PR #51 uses the existing scanner and publication path. Its versioned pre-classification
 scanner/history receipt is stored with completed graph publication. Reuse now

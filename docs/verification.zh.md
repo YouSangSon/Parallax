@@ -167,6 +167,27 @@ npm run bench:perf -- --scales 10000,50000
 
 输出表会分开显示 `full_index_ms`、`full_scan_ms`、`noop_incremental_ms`、`noop_scan_ms`、`edit_reindex_ms`、`edit_scan_ms`、`analyze_no_persist_ms`、`analyze_persist_ms`、`observed_peak_rss_mb`，以及 total phase 对应的 `/kfile` 耗时列。Peak RSS 使用 Node 内置 RSS reading 在 phase 边界采样，因此是实用的趋势信号，而不是精确 allocator trace。计时运行不在 verify 中，但合成 generator 和表格 formatter 由 `tests/synthetic-repo.test.ts` 在常规 verify 闸中守护。
 
+### Config 提取成本观测
+
+在添加选择性 config/infra carry 之前，`bench/config-extraction-profile.ts`
+记录 baseline、修改一个 source 文件、修改一个 config 文件的 full 提取。
+它使用包含 20 个 TypeScript 文件与 3 个 config 文件的新建非 Git 合成 fixture。
+在获准的执行主机上构建 checkout，并传入已构建的 package 路径：
+
+```bash
+npm run build
+node dist/bench/config-extraction-profile.js /path/to/built/parallax > config-profile.json
+```
+
+输出包括整个 index 调用耗时、所有 scan 累加的 read/byte 数、config 的
+start/process/dispose 区间、各文件 event 数、runtime 模块 hash 与 host/Node 信息。
+Process 区间包含 yield 之间消费者收集事件、等待与计测开销，不是 adapter CPU
+时间，也不是净加速估计。`unchangedConfigWindowMs` 排除修改过的 config 文件。
+没有跳过读取；该小案例不测量 Git 历史、cache precheck 或大型仓库。成功或普通
+异常时会删除 fixture。时间观测不进入确定性 accuracy report 或通过阈值；远程
+正确性测试只验证 phase/count，不评价性能。观测器和合成 generator 都属于 npm
+payload 之外的 bench 文件。
+
 ### 当前本地 baseline
 
 于 2026-06-28 在 commit `f8f6060` 上采集，环境为 macOS Darwin 24.6.0、Apple M1 Max、10 CPU cores、32 GiB RAM、Node `v24.14.0`、npm `11.9.0`。

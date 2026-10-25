@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 
 import type { Confidence, RelationKind, ScannedFile } from '../types.js';
@@ -34,6 +35,12 @@ type IgnoredRange = {
 };
 
 const capabilities: readonly AdapterCapability[] = ['references'];
+type ConfigInput = Pick<ScannedFile, 'relativePath' | 'language' | 'content'>;
+// Raw evidence stays process-local; persistence must retain the publisher's redaction boundary.
+const eventMemo = new Map<string, string>();
+const memoPayloadLimit = 1_048_576;
+const memoEntryLimit = 256;
+let memoPayloadBytes = 0;
 
 export class ConfigInfraSemanticAdapter implements SemanticAdapter {
   readonly id = CONFIG_INFRA_SEMANTIC_ADAPTER_ID;
@@ -55,16 +62,46 @@ export class ConfigInfraSemanticAdapter implements SemanticAdapter {
     const filePathSet = new Set(ctx.indexedFiles.map((file) => file.relativePath));
     const normalizedPaths = new Map([...filePathSet].map((filePath) => [filePath, filePath.toLowerCase()]));
     const tokenPaths = new Set([...normalizedPaths.values()].filter((filePath) => /^[a-z0-9._/@-]+$/.test(filePath)));
+    const contextKey = createHash('sha256').update(JSON.stringify([ctx.repoRoot, [...filePathSet]])).digest('hex');
     return {
       async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
-        yield* extractConfigInfraEvents(file, filePathSet, normalizedPaths, tokenPaths);
+        const input: ConfigInput = { relativePath: file.relativePath, language: file.language, content: file.content };
+        const key = createHash('sha256').update(contextKey).update(JSON.stringify(input)).digest('hex');
+        const cached = eventMemo.get(key);
+        if (cached !== undefined) {
+          eventMemo.delete(key);
+          eventMemo.set(key, cached);
+          yield* JSON.parse(cached) as IndexEvent[];
+          return;
+        }
+        let serialized: string[] | undefined = [];
+        let bytes = 2 * (key.length + 2);
+        for (const event of extractConfigInfraEvents(input, filePathSet, normalizedPaths, tokenPaths)) {
+          const json = JSON.stringify(event);
+          if (serialized) {
+            bytes += 2 * (json.length + (serialized.length > 0 ? 1 : 0));
+            if (bytes <= memoPayloadLimit) serialized.push(json);
+            else serialized = undefined;
+          }
+          // Keep yielded mutations out of the generator's shared descriptors and memo.
+          yield JSON.parse(json) as IndexEvent;
+        }
+        if (serialized && !eventMemo.has(key)) {
+          while (eventMemo.size >= memoEntryLimit || memoPayloadBytes + bytes > memoPayloadLimit) {
+            const [oldKey, oldJson] = eventMemo.entries().next().value!;
+            eventMemo.delete(oldKey);
+            memoPayloadBytes -= 2 * (oldKey.length + oldJson.length);
+          }
+          eventMemo.set(key, `[${serialized.join(',')}]`);
+          memoPayloadBytes += bytes;
+        }
       }
     };
   }
 }
 
 function* extractConfigInfraEvents(
-  file: ScannedFile,
+  file: ConfigInput,
   filePathSet: ReadonlySet<string>,
   normalizedPaths: ReadonlyMap<string, string>,
   tokenPaths: ReadonlySet<string>
@@ -112,7 +149,7 @@ function* extractConfigInfraEvents(
   }
 }
 
-function configInfraFileDescriptor(file: ScannedFile): EntityDescriptor {
+function configInfraFileDescriptor(file: ConfigInput): EntityDescriptor {
   return {
     kind: isWorkflowFile(file) ? 'workflow' : 'resource',
     path: file.relativePath,
@@ -121,19 +158,19 @@ function configInfraFileDescriptor(file: ScannedFile): EntityDescriptor {
   };
 }
 
-function configInfraProvenance(file: ScannedFile): string {
+function configInfraProvenance(file: ConfigInput): string {
   if (isWorkflowFile(file)) return 'github-actions path reference';
   if (file.language === 'dockerfile') return 'dockerfile path reference';
   if (file.language === 'terraform') return 'terraform path reference';
   return 'config path reference';
 }
 
-function isWorkflowFile(file: ScannedFile): boolean {
+function isWorkflowFile(file: ConfigInput): boolean {
   return file.language === 'yaml' && file.relativePath.startsWith('.github/workflows/');
 }
 
 function dockerfileCopyTargets(
-  file: ScannedFile,
+  file: ConfigInput,
   filePathSet: ReadonlySet<string>
 ): TextTarget[] {
   const targets = new Map<string, TextTarget>();
@@ -163,7 +200,7 @@ function dockerfileCopySources(copyArgs: string): string[] {
   return dockerfileSources(copyArgs);
 }
 
-function dockerfileDeferredSourceRanges(file: ScannedFile): IgnoredRange[] {
+function dockerfileDeferredSourceRanges(file: ConfigInput): IgnoredRange[] {
   const ranges: IgnoredRange[] = [];
   let offset = 0;
   for (const line of file.content.split(/\r?\n/)) {

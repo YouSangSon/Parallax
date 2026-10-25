@@ -48,6 +48,28 @@ Evidence is current only when the command and result are recorded in this file. 
 
 ## Config/Infra Selection Contract — 2026-10-25
 
+- [x] Bounded process-local memo tests pass 11/11, including actual computation
+  misses/hits across new instances, exact body/language/path/order/root identity,
+  empty output, partial/failing generators, mutation isolation, interleaved runs
+  and payload/entry eviction. Earlier independence checks use cold namespaces.
+- A new remote public-indexer oracle compares warm source/config/path edits with
+  cold fresh graphs, versions, coverage, counters, current adapter audit,
+  redacted facts/provenance and saved reports. A separate trigger checks that
+  both miss and hit still fail publication, preserve the old graph and publish
+  no valid receipt; recovery reuses computation through normal publication.
+  These DB tests are not run locally; exact PR/main gates own their results.
+- Paired pure Git-corpus arrays match base `63c17db` for Parallax and Codex.
+  Codex's 28 configs compute 28/0/1/28 times for cold/warm/one-body-edit/path-change;
+  observed windows are 32.719/6.955/8.436/22.651 ms. Corresponding uncached original,
+  edited and path-change windows are 43.705/18.694/17.444 ms. These are single
+  ordered observations with startup/JIT/instrumentation effects, not a latency
+  distribution, a CLI speedup or a read reduction. The unchanged reference is
+  still `970111f6`; freshness against its remote is unverified.
+- Only repeated same-process public API calls can benefit. No daemon, general
+  independence flag, persistent raw-event cache or selective SQL carry is added.
+  Local checks remain pure/type/build/docs/schema; existing remote canonical
+  verification must pass before landing.
+
 - [x] A bounded pure observation uses immutable Git workflow blobs and recognized
   tracked-language path context. The fixed old compiled adapter and candidate
   `808ce5f` produce equal full event arrays for Parallax/Codex forward, reverse

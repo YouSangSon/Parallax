@@ -303,6 +303,150 @@ test('config infra reordered full extraction preserves persisted graphs and save
   }
 });
 
+function configAudit(root: string) {
+  const db = openDatabase(root, { readOnly: true });
+  try {
+    const runId = latestCompletedIndexRun(db, getRepoId(db, root));
+    const owners = db.prepare(`SELECT r.id, ar.adapter_id, ar.status,
+        ar.index_run_id = r.index_run_id AS current_owner
+      FROM relations r LEFT JOIN adapter_runs ar ON ar.id = r.adapter_run_id
+      WHERE r.index_run_id = ? ORDER BY r.id`).all(runId);
+    assert.ok(owners.length > 0);
+    assert.ok(owners.every((row) => row.current_owner === 1 && row.status === 'completed'));
+    const redaction = db.prepare(`SELECT f.id, f.value_blob, f.redacted, fp.kind,
+        relation.entity_id, relation.attribute, relation.value_blob AS target
+      FROM facts f JOIN fact_provenance fp ON fp.source_fact_id = f.id
+      JOIN facts relation ON relation.id = fp.fact_id
+      WHERE f.entity_id = 'file:.github/workflows/memo.yml'
+        AND f.attribute = 'evidence_snippet' ORDER BY f.id, relation.id`).all();
+    assert.ok(redaction.length > 0);
+    assert.ok(redaction.every((row) => row.redacted === 1 && row.kind === 'evidence' &&
+      String(row.value_blob).includes('[REDACTED_GITHUB_TOKEN]')));
+    return { owners, redaction };
+  } finally { db.close(); }
+}
+
+test('config memo replays through full publication and matches cold fresh graphs, audit and saved reports', async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), 'parallax-config-memo-'));
+  const freshRoots: string[] = [];
+  const workflow = `steps:\n  - run: node src/a.ts # ghp_${'fixture'.repeat(5)}\n`;
+  const docker = 'COPY src/a.ts /app/a.ts\nCOPY src/b.ts /app/b.ts\n';
+  const editedDocker = 'COPY src/b.ts /app/only-b.ts\n';
+  const terraform = 'source = "src/b.ts"\n';
+  const configBodies = new Set([workflow, docker, editedDocker, terraform]);
+  let computed: string[] = [];
+  const lower = String.prototype.toLowerCase;
+  t.mock.method(String.prototype, 'toLowerCase', function (this: string) {
+    if (configBodies.has(String(this))) computed.push(String(this));
+    return lower.call(this);
+  });
+  const write = (dir: string, source: number, edited: boolean, removed: boolean) => {
+    for (const name of ['.github/workflows', 'infra', 'src']) mkdirSync(path.join(dir, name), { recursive: true });
+    writeFileSync(path.join(dir, '.github/workflows/memo.yml'), workflow);
+    writeFileSync(path.join(dir, 'Dockerfile'), edited ? editedDocker : docker);
+    writeFileSync(path.join(dir, 'infra/main.tf'), terraform);
+    writeFileSync(path.join(dir, 'src/a.ts'), `export const a = ${source};\n`);
+    if (removed) rmSync(path.join(dir, 'src/b.ts'));
+    else writeFileSync(path.join(dir, 'src/b.ts'), "import { a } from './a.js';\nexport const b = a;\n");
+  };
+  try {
+    write(root, 1, false, false);
+    await initProject({ repoRoot: root });
+    await indexProject({ repoRoot: root });
+    assert.deepEqual(computed.sort(), [workflow, docker, terraform].sort());
+    const saved = await savedImpact(root);
+    assert.ok(saved.graph.edges.some((edge) => edge.source === 'file:Dockerfile'));
+    for (const state of [
+      { name: 'source body edit', edited: false, removed: false, computed: [] },
+      { name: 'config body edit', edited: true, removed: false, computed: [editedDocker] },
+      { name: 'context path removal', edited: true, removed: true, computed: [workflow, editedDocker, terraform] }
+    ]) {
+      write(root, 2, state.edited, state.removed);
+      computed = [];
+      const reads: IndexScanReads[] = [];
+      const actual = await indexProject({ repoRoot: root, perfObserver: (_phase, _ms, scan) => {
+        if (scan) reads.push(scan);
+      } });
+      assert.equal(actual.mode, 'full', state.name);
+      assert.deepEqual(computed.sort(), state.computed.sort(), state.name);
+      assert.equal(reads.reduce((sum, scan) => sum + scan.bodyReads, 0), state.removed ? 4 : 5,
+        'computation reuse must not be reported as skipped scanner reads');
+      const fresh = mkdtempSync(path.join(tmpdir(), 'parallax-config-memo-fresh-'));
+      freshRoots.push(fresh);
+      write(fresh, 2, state.edited, false);
+      if (state.removed) rmSync(path.join(fresh, 'src/b.ts'));
+      await initProject({ repoRoot: fresh });
+      computed = [];
+      const expected = await indexProject({ repoRoot: fresh });
+      assert.deepEqual(computed.sort(), [workflow, state.edited ? editedDocker : docker, terraform].sort(),
+        'the fresh root must compute every config instead of using the warm root memo');
+      const { indexRunId: _actualRun, ...actualResult } = actual;
+      const { indexRunId: _expectedRun, ...expectedResult } = expected;
+      assert.deepEqual(actualResult, expectedResult, state.name);
+      assert.deepEqual(snapshotGraph(root), snapshotGraph(fresh), state.name);
+      assert.deepEqual(configAudit(root), configAudit(fresh), state.name);
+      const report = await savedImpact(root);
+      const freshReport = await savedImpact(fresh);
+      assert.deepEqual(report.semanticReport, freshReport.semanticReport, state.name);
+      assert.deepEqual(report.graph, freshReport.graph, state.name);
+      const old = await exportImpactGraph({ repoRoot: root, reportId: saved.id, format: 'json' });
+      assert.deepEqual({ nodes: old.nodes, edges: old.edges }, saved.graph, state.name);
+      computed = [];
+      assert.equal((await indexProject({ repoRoot: root })).mode, 'incremental');
+      assert.deepEqual(computed, []);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    for (const fresh of freshRoots) rmSync(fresh, { recursive: true, force: true });
+  }
+});
+
+test('a completed config memo cannot hide publication failure and remains reusable after rollback', async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), 'parallax-config-memo-rollback-'));
+  const fresh = mkdtempSync(path.join(tmpdir(), 'parallax-config-memo-rollback-fresh-'));
+  const edited = 'COPY a.ts /app/edited.ts\n';
+  const lower = String.prototype.toLowerCase;
+  let computed = 0;
+  t.mock.method(String.prototype, 'toLowerCase', function (this: string) {
+    if (String(this) === edited) computed++;
+    return lower.call(this);
+  });
+  try {
+    for (const dir of [root, fresh]) writeFileSync(path.join(dir, 'a.ts'), 'export const a = 1;\n');
+    writeFileSync(path.join(root, 'Dockerfile'), 'COPY a.ts /app/a.ts\n');
+    await indexProject({ repoRoot: root });
+    const before = snapshotGraph(root);
+    writeFileSync(path.join(root, 'Dockerfile'), edited);
+    const db = openDatabase(root);
+    try {
+      db.exec(`CREATE TRIGGER fail_memo_publication BEFORE UPDATE OF status ON index_runs
+        WHEN NEW.status = 'completed' BEGIN SELECT RAISE(ABORT, 'forced memo publication failure'); END`);
+      for (let attempt = 0; attempt < 2; attempt++) {
+        computed = 0;
+        await assert.rejects(indexProject({ repoRoot: root }), /forced memo publication failure/);
+        assert.equal(computed, attempt === 0 ? 1 : 0,
+          'a cache hit must still execute publication and propagate its failure');
+        assert.deepEqual(snapshotGraph(root), before);
+        const failed = db.prepare('SELECT status, input_snapshot_hash FROM index_runs ORDER BY id DESC LIMIT 1').get();
+        assert.equal(failed?.status, 'failed');
+        assert.equal(failed?.input_snapshot_hash, null);
+      }
+      db.exec('DROP TRIGGER fail_memo_publication');
+    } finally { db.close(); }
+    computed = 0;
+    assert.equal((await indexProject({ repoRoot: root })).mode, 'full');
+    assert.equal(computed, 0, 'a pure result is reusable independently of graph publication');
+    writeFileSync(path.join(fresh, 'Dockerfile'), edited);
+    computed = 0;
+    await indexProject({ repoRoot: fresh });
+    assert.equal(computed, 1, 'fresh reference must miss');
+    assert.deepEqual(snapshotGraph(root), snapshotGraph(fresh));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(fresh, { recursive: true, force: true });
+  }
+});
+
 test('a full reindex is byte-identical across runs (modulo run id) — the S1 oracle baseline', async () => {
   const root = mkdtempSync(path.join(tmpdir(), 'parallax-oracle-'));
   try {

@@ -53,9 +53,11 @@ export class ConfigInfraSemanticAdapter implements SemanticAdapter {
 
   start(ctx: ExtractCtx, _files: readonly ScannedFile[]): AdapterRun {
     const filePathSet = new Set(ctx.indexedFiles.map((file) => file.relativePath));
+    const normalizedPaths = new Map([...filePathSet].map((filePath) => [filePath, filePath.toLowerCase()]));
+    const tokenPaths = new Set([...normalizedPaths.values()].filter((filePath) => /^[a-z0-9._/@-]+$/.test(filePath)));
     return {
       async *process(file: ScannedFile): AsyncIterable<IndexEvent> {
-        yield* extractConfigInfraEvents(file, filePathSet);
+        yield* extractConfigInfraEvents(file, filePathSet, normalizedPaths, tokenPaths);
       }
     };
   }
@@ -63,14 +65,17 @@ export class ConfigInfraSemanticAdapter implements SemanticAdapter {
 
 function* extractConfigInfraEvents(
   file: ScannedFile,
-  filePathSet: ReadonlySet<string>
+  filePathSet: ReadonlySet<string>,
+  normalizedPaths: ReadonlyMap<string, string>,
+  tokenPaths: ReadonlySet<string>
 ): Iterable<IndexEvent> {
   const fileDescriptor = configInfraFileDescriptor(file);
   const ignoredTextRanges = file.language === 'dockerfile' ? dockerfileDeferredSourceRanges(file) : [];
   const configuredTargets = inferExplicitTextTargetsWithEvidence(
     file.relativePath,
     file.content,
-    filePathSet,
+    normalizedPaths,
+    tokenPaths,
     ignoredTextRanges
   );
 
@@ -263,15 +268,26 @@ function normalizeDockerfileSource(source: string | undefined): string | undefin
 function inferExplicitTextTargetsWithEvidence(
   relativePath: string,
   content: string,
-  filePathSet: ReadonlySet<string>,
+  normalizedPaths: ReadonlyMap<string, string>,
+  tokenPaths: ReadonlySet<string>,
   ignoredRanges: readonly IgnoredRange[] = []
 ): TextTarget[] {
   const targets: TextTarget[] = [];
   const normalizedContent = content.toLowerCase();
-  for (const candidatePath of filePathSet) {
+  const tokenIndices = new Map<string, number>();
+  // Maximal tokens use the same continuation characters as the boundary check.
+  for (const match of normalizedContent.matchAll(/[a-z0-9._/@-]+/g)) {
+    const token = match[0];
+    if (tokenPaths.has(token) && !tokenIndices.has(token) &&
+        !overlapsIgnoredRange(match.index, token.length, ignoredRanges)) {
+      tokenIndices.set(token, match.index);
+    }
+  }
+  for (const [candidatePath, normalizedPath] of normalizedPaths) {
     if (candidatePath === relativePath) continue;
-    const normalizedPath = candidatePath.toLowerCase();
-    const pathIndex = findExplicitPathIndex(normalizedContent, normalizedPath, 0, ignoredRanges);
+    const pathIndex = tokenPaths.has(normalizedPath)
+      ? tokenIndices.get(normalizedPath) ?? -1
+      : findExplicitPathIndex(normalizedContent, normalizedPath, 0, ignoredRanges);
     if (pathIndex < 0) continue;
     targets.push({
       path: candidatePath,

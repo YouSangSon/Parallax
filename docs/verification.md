@@ -180,6 +180,37 @@ Record the command, commit, Node version, OS / hardware class, and the full outp
 
 The output table separates `full_index_ms`, `full_scan_ms`, `noop_incremental_ms`, `noop_scan_ms`, `edit_reindex_ms`, `edit_scan_ms`, `analyze_no_persist_ms`, `analyze_persist_ms`, `observed_peak_rss_mb`, and matching `/kfile` timing columns for the total phases. Peak RSS is sampled at phase boundaries with Node's built-in RSS reading, so it is a practical trend signal, not an exact allocator trace. The synthetic generator and table formatter are guarded by `tests/synthetic-repo.test.ts` in the normal verify gate, even though the timing run is not.
 
+### Indexed path-token lookup
+
+A bounded adapter-only observation on 2026-10-25 found repeated full-body path
+searches on real workflow inputs. Base `5a6fbfb` and candidate `808ce5f` used
+Node `v24.14.0`, `darwin/arm64`, a 256 MiB Node heap limit and immutable local Git
+blobs. Context contained tracked paths with recognized languages, not a scanner
+snapshot; remote freshness of the local reference was not checked.
+
+| Corpus | Context paths | Workflow bodies / bytes | Base start+process (ms) | Candidate start+process (ms) |
+| --- | ---: | ---: | ---: | ---: |
+| Parallax `5a6fbfb` | 281 | 5 / 6358 | 1.186 | 0.751 |
+| [local Codex `970111f6`](https://github.com/openai/codex/tree/970111f6cb62cc02fe36a82ea7d71b37a2889c97/.github/workflows) | 7336 | 28 / 317325 | 415.014 | 22.107 |
+
+The reverse-order Codex observation was 410.206 / 20.077 ms. These are paired
+single observations including adapter startup, collection and instrumentation;
+they are not distributions, adapter CPU time, end-to-end indexing latency or a
+read reduction. Source checkouts stayed unchanged; no DB, app, model or full
+local suite was started. Codex supplied input data, not borrowed implementation.
+
+The adapter now builds a per-run path lookup and scans each normalized body for
+maximal tokens using its existing ASCII path-boundary character set. Original
+path order still materializes results before the existing sort, preserving
+collation ties and case variants. Exotic paths use the original substring
+fallback; Docker COPY and evidence calculations remain unchanged. Full event
+arrays matched the base for both corpora in forward, reverse and individual-file
+processing, and for 1298 bounded boundary/Unicode/exotic-path combinations.
+Focused tests retain original evidence and ignored-range behavior. Existing
+Unicode lowercase-expansion/CRLF offset limitations are not corrected here.
+No selective runtime flag, scanner read skipping or carry SQL is enabled; the
+other language adapter's separate matcher is outside this observation.
+
 ### Config extraction observations
 
 Before adding selective config/infra carry, `bench/config-extraction-profile.ts`

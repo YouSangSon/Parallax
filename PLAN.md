@@ -27,6 +27,14 @@ requesting 375 pixels is not proof that a 375-pixel viewport was applied.
 
 ## S1 Output Ownership and Selective Reads — 2026-10-24
 
+The real workflow-body observation now finds material config matching cost on
+one pinned local Codex corpus. First remove its repeated per-path body searches
+with a per-run token lookup while preserving full event arrays, stable ordering,
+case collisions, fallback and evidence. This is a bounded computation change;
+scan/read skipping and general selective carry remain disabled. Reassess their
+value using the remaining measured cost rather than the former matcher cost.
+See the paired adapter-only scope in `docs/verification.md`.
+
 Continue the existing S1 queue after the completed portfolio/help slices:
 
 1. Enforce opt-in `processed-file` output ownership before graph publication.

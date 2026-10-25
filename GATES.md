@@ -48,6 +48,18 @@ Evidence is current only when the command and result are recorded in this file. 
 
 ## Config/Infra Selection Contract — 2026-10-25
 
+- [x] A bounded pure observation uses immutable Git workflow blobs and recognized
+  tracked-language path context. The fixed old compiled adapter and candidate
+  `808ce5f` produce equal full event arrays for Parallax/Codex forward, reverse
+  and individual-file processing, plus 1298 boundary/exotic/Unicode cases.
+  The context bodies/hashes are inaccessible. Timing includes start and
+  consumption; it is not whole-index latency, CPU time or a read reduction.
+- [x] `node --import tsx --test --test-concurrency=1 tests/config-infra-selection.test.ts`
+  passes 5/5 before and after the change. `npm run lint`, `npm run build` and
+  `git diff --check` pass. Independent design and implementation reviews approve
+  the preserved ordering/fallback/evidence/cache boundary. Final PR/main gates
+  remain owned by their exact remote receipts; no full local suite is run.
+
 - [x] The approved my-cloud measurement used the PR #55 / `5fc6cba` package,
   verified artifact/module hashes, a nonblocking shared process lock, and actual
   cgroup limits of one CPU and 1 GiB. Provider-billed usage was below the agreed

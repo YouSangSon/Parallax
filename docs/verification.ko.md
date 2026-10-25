@@ -294,6 +294,33 @@ command, commit, Node version, OS / hardware class, 전체 output table을 함�
 
 출력 표는 `full_index_ms`, `full_scan_ms`, `noop_incremental_ms`, `noop_scan_ms`, `edit_reindex_ms`, `edit_scan_ms`, `analyze_no_persist_ms`, `analyze_persist_ms`, `observed_peak_rss_mb`, total phase에 대응하는 `/kfile` 시간 열을 분리한다. Peak RSS는 Node 내장 RSS reading을 phase 경계에서 샘플링하므로 실용적인 추세 신호이지 정확한 allocator trace는 아니다. 시간 측정 실행은 verify에 없지만 합성 generator와 표 formatter는 `tests/synthetic-repo.test.ts`로 정규 verify 게이트에서 가드된다.
 
+### 경로 토큰 조회
+
+2026-10-25 실제 workflow 본문으로 adapter만 관측하니 경로마다 전체 본문을 다시
+검색하는 비용이 드러났다. 기준 `5a6fbfb`와 후보 `808ce5f`를 Node `v24.14.0`,
+`darwin/arm64`, Node heap 상한 256 MiB에서 비교했다. 입력은 로컬 Git의 고정된
+blob이며 context는 언어를 인식한 tracked 경로다. scanner snapshot은 아니고,
+로컬 참고 저장소가 최신 원격 상태인지도 확인하지 않았다.
+
+| 입력 | Context 경로 | Workflow 본문 / byte | 기준 start+process (ms) | 후보 start+process (ms) |
+| --- | ---: | ---: | ---: | ---: |
+| Parallax `5a6fbfb` | 281 | 5 / 6358 | 1.186 | 0.751 |
+| [로컬 Codex `970111f6`](https://github.com/openai/codex/tree/970111f6cb62cc02fe36a82ea7d71b37a2889c97/.github/workflows) | 7336 | 28 / 317325 | 415.014 | 22.107 |
+
+Codex의 역순 관측은 기준 410.206 / 후보 20.077 ms였다. 시작·이벤트 수집·계측을
+포함한 단일 쌍 관측이다. 분포·adapter CPU 시간·전체 인덱싱 지연·읽기 감소로
+확대하지 않는다. 원본 checkout은 유지했으며 로컬 DB·앱·모델·전체 suite는
+실행하지 않았다. Codex는 입력 자료로만 사용했고 구현 코드는 차용하지 않았다.
+
+경로 조회표를 run마다 한 번 만들고, 정규화한 본문을 기존 ASCII 경로 경계 문자로
+나눈 최대 토큰으로 조회한다. 결과는 원래 경로 순서로 모은 뒤 기존 정렬을 적용해
+정렬 동률과 대소문자 변형을 보존한다. 특수 경로는 기존 substring fallback을 쓰고
+Docker COPY·증거 계산도 유지한다. 두 corpus의 정방향·역방향·파일별 단독 처리와
+경계·Unicode·특수 경로 조합 1298개에서 기준과 후보의 전체 이벤트 배열이 같았다.
+집중 검사는 원본 증거와 제외 구간을 확인한다. 기존 Unicode 소문자화의 길이 증가와
+CRLF 좌표 한계는 이번에 고치지 않았다. 선택 실행 flag·scanner 읽기 생략·carry SQL은
+활성화하지 않으며 다른 언어 adapter의 별도 matcher는 이 관측 범위 밖이다.
+
 ### Config 추출 비용 관측
 
 선택 config/infra carry를 추가하기 전에 `bench/config-extraction-profile.ts`로

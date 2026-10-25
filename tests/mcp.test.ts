@@ -1425,7 +1425,7 @@ test('MCP doctor returns the local health report without telemetry writes', asyn
     assert.equal(report.version, 0);
     assert.equal(report.repoRoot, '[REPO_ROOT]');
     assert.equal(report.database.path, '.parallax/impact.db');
-    assert.equal(report.database.schemaVersion, 16);
+    assert.equal(report.database.schemaVersion, 17);
     assert.equal(report.index.latestCompletedRun?.status, 'completed');
     assert.equal(report.telemetry.toolRuns, 0);
   } finally {

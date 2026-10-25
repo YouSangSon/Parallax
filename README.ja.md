@@ -27,7 +27,7 @@ Claude Code、Codex、Cursor などのエージェントがコードに手を加
 
 ---
 
-**実ファイルの再検証:** Git の `assume-unchanged`・`skip-worktree`、改行変換や clean filter を使った後は、Git が clean でもキャッシュがファイルの変更を見逃すことがあります。`parallax index --max-file-bytes 1000000` は既定の 1 MB 上限を保ち、キャッシュの再利用を避けて実ファイルを再検証します。[追跡中の回帰](https://github.com/YouSangSon/Parallax/pull/51)。
+**キャッシュの検証:** Git の clean 状態だけでなく、実際のスキャン入力と選択した Git 履歴も比較して結果を再利用します。本文の読み取りは省略しません。1 MB 上限を明示する場合は `parallax index --max-file-bytes 1000000` を使用してください。[検証範囲（英語）](docs/verification.md)。
 
 ## 🚀 クイックスタート
 

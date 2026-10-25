@@ -26,7 +26,7 @@ Every command below is an `npm run` script defined in `package.json`.
 | `npm run test:security` | Runs `tests/security.test.ts` (path containment, redaction, dependency audit gate) | After store / path / redaction / audit-gate changes |
 | `npm run test:install-smoke` | `npm run build` then `node dist/src/cli.js --help` | Before release, to confirm the packaged CLI launches |
 
-`bench:perf` also reports `*_scan_body_reads`, `*_scan_body_bytes`, `*_scan_sample_reads` and `*_scan_sample_bytes` for full/no-op/edit runs. These count successful scanner reads and bytes returned by the file API, including recognized files that no adapter supports and bounded samples of oversized files. They exclude Git/metadata work, custom-adapter reads and device/cache I/O. A non-git no-op still reads bodies; a clean same-HEAD reuse does not run the scanner. `IndexOptions.perfObserver` receives these counts as an optional third argument after a completed scan; a failed scan has no counts. The CLI/index result shape is unchanged.
+`bench:perf` also reports `*_scan_body_reads`, `*_scan_body_bytes`, `*_scan_sample_reads` and `*_scan_sample_bytes` for full/no-op/edit runs. These count successful scanner reads and bytes returned by the file API, including recognized files that no adapter supports and bounded samples of oversized files. They exclude Git/metadata work, custom-adapter reads and device/cache I/O. Both non-git no-ops and clean same-HEAD validation read bodies. A cache miss can scan twice; counters and durations sum both scans. `IndexOptions.perfObserver` receives these counts as an optional third argument after a completed scan; a failed scan has no counts. The CLI/index result shape is unchanged.
 
 `test:fixtures` is an alias for `npm test`, and `test:benchmark` is an alias for `npm run bench`. `npm run verify` includes `npm run audit:dependencies`, so its final audit stage depends on npm registry and network availability.
 
@@ -63,8 +63,9 @@ The default suite globs `tests/**/*.test.ts`. The guard is named `tests/dogfood.
 
 ## Incremental correctness gate
 
-`IndexResult.mode = 'incremental'` currently means no indexed body changed. Any
-scanner-observed changed indexed body reports `mode = 'full'` and uses full extraction. The
+`IndexResult.mode = 'incremental'` requires the same verified scanner inputs and
+selected Git history. Changed or unverified inputs, including unsupported bodies
+and skip samples, report `mode = 'full'` and use full extraction. The
 `fileContentScope` contract alone cannot authorize changed-only extraction: it
 constrains reads, not ownership of emitted rows.
 
@@ -98,19 +99,34 @@ oracles run in existing remote CI under the shared-machine policy. This is not a
 filesystem snapshot or an atomicity guarantee for every graph writer. The
 [decision and concept reference](verification.ko.md#겹친-인덱싱의-발행-기준) describe the scope.
 
-Clean same-HEAD reuse considers only the latest completed cohort, then checks its
-extractor/HEAD/clean fields. Candidate, file/coverage checks and counters share one
-short SQLite read snapshot, released on hit, miss or failure. Fatal reuse errors
-close the database before propagating. This prevents historical and mixed-cohort
-results without rejecting valid empty repositories. The remote oracle includes a
-real child CLI writer; the guarantee is one DB read point, not continuing freshness
-or a Git/filesystem snapshot. See the [Korean rationale](verification.ko.md#clean-git-캐시와-현재-cohort).
+Clean same-HEAD reuse selects the latest completed cohort, checks its extractor,
+HEAD and resource eligibility, then reads current bounded scanner inputs and
+selected Git history. Their versioned digest must equal the private receipt
+published with that graph. Capture precedes mutable adapter classification; the
+same selected history is used by co-change extraction. No body reads are skipped.
 
-Git flags, content normalization and retained stat-cache history can hide actual
-body changes from clean-HEAD reuse. This known gap is tracked in [draft #51](https://github.com/YouSangSon/Parallax/pull/51).
-Use `parallax index --max-file-bytes 1000000` to keep the default 1 MB bound and
-bypass clean reuse, rechecking actual file hashes/paths. This is a revalidation
-workaround, not proof of a new cache or selective body reading.
+Candidate, checks, validation and counters share one DEFERRED reader snapshot,
+released on hit, miss or failure. Fatal errors close the database. A miss closes
+that snapshot, allocates a new run ID and captures inputs again; it never publishes
+precheck data. Even a retained hit rechecks the latest completed ID in a fresh
+autocommit read after closing the snapshot; movement becomes a miss. A writer
+finishing after that final admission read is outside the freshness guarantee. This can read bodies twice and hold the reader snapshot longer.
+WAL avoids a writer slot, but the guarantee is one DB read point, not ongoing
+freshness or an atomic filesystem/Git snapshot.
+
+Schema v17 adds a nullable receipt without backfilling legacy hashes. A legacy,
+unknown or mismatched receipt forces a full rebuild on the next index; reapply
+SCIP/trace augmentation as for other full rebuilds. Later identical-input runs
+preserve it. Existing v16 read APIs remain compatible. Co-change savepoint failure
+keeps best-effort completed audit but stores no valid receipt, so the next run
+retries fully. Graph publication failure rolls back both graph and receipt.
+
+[PR #51](https://github.com/YouSangSon/Parallax/pull/51) records hidden Git body,
+mutable classification and history-growth/shrinkage oracles. The explicit
+`parallax index --max-file-bytes 1000000` path still bypasses clean reuse; it is not
+needed to recheck bodies and is not selective extraction. See the
+[Korean rationale](verification.ko.md#git-clean과-실제-본문-변경) for alternatives,
+input scope and limitations.
 
 Scanner checks and bounded body/sample reads share one open descriptor. Body
 allocation is limited to its checked size; short reads are completed, while EOF,

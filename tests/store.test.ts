@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
-import { contentHash, loadVectorExtension, openDatabase } from '../src/store.js';
+import { assertCurrentSchema, contentHash, ensureRepo, loadVectorExtension, openDatabase } from '../src/store.js';
 import type { Db } from '../src/store.js';
 
 function withTempDb<T>(callback: (db: Db) => T): T {
@@ -21,14 +21,14 @@ function withTempDb<T>(callback: (db: Db) => T): T {
   }
 }
 
-test('migrate records schema_versions through v16', () => {
+test('migrate records schema_versions through v17', () => {
   withTempDb((db) => {
     const versions = db
       .prepare('SELECT version FROM schema_versions ORDER BY version')
       .all() as Array<{ version: number }>;
     assert.deepEqual(
       versions.map((row) => row.version),
-      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
     );
   });
 });
@@ -70,6 +70,36 @@ test('migrate v16 adds adapter confidence metadata columns', () => {
     assert.ok(columns.includes('confidence'));
     assert.ok(columns.includes('known_gaps_json'));
   });
+});
+
+test('v17 adds an unverified nullable receipt while v16 read APIs remain compatible', () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'parallax-store-v16-'));
+  try {
+    const seed = openDatabase(dir);
+    let runId: number;
+    try {
+      const repoId = ensureRepo(seed, dir);
+      runId = Number(seed.prepare(`INSERT INTO index_runs
+        (repo_id, status, started_at, extractor_version) VALUES (?, 'completed', datetime('now'), 'legacy')`)
+        .run(repoId).lastInsertRowid);
+      seed.exec('ALTER TABLE index_runs DROP COLUMN input_snapshot_hash');
+      seed.prepare('DELETE FROM schema_versions WHERE version = 17').run();
+    } finally { seed.close(); }
+    const reader = openDatabase(dir, { readOnly: true });
+    try {
+      assert.doesNotThrow(() => assertCurrentSchema(reader, 'legacy read'));
+      assert.equal(reader.prepare('SELECT max(version) AS v FROM schema_versions').get()?.v, 16);
+      assert.equal(reader.prepare("SELECT name FROM pragma_table_info('index_runs') WHERE name = 'input_snapshot_hash'").get(), undefined);
+    } finally { reader.close(); }
+    const upgraded = openDatabase(dir);
+    try {
+      assert.deepEqual({ ...upgraded.prepare('SELECT status, extractor_version, input_snapshot_hash FROM index_runs WHERE id = ?').get(runId) },
+        { status: 'completed', extractor_version: 'legacy', input_snapshot_hash: null });
+      assert.equal(upgraded.prepare('SELECT max(version) AS v FROM schema_versions').get()?.v, 17);
+    } finally { upgraded.close(); }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('migrate v11/v14 adds persistent search FTS projection triggers', () => {
@@ -632,7 +662,7 @@ test('migrate is idempotent across re-runs', () => {
         .all() as Array<{ version: number }>;
       assert.deepEqual(
         versions.map((row) => row.version),
-        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
       );
     } finally {
       second.close();
@@ -662,6 +692,7 @@ test('migrate upgrades a synthetic v6 schema by adding v7/v8/v9 columns and tabl
       seed.prepare('DELETE FROM schema_versions WHERE version = 14').run();
       seed.prepare('DELETE FROM schema_versions WHERE version = 15').run();
       seed.prepare('DELETE FROM schema_versions WHERE version = 16').run();
+      seed.prepare('DELETE FROM schema_versions WHERE version = 17').run();
       seed.prepare('DROP TABLE IF EXISTS reflections').run();
       seed.prepare('DROP TABLE IF EXISTS context_tool_runs').run();
       seed.prepare('DROP TABLE IF EXISTS context_resource_accesses').run();
@@ -780,7 +811,7 @@ test('migrate upgrades a synthetic v6 schema by adding v7/v8/v9 columns and tabl
       const versions = upgraded
         .prepare('SELECT max(version) AS v FROM schema_versions')
         .get() as { v: number };
-      assert.equal(versions.v, 16);
+      assert.equal(versions.v, 17);
       const telemetry = upgraded
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'context_tool_runs'")
         .get();

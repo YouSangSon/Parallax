@@ -173,7 +173,7 @@ async function indexProjectInternal(
       gitSnapshot.commitSha,
       gitSnapshot.isDirty,
       extractorVersion,
-      options.maxFileBytes
+      options
     );
   } catch (error) {
     db.close();
@@ -204,6 +204,9 @@ async function indexProjectInternal(
     const scan = timeIndexPhase(options, 'scan', () =>
       scanFiles(repoRoot, options.maxFileBytes ?? defaultMaxFileBytes)
     );
+    const commitHistory = readCommitHistory(repoRoot);
+    // Capture actual scanner inputs before legacy adapter callbacks can mutate them.
+    const inputSnapshotHash = hashIndexInputs(scan, commitHistory);
     const files = scan.files;
     const classified = registry.classify(files);
     const skippedCoverage = scan.skipped.map((file) => ({
@@ -240,11 +243,12 @@ async function indexProjectInternal(
       }
     });
     const effectiveDelta: IndexDelta =
-      delta.mode === 'incremental' && delta.changed.length > 0
+      delta.mode === 'incremental' && (delta.changed.length > 0 ||
+        priorRun?.inputSnapshotHash !== inputSnapshotHash)
         ? {
             ...delta,
             mode: 'full',
-            reason: 'changed indexed content requires full extraction',
+            reason: 'changed or unverified index inputs require full extraction',
             unchanged: [],
             changed: []
           }
@@ -355,6 +359,8 @@ async function indexProjectInternal(
       mainBranch,
       memoryTxId,
       memoryTs,
+      commitHistory,
+      inputSnapshotHash,
     });
     db.close();
 
@@ -381,6 +387,21 @@ function timeIndexPhase(options: IndexOptions, phase: 'scan', fn: () => ScanResu
   } finally {
     options.perfObserver(phase, performance.now() - start, result?.reads);
   }
+}
+
+function hashIndexInputs(scan: ScanResult, commitHistory: readonly (readonly string[])[]): string {
+  const hash = createHash('sha256');
+  for (const file of scan.files) {
+    hash.update(JSON.stringify(['file', file.relativePath, file.language, file.hash])).update('\n');
+  }
+  for (const file of scan.skipped) {
+    hash.update(JSON.stringify(['skipped', file.relativePath, file.language ?? null, file.reason,
+      file.contentSample ?? null, file.contentSampleHash ?? null])).update('\n');
+  }
+  for (const commit of commitHistory) {
+    hash.update(JSON.stringify(['commit', commit])).update('\n');
+  }
+  return `s1-input-v1:${hash.digest('hex')}`;
 }
 
 async function collectAdapterEvents(input: {
@@ -542,6 +563,8 @@ function persistCollectedIndexRun(input: {
   mainBranch: { id: string; head_tx_id: string | null };
   memoryTxId: string;
   memoryTs: string;
+  commitHistory: readonly (readonly string[])[];
+  inputSnapshotHash: string;
 }): IndexResult {
   if (input.delta.mode === 'incremental' && input.delta.changed.length > 0) {
     throw new Error('carry-forward requires unchanged indexed content');
@@ -561,7 +584,7 @@ function persistCollectedIndexRun(input: {
     counters: { symbolsIndexed: 0, edgesIndexed: 0 },
   };
   const indexedPaths = new Set(input.indexedFiles.map((file) => file.relativePath));
-  const coChangePairs = computeCoChanges(readCommitHistory(input.repoRoot), indexedPaths);
+  const coChangePairs = computeCoChanges(input.commitHistory, indexedPaths);
   const coChangeRunId =
     coChangePairs.length > 0
       ? Number(
@@ -701,6 +724,7 @@ function persistCollectedIndexRun(input: {
       );
     }
 
+    let completeInputs = true;
     if (coChangeRunId !== null) {
       input.db.exec('SAVEPOINT s2_co_change_graph');
       try {
@@ -744,6 +768,7 @@ function persistCollectedIndexRun(input: {
         input.db.exec('RELEASE SAVEPOINT s2_co_change_graph');
         updateAdapterRun(input.db, coChangeRunId, 'completed');
       } catch (error) {
+        completeInputs = false;
         input.db.exec('ROLLBACK TO SAVEPOINT s2_co_change_graph');
         input.db.exec('RELEASE SAVEPOINT s2_co_change_graph');
         updateAdapterRun(
@@ -756,8 +781,9 @@ function persistCollectedIndexRun(input: {
     }
 
     input.db
-      .prepare("UPDATE index_runs SET status = ?, finished_at = datetime('now') WHERE id = ?")
-      .run('completed', input.indexRunId);
+      .prepare(`UPDATE index_runs SET status = ?, finished_at = datetime('now'),
+        input_snapshot_hash = ? WHERE id = ?`)
+      .run('completed', completeInputs ? input.inputSnapshotHash : null, input.indexRunId);
     input.db
       .prepare('UPDATE branches SET head_tx_id = ? WHERE id = ?')
       .run(input.memoryTxId, input.mainBranch.id);
@@ -1009,21 +1035,22 @@ function extractorVersionFor(
 // `computeIndexDelta` can decide whether the next run may be incremental. After
 // any completed run (full or incremental) every live row is stamped with that
 // run id, so the prior completed run always holds the full current graph.
-type PriorIndexRun = { runId: number; files: IndexRunFiles };
+type PriorIndexRun = { runId: number; files: IndexRunFiles; inputSnapshotHash: string | null };
 
 function loadPriorCompletedRun(db: Db, repoId: number): PriorIndexRun | null {
   const priorRun = db
     .prepare(
-      "SELECT id, extractor_version FROM index_runs WHERE repo_id = ? AND status = 'completed' ORDER BY id DESC LIMIT 1"
+      "SELECT id, extractor_version, input_snapshot_hash FROM index_runs WHERE repo_id = ? AND status = 'completed' ORDER BY id DESC LIMIT 1"
     )
-    .get(repoId) as { id: number; extractor_version: string } | undefined;
+    .get(repoId) as { id: number; extractor_version: string; input_snapshot_hash: string | null } | undefined;
   if (!priorRun) return null;
   const rows = db
     .prepare('SELECT path, content_hash FROM files WHERE repo_id = ? AND index_run_id = ?')
     .all(repoId, priorRun.id) as Array<{ path: string; content_hash: string }>;
   const files = new Map<string, string>();
   for (const row of rows) files.set(row.path, row.content_hash);
-  return { runId: priorRun.id, files: { extractorVersion: priorRun.extractor_version, files } };
+  return { runId: priorRun.id, files: { extractorVersion: priorRun.extractor_version, files },
+    inputSnapshotHash: priorRun.input_snapshot_hash };
 }
 
 function reuseCleanGitIndexIfUnchanged(
@@ -1033,26 +1060,36 @@ function reuseCleanGitIndexIfUnchanged(
   commitSha: string | null,
   isDirty: boolean,
   extractorVersion: string,
-  maxFileBytes: number | undefined
+  options: IndexOptions
 ): IndexResult | null {
-  if (!commitSha || isDirty || maxFileBytes !== undefined) return null;
+  if (!commitSha || isDirty || options.maxFileBytes !== undefined) return null;
+  let reusable: IndexResult | null = null;
   // Keep the candidate and its mutable cohort rows in one reader snapshot.
   db.exec('BEGIN DEFERRED');
   try {
     const prior = db.prepare(
-      `SELECT id, extractor_version, git_commit_sha, git_is_dirty
+      `SELECT id, extractor_version, git_commit_sha, git_is_dirty, input_snapshot_hash
        FROM index_runs WHERE repo_id = ? AND status = 'completed'
        ORDER BY id DESC LIMIT 1`
     ).get(repoId) as {
       id: number; extractor_version: string; git_commit_sha: string | null; git_is_dirty: number | null;
+      input_snapshot_hash: string | null;
     } | undefined;
     if (!prior || prior.extractor_version !== extractorVersion ||
-        prior.git_commit_sha !== commitSha || prior.git_is_dirty !== 0) return null;
+        prior.git_commit_sha !== commitSha || prior.git_is_dirty !== 0 || !prior.input_snapshot_hash) return null;
     if (!indexRunFitsDefaultScanLimit(db, repoId, repoRoot, prior.id)) return null;
-    return loadIndexResultForRun(db, repoId, prior.id);
+    const scan = timeIndexPhase(options, 'scan', () => scanFiles(repoRoot, defaultMaxFileBytes));
+    if (hashIndexInputs(scan, readCommitHistory(repoRoot)) !== prior.input_snapshot_hash) return null;
+    reusable = loadIndexResultForRun(db, repoId, prior.id);
   } finally {
     if (db.isTransaction) db.exec('ROLLBACK');
   }
+  if (!reusable) return null;
+  // A retained reader snapshot cannot see a cohort published during validation.
+  const latest = db.prepare(`SELECT id FROM index_runs
+    WHERE repo_id = ? AND status = 'completed' ORDER BY id DESC LIMIT 1`)
+    .get(repoId) as { id: number } | undefined;
+  return latest?.id === reusable.indexRunId ? reusable : null;
 }
 
 function indexRunFitsDefaultScanLimit(

@@ -6,7 +6,8 @@ import path from 'node:path';
 import { test } from 'node:test';
 
 import { AdapterRegistry } from '../src/adapters/registry.js';
-import { indexProjectWithRegistryForTest } from '../src/indexer.js';
+import { indexProject, indexProjectWithRegistryForTest } from '../src/indexer.js';
+import { timedIndex } from '../bench/impact-perf.js';
 import type { IndexOptions } from '../src/types.js';
 
 function registry(): AdapterRegistry {
@@ -54,7 +55,7 @@ test('scan counters measure returned bytes including unsupported bodies and boun
   assert.equal('scanReads' in first, false);
 });
 
-test('clean same-HEAD reuse does not run the scan observer', async (t) => {
+test('clean same-HEAD reuse observes body validation and retains the run', async (t) => {
   const root = await mkdtemp(path.join(tmpdir(), 'parallax-scan-reuse-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   await writeFile(path.join(root, 'app.ts'), 'export const value = 1;\n');
@@ -68,7 +69,27 @@ test('clean same-HEAD reuse does not run the scan observer', async (t) => {
   const adapters = registry();
   const first = await indexProjectWithRegistryForTest(options, adapters);
   const second = await indexProjectWithRegistryForTest(options, adapters);
-  assert.equal(scans, 1);
+  assert.equal(scans, 2);
   assert.equal(second.mode, 'incremental');
   assert.equal(second.indexRunId, first.indexRunId);
+});
+
+test('performance measurement sums validation and publication body reads on a clean-cache miss', async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), 'parallax-scan-bench-miss-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const git = (args: string[]) => execFileSync('git', args, { cwd: root, stdio: 'pipe' });
+  await writeFile(path.join(root, 'app.ts'), 'export const value = 1;\n');
+  git(['init']);
+  git(['add', 'app.ts']);
+  git(['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', '-c', 'commit.gpgsign=false', 'commit', '-m', 'fixture']);
+  await writeFile(path.join(root, '.git/info/exclude'), '.parallax/\n');
+  await indexProject({ repoRoot: root });
+  git(['update-index', '--assume-unchanged', 'app.ts']);
+  const changed = 'export const value = 22;\n';
+  await writeFile(path.join(root, 'app.ts'), changed);
+  const measured = await timedIndex(root);
+  assert.equal(measured.value.mode, 'full');
+  assert.deepEqual(measured.scanReads, {
+    bodyReads: 2, bodyBytes: 2 * Buffer.byteLength(changed), sampleReads: 0, sampleBytes: 0
+  });
 });

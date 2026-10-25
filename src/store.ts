@@ -7,7 +7,9 @@ import * as sqliteVec from 'sqlite-vec';
 import { DATA_DIR, PACKAGE_NAME, PRODUCT_NAME } from './branding.js';
 
 export type Db = DatabaseSync;
-export const CURRENT_SCHEMA_VERSION = 16;
+export const CURRENT_SCHEMA_VERSION = 17;
+// Read APIs do not consume the private v17 index-input receipt.
+const READ_API_SCHEMA_VERSION = 16;
 
 type OpenDatabaseOptions = {
   readOnly?: boolean;
@@ -725,6 +727,13 @@ function migrate(db: Db, options: MigrateOptions): void {
     VALUES (16, datetime('now'));
   `);
 
+  // Legacy cohorts stay unverified until a full extraction records actual inputs.
+  tryAddColumn(db, 'index_runs', 'input_snapshot_hash', 'TEXT');
+  db.exec(`
+    INSERT OR IGNORE INTO schema_versions (version, applied_at)
+    VALUES (17, datetime('now'));
+  `);
+
   // Schema v11/v14: persistent FTS projections for context search. These
   // projections make entities, relation evidence, and selected memory facts
   // searchable from read-only MCP calls without rebuilding temp FTS tables per
@@ -912,6 +921,7 @@ const ALLOWED_COLUMNS = new Set([
   'git_commit_sha',
   'git_branch_name',
   'git_is_dirty',
+  'input_snapshot_hash',
   'confidence',
   'known_gaps_json'
 ]);
@@ -1084,14 +1094,14 @@ export function assertCurrentSchema(db: Db, feature: string): void {
     columnExists(db, 'adapter_runs', 'confidence')
     && columnExists(db, 'adapter_runs', 'known_gaps_json');
   if (
-    version < CURRENT_SCHEMA_VERSION
+    version < READ_API_SCHEMA_VERSION
     || !hasProvenanceTx
     || !hasCurrentSearchProjections
     || !hasContextPackStore
     || !hasAdapterRunMetadata
   ) {
     throw new Error(
-      `${feature} requires ${PRODUCT_NAME} schema v${CURRENT_SCHEMA_VERSION} with current search projections, context pack store, and adapter metadata; current database is v${version}. Run ${PACKAGE_NAME} init with the current build to apply additive migrations.`
+      `${feature} requires ${PRODUCT_NAME} schema v${READ_API_SCHEMA_VERSION} with current search projections, context pack store, and adapter metadata; current database is v${version}. Run ${PACKAGE_NAME} init with the current build to apply additive migrations.`
     );
   }
 }

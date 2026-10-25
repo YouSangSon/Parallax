@@ -51,6 +51,16 @@ test('ingestTraces promotes a heuristic co-change relation to proven', async () 
     assert.ok(betaAfter, 'expected beta as a dependent after ingestion');
     assert.equal(betaAfter.confidence, 'proven');
 
+    const legacy = openDatabase(repoRoot);
+    try {
+      legacy.exec(`UPDATE index_runs SET input_snapshot_hash = NULL
+        WHERE id = (SELECT max(id) FROM index_runs WHERE status = 'completed')`);
+    } finally { legacy.close(); }
+    assert.equal((await indexProject({ repoRoot })).mode, 'full');
+    const rebuilt = await analyzeDiff({ repoRoot, changedFiles: ['src/alpha.ts'] });
+    assert.equal(rebuilt.affectedFiles.find((file) => file.path === 'src/beta.ts')?.confidence, 'heuristic');
+    assert.equal(ingestTraces(repoRoot, [{ source: 'src/beta.ts', target: 'src/alpha.ts' }]).promoted, 1);
+
     const rerun = await indexProject({ repoRoot, maxFileBytes: 1_000_000 });
     assert.equal(rerun.mode, 'incremental');
     const afterRerun = await analyzeDiff({ repoRoot, changedFiles: ['src/alpha.ts'] });
@@ -69,6 +79,8 @@ test('ingestTraces promotes a heuristic co-change relation to proven', async () 
       await assert.rejects(indexProject({ repoRoot, maxFileBytes: 1_000_000 }), /forced publication failure/);
       assert.deepEqual(graphState(), beforeFailure, 'publication failure must roll back the entire graph');
       assert.equal(db.prepare('SELECT status FROM index_runs ORDER BY id DESC LIMIT 1').get()?.status, 'failed');
+      assert.equal(db.prepare('SELECT input_snapshot_hash FROM index_runs ORDER BY id DESC LIMIT 1').get()?.input_snapshot_hash, null,
+        'failed publication must not retain a valid input receipt');
     } finally {
       db.close();
     }

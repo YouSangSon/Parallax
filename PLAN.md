@@ -40,14 +40,20 @@ processing, edited targets and path-set invalidation with unreadable context
 bodies/hashes. These bounded fixtures do not enable selective runtime execution
 or replace the persisted fresh-index/saved-report gates.
 
-The active input-validity follow-up is draft PR #51. Pure Git probes show that
-clean status and unchanged HEAD can coexist with changed decoded source after
-index flags, normalization or retained stat-cache history. Current-state checks
-and a prior-input marker alone are insufficient. Before enabling new read skips,
-choose and validate evidence binding the captured scanner inputs to the current
-files, including metadata/timestamp ambiguity. No schema change is implemented.
-The existing explicit default byte limit provides a forced body-recheck path;
-README guidance records this while the failing cache regressions remain unmerged.
+The input-validity slice in PR #51 uses the existing scanner and publication path. Its versioned pre-classification
+scanner/history receipt is stored with completed graph publication. Reuse now
+validates bounded bodies and selected history; a miss allocates a new run before
+capturing inputs again. NULL/unknown/different inputs require full extraction,
+including legacy cohorts and changed skip/unsupported/history inputs. The first
+legacy rebuild follows the existing SCIP/trace reapply contract; later identical
+inputs retain augmentation. A co-change savepoint failure publishes no valid
+receipt. Schema v17 is private to indexing; v16 read APIs remain compatible.
+
+The eight hidden-Git regressions and two mutable-supports cases are preserved.
+Required remote gates additionally cover history removal, legacy reapply,
+rescan/history capture, summed read counts and graph/receipt rollback. Local
+validation stays type/docs/schema only. Runtime selective extraction/read skipping
+remains a later step, with no speedup or read-reduction claim for this repair.
 
 ## CLI Help Safety Follow-up — 2026-10-23
 
@@ -229,9 +235,9 @@ existing ownership gates; this loop makes the shipped product reviewable.
   measured adapter-contract design exists; the remaining scan cost cannot be
   safely removed by only skipping file reads because adapters currently consume
   whole indexed-file context at startup.
-- Completed slice: S1 incremental indexing now reuses the latest completed
-  clean same-HEAD git index for default resource limits, skipping directory
-  scan, content reads, adapter startup, and a redundant `index_runs` row. The
+- Historical slice (input validation above supersedes read skipping): S1 reused
+  the latest completed clean same-HEAD git index for default resource limits,
+  skipping scan/body reads as well as adapter startup and a redundant run. The
   fast path is disabled for explicit `maxFileBytes`, prior resource skips, and
   any git-ignored path that Parallax's scanner would index.
 - Completed slice: S1 incremental indexing now writes indexed coverage only for

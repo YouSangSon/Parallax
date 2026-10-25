@@ -67,16 +67,21 @@ async function timed<T>(fn: () => Promise<T>): Promise<Timed<T>> {
   return { value, ms: performance.now() - start };
 }
 
-async function timedIndex(repoRoot: string): Promise<Timed<IndexResult> & { scanMs: number; scanReads: IndexScanReads }> {
+export async function timedIndex(repoRoot: string): Promise<Timed<IndexResult> & { scanMs: number; scanReads: IndexScanReads }> {
   let scanMs = 0;
-  let scanReads: IndexScanReads = { bodyReads: 0, bodyBytes: 0, sampleReads: 0, sampleBytes: 0 };
+  const scanReads: IndexScanReads = { bodyReads: 0, bodyBytes: 0, sampleReads: 0, sampleBytes: 0 };
   const timedResult = await timed(() =>
     indexProject({
       repoRoot,
       perfObserver: (phase, ms, reads) => {
         if (phase === 'scan') {
           scanMs += ms;
-          if (reads) scanReads = reads;
+          if (reads) {
+            scanReads.bodyReads += reads.bodyReads;
+            scanReads.bodyBytes += reads.bodyBytes;
+            scanReads.sampleReads += reads.sampleReads;
+            scanReads.sampleBytes += reads.sampleBytes;
+          }
         }
       }
     })

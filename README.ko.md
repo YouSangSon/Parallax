@@ -27,7 +27,7 @@ Claude Code, Codex, Cursor 같은 에이전트가 코드를 고치기 전에<br/
 
 ---
 
-**실제 파일 재검증:** `assume-unchanged`·`skip-worktree`, 줄바꿈 변환이나 clean filter를 사용한 뒤에는 Git이 clean이어도 캐시가 파일 변경을 놓칠 수 있습니다. `parallax index --max-file-bytes 1000000`으로 기본 1 MB 한도를 유지하며 캐시를 건너뛰고 실제 파일을 다시 확인할 수 있습니다. [추적 중인 회귀](https://github.com/YouSangSon/Parallax/pull/51).
+**캐시 검증:** Git clean 표시뿐 아니라 실제 스캔 입력과 선택된 Git 이력을 비교한 뒤 결과를 재사용합니다. 본문 읽기는 생략하지 않습니다. 1 MB 한도를 명시하려면 `parallax index --max-file-bytes 1000000`을 사용하세요. [검증 범위](docs/verification.ko.md).
 
 ## 🚀 빠른 시작
 

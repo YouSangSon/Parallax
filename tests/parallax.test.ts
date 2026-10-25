@@ -244,7 +244,7 @@ test('initProject creates config and SQLite database tables', async () => {
     assert.match(tables.names, /search_entities_fts/);
     assert.match(tables.names, /search_relation_evidence_fts/);
     assert.match(tables.names, /search_facts_fts/);
-    assert.equal(schemaVersion.version, 16);
+    assert.equal(schemaVersion.version, 17);
   } finally {
     db.close();
   }

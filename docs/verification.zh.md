@@ -26,7 +26,7 @@ Parallax 分层验证正确性——快速的 unit suite、typecheck、docs lint
 | `npm run test:security` | 运行 `tests/security.test.ts`（路径包含约束、脱敏、dependency audit gate） | store / 路径 / 脱敏 / audit gate 变更后 |
 | `npm run test:install-smoke` | 先 `npm run build` 再 `node dist/src/cli.js --help` | 发布前，确认打包后的 CLI 能启动 |
 
-`bench:perf` 还按 full/no-op/edit 输出 `*_scan_body_reads`、`*_scan_body_bytes`、`*_scan_sample_reads` 和 `*_scan_sample_bytes`。这些指标统计扫描器成功读取的次数及文件 API 返回的字节数，包括可识别但无适配器支持的文件，以及超限文件的有限样本读取。不包含 Git/元数据操作、自定义适配器的直接读取或设备/缓存 I/O。非 Git 仓库的 no-op 仍会读取正文；clean same-HEAD 复用不运行扫描器。完整 scan 的计数通过 `IndexOptions.perfObserver` 的可选第三个参数传入；失败的 scan 不提供计数。CLI/index 结果结构保持不变。
+`bench:perf` 还按 full/no-op/edit 输出 `*_scan_body_reads`、`*_scan_body_bytes`、`*_scan_sample_reads` 和 `*_scan_sample_bytes`。这些指标统计扫描器成功读取的次数及文件 API 返回的字节数，包括可识别但无适配器支持的文件，以及超限文件的有限样本读取。不包含 Git/元数据操作、自定义适配器的直接读取或设备/缓存 I/O。非 Git no-op 与 clean same-HEAD 验证都会读取正文。Cache miss 可能扫描两次，时间和读取量会累加。完整 scan 的计数通过 `IndexOptions.perfObserver` 的可选第三个参数传入；失败的 scan 不提供计数。CLI/index 结果结构保持不变。
 
 `test:fixtures` 是 `npm test` 的别名，`test:benchmark` 是 `npm run bench` 的别名。`npm run verify` 包含 `npm run audit:dependencies`，所以最后的 audit 阶段依赖 npm registry 和网络可用性。
 
@@ -61,8 +61,9 @@ dogfood guard 填补了这个缺口。在每个 test 中，它：
 
 ## 增量正确性 gate
 
-当前 `IndexResult.mode = 'incremental'` 表示 indexed body 没有变化。当 scanner 确认
-indexed body 发生变化时，都会报告 `mode = 'full'` 并执行完整 extraction。
+只有已验证的 scanner 输入与选定 Git 历史相同时才使用 `IndexResult.mode = 'incremental'`。
+正文、unsupported 输入、skip sample、历史变化或旧输入未经验证时，使用 `mode = 'full'`
+执行完整 extraction。
 仅凭 `fileContentScope` 不能授权 changed-only extraction：它约束读取范围，
 但不约束 emitted row 的 ownership。
 
@@ -94,17 +95,27 @@ run ID（包括 null）和 main branch ID/head。不一致时返回
 snapshot 或所有 graph writer 的原子性。范围与概念参考见
 [韩语说明](verification.ko.md#겹친-인덱싱의-발행-기준)。
 
-Clean same-HEAD 复用只选择最新 completed cohort，再检查 extractor/HEAD/clean
-字段。候选、file/coverage 检查和计数在一个短 SQLite 读取 snapshot 中完成，
-hit、miss、异常都结束事务；致命错误传播前关闭数据库。有效空仓库仍可复用。
-远程 oracle 使用真实 child CLI writer。保证范围是同一 DB 读取时点，不保证
-返回后仍是最新，也不是 Git/filesystem snapshot。见
-[韩语原理](verification.ko.md#clean-git-캐시와-현재-cohort)。
+Clean same-HEAD 复用先选择最新 completed cohort，校验 extractor/HEAD/resource 条件，
+再读取当前有界 scanner 输入和选定 Git 历史，与该 graph 发布时的私有版本化 digest 比较。
+捕获发生在 mutable adapter 分类之前；co-change 使用同一份历史。不会省略正文读取。
 
-Git flag、内容正规化与残留 stat cache 可能使 clean-HEAD 复用漏掉正文变化。
-这一已知缺口由 [draft #51](https://github.com/YouSangSon/Parallax/pull/51) 跟踪。
-使用 `parallax index --max-file-bytes 1000000` 保留默认 1 MB 上限并跳过 clean 复用，
-重新核对实际文件 hash/路径。这是重新验证的临时方法，不代表新缓存证明或选择性正文读取。
+候选、验证与计数位于同一个 DEFERRED 读取 snapshot，hit/miss/异常均结束它，致命错误
+关闭数据库。Miss 后先关闭 snapshot、分配新 run ID，再重新读取 scan/history，不发布
+precheck 数据。保留的 hit 也会在关闭 snapshot 后用新的 autocommit 查询核对最新
+completed ID；发生移动则按 miss 处理。最后核对之后完成的 writer 不在新鲜度保证内。
+可能读取两次正文，并延长读取 snapshot；WAL 不占 writer slot，但这不是
+整个 filesystem/Git 的原子 snapshot，也不保证返回后仍是最新结果。
+
+Schema v17 增加 nullable receipt，不从旧 hash backfill。旧 NULL、未知或不匹配的记录
+在下次 index 时触发 full；如其他 full rebuild 一样，需要重新应用 SCIP/trace augmentation。
+之后真正相同的输入仍保留这些信息。现有 v16 读取 API 继续兼容。Co-change savepoint
+失败时保留 best-effort completed audit，但不写入有效 receipt，下次 full 重试。
+graph 发布失败会一起回滚 graph 与 receipt。
+
+[PR #51](https://github.com/YouSangSon/Parallax/pull/51) 的 oracle 覆盖隐藏正文、mutable
+分类和历史增加/删除。`parallax index --max-file-bytes 1000000` 仍可跳过 clean 结果复用，
+但正文重新验证不再依赖此临时方法，也未启用选择性提取。原理、替代方案和范围见
+[韩语说明](verification.ko.md#git-clean과-실제-본문-변경)。
 
 Scanner 在同一已打开的 descriptor 上检查并限制正文/sample 读取。正文分配量不超过
 已检查的大小；短读取会继续，EOF、大小或修改时间变化则使扫描失败。Linux/macOS

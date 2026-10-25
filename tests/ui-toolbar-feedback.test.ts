@@ -4,12 +4,16 @@ import { runInNewContext } from 'node:vm';
 
 import { UI_CLIENT_JS } from '../src/ui/client.js';
 
-function toolbar(messages: Record<string, string>) {
+function toolbar(messages: Record<string, string>, modernClipboard = true) {
   const listeners = new Map<string, () => Promise<void>>();
   const timers: Array<() => void> = [];
-  const platform = { denied: true, downloads: 0, copies: 0 };
-  const buttons = Object.fromEntries(['copyLinkButton', 'exportJsonButton', 'exportCsvButton', 'exportPngButton'].map((id) => [id, {
-    textContent: id, dataset: {} as Record<string, string>,
+  const platform = { denied: true, downloads: 0, copies: 0, legacyCalls: 0,
+    legacyResult: true as boolean | Error, removedTextareas: 0, copiedText: [] as string[] };
+  const textareas = new Set<object>();
+  let selectedText = '';
+  const buttons = Object.fromEntries(['copyLinkButton', 'exportJsonButton', 'exportCsvButton', 'exportPngButton', 'copyCommandButton'].map((id) => [id, {
+    textContent: id, dataset: {} as Record<string, string>, disabled: false,
+    getAttribute: (name: string) => name === 'data-command' ? 'parallax analyze --changed src/login.ts' : null,
     addEventListener(_event: string, listener: () => Promise<void>) { listeners.set(id, listener); }
   }]));
   class BrowserUrl extends URL {
@@ -21,24 +25,38 @@ function toolbar(messages: Record<string, string>) {
   }
   runInNewContext(UI_CLIENT_JS, {
     Blob, URL: BrowserUrl,
-    navigator: { clipboard: { async writeText() {
+    navigator: modernClipboard ? { clipboard: { async writeText(value: string) {
       if (platform.denied) throw new Error('clipboard unavailable');
       platform.copies += 1;
-    } } },
+      platform.copiedText.push(value);
+    } } } : {},
     window: { location: new URL('http://localhost/?report=synthetic'), addEventListener() {},
       setTimeout(callback: () => void) { timers.push(callback); } },
     document: {
-      documentElement: { lang: 'ko' }, body: { dataset: {}, append() {} },
+      documentElement: { lang: 'ko' }, body: { dataset: {}, append(element: object) { textareas.add(element); } },
       getElementById(id: string) {
         if (id === 'impact-data') return { textContent: '{}' };
         if (id === 'ui-messages') return { textContent: JSON.stringify(messages) };
         return buttons[id] ?? null;
       },
-      querySelector: () => null, querySelectorAll: () => [],
-      createElement: () => ({ style: {}, click() { platform.downloads += 1; }, remove() {} })
+      querySelector: () => null,
+      querySelectorAll: (selector: string) => selector === '.copy-command[data-command]' ? [buttons.copyCommandButton] : [],
+      execCommand(command: string) {
+        assert.equal(command, 'copy');
+        platform.legacyCalls += 1;
+        if (platform.legacyResult instanceof Error) throw platform.legacyResult;
+        if (platform.legacyResult) platform.copiedText.push(selectedText);
+        return platform.legacyResult;
+      },
+      createElement(tag: string) {
+        const element = { value: '', style: {}, setAttribute() {},
+          select() { selectedText = element.value; }, click() { platform.downloads += 1; },
+          remove() { textareas.delete(element); if (tag === 'textarea') platform.removedTextareas += 1; } };
+        return element;
+      }
     }
   });
-  return { buttons, platform, click: async (id: string) => { await listeners.get(id)!(); },
+  return { buttons, platform, textareas, click: async (id: string) => { await listeners.get(id)!(); },
     settle() { while (timers.length) timers.shift()!(); } };
 }
 
@@ -60,6 +78,47 @@ test('toolbar distinguishes export failures from clipboard failures in localized
   assert.equal(fallback.buttons.exportPngButton!.textContent, 'Export failed');
   await fallback.click('copyLinkButton');
   assert.equal(fallback.buttons.copyLinkButton!.textContent, 'Copy failed');
+});
+
+test('legacy clipboard checks success, refusal and exceptions for both copy controls', async () => {
+  for (const messages of [{ copyCopied: '복사됨', copyFailed: '복사 실패' }, {}]) {
+    for (const result of [false, new Error('clipboard unavailable'), true]) {
+      const ui = toolbar(messages, false);
+      ui.platform.legacyResult = result;
+      const success = result === true;
+      for (const id of ['copyLinkButton', 'copyCommandButton']) {
+        await ui.click(id);
+        assert.equal(ui.buttons[id]!.textContent, success ? messages.copyCopied ?? 'Copied' : messages.copyFailed ?? 'Copy failed');
+        assert.equal(ui.buttons[id]!.dataset.state, success ? 'copied' : 'failed', id);
+        assert.equal(ui.textareas.size, 0, 'temporary textarea is removed after every outcome');
+        if (id === 'copyCommandButton') assert.equal(ui.buttons[id]!.disabled, true);
+        ui.settle();
+        assert.equal(ui.buttons[id]!.textContent, id);
+        assert.equal(ui.buttons[id]!.dataset.state, undefined);
+        assert.equal(ui.buttons[id]!.disabled, false);
+      }
+      assert.equal(ui.platform.legacyCalls, 2);
+      assert.equal(ui.platform.removedTextareas, 2);
+      assert.deepEqual(ui.platform.copiedText, success ? ['http://localhost/?report=synthetic', 'parallax analyze --changed src/login.ts'] : []);
+    }
+  }
+});
+
+test('available Clipboard API remains preferred and rejection does not retry legacy copy', async () => {
+  for (const denied of [true, false]) {
+    const ui = toolbar({});
+    ui.platform.denied = denied;
+    for (const id of ['copyLinkButton', 'copyCommandButton']) {
+      await ui.click(id);
+      assert.equal(ui.buttons[id]!.dataset.state, denied ? 'failed' : 'copied');
+      ui.settle();
+      assert.equal(ui.buttons[id]!.disabled, false);
+    }
+    assert.equal(ui.platform.copies, denied ? 0 : 2);
+    assert.equal(ui.platform.legacyCalls, 0);
+    assert.equal(ui.platform.removedTextareas, 0);
+    assert.equal(ui.textareas.size, 0);
+  }
 });
 
 test('successful toolbar exports and copy retain their existing feedback and restoration', async () => {

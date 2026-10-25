@@ -11,6 +11,12 @@ traffic checks before transfer or execution; no Nebula VM is used for Parallax.
 
 ## Workbench Export Feedback — 2026-10-25
 
+Follow-up: the existing legacy clipboard fallback must reject a false
+`execCommand('copy')` result. Fix the shared helper once for link/command copy;
+preserve modern Clipboard API behavior, textarea cleanup and button restoration.
+Use the emitted-client unit harness and normal remote gates; legacy-browser
+platform behavior is separate from these stubbed outcomes.
+
 The public CLI/MCP/desktop VM replay found that a missing report's guarded PNG
 failure said "Copy failed". Keep the empty-map guard and existing copy behavior;
 give JSON/CSV/PNG their own localized export-failure message through the existing

@@ -455,7 +455,7 @@ export const UI_CLIENT_JS = `    const snapshot = JSON.parse(document.getElement
       document.body.append(textarea);
       textarea.select();
       try {
-        document.execCommand('copy');
+        if (!document.execCommand('copy')) throw new Error('Copy failed');
       } finally {
         textarea.remove();
       }

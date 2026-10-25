@@ -2,6 +2,37 @@
 
 Evidence is current only when the command and result are recorded in this file. A focused pass proves only its named scope.
 
+## Workbench Export Feedback — 2026-10-25
+
+- The `70ccf92` npm package passed the approved VM's 19-step public CLI fixture,
+  real stdio MCP (24 tools), invalid-path controls, and saved-graph equality after
+  a later full reindex. Native desktop inspection covered filtering, selection,
+  Strict policy, copied link state, history restoration, source new-tab/back
+  links, EN/KO/ZH, keyboard focus, zero-impact and missing-report states.
+- PNG output was saved through the native browser dialog and decoded as a
+  760×580 PNG. Waiting for the automated download event timed out. The enclosing
+  UI observation later reached its own deadline and exited 1; its finally cleanup,
+  absent UI process/port/path and released lock were verified separately. This
+  is not an all-green wrapper or a 375-pixel result: actual width stayed 2560.
+- The missing-map PNG guard rejected export, but its button said "Copy failed".
+  The emitted-client regression reproduced that error without local DB/app
+  execution. The shared handler now accepts action-specific failure text;
+  JSON/CSV/PNG use EN/KO/ZH export messages and copy retains its prior messages.
+  Pure tests cover localized/fallback failures, no file on failed export,
+  successful JSON/CSV/copy feedback and restoration. Rendered locale payloads
+  remain covered by remote UI tests. No full local suite is run.
+- [x] Candidate `48907f2` was freshly built and packaged; only `dist/src/ui.js`
+  and `dist/src/ui/client.js` differ from the public-flow archive. The approved
+  VM displayed `Export failed` / `내보내기 실패` / `导出失败` for missing-map PNG
+  export, with no SVG, while Korean copy success still displayed `복사됨`.
+- [x] Activating the owned tab and using native DevTools established an actual
+  375×812 CSS-pixel viewport, document/body width 375 and a saved 750×1624 image.
+  Image pixels are separate from CSS pixels. Prior request-only attempts and
+  an emulated-mode CDP click timeout are not counted as passing checks. Device
+  defaults, device mode and DevTools were restored; the final width was 2560.
+  Normal VM shutdown and cleanup passed after this narrow recheck. Exact final
+  PR/main gates remain separately owned by the PR and portfolio receipts.
+
 ## Config/Infra Selection Contract — 2026-10-25
 
 - [x] The approved my-cloud measurement used the PR #55 / `5fc6cba` package,

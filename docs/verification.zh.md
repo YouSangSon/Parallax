@@ -213,6 +213,10 @@ node --max-old-space-size=512 profile-tool/config-extraction-profile.js package
 script 的锁定依赖，没有请求模型。CLI 帮助与错误的观测器调用另行检查；已验证强制
 超时清理并移除执行 fixture。这不是默认 embedding 或生产环境 smoke。
 
+工作台的导出失败与剪贴板失败分别验证：JSON/CSV/PNG 失败显示当前 UI 语言的
+"导出失败"，复制失败显示"复制失败"。缺少图时仍须拒绝生成 PNG。纯 client 测试
+使用平台 stub；真实 VM/浏览器观测和远程 rendered HTML 测试属于不同证据范围。
+
 ### 当前本地 baseline
 
 于 2026-06-28 在 commit `f8f6060` 上采集，环境为 macOS Darwin 24.6.0、Apple M1 Max、10 CPU cores、32 GiB RAM、Node `v24.14.0`、npm `11.9.0`。

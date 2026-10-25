@@ -55,6 +55,11 @@ test('toolbar distinguishes export failures from clipboard failures in localized
     }
     assert.equal(ui.platform.downloads, 0, 'missing map and denied downloads create no file');
   }
+  const fallback = toolbar({});
+  await fallback.click('exportPngButton');
+  assert.equal(fallback.buttons.exportPngButton!.textContent, 'Export failed');
+  await fallback.click('copyLinkButton');
+  assert.equal(fallback.buttons.copyLinkButton!.textContent, 'Copy failed');
 });
 
 test('successful toolbar exports and copy retain their existing feedback and restoration', async () => {

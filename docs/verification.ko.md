@@ -342,6 +342,11 @@ fixture만으로 일반 선택적 carry의 복잡도를 추가할 근거는 부�
 CLI 도움말과 잘못된 관측 도구 호출은 별도로 검사했다. 강제 시간 초과 정리도
 확인하고 실행 fixture를 제거했다. 기본 embedding이나 운영 환경 검증은 아니다.
 
+워크벤치 내보내기 실패와 클립보드 실패는 따로 확인한다. JSON·CSV·PNG 실패에는
+선택한 UI 언어의 "내보내기 실패", 복사 실패에는 "복사 실패"를 표시한다. 맵이
+없으면 PNG 생성을 계속 거부해야 한다. 순수 client 검사는 플랫폼 stub을 사용하며,
+실제 VM·브라우저 관측과 원격 rendered HTML 검사는 각각 별도의 근거다.
+
 ### 현재 로컬 baseline
 
 2026-06-28에 commit `f8f6060`, macOS Darwin 24.6.0, Apple M1 Max, CPU core 10개, RAM 32 GiB, Node `v24.14.0`, npm `11.9.0` 환경에서 측정했다.

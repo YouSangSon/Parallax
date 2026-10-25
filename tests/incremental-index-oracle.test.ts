@@ -9,11 +9,12 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 
-import { importScipJson, indexProject, initProject } from '../src/index.js';
+import { analyzeDiff, exportImpactGraph, importScipJson, indexProject, initProject } from '../src/index.js';
 import { remember } from '../src/agent_memory.js';
 import type { IndexScanReads, ScannedFile } from '../src/types.js';
 import { AdapterRegistry } from '../src/adapters/registry.js';
-import { indexProjectWithRegistryForTest } from '../src/indexer.js';
+import { createDefaultRegistry, indexProjectWithRegistryForTest } from '../src/indexer.js';
+import { CONFIG_INFRA_SEMANTIC_ADAPTER_ID } from '../src/adapters/config-infra.js';
 import { readGitSnapshot } from '../src/git-snapshot.js';
 import { normalizeRepoRoot } from '../src/security.js';
 import { getRepoId, latestCompletedIndexRun, openDatabase } from '../src/store.js';
@@ -150,6 +151,157 @@ function writeChain(root: string): void {
     "import { bar } from './a.js';\nexport function baz() {\n  return bar();\n}\n"
   );
 }
+
+async function savedImpact(root: string) {
+  const report = await analyzeDiff({ repoRoot: root, changedFiles: ['src/a.ts'], writeReport: true });
+  const db = openDatabase(normalizeRepoRoot(root), { readOnly: true });
+  try {
+    const row = db.prepare('SELECT json FROM reports WHERE id = ?').get(report.id) as { json: string };
+    assert.deepEqual(JSON.parse(row.json), report, 'compare the persisted report, including its evidence');
+  } finally {
+    db.close();
+  }
+  const { id, indexRunId, reportPath, ...semanticReport } = report;
+  const { nodes, edges } = await exportImpactGraph({ repoRoot: root, reportId: id, format: 'json' });
+  return { id, semanticReport, graph: { nodes, edges } };
+}
+
+test('target-only processed-file output can still depend on earlier process calls', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'parallax-order-dependent-'));
+  const fresh = mkdtempSync(path.join(tmpdir(), 'parallax-order-fresh-'));
+  const makeRegistry = (processed: string[]) => {
+    const registry = new AdapterRegistry();
+    registry.register({
+      id: 'run-local-order', version: '1', capabilities: ['references'],
+      fileContentScope: 'target-only', outputOwnership: 'processed-file',
+      supports: (file) => file.language === 'typescript',
+      start: () => {
+        let ordinal = 0;
+        return {
+          async *process(file) {
+            processed.push(file.relativePath);
+            ordinal += 1;
+            if (file.relativePath !== 'src/b.ts') return;
+            yield {
+              kind: 'relation',
+              relation: {
+                source: { kind: 'file', path: file.relativePath },
+                target: { kind: 'file', path: ordinal === 2 ? 'src/a.ts' : 'src/c.ts' },
+                kind: 'DEPENDS_ON',
+                evidence: [{ file: file.relativePath, snippet: `ordinal ${ordinal}`, confidence: 'proven' }]
+              }
+            };
+          }
+        };
+      }
+    });
+    return registry;
+  };
+  const write = (dir: string, body: string) => {
+    mkdirSync(path.join(dir, 'src'), { recursive: true });
+    for (const name of ['a', 'b', 'c']) {
+      writeFileSync(path.join(dir, `src/${name}.ts`), name === 'b' ? body : `export const ${name} = 1;\n`);
+    }
+  };
+  try {
+    write(root, 'export const b = 1;\n');
+    await initProject({ repoRoot: root });
+    await indexProjectWithRegistryForTest({ repoRoot: root }, makeRegistry([]));
+    const saved = await savedImpact(root);
+    assert.ok(saved.semanticReport.affectedFiles.some((file) => file.path === 'src/b.ts'));
+
+    const processed: string[] = [];
+    write(root, 'export const b = 2;\n');
+    const rerun = await indexProjectWithRegistryForTest({ repoRoot: root }, makeRegistry(processed));
+    assert.equal(rerun.mode, 'full', 'content scope and output ownership do not prove process independence');
+    assert.deepEqual(processed, ['src/a.ts', 'src/b.ts', 'src/c.ts']);
+
+    write(fresh, 'export const b = 2;\n');
+    await initProject({ repoRoot: fresh });
+    await indexProjectWithRegistryForTest({ repoRoot: fresh }, makeRegistry([]));
+    assert.deepEqual(snapshotGraph(root), snapshotGraph(fresh));
+    const actual = await savedImpact(root);
+    const expected = await savedImpact(fresh);
+    assert.deepEqual(actual.semanticReport, expected.semanticReport);
+    assert.deepEqual(actual.graph, expected.graph);
+    assert.ok(actual.graph.edges.some((edge) => edge.source === 'file:src/b.ts' && edge.target === 'file:src/a.ts'));
+    const old = await exportImpactGraph({ repoRoot: root, reportId: saved.id, format: 'json' });
+    assert.deepEqual({ nodes: old.nodes, edges: old.edges }, saved.graph);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(fresh, { recursive: true, force: true });
+  }
+});
+
+test('config infra reordered full extraction preserves persisted graphs and saved reports across input changes', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'parallax-config-order-'));
+  const freshRoots: string[] = [];
+  const registry = createDefaultRegistry();
+  const classify = registry.classify.bind(registry);
+  let reversedPaths: string[] = [];
+  registry.classify = (files) => {
+    const groups = classify(files);
+    for (const [adapter, targets] of groups) {
+      if (adapter.id === CONFIG_INFRA_SEMANTIC_ADAPTER_ID) {
+        targets.reverse();
+        reversedPaths = targets.map((file) => file.relativePath);
+      }
+    }
+    return groups;
+  };
+  const write = (dir: string, edited: boolean, removed: boolean) => {
+    mkdirSync(path.join(dir, '.github/workflows'), { recursive: true });
+    mkdirSync(path.join(dir, 'infra'), { recursive: true });
+    mkdirSync(path.join(dir, 'src'), { recursive: true });
+    writeFileSync(path.join(dir, '.github/workflows/ci.yml'), 'steps:\n  - run: node src/a.ts\n');
+    writeFileSync(path.join(dir, 'Dockerfile'), edited
+      ? 'COPY src/b.ts /app/only-b.ts\n'
+      : 'COPY src/a.ts /app/a.ts\nCOPY src/b.ts /app/b.ts\n');
+    writeFileSync(path.join(dir, 'infra/main.tf'), 'source = "src/b.ts"\n');
+    writeFileSync(path.join(dir, 'src/a.ts'), 'export const a = 1;\n');
+    if (removed) rmSync(path.join(dir, 'src/b.ts'), { force: true });
+    else writeFileSync(path.join(dir, 'src/b.ts'), 'export const b = 2;\n');
+  };
+  try {
+    write(root, false, false);
+    await initProject({ repoRoot: root });
+    await indexProjectWithRegistryForTest({ repoRoot: root }, registry);
+    assert.deepEqual(reversedPaths, ['infra/main.tf', 'Dockerfile', '.github/workflows/ci.yml']);
+    const saved = await savedImpact(root);
+    assert.ok(saved.graph.edges.some((edge) => edge.source === 'file:Dockerfile' && edge.target === 'file:src/a.ts'));
+
+    for (const state of [{ name: 'edited target', edited: true, removed: false },
+      { name: 'removed context path', edited: true, removed: true }]) {
+      write(root, state.edited, state.removed);
+      const rerun = await indexProjectWithRegistryForTest({ repoRoot: root }, registry);
+      assert.equal(rerun.mode, 'full', state.name);
+      const fresh = mkdtempSync(path.join(tmpdir(), 'parallax-config-fresh-'));
+      freshRoots.push(fresh);
+      write(fresh, state.edited, state.removed);
+      await initProject({ repoRoot: fresh });
+      await indexProject({ repoRoot: fresh });
+      const expected = snapshotGraph(fresh);
+      assert.ok(expected.relations.length > 0, state.name);
+      assert.ok(expected.relationEvidence.length > 0, state.name);
+      assert.ok(expected.coverage.length > 0, state.name);
+      if (state.removed) {
+        assert.ok(expected.files.every((file) => file.path !== 'src/b.ts'));
+        assert.ok(expected.relations.every((relation) => relation.target_entity_id !== 'file:src/b.ts'));
+      }
+      assert.deepEqual(snapshotGraph(root), expected, state.name);
+      const actualReport = await savedImpact(root);
+      const expectedReport = await savedImpact(fresh);
+      assert.deepEqual(actualReport.semanticReport, expectedReport.semanticReport, state.name);
+      assert.deepEqual(actualReport.graph, expectedReport.graph, state.name);
+      assert.ok(actualReport.graph.edges.every((edge) => edge.source !== 'file:Dockerfile'), state.name);
+      const old = await exportImpactGraph({ repoRoot: root, reportId: saved.id, format: 'json' });
+      assert.deepEqual({ nodes: old.nodes, edges: old.edges }, saved.graph, state.name);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    for (const fresh of freshRoots) rmSync(fresh, { recursive: true, force: true });
+  }
+});
 
 test('a full reindex is byte-identical across runs (modulo run id) — the S1 oracle baseline', async () => {
   const root = mkdtempSync(path.join(tmpdir(), 'parallax-oracle-'));

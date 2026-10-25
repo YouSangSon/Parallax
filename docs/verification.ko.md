@@ -294,6 +294,27 @@ command, commit, Node version, OS / hardware class, 전체 output table을 함�
 
 출력 표는 `full_index_ms`, `full_scan_ms`, `noop_incremental_ms`, `noop_scan_ms`, `edit_reindex_ms`, `edit_scan_ms`, `analyze_no_persist_ms`, `analyze_persist_ms`, `observed_peak_rss_mb`, total phase에 대응하는 `/kfile` 시간 열을 분리한다. Peak RSS는 Node 내장 RSS reading을 phase 경계에서 샘플링하므로 실용적인 추세 신호이지 정확한 allocator trace는 아니다. 시간 측정 실행은 verify에 없지만 합성 generator와 표 formatter는 `tests/synthetic-repo.test.ts`로 정규 verify 게이트에서 가드된다.
 
+### Config 추출 비용 관측
+
+선택 config/infra carry를 추가하기 전에 `bench/config-extraction-profile.ts`로
+baseline·source 한 파일 수정·config 한 파일 수정의 full 추출을 기록한다.
+TypeScript 20개와 config 3개인 새 비Git 합성 fixture를 사용한다. 승인된 실행
+호스트에서 checkout을 빌드하고 관측 도구에 빌드된 패키지 경로를 넘긴다.
+
+```bash
+npm run build
+node dist/bench/config-extraction-profile.js /path/to/built/parallax > config-profile.json
+```
+
+전체 index 호출 시간, 모든 scan의 합산 read/byte 수, config의 start/process/dispose
+구간, 파일별 event 수, runtime 모듈 hash와 host/Node 정보를 남긴다. Process 구간은
+yield 사이 소비자의 이벤트 수집·대기·계측 비용도 포함하며 adapter CPU 시간이나
+순수 속도 개선 예상값이 아니다. `unchangedConfigWindowMs`는 수정한 config 파일을
+제외한다. 읽기를 생략하지 않으며 Git 이력·cache precheck·대규모 저장소는 이 작은
+사례로 측정하지 않는다. 성공·일반 예외 시 fixture를 제거한다. 시간 관측을 결정적
+accuracy report나 통과 기한에 넣지 않는다. 원격 정확성 검사는 phase/count를 확인하고
+성능을 판정하지 않는다. 관측 도구와 합성 generator는 npm payload 밖의 bench 파일이다.
+
 ### 현재 로컬 baseline
 
 2026-06-28에 commit `f8f6060`, macOS Darwin 24.6.0, Apple M1 Max, CPU core 10개, RAM 32 GiB, Node `v24.14.0`, npm `11.9.0` 환경에서 측정했다.

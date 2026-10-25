@@ -4,6 +4,13 @@ Evidence is current only when the command and result are recorded in this file. 
 
 ## Config/Infra Selection Contract — 2026-10-25
 
+- PR #54's persisted full/reversed and stateful-fallback gates passed 771/771,
+  dogfood 2/2, benchmark/audit, all five PR checks and all four main workflows.
+- The config extraction observer uses a small non-Git fixture and the existing
+  scanner observer. Only its pure wrapper is executed locally; the remote
+  correctness case checks phases, event/file counts and runtime hashes without
+  timing thresholds. Actual VM observations remain separate from those checks.
+
 - [x] `node --import tsx --test --test-concurrency=1 tests/config-infra-selection.test.ts`:
   3/3 pure cases pass without DB, services, filesystem fixtures or model access.
   Exact emitted events agree for full/reversed/single-file processing and an

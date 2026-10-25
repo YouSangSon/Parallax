@@ -180,6 +180,29 @@ Record the command, commit, Node version, OS / hardware class, and the full outp
 
 The output table separates `full_index_ms`, `full_scan_ms`, `noop_incremental_ms`, `noop_scan_ms`, `edit_reindex_ms`, `edit_scan_ms`, `analyze_no_persist_ms`, `analyze_persist_ms`, `observed_peak_rss_mb`, and matching `/kfile` timing columns for the total phases. Peak RSS is sampled at phase boundaries with Node's built-in RSS reading, so it is a practical trend signal, not an exact allocator trace. The synthetic generator and table formatter are guarded by `tests/synthetic-repo.test.ts` in the normal verify gate, even though the timing run is not.
 
+### Config extraction observations
+
+Before adding selective config/infra carry, `bench/config-extraction-profile.ts`
+records baseline, source-edit and config-edit full extraction on a fresh non-Git
+fixture of 20 TypeScript files and three config files. On an approved execution
+host, build the checkout and point the compiled observer at a built package:
+
+```bash
+npm run build
+node dist/bench/config-extraction-profile.js /path/to/built/parallax > config-profile.json
+```
+
+It records total index-call time, every scan's summed reads/bytes, config
+start/process/dispose windows, per-file event counts, runtime module hashes and
+host/Node metadata. Process windows include consumer collection between yields,
+waits and instrumentation; they are not adapter CPU time or a net speedup
+estimate. `unchangedConfigWindowMs` excludes the edited config file. Reads are
+not skipped. This small fixture does not measure Git history/cache prechecks or
+large-repository behavior. The fixture is removed on success or ordinary failure.
+Keep timing observations outside deterministic accuracy reports and thresholds;
+remote correctness coverage checks phases/counts, not performance. The observer
+and synthetic generator are bench files outside the npm package payload.
+
 ### Current local baseline
 
 Captured on 2026-06-28 from commit `f8f6060` on macOS Darwin 24.6.0, Apple M1 Max, 10 CPU cores, 32 GiB RAM, Node `v24.14.0`, npm `11.9.0`.

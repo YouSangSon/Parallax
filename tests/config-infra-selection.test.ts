@@ -85,3 +85,48 @@ test('config infra unchanged body depends on the current indexed path set', asyn
   assert.notDeepEqual(after, before);
   assert.deepEqual((await collect([...targets].reverse(), pathsWithoutB)).get(docker.relativePath), after);
 });
+
+test('config infra explicit paths retain boundaries, case variants and original evidence', async () => {
+  const lines = [
+    'name: path-boundaries',
+    '  run: echo xsrc/a.ts src/a.tsx ./src/a.ts @src/a.ts -src/a.ts src/a.ts/ src/a.ts. src/a.ts_ src/a.ts@',
+    '  run: echo (SRC/A.TS), SRC/A.TS',
+    '  run: echo İsrc/unicode.ts src/東京.ts "src/has space.ts" src/bracket[x].ts',
+    '  run: echo .github/workflows/ci.yml'
+  ];
+  const input = file('.github/workflows/ci.yml', 'yaml', lines.join('\r\n') + '\r\n');
+  const paths = [input, ...['src/a.ts', 'src/A.ts', 'src/unicode.ts', 'src/東京.ts',
+    'src/has space.ts', 'src/bracket', 'src/bracket[x].ts'].map((name) => file(name, 'typescript', ''))];
+  const events = (await collect([input], paths)).get(input.relativePath)!;
+  assert.ok(events.every((event) => event.kind === 'relation'));
+  const relations = events.filter((event) => event.kind === 'relation').map((event) => event.relation);
+  assert.deepEqual(relations.map((relation) => relation.target.path), paths.slice(1).map((target) => target.relativePath).sort((a, b) => a.localeCompare(b)));
+  for (const relation of relations) {
+    const ascii = relation.target.path === 'src/a.ts' || relation.target.path === 'src/A.ts';
+    const line = ascii ? 3 : 4;
+    assert.deepEqual(relation.evidence, [{ file: input.relativePath, confidence: 'heuristic',
+      snippet: lines[line - 1]!.slice(2) + '\r', startLine: line, endLine: line,
+      startCol: 3, endCol: lines[line - 1]!.length + 2 }]);
+  }
+});
+
+test('config infra preserves stable path ties and first nonignored Docker reference', async () => {
+  const tiedPaths = ['\u200ba.ts', 'a.ts'];
+  assert.equal(tiedPaths[0]!.localeCompare(tiedPaths[1]!), 0);
+  const input = file('.github/workflows/ties.yml', 'yaml', '\u200ba.ts\n');
+  const tied = (await collect([input], [input, ...tiedPaths.map((name) => file(name, 'typescript', ''))])).get(input.relativePath)!;
+  assert.deepEqual(tied.filter((event) => event.kind === 'relation').map((event) => event.relation.target.path), tiedPaths);
+
+  const content = 'COPY --from=builder src/a.ts /ignored\nCOPY src/a.ts /app/a.ts\nCOPY src/a.ts /app/again.ts\n';
+  const inputDocker = file('Dockerfile', 'dockerfile', content);
+  const events = (await collect([inputDocker], [inputDocker, ...sources])).get(inputDocker.relativePath)!;
+  assert.equal(events.length, 2);
+  for (const event of events) {
+    assert.equal(event.kind, 'relation');
+    if (event.kind === 'relation') {
+      assert.equal(event.relation.target.path, 'src/a.ts');
+      assert.equal(event.relation.evidence?.[0]?.startLine, 2);
+      assert.equal(event.relation.evidence?.[0]?.snippet, 'COPY src/a.ts /app/a.ts');
+    }
+  }
+});

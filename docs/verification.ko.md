@@ -298,7 +298,7 @@ command, commit, Node version, OS / hardware class, 전체 output table을 함�
 
 2026-10-25 실제 workflow 본문으로 adapter만 관측하니 경로마다 전체 본문을 다시
 검색하는 비용이 드러났다. 기준 `5a6fbfb`와 후보 `808ce5f`를 Node `v24.14.0`,
-`darwin/arm64`, Node heap 상한 256 MiB에서 비교했다. 입력은 로컬 Git의 고정된
+`darwin/arm64`, V8 old-space 상한 256 MiB에서 비교했다. 입력은 로컬 Git의 고정된
 blob이며 context는 언어를 인식한 tracked 경로다. scanner snapshot은 아니고,
 로컬 참고 저장소가 최신 원격 상태인지도 확인하지 않았다.
 

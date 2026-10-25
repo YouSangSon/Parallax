@@ -68,6 +68,12 @@ B만 처리하면 1이다. 다른 본문을 읽거나 다른 파일 행을 쓰�
 선택 실행에는 파일별 재실행의 독립성을 별도로 명시·입증해야 한다. 현재는 순서와
 startup context가 영향을 주는 adapter까지 보존하도록 changed-body full fallback을 유지한다.
 
+config/infra의 순수 선택 검사에서는 context 본문·해시를 읽으면 실패하게 두고,
+전체·역순·단일 파일 처리와 수정된 target의 이벤트를 비교한다. 같은 Dockerfile도
+indexed path 하나를 제거하면 관계가 달라짐을 확인한다. 이 근거는 한정된 adapter
+이벤트 검사이며 일반 독립성 선언이나 영속 graph·saved-report oracle을 대신하지
+않는다. 경로 집합 변경은 여전히 무효화해야 하며 runtime 선택 추출은 비활성 상태다.
+
 ## Evidence와 confidence (불변 원칙 I-10)
 
 모든 relation은 `evidence` — source 파일, span, snippet — 와 confidence 라벨을 가져야 한다. `Confidence`는 네 단계다:

@@ -2,7 +2,7 @@
 
 # 🛰️ Parallax
 
-**Give coding agents a local map of what a change can break.**
+**为编码智能体提供本地地图，了解改动可能影响什么。**
 
 一款影响力情报（impact intelligence）工具 —— 在 Claude Code、Codex、Cursor 等智能体改动代码之前，<br/>
 先在本地索引你的仓库，并以证据呈现某个被改文件可能波及的代码、测试、文档与契约。
@@ -26,6 +26,8 @@
 > **为什么需要它** —— AI 编码工具很快，但每次改动 `auth.ts` 中的一个函数时，它们都得靠猜：哪些测试、消费方、策略文档会随之变动。Parallax 把代码图谱和智能体记忆存储在仓库本地的 `.parallax/impact.db` 中，让智能体在改动*之前*就能以一个小巧的 context pack 确认“什么会受影响、为什么”。
 
 ---
+
+**重新检查实际文件：** 使用过 Git 的 `assume-unchanged`、`skip-worktree`、换行转换或 clean filter 后，即使 Git 显示 clean，缓存仍可能漏掉文件变化。运行 `parallax index --max-file-bytes 1000000`，即可保留默认 1 MB 上限、跳过缓存复用并重新检查实际文件。[跟踪中的回归](https://github.com/YouSangSon/Parallax/pull/51)。
 
 ## 🚀 快速开始
 

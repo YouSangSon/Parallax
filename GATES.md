@@ -2,6 +2,36 @@
 
 Evidence is current only when the command and result are recorded in this file. A focused pass proves only its named scope.
 
+## Config/Infra Selection Contract — 2026-10-25
+
+- [x] `node --import tsx --test --test-concurrency=1 tests/config-infra-selection.test.ts`:
+  3/3 pure cases pass without DB, services, filesystem fixtures or model access.
+  Exact emitted events agree for full/reversed/single-file processing and an
+  edited target, while context content/hash getters throw on access.
+- [x] Removing an indexed target path changes an unchanged Dockerfile's output;
+  path-set invalidation is required. Nonempty target/evidence assertions prevent
+  vacuous equality. Product code, schema and adapter declarations are unchanged.
+- This is bounded event-level evidence. General adapter independence,
+  persisted graph/saved-report equivalence and selective runtime extraction
+  remain unproven; changed-body full fallback stays active.
+
+## Git Cache Input Validity — Open, 2026-10-25
+
+- [x] Draft #51 regression head `2245d4b` failed 7/753 remote tests: all seven
+  hidden-input default-cache cases reused stale extraction. The other 746
+  passed, including seven actual source-CLI controls with explicit default
+  `--max-file-bytes 1000000`, each equal to fresh full extraction.
+- Cases cover assume-unchanged, skip-worktree, active EOL normalization, an
+  unsafe scanned baseline after clearing its flag, temporary normalization and
+  removed same-length filters. Git clean/HEAD equality are fixture preconditions.
+- Current-state checks plus a prior marker do not establish current input
+  identity after stat-cache normalization history. No schema/product fix is
+  implemented; failing tests remain in the unmerged draft. Actual-input receipts
+  and timestamp ambiguity need a validated design before new read skipping.
+- README root/docs entrances in Korean/Japanese/English/Chinese describe the
+  verified forced-body-recheck path and this known limit. This workaround
+  preserves the default 1 MB budget; it is not a new cache correctness proof.
+
 ## S1 Recovery Bookkeeping Removal — 2026-10-25
 
 - [x] Static call-path review found no caller of private `restore()`; its seven
@@ -14,7 +44,9 @@ Evidence is current only when the command and result are recorded in this file. 
 - Independent final integrity review found no blocker. Existing rollback,
   cohort and saved-report oracles remain mandatory in remote Release; no local
   DB/integration/full suite or new implementation-mirroring test was run.
-  No latency/RSS improvement claim is made.
+  Final head `45c4fa2` passed all five PR checks, 739/739, dogfood 2/2 and
+  bench/audit. PR #50 merged as `8b337ba` with exact tree equality and all four
+  main workflows passed. No latency/RSS improvement claim is made.
 
 ## Audit Setup Reliability — 2026-10-25
 

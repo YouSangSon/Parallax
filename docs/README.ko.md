@@ -4,6 +4,8 @@
 
 Parallax는 local-first 코드 impact 분석 계층이다 — 단일 SQLite 저장소가 CLI, 코딩 에이전트용 MCP 서버, UI explorer를 구동한다. 이 인덱스는 `docs/`에 포함된 주요 packaged guide를 링크한다.
 
+**실제 파일 재검증:** `assume-unchanged`·`skip-worktree`, 줄바꿈 변환이나 clean filter를 사용한 뒤에는 Git이 clean이어도 캐시가 파일 변경을 놓칠 수 있습니다. `parallax index --max-file-bytes 1000000`으로 기본 1 MB 한도를 유지하며 캐시를 건너뛰고 실제 파일을 다시 확인할 수 있습니다. [추적 중인 회귀](https://github.com/YouSangSon/Parallax/pull/51).
+
 ## 시작하기
 
 | 문서 | 내용 |

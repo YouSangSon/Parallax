@@ -27,6 +27,8 @@ indexes your repository locally and shows, with evidence, the code, tests, docs,
 
 ---
 
+**Rechecking actual files:** After Git index flags (`assume-unchanged` or `skip-worktree`) or content normalization, clean-HEAD reuse can miss working-tree changes. Run `parallax index --max-file-bytes 1000000` to bypass reuse and recheck actual files with the default 1 MB limit. [Tracked regressions](https://github.com/YouSangSon/Parallax/pull/51).
+
 ## 🚀 Quick start
 
 ### Requirements

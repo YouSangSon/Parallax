@@ -171,7 +171,7 @@ npm run bench:perf -- --scales 10000,50000
 
 2026-10-25 对真实 workflow 正文的 adapter 单独观测发现了逐路径重复搜索整个
 正文的成本。基准 `5a6fbfb` 与候选 `808ce5f` 使用 Node `v24.14.0`、
-`darwin/arm64`、256 MiB Node heap 上限和本地 Git 的固定 blob。Context 是已识别
+`darwin/arm64`、256 MiB V8 old-space 上限和本地 Git 的固定 blob。Context 是已识别
 语言的 tracked 路径，不是 scanner snapshot；未确认本地参考仓库是否与远端最新状态相同。
 
 | 输入 | Context 路径 | Workflow 正文 / byte | 基准 start+process (ms) | 候选 start+process (ms) |

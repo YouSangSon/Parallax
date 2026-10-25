@@ -184,7 +184,7 @@ The output table separates `full_index_ms`, `full_scan_ms`, `noop_incremental_ms
 
 A bounded adapter-only observation on 2026-10-25 found repeated full-body path
 searches on real workflow inputs. Base `5a6fbfb` and candidate `808ce5f` used
-Node `v24.14.0`, `darwin/arm64`, a 256 MiB Node heap limit and immutable local Git
+Node `v24.14.0`, `darwin/arm64`, a 256 MiB V8 old-space limit and immutable local Git
 blobs. Context contained tracked paths with recognized languages, not a scanner
 snapshot; remote freshness of the local reference was not checked.
 

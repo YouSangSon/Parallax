@@ -15,22 +15,27 @@ Evidence is current only when the command and result are recorded in this file. 
   persisted graph/saved-report equivalence and selective runtime extraction
   remain unproven; changed-body full fallback stays active.
 
-## Git Cache Input Validity — Open, 2026-10-25
+## Git Cache Input Validity — Repair Pending Remote Gate, 2026-10-25
 
-- [x] Draft #51 regression head `2245d4b` failed 7/753 remote tests: all seven
-  hidden-input default-cache cases reused stale extraction. The other 746
-  passed, including seven actual source-CLI controls with explicit default
-  `--max-file-bytes 1000000`, each equal to fresh full extraction.
-- Cases cover assume-unchanged, skip-worktree, active EOL normalization, an
-  unsafe scanned baseline after clearing its flag, temporary normalization and
-  removed same-length filters. Git clean/HEAD equality are fixture preconditions.
-- Current-state checks plus a prior marker do not establish current input
-  identity after stat-cache normalization history. No schema/product fix is
-  implemented; failing tests remain in the unmerged draft. Actual-input receipts
-  and timestamp ambiguity need a validated design before new read skipping.
-- README root/docs entrances in Korean/Japanese/English/Chinese describe the
-  verified forced-body-recheck path and this known limit. This workaround
-  preserves the default 1 MB budget; it is not a new cache correctness proof.
+- [x] Regression head `48e2f53` at PR merge `3565445` failed 8/758 remote tests:
+  seven hidden-body cases plus same-HEAD shallow deepen. All eight actual CLI
+  controls matched fresh full graphs. Later Verify stages were not reached.
+- [x] `5f5120f` adds actual DB mutable-supports cache/normal-delta oracles:
+  remote Release failed exactly 10/760, including both new cases; 750 passed.
+  These are separate failures, not a passing overall gate or a local DB run.
+- Implementation captures ordered scanner inputs before callbacks and shares the
+  selected history with co-change extraction. A private nullable v17 receipt is
+  committed with the graph; absent/unknown/mismatched inputs force full.
+  Co-change savepoint failure keeps completed audit but no valid receipt.
+- Legacy cohorts rebuild once without backfill; SCIP/trace must be reapplied,
+  then actual identical-input preservation remains mandatory. V16 read APIs
+  remain supported. No new CLI/JSON field or dependency is introduced.
+- New remote oracles cover history loss as well as growth, legacy reapply,
+  second-scan/history publication, summed benchmark read counters, receipt/graph
+  rollback and partial co-change recovery. Local execution is type/lint only.
+- Required final-head Release, security and independent integrity review remain
+  pending. Do not merge until all required checks pass. This repairs correctness
+  by reading inputs; selective runtime execution and read reduction remain off.
 
 ## S1 Recovery Bookkeeping Removal — 2026-10-25
 

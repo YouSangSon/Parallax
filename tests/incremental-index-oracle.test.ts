@@ -11,7 +11,7 @@ import { test } from 'node:test';
 
 import { importScipJson, indexProject, initProject } from '../src/index.js';
 import { remember } from '../src/agent_memory.js';
-import type { ScannedFile } from '../src/types.js';
+import type { IndexScanReads, ScannedFile } from '../src/types.js';
 import { AdapterRegistry } from '../src/adapters/registry.js';
 import { indexProjectWithRegistryForTest } from '../src/indexer.js';
 import { readGitSnapshot } from '../src/git-snapshot.js';
@@ -302,7 +302,7 @@ test('changing full-index context forces a full extraction and matches a fresh i
 });
 
 for (const output of ['entity', 'file diagnostic', 'global diagnostic', 'contract', 'foreign placeholder'] as const) {
-  test(`unchanged carry-forward preserves ${output} while refreshing skipped coverage`, async () => {
+  test(`skip changes rebuild ${output} before identical-input carry-forward`, async () => {
     const root = mkdtempSync(path.join(tmpdir(), 'parallax-carry-parity-'));
     const fresh = mkdtempSync(path.join(tmpdir(), 'parallax-carry-fresh-'));
     try {
@@ -345,7 +345,7 @@ for (const output of ['entity', 'file diagnostic', 'global diagnostic', 'contrac
       writeFileSync(path.join(root, 'unsupported.py'), 'x'.repeat(200));
       const rerun = await indexProjectWithRegistryForTest({ repoRoot: root, maxFileBytes: 100 }, registry);
       await indexProjectWithRegistryForTest({ repoRoot: fresh, maxFileBytes: 100 }, registry);
-      assert.equal(rerun.mode, 'incremental');
+      assert.equal(rerun.mode, 'full');
       const warnings = (dir: string) => {
         const db = openDatabase(dir, { readOnly: true });
         try {
@@ -356,7 +356,8 @@ for (const output of ['entity', 'file diagnostic', 'global diagnostic', 'contrac
       };
       assert.deepEqual(warnings(root), warnings(fresh));
       assert.deepEqual(snapshotGraph(root), snapshotGraph(fresh));
-      await indexProjectWithRegistryForTest({ repoRoot: root, maxFileBytes: 100 }, registry);
+      const unchanged = await indexProjectWithRegistryForTest({ repoRoot: root, maxFileBytes: 100 }, registry);
+      assert.equal(unchanged.mode, 'incremental');
       assert.deepEqual(warnings(root), warnings(fresh));
       assert.deepEqual(snapshotGraph(root), snapshotGraph(fresh), 'a second carry must preserve the same output');
     } finally {
@@ -366,7 +367,7 @@ for (const output of ['entity', 'file diagnostic', 'global diagnostic', 'contrac
   });
 }
 
-test('unchanged carry-forward preserves imported SCIP graph with contracts', async () => {
+test('legacy input rebuild requires SCIP reapply, then identical-input carry preserves it', async () => {
   const root = mkdtempSync(path.join(tmpdir(), 'parallax-carry-scip-'));
   try {
     const source = 'const value = greet();\n';
@@ -387,6 +388,15 @@ test('unchanged carry-forward preserves imported SCIP graph with contracts', asy
     ] }));
     const imported = importScipJson({ repoRoot: root, file });
     assert.ok(imported.relationsImported > 0, 'fixture must import relations');
+    const legacy = openDatabase(root);
+    try {
+      legacy.prepare('UPDATE index_runs SET input_snapshot_hash = NULL WHERE id = ?').run(imported.indexRunId);
+    } finally { legacy.close(); }
+    const rebuilt = await indexProject({ repoRoot: root });
+    assert.equal(rebuilt.mode, 'full');
+    assert.equal(snapshotGraph(root).relations.some((row) => String(row.provenance).startsWith('scip:')), false);
+    assert.ok(importScipJson({ repoRoot: root, file }).relationsImported > 0,
+      'the existing full-rebuild contract requires reapplying external augmentation');
     const before = snapshotGraph(root);
     const rerun = await indexProject({ repoRoot: root });
     assert.equal(rerun.mode, 'incremental');
@@ -610,12 +620,12 @@ test('clean reuse reads one coherent cohort while another process publishes a ne
       return Reflect.apply(original, childProcess, args);
     });
     syncBuiltinESMExports();
-    let scanned = false;
-    const reused = await indexProject({ repoRoot: root, perfObserver: () => { scanned = true; } });
+    let scans = 0;
+    const reused = await indexProject({ repoRoot: root, perfObserver: () => { scans++; } });
     assert.equal(moved, true, 'writer must run after candidate selection');
     assert.equal(childFailure, undefined);
     assert.ok(childRunId !== undefined && childRunId > first.indexRunId);
-    assert.equal(scanned, false, 'the fixture must exercise reuse, not fall back to scanning');
+    assert.equal(scans, 1, 'reuse validates inputs once and returns the retained reader snapshot');
     assert.equal(reused.indexRunId, first.indexRunId);
     assert.equal(reused.filesIndexed, first.filesIndexed, 'cohort movement must not mix an old ID with empty live rows');
     const db = openDatabase(root, { readOnly: true });
@@ -625,6 +635,44 @@ test('clean reuse reads one coherent cohort while another process publishes a ne
     t.mock.restoreAll();
     syncBuiltinESMExports();
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('cache validation cannot retain A after a child publishes B and restores A', async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), 'parallax-reuse-restored-input-'));
+  const fresh = mkdtempSync(path.join(tmpdir(), 'parallax-reuse-restored-fresh-'));
+  try {
+    writeChain(root);
+    writeChain(fresh);
+    initOracleGitRepo(root);
+    await indexProject({ repoRoot: root });
+    const leaf = path.join(root, 'src/leaf.ts');
+    const originalBody = readFileSync(leaf, 'utf8');
+    execFileSync('git', ['update-index', '--assume-unchanged', 'src/leaf.ts'], { cwd: root });
+    writeFileSync(leaf, originalBody.replace('return 1', 'return 2'));
+    assert.equal(readGitSnapshot(root).isDirty, false);
+    const original = childProcess.execFileSync;
+    let child: ReturnType<typeof indexWithChildCli> | undefined;
+    t.mock.method(childProcess, 'execFileSync', (...args: unknown[]) => {
+      if (!child && args[0] === 'git' && Array.isArray(args[1]) && args[1].join(' ') === 'ls-files -z') {
+        child = indexWithChildCli(root);
+        writeFileSync(leaf, originalBody);
+      }
+      return Reflect.apply(original, childProcess, args);
+    });
+    syncBuiltinESMExports();
+    const result = await indexProject({ repoRoot: root });
+    assert.ok(child);
+    assert.equal(child.status, 0, child.error?.message ?? child.stderr.slice(-1000));
+    await indexProject({ repoRoot: fresh });
+    assert.deepEqual(snapshotGraph(root), snapshotGraph(fresh),
+      'latest graph must be restored A, not the completed child B hidden by the old reader snapshot');
+    assert.ok(result.indexRunId > (JSON.parse(child.stdout) as { indexRunId: number }).indexRunId);
+  } finally {
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+    rmSync(root, { recursive: true, force: true });
+    rmSync(fresh, { recursive: true, force: true });
   }
 });
 
@@ -811,56 +859,186 @@ for (const forced of [false, true]) {
   });
 }
 
-for (const forced of [false, true]) {
-  test(`Git cache shallow deepen: ${forced ? 'explicit CLI byte limit refreshes' : 'default cache must refresh'} history-derived graph`, async () => {
-    const root = mkdtempSync(path.join(tmpdir(), 'parallax-hidden-history-'));
-    const origin = path.join(root, 'origin');
-    const clone = path.join(root, 'clone');
-    const git = (cwd: string, ...args: string[]) => execFileSync('git', [
-      '-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false', ...args
-    ], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10_000 });
-    const commit = () => {
-      git(origin, 'add', '.');
-      git(origin, '-c', 'user.name=Parallax Test', '-c', 'user.email=parallax@example.invalid',
-        'commit', '-m', 'synthetic co-change history');
-    };
-    try {
-      mkdirSync(origin);
-      git(origin, 'init', '-b', 'main');
-      writeFileSync(path.join(origin, '.gitignore'), '.parallax/\n');
-      for (const value of [1, 2, 3]) {
-        writeFileSync(path.join(origin, 'a.ts'), `export const a = ${value};\n`);
-        writeFileSync(path.join(origin, 'b.ts'), `export const b = ${value};\n`);
+for (const historyChange of ['deepen', 'shorten'] as const) {
+  for (const forced of [false, true]) {
+    test(`Git cache history ${historyChange}: ${forced ? 'explicit CLI byte limit refreshes' : 'default cache must refresh'} history-derived graph`, async () => {
+      const root = mkdtempSync(path.join(tmpdir(), 'parallax-hidden-history-'));
+      const origin = path.join(root, 'origin');
+      const clone = path.join(root, 'clone');
+      const git = (cwd: string, ...args: string[]) => execFileSync('git', [
+        '-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false', ...args
+      ], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10_000 });
+      const commit = () => {
+        git(origin, 'add', '.');
+        git(origin, '-c', 'user.name=Parallax Test', '-c', 'user.email=parallax@example.invalid',
+          'commit', '-m', 'synthetic co-change history');
+      };
+      try {
+        mkdirSync(origin);
+        git(origin, 'init', '-b', 'main');
+        writeFileSync(path.join(origin, '.gitignore'), '.parallax/\n');
+        for (const value of [1, 2, 3]) {
+          writeFileSync(path.join(origin, 'a.ts'), `export const a = ${value};\n`);
+          writeFileSync(path.join(origin, 'b.ts'), `export const b = ${value};\n`);
+          commit();
+        }
+        writeFileSync(path.join(origin, 'note.txt'), 'latest commit changes neither source\n');
         commit();
-      }
-      writeFileSync(path.join(origin, 'note.txt'), 'latest commit changes neither source\n');
-      commit();
-      git(root, '-c', 'protocol.file.allow=always', 'clone', '--depth=1', pathToFileURL(origin).href, clone);
-      const beforeGit = readGitSnapshot(clone);
-      const beforeTree = git(clone, 'rev-parse', 'HEAD^{tree}');
-      const bodies = ['a.ts', 'b.ts'].map((name) => readFileSync(path.join(clone, name), 'utf8'));
-      await indexProject({ repoRoot: clone });
-      assert.equal(snapshotGraph(clone).relations.filter((row) => row.kind === 'CO_CHANGES').length, 0);
-      git(clone, '-c', 'protocol.file.allow=always', 'fetch', '--unshallow');
-      assert.equal(git(clone, 'rev-parse', '--is-shallow-repository').trim(), 'false');
-      assert.equal(git(clone, 'status', '--porcelain').trim(), '');
-      assert.equal(git(clone, 'rev-parse', 'HEAD^{tree}'), beforeTree);
-      assert.deepEqual(readGitSnapshot(clone), beforeGit);
-      assert.deepEqual(['a.ts', 'b.ts'].map((name) => readFileSync(path.join(clone, name), 'utf8')), bodies);
-
-      await indexProject({ repoRoot: origin });
-      const oracle = snapshotGraph(origin);
-      assert.equal(oracle.relations.filter((row) => row.kind === 'CO_CHANGES').length, 2,
-        'fresh full extraction must observe both directed co-change relations');
-      if (forced) {
-        const child = indexWithChildCli(clone);
-        assert.equal(child.status, 0, child.error?.message ?? child.stderr.slice(-1000));
-      } else {
+        git(root, '-c', 'protocol.file.allow=always', 'clone',
+          ...(historyChange === 'deepen' ? ['--depth=1'] : []), pathToFileURL(origin).href, clone);
+        const beforeGit = readGitSnapshot(clone);
+        const beforeTree = git(clone, 'rev-parse', 'HEAD^{tree}');
+        const bodies = ['a.ts', 'b.ts'].map((name) => readFileSync(path.join(clone, name), 'utf8'));
         await indexProject({ repoRoot: clone });
+        assert.equal(snapshotGraph(clone).relations.filter((row) => row.kind === 'CO_CHANGES').length,
+          historyChange === 'deepen' ? 0 : 2);
+        git(clone, '-c', 'protocol.file.allow=always', 'fetch', historyChange === 'deepen' ? '--unshallow' : '--depth=1');
+        assert.equal(git(clone, 'rev-parse', '--is-shallow-repository').trim(), String(historyChange === 'shorten'));
+        assert.equal(git(clone, 'status', '--porcelain').trim(), '');
+        assert.equal(git(clone, 'rev-parse', 'HEAD^{tree}'), beforeTree);
+        assert.deepEqual(readGitSnapshot(clone), beforeGit);
+        assert.deepEqual(['a.ts', 'b.ts'].map((name) => readFileSync(path.join(clone, name), 'utf8')), bodies);
+
+        const oracleRoot = historyChange === 'deepen' ? origin : path.join(root, 'fresh');
+        if (historyChange === 'shorten') {
+          git(root, '-c', 'protocol.file.allow=always', 'clone', '--depth=1', pathToFileURL(origin).href, oracleRoot);
+        }
+        await indexProject({ repoRoot: oracleRoot });
+        const oracle = snapshotGraph(oracleRoot);
+        assert.equal(oracle.relations.filter((row) => row.kind === 'CO_CHANGES').length,
+          historyChange === 'deepen' ? 2 : 0, 'fresh full extraction must reflect the current history');
+        if (forced) {
+          const child = indexWithChildCli(clone);
+          assert.equal(child.status, 0, child.error?.message ?? child.stderr.slice(-1000));
+        } else {
+          await indexProject({ repoRoot: clone });
+        }
+        assert.deepEqual(snapshotGraph(clone), oracle);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
       }
-      assert.deepEqual(snapshotGraph(clone), oracle);
+    });
+  }
+}
+
+for (const receipt of [null, 's1-input-v0:unverified']) {
+  test(`an unverified input receipt rebuilds once before clean reuse (${receipt})`, async () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'parallax-legacy-input-'));
+    try {
+      writeChain(root);
+      initOracleGitRepo(root);
+      const first = await indexProject({ repoRoot: root });
+      const before = snapshotGraph(root);
+      const db = openDatabase(root);
+      try { db.prepare('UPDATE index_runs SET input_snapshot_hash = ? WHERE id = ?').run(receipt, first.indexRunId); }
+      finally { db.close(); }
+      const rebuilt = await indexProject({ repoRoot: root });
+      assert.equal(rebuilt.mode, 'full');
+      assert.notEqual(rebuilt.indexRunId, first.indexRunId);
+      assert.deepEqual(snapshotGraph(root), before);
+      const reader = openDatabase(root, { readOnly: true });
+      try {
+        assert.match(String(reader.prepare('SELECT input_snapshot_hash FROM index_runs WHERE id = ?')
+          .get(rebuilt.indexRunId)?.input_snapshot_hash), /^s1-input-v1:[a-f0-9]{64}$/);
+      } finally { reader.close(); }
+      assert.equal((await indexProject({ repoRoot: root })).indexRunId, rebuilt.indexRunId);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
   });
 }
+
+test('co-change savepoint failure publishes no valid input receipt and retries fully', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'parallax-input-cochange-failure-'));
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: root, stdio: 'ignore' });
+  try {
+    git('init');
+    git('config', 'user.name', 'Parallax Test');
+    git('config', 'user.email', 'parallax@example.invalid');
+    writeFileSync(path.join(root, '.gitignore'), '.parallax/\n');
+    for (const value of [1, 2, 3]) {
+      writeFileSync(path.join(root, 'a.ts'), `export const a = ${value};\n`);
+      writeFileSync(path.join(root, 'b.ts'), `export const b = ${value};\n`);
+      git('add', '.');
+      git('-c', 'commit.gpgsign=false', 'commit', '-m', 'co-change fixture');
+    }
+    const first = await indexProject({ repoRoot: root });
+    const db = openDatabase(root);
+    try {
+      db.prepare('UPDATE index_runs SET input_snapshot_hash = NULL WHERE id = ?').run(first.indexRunId);
+      db.exec(`CREATE TRIGGER fail_cochange BEFORE INSERT ON relations
+        WHEN NEW.kind = 'CO_CHANGES' BEGIN SELECT RAISE(ABORT, 'forced co-change failure'); END`);
+      const incomplete = await indexProject({ repoRoot: root });
+      assert.equal(incomplete.mode, 'full');
+      assert.deepEqual({ ...db.prepare('SELECT status, input_snapshot_hash FROM index_runs WHERE id = ?').get(incomplete.indexRunId) },
+        { status: 'completed', input_snapshot_hash: null });
+      assert.equal(db.prepare("SELECT status FROM adapter_runs WHERE index_run_id = ? AND adapter_id = 'co-change'")
+        .get(incomplete.indexRunId)?.status, 'failed');
+      assert.equal(snapshotGraph(root).relations.filter((row) => row.kind === 'CO_CHANGES').length, 0);
+      db.exec('DROP TRIGGER fail_cochange');
+      const recovered = await indexProject({ repoRoot: root });
+      assert.equal(recovered.mode, 'full');
+      assert.equal(snapshotGraph(root).relations.filter((row) => row.kind === 'CO_CHANGES').length, 2);
+      assert.equal((await indexProject({ repoRoot: root })).indexRunId, recovered.indexRunId);
+    } finally { db.close(); }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a precheck miss publishes only the second scan and history and observes both reads', async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), 'parallax-input-rescan-'));
+  const fresh = mkdtempSync(path.join(tmpdir(), 'parallax-input-rescan-fresh-'));
+  const firstBody = 'export const a = 1;\n';
+  const precheckBody = 'export const a = 22;\n';
+  const currentBody = 'export const a = 333;\n';
+  const otherBody = 'export const b = 1;\n';
+  try {
+    for (const dir of [root, fresh]) {
+      writeFileSync(path.join(dir, 'a.ts'), dir === root ? firstBody : currentBody);
+      writeFileSync(path.join(dir, 'b.ts'), otherBody);
+      initOracleGitRepo(dir);
+      writeFileSync(path.join(dir, '.git/info/exclude'), '.parallax/\n');
+    }
+    await indexProject({ repoRoot: root });
+    execFileSync('git', ['update-index', '--assume-unchanged', 'a.ts'], { cwd: root });
+    writeFileSync(path.join(root, 'a.ts'), precheckBody);
+    assert.equal(readGitSnapshot(root).isDirty, false);
+    const original = childProcess.execFileSync;
+    let historyReads = 0;
+    t.mock.method(childProcess, 'execFileSync', (...args: unknown[]) => {
+      if (args[0] === 'git' && Array.isArray(args[1]) && args[1][0] === 'log') {
+        return '\0a.ts\nb.ts\n'.repeat(++historyReads === 1 ? 1 : 3);
+      }
+      return Reflect.apply(original, childProcess, args);
+    });
+    syncBuiltinESMExports();
+    const reads: IndexScanReads[] = [];
+    const result = await indexProject({ repoRoot: root, perfObserver: (_phase, _ms, observed) => {
+      assert.ok(observed);
+      reads.push({ ...observed });
+      if (reads.length === 1) writeFileSync(path.join(root, 'a.ts'), currentBody);
+    } });
+    assert.equal(result.mode, 'full');
+    assert.equal(historyReads, 2, 'validation history cannot be reused after the miss or read again during publication');
+    assert.deepEqual(reads.map((item) => item.bodyReads), [2, 2]);
+    assert.deepEqual(reads.map((item) => item.bodyBytes), [
+      Buffer.byteLength(precheckBody + otherBody), Buffer.byteLength(currentBody + otherBody)
+    ]);
+    await indexProject({ repoRoot: fresh });
+    const oracle = snapshotGraph(fresh);
+    assert.equal(oracle.relations.filter((row) => row.kind === 'CO_CHANGES').length, 2);
+    assert.deepEqual(snapshotGraph(root), oracle);
+    const receipt = (dir: string) => {
+      const db = openDatabase(dir, { readOnly: true });
+      try { return db.prepare("SELECT input_snapshot_hash FROM index_runs WHERE status = 'completed' ORDER BY id DESC LIMIT 1").get()?.input_snapshot_hash; }
+      finally { db.close(); }
+    };
+    assert.equal(receipt(root), receipt(fresh), 'publication receipt must bind the second captured input set');
+  } finally {
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+    rmSync(root, { recursive: true, force: true });
+    rmSync(fresh, { recursive: true, force: true });
+  }
+});

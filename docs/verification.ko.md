@@ -26,7 +26,7 @@ Parallax는 정확성을 여러 계층으로 검증한다 — 빠른 unit suite,
 | `npm run test:security` | `tests/security.test.ts` 실행(path containment, redaction, dependency audit gate) | store / path / redaction / audit gate 변경 후 |
 | `npm run test:install-smoke` | `npm run build` 후 `node dist/src/cli.js --help` | 릴리스 전, 패키징된 CLI가 실행되는지 확인 |
 
-`bench:perf`는 full/no-op/edit 실행별 `*_scan_body_reads`, `*_scan_body_bytes`, `*_scan_sample_reads`, `*_scan_sample_bytes`도 출력한다. 스캐너가 성공적으로 읽은 횟수와 파일 API가 반환한 바이트 수이며, 어댑터가 지원하지 않는 인식 가능한 파일과 크기 제한을 넘긴 파일의 일부 읽기도 포함한다. Git·메타데이터 작업, 사용자 어댑터의 직접 읽기, 장치·캐시 I/O는 제외한다. Git이 없는 저장소의 no-op은 본문을 다시 읽고, clean same-HEAD 재사용은 스캐너를 실행하지 않는다. 완료된 scan의 계측값은 `IndexOptions.perfObserver`의 선택적 세 번째 인자로 전달하며, 실패한 scan에는 계측값이 없다. CLI/index 결과 형식은 그대로 유지한다.
+`bench:perf`는 full/no-op/edit 실행별 `*_scan_body_reads`, `*_scan_body_bytes`, `*_scan_sample_reads`, `*_scan_sample_bytes`도 출력한다. 스캐너가 성공적으로 읽은 횟수와 파일 API가 반환한 바이트 수이며, 어댑터가 지원하지 않는 인식 가능한 파일과 크기 제한을 넘긴 파일의 일부 읽기도 포함한다. Git·메타데이터 작업, 사용자 어댑터의 직접 읽기, 장치·캐시 I/O는 제외한다. Git이 없는 no-op과 clean same-HEAD 검증 모두 본문을 읽는다. Cache miss에서는 두 번 스캔할 수 있으며 시간과 읽기량은 두 scan을 합산한다. 완료된 scan의 계측값은 `IndexOptions.perfObserver`의 선택적 세 번째 인자로 전달하며, 실패한 scan에는 계측값이 없다. CLI/index 결과 형식은 그대로 유지한다.
 
 `test:fixtures`는 `npm test`의 alias이고, `test:benchmark`는 `npm run bench`의 alias다. `npm run verify`에는 `npm run audit:dependencies`가 포함되므로 마지막 audit 단계는 npm registry와 network 상태에 의존한다.
 
@@ -66,9 +66,9 @@ dogfood guard는 그 틈을 메운다. 각 test에서:
 
 ## 증분 정확성 gate
 
-현재 `IndexResult.mode = 'incremental'`은 indexed body 변경이 없다는 뜻이다.
-scanner가 indexed body 변경을 확인하면 `mode = 'full'`을 보고하고 전체 extraction을
-사용한다. `fileContentScope`만으로 changed-only extraction을 허용할 수는 없다.
+`IndexResult.mode = 'incremental'`은 검증된 scanner 입력과 선택 Git 이력이 같을 때만
+사용한다. 본문·unsupported 입력·skip sample·이력이 달라지거나 이전 입력이 미검증이면
+`mode = 'full'`로 전체 extraction을 수행한다. `fileContentScope`만으로 changed-only extraction을 허용할 수는 없다.
 이 계약은 read 범위만 제한하며 emitted row의 ownership은 제한하지 않는다.
 
 회귀 oracle은 `tests/incremental-index-oracle.test.ts`다. `tsconfig.json` path
@@ -105,7 +105,7 @@ Full index도 나중에 시작한 작업이 먼저 끝나면, 늦게 끝난 옛 
 같아도 옛 ID로 행을 되돌릴 수 있으므로 최신 completed ID는 자기 ID보다 작아야 한다.
 하나라도 어긋나면 `index publication baseline changed; retry indexing` 오류로 거부한다. 기존 catch는 자기 run의 실패 audit만 남기고, 새 graph·version·head를
 발행하지 않는다. 실행 중인 adapter를 자동 재시도하지 않으므로 파일이 안정된 뒤
-명령을 다시 실행한다. clean same-HEAD의 기존 읽기 전용 재사용은 바뀌지 않는다.
+명령을 다시 실행한다. clean same-HEAD도 입력 검증 후 읽기 snapshot에서 결과만 재사용한다.
 
 | 대안 | 판단 |
 | --- | --- |
@@ -139,19 +139,19 @@ A의 파일을 되돌려도, A의 행이 DB에 다시 생기지는 않는다. HE
 `reuseCleanGitIndexIfUnchanged`는 최신 completed row 하나를 먼저 고른 뒤 그 row의
 extractor version·HEAD·clean bit를 검사한다. 조건이 맞는 과거 run을 검색하지 않는다.
 Miss이면 기존 scan/delta 경로가 현재 본문을 확인해 필요한 재구축을 수행한다.
-복구된 새 clean cohort는 다음 실행부터 다시 읽기 없이 재사용한다. 빈 저장소도
+복구된 clean cohort도 다음 실행에서 실제 입력을 읽어 검증한 뒤 재사용한다. 빈 저장소도
 유효하므로 0개 파일 자체를 cache miss 조건으로 삼지는 않는다.
 
 후보를 고른 뒤 files·coverage·카운터를 여러 SQL로 읽는 동안 다른 프로세스가
 행을 새 cohort로 옮길 수도 있다. 따라서 후보 선택부터 마지막 결과 조회까지
-`BEGIN DEFERRED`의 짧은 읽기 snapshot으로 묶고 hit·miss·예외 모두 종료한다.
+`BEGIN DEFERRED`의 읽기 snapshot으로 입력 검증까지 묶고 hit·miss·예외 모두 종료한다.
 현재 WAL 설정에서는 writer slot을 차지하지 않는다. Snapshot 시작 등 치명적 오류가
 기존 failed-run catch 전에 발생해도 호출자가 DB를 닫는다. 읽기 snapshot만 종료하는
 `ROLLBACK`은 graph 변경 실패나 새 failed index run의 생성이라는 뜻이 아니다.
 
 이 선택은 위 [SQLite transaction 원문](https://www.sqlite.org/lang_transaction.html)과
-발행 직전에 기준을 확인하는 원리를 재사용한다. 새 schema·global mutation epoch·전체
-과거 graph 복사는 필요하지 않다. `tests/incremental-index-oracle.test.ts`의 원격 회귀는
+발행 직전에 기준을 확인하는 원리를 재사용한다. 이 DB 조회 일관성에는 global mutation
+epoch나 전체 과거 graph 복사가 필요하지 않다. `tests/incremental-index-oracle.test.ts`의 원격 회귀는
 A→dirty B→restore A→fresh-full 동등성→새 clean 재사용과, 후보 조회 사이 실제 별도 CLI
 writer가 no-op cohort를 발행하는 순서를 검증한다. 후자는 reader가 한 DB 시점의
 기존 ID와 nonzero 카운터를 함께 반환하고 실제 latest는 child run임을 대조한다.
@@ -160,20 +160,51 @@ writer가 no-op cohort를 발행하는 순서를 검증한다. 후자는 reader�
 clean 재사용을 유지해야 한다. 로컬에서는 이 DB 검사를 실행하지 않는다.
 
 보장 범위는 조회 중 후보와 행의 일관성이다. 반환 직후에도 해당 run이 계속 최신이거나
-Git·파일시스템 전체가 하나의 snapshot이라는 보장은 아니다. 본문 생략 범위도 기존의
-clean same-HEAD 재사용이며, 변경 파일만 읽는 selective scanner는 아직 활성화하지 않는다.
+Git·파일시스템 전체가 하나의 snapshot이라는 보장은 아니다. 본문을 읽어 검증하므로
+읽기 snapshot이 길어질 수 있고 WAL 보존 비용도 고려해야 한다. 변경 파일만 읽는
+selective scanner는 아직 활성화하지 않는다.
 
 ### Git clean과 실제 본문 변경
 
-Git의 assume-unchanged/skip-worktree, 줄바꿈·clean filter 정규화 및 그 뒤 남은
-stat cache는 실제 본문 변경을 clean 상태로 숨길 수 있다. 현재 clean-HEAD cache는
-이 경우 stale 결과를 반환할 수 있으며, 수정은 [draft #51](https://github.com/YouSangSon/Parallax/pull/51)에서
-실패 재현과 함께 추적한다. 현재 설정만 검사하거나 이전 입력 marker만 저장하는
-대안은 정규화 뒤 설정을 제거한 사례까지 해결하지 못하므로 아직 적용하지 않았다.
+Git의 assume-unchanged/skip-worktree, 정규화 및 남은 stat cache는 실제 본문 변경을
+clean으로 숨길 수 있다. 같은 HEAD에서도 shallow 이력을 늘리거나 줄이면 co-change
+입력이 달라진다. 어댑터의 `supports()`가 hash를 바꿀 수도 있어, 분류 후 DB hash와
+현재 파일을 비교하는 것만으로 과거 추출 입력을 확인할 수 없다.
 
-실제 파일을 다시 읽어야 할 때는 `parallax index --max-file-bytes 1000000`을 사용한다.
-기본 1 MB 한도를 명시하면 기존 clean cache를 건너뛰고 본문 hash/경로를 재검사한다.
-이 우회는 새 캐시 유효성 증명이 아니며, 변경 파일만 읽는 최적화도 아니다.
+`hashIndexInputs`는 분류 callback 전에 실제 scanner 순서의 경로·language·decoded
+본문 hash, skipped reason/sample 값과 선택한 Git 이력을 SHA-256으로 묶는다.
+이력을 한 번 캡처해 digest와 `computeCoChanges`에 같은 값을 전달한다. 계측값과
+현재 시각은 포함하지 않는다. Cache hit는 이 기록이 같은 경우에만 기존 run을 반환한다.
+Miss에서는 읽기 snapshot을 닫고 새 run ID를 발급한 다음 다시 scan/history를 읽는다.
+먼저 읽은 결과를 새 실행에 재사용하면 그 사이 바뀐 입력을 놓치거나 발행 순서를 깨뜨릴 수 있다.
+
+| 대안 | 판단 |
+| --- | --- |
+| 현재 Git flag/config 차단 | 과거 정규화와 stat cache 이력을 놓친다 |
+| metadata 또는 기존 분류 후 hash 비교 | 현재 본문과 과거 실제 입력의 연결이 부족하다 |
+| 기존 bounded scanner + 원본 입력 기록 | 본문을 읽는 비용으로 입력을 직접 대조하고 기존 SQL 발행 구조를 재사용한다 |
+
+Schema v17의 nullable `index_runs.input_snapshot_hash`는 완료 graph와 같은 transaction에서
+저장한다. 기존 cohort를 과거 hash로 backfill하지 않는다. NULL·알 수 없는 버전·불일치는
+다음 index를 full로 승격한다. **처음 한 번 재구축한 뒤 SCIP/trace augmentation을 다시
+적용해야 한다.** 이는 기존 full/reapply 계약이며 과거 audit이 graph 복구 백업이라는 뜻은 아니다.
+이후 실제 동일 입력은 버전·진단·SCIP·trace를 보존한다. 이 필드를 읽지 않는 기존 v16
+읽기 API는 계속 지원한다. Co-change savepoint가 실패하면 best-effort completed audit을
+유지하되 receipt를 NULL로 남겨 다음 실행이 full로 회복한다. 발행 실패는 graph와 receipt를 함께 롤백한다.
+
+원리 참고는 Bazel의 [action cache](https://bazel.build/remote/caching)와
+[hermeticity](https://bazel.build/basics/hermeticity)다. 결과 재사용에는 입력의 동일성과
+입력 경계가 필요하다는 개념만 적용했다. Bazel·원격 cache·sandbox를 도입하거나 코드를
+복사하지 않았다. Parallax 어댑터의 임의 외부 읽기·비결정성을 격리했다는 보장도 아니다.
+
+[PR #51](https://github.com/YouSangSon/Parallax/pull/51)의 원격 DB oracle은 Git 숨김 본문,
+분류 중 hash 변경의 cache/일반 delta 경로, legacy 재구축과 재적용, 이력 증가·제거,
+precheck 이후 재스캔 및 graph/receipt 실패 원자성을 다룬다. 로컬에서는 type/lint만
+검사한다. 본문·sample 읽기 횟수와 바이트는 실제 두 scan까지 합산하며, Git 자체 읽기는
+observer 범위 밖이다. 읽기 감소나 속도 향상을 측정한 결과가 아니다.
+
+`parallax index --max-file-bytes 1000000`은 여전히 clean 결과 재사용을 건너뛰고 기본
+1 MB 한도를 명시한다. 기본 경로도 실제 입력을 읽으므로 본문 재검증을 위한 필수 우회는 아니다.
 
 ### 파일 읽기 경쟁 조건과 자원 한계
 

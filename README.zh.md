@@ -27,7 +27,7 @@
 
 ---
 
-**重新检查实际文件：** 使用过 Git 的 `assume-unchanged`、`skip-worktree`、换行转换或 clean filter 后，即使 Git 显示 clean，缓存仍可能漏掉文件变化。运行 `parallax index --max-file-bytes 1000000`，即可保留默认 1 MB 上限、跳过缓存复用并重新检查实际文件。[跟踪中的回归](https://github.com/YouSangSon/Parallax/pull/51)。
+**缓存验证：** 复用结果前会比较实际扫描输入、选定的 Git 历史和 Git clean 状态，不会省略正文读取。要明确设置 1 MB 上限，请使用 `parallax index --max-file-bytes 1000000`。[验证范围](docs/verification.zh.md)。
 
 ## 🚀 快速开始
 

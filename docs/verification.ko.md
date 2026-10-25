@@ -315,6 +315,33 @@ yield 사이 소비자의 이벤트 수집·대기·계측 비용도 포함하�
 accuracy report나 통과 기한에 넣지 않는다. 원격 정확성 검사는 phase/count를 확인하고
 성능을 판정하지 않는다. 관측 도구와 합성 generator는 npm payload 밖의 bench 파일이다.
 
+2026-10-25 승인된 VM 관측: PR #55의 병합 커밋 `5fc6cba`, Node
+`v24.14.0 --max-old-space-size=512`, Ubuntu 24.04 / Linux 6.8.0-147-generic
+`linux/x64`, Xeon Gold 6148, 논리 CPU 2개와 RAM 4 GB. 실행 전체에 공유 프로세스
+잠금과 cgroup CPU 1개·메모리 1 GiB 제한을 적용했다. npm archive SHA-256은
+`4f4ab3125c5b85edb149d4586f56c23de77ed0bb019574533c0b9953a3f44309`이며,
+관측 도구가 읽은 runtime 모듈 5개의 hash도 기록했다. 실행 명령:
+
+```bash
+node --max-old-space-size=512 profile-tool/config-extraction-profile.js package
+```
+
+| 단계 | Index 호출 (ms) | Scan (ms) | 전체 config 처리 구간 (ms) | 수정하지 않은 config 구간 (ms) | 본문 읽기 / byte |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| baseline | 146.157 | 14.653 | 2.139 | 2.139 | 23 / 1258 |
+| source-edit | 141.282 | 3.716 | 0.876 | 0.876 | 23 / 1258 |
+| config-edit | 85.875 | 2.995 | 0.326 | 0.156 | 23 / 1231 |
+
+각 단계는 scan 1회, 비어 있지 않은 config 처리 호출 3회와 full 추출을 수행했고,
+sample 읽기는 0회였다. 순차 실행한 단일 관측으로 시작·cache 효과가 포함되며 통계적
+비교가 아니다. 두 수정 사례에서 수정하지 않은 config 구간은 1 ms 미만이다. 이
+fixture만으로 일반 선택적 carry의 복잡도를 추가할 근거는 부족하다. 보수적인 경로를
+유지하고 대표적인 작업에서 config 비용이 유의미하게 확인될 때 다시 검토한다.
+순수 속도 향상·안전한 읽기 생략·대규모 저장소 성능을 입증하지 않는다. VM에서는
+임시 Node와 lifecycle script를 끈 고정 의존성을 사용했고 모델을 요청하지 않았다.
+CLI 도움말과 잘못된 관측 도구 호출은 별도로 검사했다. 강제 시간 초과 정리도
+확인하고 실행 fixture를 제거했다. 기본 embedding이나 운영 환경 검증은 아니다.
+
 ### 현재 로컬 baseline
 
 2026-06-28에 commit `f8f6060`, macOS Darwin 24.6.0, Apple M1 Max, CPU core 10개, RAM 32 GiB, Node `v24.14.0`, npm `11.9.0` 환경에서 측정했다.

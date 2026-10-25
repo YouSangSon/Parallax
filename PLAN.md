@@ -44,11 +44,15 @@ edit: its run-local ordinal changes an owned relation. These persisted gates
 passed in PR #54; they do not enable selective runtime execution or prove a
 general adapter independence contract.
 
-Before adding a general flag or selective carry SQL, use the bounded config
-extraction observer in `docs/verification.md` to measure processing windows
-against total index cost. Local checks cover only its pure wrapper/type/docs;
-the actual timing run waits for the approved VM's access/resource/traffic gates.
-The small non-Git fixture does not cover Git history or large-repo performance.
+The bounded config extraction observation on the approved VM is complete; see
+`docs/verification.md` for the source, environment and measurements. Unchanged
+config processing occupied less than 1 ms in either edit case, while each run
+still read all 23 bodies. This small non-Git case does not justify a general
+flag or selective carry SQL. Keep changed-body full extraction and defer that
+implementation until a representative workload shows material config cost.
+This is a measured scope decision, not a selective-execution proof or a
+large-repository performance conclusion. Local checks remain pure/type/docs;
+remote CI owns the required full verification.
 
 The input-validity slice in PR #51 uses the existing scanner and publication path. Its versioned pre-classification
 scanner/history receipt is stored with completed graph publication. Reuse now

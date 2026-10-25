@@ -203,6 +203,35 @@ Keep timing observations outside deterministic accuracy reports and thresholds;
 remote correctness coverage checks phases/counts, not performance. The observer
 and synthetic generator are bench files outside the npm package payload.
 
+Approved VM observation, 2026-10-25: merge commit `5fc6cba` (PR #55), Node
+`v24.14.0 --max-old-space-size=512`, Ubuntu 24.04 / Linux 6.8.0-147-generic
+`linux/x64`, Xeon Gold 6148, 2 logical CPUs and 4 GB RAM. The entire execution
+used a shared process lock and cgroup limits of one CPU / 1 GiB. The npm archive
+SHA-256 was `4f4ab3125c5b85edb149d4586f56c23de77ed0bb019574533c0b9953a3f44309`;
+the observer recorded hashes of the five loaded runtime modules. Command:
+
+```bash
+node --max-old-space-size=512 profile-tool/config-extraction-profile.js package
+```
+
+| Phase | Index call (ms) | Scan (ms) | All config process windows (ms) | Unchanged config windows (ms) | Body reads / bytes |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| baseline | 146.157 | 14.653 | 2.139 | 2.139 | 23 / 1258 |
+| source-edit | 141.282 | 3.716 | 0.876 | 0.876 | 23 / 1258 |
+| config-edit | 85.875 | 2.995 | 0.326 | 0.156 | 23 / 1231 |
+
+Each phase used one scan, three nonempty config process calls and full
+extraction; sample reads were zero. These are single sequential observations,
+with startup/cache effects and no statistical comparison. The sub-millisecond
+unchanged-config windows in the edit cases do not justify general selective
+carry complexity for this fixture. Keep the conservative path and revisit only
+with a representative workload that demonstrates material config cost. This
+does not establish a net speedup, safe read skipping or large-repo performance.
+The VM used a temporary Node installation and locked dependencies with lifecycle
+scripts disabled; no model was requested. CLI help and invalid observer usage
+were checked separately. Execution fixtures were removed, including a forced
+timeout cleanup check; this was not a default-embedding or production smoke.
+
 ### Current local baseline
 
 Captured on 2026-06-28 from commit `f8f6060` on macOS Darwin 24.6.0, Apple M1 Max, 10 CPU cores, 32 GiB RAM, Node `v24.14.0`, npm `11.9.0`.

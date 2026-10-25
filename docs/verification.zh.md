@@ -188,6 +188,31 @@ Process 区间包含 yield 之间消费者收集事件、等待与计测开销�
 正确性测试只验证 phase/count，不评价性能。观测器和合成 generator 都属于 npm
 payload 之外的 bench 文件。
 
+2026-10-25 在获准 VM 上观测：PR #55 的合并提交 `5fc6cba`，Node
+`v24.14.0 --max-old-space-size=512`，Ubuntu 24.04 / Linux 6.8.0-147-generic
+`linux/x64`，Xeon Gold 6148，2 个逻辑 CPU、4 GB RAM。整个执行使用共享进程锁，
+并以 cgroup 限制为 1 个 CPU / 1 GiB。npm archive SHA-256 为
+`4f4ab3125c5b85edb149d4586f56c23de77ed0bb019574533c0b9953a3f44309`；
+观测器另记录了 5 个加载的 runtime 模块 hash。命令：
+
+```bash
+node --max-old-space-size=512 profile-tool/config-extraction-profile.js package
+```
+
+| 阶段 | Index 调用 (ms) | Scan (ms) | 全部 config 处理区间 (ms) | 未修改 config 区间 (ms) | 正文读取 / byte |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| baseline | 146.157 | 14.653 | 2.139 | 2.139 | 23 / 1258 |
+| source-edit | 141.282 | 3.716 | 0.876 | 0.876 | 23 / 1258 |
+| config-edit | 85.875 | 2.995 | 0.326 | 0.156 | 23 / 1231 |
+
+每个阶段均为 full 提取、一次 scan、3 次非空 config 处理调用，sample 读取为零。
+这些是依次执行的单次观测，包含启动与 cache 效应，不是统计比较。两个修改案例中，
+未修改 config 的区间均小于 1 ms。该 fixture 不足以支持增加通用选择性 carry 的
+复杂度；保留保守路径，仅在代表性工作负载证明 config 成本显著时重新考虑。
+这不证明净加速、安全跳过读取或大型仓库性能。VM 使用临时 Node 和禁用 lifecycle
+script 的锁定依赖，没有请求模型。CLI 帮助与错误的观测器调用另行检查；已验证强制
+超时清理并移除执行 fixture。这不是默认 embedding 或生产环境 smoke。
+
 ### 当前本地 baseline
 
 于 2026-06-28 在 commit `f8f6060` 上采集，环境为 macOS Darwin 24.6.0、Apple M1 Max、10 CPU cores、32 GiB RAM、Node `v24.14.0`、npm `11.9.0`。

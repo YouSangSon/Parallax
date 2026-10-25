@@ -4,6 +4,19 @@ Evidence is current only when the command and result are recorded in this file. 
 
 ## Workbench Export Feedback — 2026-10-25
 
+- Clipboard follow-up: the emitted-client regression reproduced a false legacy
+  copy result being displayed as success. The shared helper now throws on that
+  result so both link and command controls use their existing failure handling.
+  Bounded tests exercise true/false/throw results, localized/fallback feedback,
+  exact copied text, temporary textarea cleanup and restored button state.
+  Modern Clipboard API resolution/rejection stays separate; a rejection does
+  not retry the legacy path. Real legacy-browser execution is not claimed.
+  Source contract: [W3C copy action](https://www.w3.org/TR/clipboard-apis/#copy-action).
+- [x] `node --import tsx --test --test-concurrency=1 tests/ui-toolbar-feedback.test.ts`
+  passes 4/4; `npm run lint`, `npm run build` and `git diff --check` pass.
+  Local execution contains no DB/app/integration suite. The final PR and main
+  required checks retain their own commit-specific receipts.
+
 - The `70ccf92` npm package passed the approved VM's 19-step public CLI fixture,
   real stdio MCP (24 tools), invalid-path controls, and saved-graph equality after
   a later full reindex. Native desktop inspection covered filtering, selection,

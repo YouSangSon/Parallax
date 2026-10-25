@@ -140,6 +140,38 @@ The concept reference is Codex's descriptor-bound, capped
 [file reader at commit 970111f](https://github.com/openai/codex/blob/970111f6cb62cc02fe36a82ea7d71b37a2889c97/codex-rs/exec-server/src/local_file_system_read.rs).
 Parallax adapts the principle to its synchronous scanner; no source code is copied.
 
+## Process-local config computation reuse
+
+Repeated public `indexProject()` calls in one process may reuse the built-in
+config/infra adapter's completed pure computation. Its key binds repo root,
+actual target path/language/body and ordered unique indexed paths. Other bodies
+are not inputs. Separate CLI processes cannot share this memo; wrapper lifecycle,
+other adapters, scanning, current audit IDs and full publication still execute.
+Changed inputs retain `mode = 'full'`. This is not general adapter independence,
+partial row carry or a read reduction.
+
+The memo holds at most 256 entries and 1 MiB of key/serialized-event UTF-16
+payload, not an RSS limit. Oversized results continue without caching; partial
+or failed generators add no entry. Both cold and hot events are fresh copies.
+Raw snippets stay process-local: persisting them before publisher redaction
+could expose secrets, while pre-redacting them changes `facts.redacted` audit.
+A complete computation may survive later publication failure; it never proves
+that a graph was published. Every retry still passes normal writer admission.
+
+Pure tests observe actual matching rather than elapsed-time thresholds. The
+remote indexer oracle requires source edits to reuse config calculations,
+config edits to recompute that target and path changes to invalidate the context.
+It compares cold fresh-root graph/version/coverage/counts, current relation audit,
+redacted facts/provenance and saved reports; a SQL trigger tests miss/hit rollback
+and recovery. Actual scanner reads are counted separately. Existing generic
+stateful-adapter full fallback remains required. Earlier event independence
+checks use cold namespaces so memo replay cannot substitute for fresh work.
+
+Concept reference: Bazel's [input-keyed action cache](https://bazel.build/remote/caching)
+and [hermeticity](https://bazel.build/basics/hermeticity). Only the input-identity
+principle is used; no implementation, dependency, remote cache or general
+hermetic-adapter claim is introduced.
+
 ## The accuracy bench
 
 `bench/impact-bench.ts` builds a fixed multi-language fixture (TypeScript/JavaScript, JVM/Spring Boot, Python, Go, Rust, OpenAPI contracts, and build manifests), indexes it, and scores the resulting graph against a pinned set of expected relations. It pins:

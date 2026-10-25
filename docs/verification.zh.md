@@ -127,6 +127,31 @@ Scanner 在同一已打开的 descriptor 上检查并限制正文/sample 读取�
 [970111f 提交中的 descriptor 限量读取](https://github.com/openai/codex/blob/970111f6cb62cc02fe36a82ea7d71b37a2889c97/codex-rs/exec-server/src/local_file_system_read.rs)；
 Parallax 将这一原理用于现有同步 scanner，没有复制原始代码。
 
+## 进程内 config 计算复用
+
+在同一进程中重复调用公开 `indexProject()` API 时，可复用内置 config/infra 已完成的
+纯计算。键包含仓库 root、目标的实际路径/语言/正文，以及保留顺序的 unique indexed
+paths；其他文件正文不是输入。独立 CLI 进程不能共享缓存。wrapper 的
+start/process/dispose、其他 adapter、scanner、当前 audit ID 和完整 publication 均照常
+执行。输入变化仍返回 `mode = 'full'`。这不是通用 adapter 独立性、部分行 carry 或读取减少。
+
+缓存最多保留 256 项、1 MiB 的键和序列化事件 UTF-16 payload，并非 RSS 上限。
+超大结果继续计算但不缓存；部分消费或 generator 失败不写入。cold/hot 都返回新事件副本。
+原始 snippet 只保留在进程内存：在 publisher 脱敏前持久化会泄露秘密，而提前脱敏后
+重放可能改变 `facts.redacted` 审计值。计算完成后即使 publication 失败，计算结果仍可
+复用，但不能证明 graph 已发布。重试仍执行原有 writer admission 和 publication。
+
+Pure 测试观察实际 matching，而非时间阈值。远程 indexer oracle 要求 source 编辑复用
+config 计算、config 编辑重算该目标、路径变化使 context 失效。它与 cold fresh root
+比较 graph/version/coverage/count、当前关系 audit、脱敏 fact/provenance 和已保存 report。
+SQL trigger 检查 miss/hit 的 publication 失败、回滚与恢复；实际 scanner 读取单独计数。
+通用 stateful adapter 的完整处理回归继续保留。既有事件独立性测试使用不同 cold
+namespace，防止缓存重放代替独立计算。
+
+概念参考：Bazel 的[输入键 action cache](https://bazel.build/remote/caching)和
+[hermeticity](https://bazel.build/basics/hermeticity)。仅采用完整识别输入后再复用的原则，
+未引入其实现、依赖、远程缓存，也不声称通用 adapter 具有 hermeticity。
+
 ## accuracy bench
 
 `bench/impact-bench.ts` 构建一个固定的 multi-language fixture（TypeScript/JavaScript、JVM/Spring Boot、Python、Go、Rust、OpenAPI 契约与 build manifest），对其索引，并将所得 graph 与一组 pin 住的期望 relation 对照打分。它 pin 住：

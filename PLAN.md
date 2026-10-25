@@ -27,6 +27,15 @@ requesting 375 pixels is not proof that a 375-pixel viewport was applied.
 
 ## S1 Output Ownership and Selective Reads — 2026-10-24
 
+The next bounded runtime slice reuses completed config/infra computations inside
+one process, then sends fresh event copies through the unchanged full publisher.
+It serves repeated public `indexProject()` API calls; separate CLI invocations
+cannot share it. Actual body/language/path and ordered indexed paths invalidate
+the memo. Raw evidence is never persisted outside the existing redaction path.
+Cold fresh-root graph/audit/redaction/report oracles and publication-failure
+retries are required remotely. General adapter selection, partial SQL carry and
+scanner read skipping remain deferred; this does not complete the whole S1 goal.
+
 The real workflow-body observation now finds material config matching cost on
 one pinned local Codex corpus. First remove its repeated per-path body searches
 with a per-run token lookup while preserving full event arrays, stable ordering,

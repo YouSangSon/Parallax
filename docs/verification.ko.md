@@ -254,6 +254,35 @@ descriptor 종료를 확인하며 DB·서버를 띄우지 않는다.
 [Node 24 파일 API와 플랫폼별 flag](https://nodejs.org/download/release/v24.14.0/docs/api/fs.html#file-open-constants)를
 기준으로 한다. 일반적인 파일 수정 중 스캔이 실패하면 파일이 안정된 뒤 다시 실행한다.
 
+## 프로세스 내부 config 계산 재사용
+
+한 프로세스에서 공개 `indexProject()` API를 반복 호출하면 내장 config/infra의
+완료된 순수 계산을 재사용할 수 있다. 키에는 저장소 root, 대상의 실제 경로·언어·본문,
+순서를 보존한 unique indexed paths가 들어간다. 다른 파일의 본문은 입력이 아니다.
+별도 CLI 프로세스끼리는 공유하지 않는다. wrapper의 start/process/dispose, 다른 adapter,
+scanner, 현재 audit ID와 전체 publication은 그대로 실행한다. 변경 입력은 계속
+`mode = 'full'`이다. 일반 adapter 독립성·부분 행 carry·read 감소의 증거는 아니다.
+
+상한은 256항목과 키·직렬화 이벤트의 UTF-16 payload 1 MiB이며 RSS 상한은 아니다.
+큰 결과는 캐시 없이 계속 처리하고, 부분 소비·generator 실패는 저장하지 않는다.
+cold/hot 모두 새 이벤트 사본을 내보낸다. 원시 snippet은 프로세스 메모리에만 둔다.
+publisher의 마스킹 전에 디스크에 저장하면 비밀이 남을 수 있고, 먼저 마스킹해 재생하면
+`facts.redacted` 감사 값이 달라질 수 있기 때문이다. 계산 완료 뒤 publication이 실패해도
+계산 결과는 재사용할 수 있지만 graph 발행의 증거가 되지는 않는다. 재시도에서도 기존
+writer admission과 publication을 반드시 수행한다.
+
+Pure 검사는 시간 임계값 대신 실제 matching 호출을 관측한다. 원격 indexer oracle은
+source 편집 시 config 계산 재사용, config 편집 시 해당 대상 재계산, 경로 변경 시
+context 무효화를 요구한다. Cold fresh root와 graph/version/coverage/count, 현재 관계의
+audit, 마스킹된 fact/provenance, 저장 report를 비교한다. SQL trigger로 miss/hit의
+publication 실패·롤백·복구도 검사한다. 실제 scanner read는 별도로 센다. 일반 stateful
+adapter의 전체 처리 회귀는 유지한다. 이전 이벤트 독립성 검사는 서로 다른 cold namespace를
+사용하여 캐시 재생이 독립 계산을 대신하지 못하게 한다.
+
+참고 원리: Bazel의 [입력 기반 action cache](https://bazel.build/remote/caching)와
+[hermeticity](https://bazel.build/basics/hermeticity). 입력을 모두 식별해야 재사용할 수 있다는
+개념만 적용했다. 구현·의존성·원격 캐시를 도입하거나 일반 adapter의 hermeticity를 주장하지 않는다.
+
 ## accuracy bench
 
 `bench/impact-bench.ts`는 고정된 multi-language fixture(TypeScript/JavaScript, JVM/Spring Boot, Python, Go, Rust, OpenAPI contract, build manifest)를 만들어 인덱싱하고, 그 결과 graph를 pin된 기대 relation 집합과 대조해 채점한다. pin하는 항목:

@@ -35,10 +35,13 @@ The first implementation leaves changed-body extraction conservative. Its
 ownership declaration alone is not a changed-only execution gate; diagnostic
 coverage and entity-version carry-forward also require equivalence checks.
 
-Config/infra now has pure event-level selection checks for full/reversed/single
+Config/infra has pure event-level selection checks for full/reversed/single
 processing, edited targets and path-set invalidation with unreadable context
-bodies/hashes. These bounded fixtures do not enable selective runtime execution
-or replace the persisted fresh-index/saved-report gates.
+bodies/hashes. The next remote persisted oracles compare reversed full processing
+with fresh full graphs and saved reports after target edits and path removal.
+A stateful adapter with both scope flags must still process every file after an
+edit: its run-local ordinal changes an owned relation. These tests do not enable
+selective runtime execution or prove a general adapter independence contract.
 
 The input-validity slice in PR #51 uses the existing scanner and publication path. Its versioned pre-classification
 scanner/history receipt is stored with completed graph publication. Reuse now

@@ -11,9 +11,16 @@ Evidence is current only when the command and result are recorded in this file. 
 - [x] Removing an indexed target path changes an unchanged Dockerfile's output;
   path-set invalidation is required. Nonempty target/evidence assertions prevent
   vacuous equality. Product code, schema and adapter declarations are unchanged.
-- This is bounded event-level evidence. General adapter independence,
-  persisted graph/saved-report equivalence and selective runtime extraction
-  remain unproven; changed-body full fallback stays active.
+- Added remote persisted oracles compare reversed config/infra full processing
+  with fresh full graph tables, report JSON and exported report graphs after
+  target edits and path removal. Earlier saved reports must remain unchanged.
+- A run-local ordinal adapter declares both target-only content and
+  processed-file ownership but emits a different relation if an earlier process
+  call is skipped. Its changed-body oracle requires all files to be processed
+  and compares the persisted graph/report with a fresh full index.
+- These additions require the remote canonical gate; no local DB/app/full suite
+  is run. General adapter independence and selective runtime extraction remain
+  unproven; changed-body full fallback stays active.
 
 ## Git Cache Input Validity — 2026-10-25
 
@@ -44,6 +51,9 @@ Evidence is current only when the command and result are recorded in this file. 
   and the portfolio evidence owner in `CONTEXT.md`. Required checks must pass
   before landing; a focused pass is not the full gate. Selective execution and
   read reduction remain off.
+- [x] Final `b239c21` passed all five PR checks: 769/769, dogfood 2/2,
+  benchmark and audit. PR #51 merged as `eca7eb1` with exact tree equality;
+  CI, Security, CodeQL and Scorecard passed on that main commit separately.
 
 ## S1 Recovery Bookkeeping Removal — 2026-10-25
 

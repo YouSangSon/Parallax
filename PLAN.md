@@ -9,6 +9,16 @@ type/build/lint checks; existing remote CI owns required full verification.
 Any my-cloud smoke requires current resource, shared-lock and provider-billed
 traffic checks before transfer or execution; no Nebula VM is used for Parallax.
 
+## Workbench Export Feedback — 2026-10-25
+
+The public CLI/MCP/desktop VM replay found that a missing report's guarded PNG
+failure said "Copy failed". Keep the empty-map guard and existing copy behavior;
+give JSON/CSV/PNG their own localized export-failure message through the existing
+toolbar handler. Validate the emitted browser script with bounded platform
+stubs, check the actual VM failure path, then require the normal remote gates.
+The replay's desktop and failed viewport attempt remain distinct evidence;
+requesting 375 pixels is not proof that a 375-pixel viewport was applied.
+
 ## S1 Output Ownership and Selective Reads — 2026-10-24
 
 Continue the existing S1 queue after the completed portfolio/help slices:

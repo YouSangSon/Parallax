@@ -253,7 +253,8 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(html, /async function exportPng\(\)/);
     assert.match(html, /if \(!svg \|\| !svg\.querySelector\('\[data-impact-path\]'\)\) throw new Error\('no impact map to export'\);/);
     assert.match(html, /"exportDone":"Exported"/);
-    assert.match(html, /wireToolbarButton\('exportJsonButton', exportJson, uiMessage\('exportDone', 'Exported'\)\)/);
+    assert.match(html, /wireToolbarButton\('exportJsonButton', exportJson, uiMessage\('exportDone', 'Exported'\), uiMessage\('exportFailed', 'Export failed'\)\)/);
+    assert.match(html, /"exportFailed":"Export failed"/);
     assert.match(html, /@media \(max-width: 560px\)[\s\S]*\.toolbar \{\s*display: grid;\s*grid-template-columns: minmax\(0, 1fr\);/);
     assert.match(html, /@media \(max-width: 560px\)[\s\S]*\.toolbar \{[\s\S]*width: 100%;[\s\S]*max-width: 100%;/);
     assert.match(html, /@media \(max-width: 560px\)[\s\S]*\.lang-switcher \{[\s\S]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/);
@@ -356,6 +357,7 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     assert.match(koHtml, /<html lang="ko">/);
     assert.match(koHtml, /<script id="ui-messages" type="application\/json">/);
     assert.match(koHtml, /"copyCopied":"복사됨"/);
+    assert.match(koHtml, /"exportFailed":"내보내기 실패"/);
     assert.match(koHtml, /영향 판정[\s\S]*검증 준비됨[\s\S]*검증할 테스트 · proven · 2 증거 적중 · 명령 준비됨/);
     assert.match(koHtml, /영향 맵[\s\S]*1 변경됨[\s\S]*3 전체 영향[\s\S]*5 표시 경로/);
     assert.match(koHtml, /주요 영향 흐름[\s\S]*VERIFY · 3 전체 대상 · 5 표시 경로 · proven 신뢰도/);
@@ -365,6 +367,7 @@ test('UI snapshot and HTML render a list-first report workbench', async () => {
     const zhHtml = renderUiHtml(snapshot, 'zh');
     assert.match(zhHtml, /<html lang="zh">/);
     assert.match(zhHtml, /"copyFailed":"复制失败"/);
+    assert.match(zhHtml, /"exportFailed":"导出失败"/);
     assert.match(zhHtml, /影响图[\s\S]*3 总受影响[\s\S]*5 已绘制路径/);
   } finally {
     await rm(repoRoot, { recursive: true, force: true });

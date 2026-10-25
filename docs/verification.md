@@ -232,6 +232,12 @@ scripts disabled; no model was requested. CLI help and invalid observer usage
 were checked separately. Execution fixtures were removed, including a forced
 timeout cleanup check; this was not a default-embedding or production smoke.
 
+Workbench export failure feedback is checked separately from clipboard feedback:
+JSON/CSV/PNG failures say "Export failed", while copy failures say "Copy failed"
+in the selected UI language. A missing map must still reject PNG creation.
+The pure emitted-client test uses platform stubs; actual VM/browser observations
+and remote rendered-HTML tests establish different boundaries.
+
 ### Current local baseline
 
 Captured on 2026-06-28 from commit `f8f6060` on macOS Darwin 24.6.0, Apple M1 Max, 10 CPU cores, 32 GiB RAM, Node `v24.14.0`, npm `11.9.0`.

@@ -569,7 +569,7 @@ type UiMessageKey =
   | 'backToWorkbench' | 'lineLabel'
   // Buttons / actions
   | 'copy' | 'copyConfig' | 'copyVerify' | 'copyCopied' | 'copyFailed' | 'copyLink'
-  | 'exportJson' | 'exportCsv' | 'exportPng' | 'exportDone' | 'shareExport' | 'verify' | 'review'
+  | 'exportJson' | 'exportCsv' | 'exportPng' | 'exportDone' | 'exportFailed' | 'shareExport' | 'verify' | 'review'
   // Trust state labels
   | 'reviewGaps' | 'useWithGaps' | 'readyToUse'
   | 'noSkippedPaths' | 'confidenceMetadataPresent' | 'openLimitations' | 'noneReported'
@@ -646,7 +646,7 @@ const UI_MESSAGES: Record<UiLanguage, UiMessages> = {
     backToWorkbench: 'Back to Impact Workbench', lineLabel: 'Line',
     copy: 'Copy', copyConfig: 'Copy config', copyVerify: 'Copy verify',
     copyCopied: 'Copied', copyFailed: 'Copy failed', copyLink: 'Copy link',
-    exportJson: 'JSON', exportCsv: 'CSV', exportPng: 'PNG', exportDone: 'Exported', shareExport: 'Share and export',
+    exportJson: 'JSON', exportCsv: 'CSV', exportPng: 'PNG', exportDone: 'Exported', exportFailed: 'Export failed', shareExport: 'Share and export',
     verify: 'Verify', review: 'Review',
     reviewGaps: 'Review gaps', useWithGaps: 'Use with gaps', readyToUse: 'Ready to use',
     noSkippedPaths: 'No skipped paths', confidenceMetadataPresent: 'Confidence metadata present',
@@ -732,7 +732,7 @@ const UI_MESSAGES: Record<UiLanguage, UiMessages> = {
     backToWorkbench: 'Impact Workbench로 돌아가기', lineLabel: '줄',
     copy: '복사', copyConfig: '설정 복사', copyVerify: '검증 복사',
     copyCopied: '복사됨', copyFailed: '복사 실패', copyLink: '링크 복사',
-    exportJson: 'JSON', exportCsv: 'CSV', exportPng: 'PNG', exportDone: '내보냄', shareExport: '공유 및 내보내기',
+    exportJson: 'JSON', exportCsv: 'CSV', exportPng: 'PNG', exportDone: '내보냄', exportFailed: '내보내기 실패', shareExport: '공유 및 내보내기',
     verify: '검증', review: '검토',
     reviewGaps: '갭 검토', useWithGaps: '갭 있음', readyToUse: '사용 가능',
     noSkippedPaths: '건너뛴 경로 없음', confidenceMetadataPresent: '신뢰도 메타데이터 존재',
@@ -818,7 +818,7 @@ const UI_MESSAGES: Record<UiLanguage, UiMessages> = {
     backToWorkbench: '返回 Impact Workbench', lineLabel: '行',
     copy: '复制', copyConfig: '复制配置', copyVerify: '复制验证',
     copyCopied: '已复制', copyFailed: '复制失败', copyLink: '复制链接',
-    exportJson: 'JSON', exportCsv: 'CSV', exportPng: 'PNG', exportDone: '已导出', shareExport: '分享与导出',
+    exportJson: 'JSON', exportCsv: 'CSV', exportPng: 'PNG', exportDone: '已导出', exportFailed: '导出失败', shareExport: '分享与导出',
     verify: '验证', review: '审查',
     reviewGaps: '审查缺口', useWithGaps: '存在缺口', readyToUse: '可使用',
     noSkippedPaths: '无跳过路径', confidenceMetadataPresent: '存在置信度元数据',

@@ -40,7 +40,7 @@ processing, edited targets and path-set invalidation with unreadable context
 bodies/hashes. These bounded fixtures do not enable selective runtime execution
 or replace the persisted fresh-index/saved-report gates.
 
-The active input-validity follow-up is PR #51. Its versioned pre-classification
+The input-validity slice in PR #51 uses the existing scanner and publication path. Its versioned pre-classification
 scanner/history receipt is stored with completed graph publication. Reuse now
 validates bounded bodies and selected history; a miss allocates a new run before
 capturing inputs again. NULL/unknown/different inputs require full extraction,

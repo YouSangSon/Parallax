@@ -108,7 +108,9 @@ same selected history is used by co-change extraction. No body reads are skipped
 Candidate, checks, validation and counters share one DEFERRED reader snapshot,
 released on hit, miss or failure. Fatal errors close the database. A miss closes
 that snapshot, allocates a new run ID and captures inputs again; it never publishes
-precheck data. This can read bodies twice and hold the reader snapshot longer.
+precheck data. Even a retained hit rechecks the latest completed ID in a fresh
+autocommit read after closing the snapshot; movement becomes a miss. A writer
+finishing after that final admission read is outside the freshness guarantee. This can read bodies twice and hold the reader snapshot longer.
 WAL avoids a writer slot, but the guarantee is one DB read point, not ongoing
 freshness or an atomic filesystem/Git snapshot.
 

@@ -101,7 +101,9 @@ Clean same-HEAD 复用先选择最新 completed cohort，校验 extractor/HEAD/r
 
 候选、验证与计数位于同一个 DEFERRED 读取 snapshot，hit/miss/异常均结束它，致命错误
 关闭数据库。Miss 后先关闭 snapshot、分配新 run ID，再重新读取 scan/history，不发布
-precheck 数据。可能读取两次正文，并延长读取 snapshot；WAL 不占 writer slot，但这不是
+precheck 数据。保留的 hit 也会在关闭 snapshot 后用新的 autocommit 查询核对最新
+completed ID；发生移动则按 miss 处理。最后核对之后完成的 writer 不在新鲜度保证内。
+可能读取两次正文，并延长读取 snapshot；WAL 不占 writer slot，但这不是
 整个 filesystem/Git 的原子 snapshot，也不保证返回后仍是最新结果。
 
 Schema v17 增加 nullable receipt，不从旧 hash backfill。旧 NULL、未知或不匹配的记录

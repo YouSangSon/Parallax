@@ -1063,6 +1063,7 @@ function reuseCleanGitIndexIfUnchanged(
   options: IndexOptions
 ): IndexResult | null {
   if (!commitSha || isDirty || options.maxFileBytes !== undefined) return null;
+  let reusable: IndexResult | null = null;
   // Keep the candidate and its mutable cohort rows in one reader snapshot.
   db.exec('BEGIN DEFERRED');
   try {
@@ -1079,10 +1080,16 @@ function reuseCleanGitIndexIfUnchanged(
     if (!indexRunFitsDefaultScanLimit(db, repoId, repoRoot, prior.id)) return null;
     const scan = timeIndexPhase(options, 'scan', () => scanFiles(repoRoot, defaultMaxFileBytes));
     if (hashIndexInputs(scan, readCommitHistory(repoRoot)) !== prior.input_snapshot_hash) return null;
-    return loadIndexResultForRun(db, repoId, prior.id);
+    reusable = loadIndexResultForRun(db, repoId, prior.id);
   } finally {
     if (db.isTransaction) db.exec('ROLLBACK');
   }
+  if (!reusable) return null;
+  // A retained reader snapshot cannot see a cohort published during validation.
+  const latest = db.prepare(`SELECT id FROM index_runs
+    WHERE repo_id = ? AND status = 'completed' ORDER BY id DESC LIMIT 1`)
+    .get(repoId) as { id: number } | undefined;
+  return latest?.id === reusable.indexRunId ? reusable : null;
 }
 
 function indexRunFitsDefaultScanLimit(

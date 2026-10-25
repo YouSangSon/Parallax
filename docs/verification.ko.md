@@ -153,8 +153,11 @@ Miss이면 기존 scan/delta 경로가 현재 본문을 확인해 필요한 재�
 발행 직전에 기준을 확인하는 원리를 재사용한다. 이 DB 조회 일관성에는 global mutation
 epoch나 전체 과거 graph 복사가 필요하지 않다. `tests/incremental-index-oracle.test.ts`의 원격 회귀는
 A→dirty B→restore A→fresh-full 동등성→새 clean 재사용과, 후보 조회 사이 실제 별도 CLI
-writer가 no-op cohort를 발행하는 순서를 검증한다. 후자는 reader가 한 DB 시점의
-기존 ID와 nonzero 카운터를 함께 반환하고 실제 latest는 child run임을 대조한다.
+writer가 cohort를 발행하는 순서를 검증한다. 읽기 snapshot에서 보관한 hit도 snapshot을
+종료한 뒤 autocommit 조회로 최신 completed ID를 정확히 다시 확인한다. 이동했으면
+miss로 처리해 새 run/입력을 발행하며, 같은 snapshot 안의 재조회로 대체하지 않는다.
+별도 CLI가 B를 발행한 뒤 파일을 A로 복원해도 latest graph가 fresh A와 같아야 한다.
+마지막 ID 확인 이후의 writer 완료는 반환 전이더라도 post-admission 경쟁 범위다.
 읽기 시작 실패 시 DB close도 강제로 확인한다. 스캔 observer 안에서 실제 child를 먼저
 완료시킨 별도 순서도 검증한다. 더 작은 parent ID의 발행을 거부하고 child graph와 다음
 clean 재사용을 유지해야 한다. 로컬에서는 이 DB 검사를 실행하지 않는다.

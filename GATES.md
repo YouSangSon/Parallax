@@ -15,7 +15,7 @@ Evidence is current only when the command and result are recorded in this file. 
   persisted graph/saved-report equivalence and selective runtime extraction
   remain unproven; changed-body full fallback stays active.
 
-## Git Cache Input Validity — Repair Pending Remote Gate, 2026-10-25
+## Git Cache Input Validity — 2026-10-25
 
 - [x] Regression head `48e2f53` at PR merge `3565445` failed 8/758 remote tests:
   seven hidden-body cases plus same-HEAD shallow deepen. All eight actual CLI
@@ -33,9 +33,17 @@ Evidence is current only when the command and result are recorded in this file. 
 - New remote oracles cover history loss as well as growth, legacy reapply,
   second-scan/history publication, summed benchmark read counters, receipt/graph
   rollback and partial co-change recovery. Local execution is type/lint only.
-- Required final-head Release, security and independent integrity review remain
-  pending. Do not merge until all required checks pass. This repairs correctness
-  by reading inputs; selective runtime execution and read reduction remain off.
+- A retained hit also checks the latest completed ID after closing its reader
+  snapshot. A real child B publication followed by file restoration to A must
+  leave the latest graph equal to fresh A; movement requires a new capture.
+- [x] Candidate `a0d03fe` passed 768/769 remotely; only the real child B→restore A
+  admission oracle failed. The follow-up guard reads the latest ID after ending
+  the snapshot; same-body child movement also requires fresh capture.
+- `npm run lint` (type/docs/schema) passes locally. Exact final-head Release,
+  security, merge and main-run receipts are owned by [PR #51](https://github.com/YouSangSon/Parallax/pull/51)
+  and the portfolio evidence owner in `CONTEXT.md`. Required checks must pass
+  before landing; a focused pass is not the full gate. Selective execution and
+  read reduction remain off.
 
 ## S1 Recovery Bookkeeping Removal — 2026-10-25
 

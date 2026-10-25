@@ -595,7 +595,7 @@ test('restoring clean HEAD after a dirty index rebuilds the current cohort befor
   }
 });
 
-test('clean reuse reads one coherent cohort while another process publishes a new run', async (t) => {
+test('clean validation rescans after another process moves the candidate cohort', async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), 'parallax-reuse-snapshot-'));
   try {
     writeChain(root);
@@ -625,11 +625,11 @@ test('clean reuse reads one coherent cohort while another process publishes a ne
     assert.equal(moved, true, 'writer must run after candidate selection');
     assert.equal(childFailure, undefined);
     assert.ok(childRunId !== undefined && childRunId > first.indexRunId);
-    assert.equal(scans, 1, 'reuse validates inputs once and returns the retained reader snapshot');
-    assert.equal(reused.indexRunId, first.indexRunId);
+    assert.equal(scans, 2, 'cohort movement requires a new run and fresh capture after validation');
+    assert.ok(reused.indexRunId > childRunId);
     assert.equal(reused.filesIndexed, first.filesIndexed, 'cohort movement must not mix an old ID with empty live rows');
     const db = openDatabase(root, { readOnly: true });
-    try { assert.equal(latestCompletedIndexRun(db, getRepoId(db, root)), childRunId); }
+    try { assert.equal(latestCompletedIndexRun(db, getRepoId(db, root)), reused.indexRunId); }
     finally { db.close(); }
   } finally {
     t.mock.restoreAll();
@@ -668,6 +668,9 @@ test('cache validation cannot retain A after a child publishes B and restores A'
     assert.deepEqual(snapshotGraph(root), snapshotGraph(fresh),
       'latest graph must be restored A, not the completed child B hidden by the old reader snapshot');
     assert.ok(result.indexRunId > (JSON.parse(child.stdout) as { indexRunId: number }).indexRunId);
+    const db = openDatabase(root, { readOnly: true });
+    try { assert.equal(latestCompletedIndexRun(db, getRepoId(db, root)), result.indexRunId); }
+    finally { db.close(); }
   } finally {
     t.mock.restoreAll();
     syncBuiltinESMExports();

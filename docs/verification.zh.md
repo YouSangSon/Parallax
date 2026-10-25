@@ -167,6 +167,31 @@ npm run bench:perf -- --scales 10000,50000
 
 输出表会分开显示 `full_index_ms`、`full_scan_ms`、`noop_incremental_ms`、`noop_scan_ms`、`edit_reindex_ms`、`edit_scan_ms`、`analyze_no_persist_ms`、`analyze_persist_ms`、`observed_peak_rss_mb`，以及 total phase 对应的 `/kfile` 耗时列。Peak RSS 使用 Node 内置 RSS reading 在 phase 边界采样，因此是实用的趋势信号，而不是精确 allocator trace。计时运行不在 verify 中，但合成 generator 和表格 formatter 由 `tests/synthetic-repo.test.ts` 在常规 verify 闸中守护。
 
+### 路径 token 查询
+
+2026-10-25 对真实 workflow 正文的 adapter 单独观测发现了逐路径重复搜索整个
+正文的成本。基准 `5a6fbfb` 与候选 `808ce5f` 使用 Node `v24.14.0`、
+`darwin/arm64`、256 MiB Node heap 上限和本地 Git 的固定 blob。Context 是已识别
+语言的 tracked 路径，不是 scanner snapshot；未确认本地参考仓库是否与远端最新状态相同。
+
+| 输入 | Context 路径 | Workflow 正文 / byte | 基准 start+process (ms) | 候选 start+process (ms) |
+| --- | ---: | ---: | ---: | ---: |
+| Parallax `5a6fbfb` | 281 | 5 / 6358 | 1.186 | 0.751 |
+| [本地 Codex `970111f6`](https://github.com/openai/codex/tree/970111f6cb62cc02fe36a82ea7d71b37a2889c97/.github/workflows) | 7336 | 28 / 317325 | 415.014 | 22.107 |
+
+Codex 逆序观测为基准 410.206 / 候选 20.077 ms。这是包含启动、事件收集和计测的
+单次配对观测，不是分布、adapter CPU 时间、端到端索引延迟或读取减少。原始
+checkout 保持不变，没有启动本地 DB、app、模型或完整 suite。Codex 仅提供输入
+数据，没有借用其实现代码。
+
+每个 run 构建路径查询表，并用现有 ASCII 路径边界字符集的最大 token 查询
+归一化正文。仍按原始路径顺序收集结果后执行原来的排序，保留排序相等和大小写
+变体。特殊路径保留原 substring fallback，Docker COPY 和 evidence 计算不变。
+两组 corpus 的正序、逆序、单文件处理以及 1298 个边界、Unicode、特殊路径组合的
+完整事件数组与基准相同。集中测试检查原始 evidence 和忽略区间。本次没有修复
+Unicode 小写展开和 CRLF 的既有坐标限制。未启用选择执行 flag、scanner 跳读或
+carry SQL；其他语言 adapter 的独立 matcher 不在本次观测范围内。
+
 ### Config 提取成本观测
 
 在添加选择性 config/infra carry 之前，`bench/config-extraction-profile.ts`

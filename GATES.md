@@ -2,6 +2,24 @@
 
 Evidence is current only when the command and result are recorded in this file. A focused pass proves only its named scope.
 
+## Current Delivery Boundary — 2026-10-26
+
+- PR #62 head `516d72e` passed required checks and canonical `npm run verify`:
+  804/804 tests, dogfood 2/2, benchmark and audit. Merged main `5429afc` passed
+  CI/Security/CodeQL/Scorecard and the same canonical counts.
+- PR #63 head `b0ffb53` passed required checks and canonical `npm run verify`:
+  811/811 tests, dogfood 2/2, benchmark and audit. Six legacy upgrade oracles cover
+  false-source removal, destination preservation, fresh graphs and old reports.
+  Main `ae0102f` also passed CI/Security/CodeQL/Scorecard and canonical 811/811,
+  dogfood 2/2, benchmark and audit; exact receipts retain their separate scope.
+- Final runtime package has 89 verified compiled bodies and eight root/docs
+  README entry points in KO/JA/EN/ZH. No latest-runtime VM replay is claimed;
+  earlier VM proof predates the memo and source-coordinate/source-span changes.
+- The active plan now separates completed runtime slices from remaining S1
+  evidence. This documentation correction changes no source, dependency, schema,
+  workflow or runtime behavior. Local checks remain docs/diff only; unchanged
+  passing runtime evidence is reused and required remote gates remain enabled.
+
 ## Workbench Export Feedback — 2026-10-25
 
 - Clipboard follow-up: the emitted-client regression reproduced a false legacy
@@ -80,8 +98,9 @@ Evidence is current only when the command and result are recorded in this file. 
   checks own their results. Existing SCIP/trace reapply rules still apply.
 - [x] `npm run lint`, `npm run build` and `git diff --check` pass.
 - No new dependency, scanner read skipping, selective carry or public API change.
-  Repeated source text on one Docker line retains the existing first-occurrence
-  parser limit. See [coordinate repair](docs/verification.md#source-evidence-coordinates).
+  This PR #62 checkpoint retained the first-occurrence Docker parser limit;
+  Docker Source Operands above records its later correction. See
+  [coordinate repair](docs/verification.md#source-evidence-coordinates).
 
 ## Config/Infra Selection Contract — 2026-10-25
 

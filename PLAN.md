@@ -9,101 +9,55 @@ type/build/lint checks; existing remote CI owns required full verification.
 Any my-cloud smoke requires current resource, shared-lock and provider-billed
 traffic checks before transfer or execution; no Nebula VM is used for Parallax.
 
-## Workbench Export Feedback — 2026-10-25
+## Completed Runtime Slices — 2026-10-26
 
-Follow-up: the existing legacy clipboard fallback must reject a false
-`execCommand('copy')` result. Fix the shared helper once for link/command copy;
-preserve modern Clipboard API behavior, textarea cleanup and button restoration.
-Use the emitted-client unit harness and normal remote gates; legacy-browser
-platform behavior is separate from these stubbed outcomes.
+- Workbench feedback (PR #57/#58): export failures use action-specific localized
+  text; the legacy clipboard fallback rejects false copy results and cleans up.
+  The actual 375×812 viewport recheck is separate from the earlier deadline and
+  request-only attempt. Real legacy-browser execution remains unverified.
+- Text evidence (PR #62/#63): original LF ranges preserve Unicode/CRLF positions;
+  raw Docker source/from spans prevent false local relations while retaining
+  destination references. Validated JSON keeps spaces, escapes and literal
+  filename quotes; rejected JSON never enters the secondary string lexer.
+  Config/infra version 3 and shared regex version 39 rebuild legacy cohorts.
+  Saved reports remain snapshots. This does not implement a full Docker parser.
+- Extraction cost (PR #59/#61): a per-run path lookup removes repeated matching;
+  a bounded process-local memo reuses fully consumed successful config events
+  across public `indexProject()` calls. Body/language/path/root and ordered
+  indexed paths invalidate it; fresh copies still use the full publisher and
+  redaction path. Separate CLI invocations cannot share it.
 
-The public CLI/MCP/desktop VM replay found that a missing report's guarded PNG
-failure said "Copy failed". Keep the empty-map guard and existing copy behavior;
-give JSON/CSV/PNG their own localized export-failure message through the existing
-toolbar handler. Validate the emitted browser script with bounded platform
-stubs, check the actual VM failure path, then require the normal remote gates.
-The replay's desktop and failed viewport attempt remain distinct evidence;
-requesting 375 pixels is not proof that a 375-pixel viewport was applied.
+Exact local, PR and merged-main evidence is owned by `GATES.md` and the existing
+portfolio owner in `CONTEXT.md`. These completed slices are not pending work.
 
-## Docker Source Operands — 2026-10-26
+## S1 Remaining Queue — 2026-10-26
 
-Follow the coordinate repair with raw COPY/ADD operand spans. Repeated sources,
-flag-value collisions and filtered glob/URL text must not become local stage
-relations; destination references remain visible. Preserve validated JSON values
-and their raw spans without rejoining whitespace or stripping decoded quotes.
-Version 3 must rebuild v2 cohorts and preserve saved reports through the existing
-Git/non-Git oracle. Keep malformed JSON out of the secondary string lexer.
+Output ownership admission, cohort revalidation under the writer lock, actual
+input receipts and deterministic read counters already exist. Config/infra's
+full/reversed/single-file and edit/path-set oracles passed in PR #54. A stateful
+adapter with both scope flags still disproves general process-order independence.
+Changed-body extraction therefore remains conservative; no general selection
+flag, partial SQL carry or scanner read skipping is enabled.
 
-## Source Evidence Coordinates — 2026-10-26
+1. Revalidate the latest packaged runtime on my-cloud after fresh provider-billed
+   traffic, resource and shared-lock checks. Earlier VM modules predate the memo
+   and coordinate/source-span repairs; CI success does not establish VM equality.
+   Without authenticated billed usage, hold new images/large dependency transfers and
+   public demo execution; bounded local preparation may continue.
+2. Measure remaining cold/warm extraction cost on a representative workload before
+   expanding runtime complexity. The prior 23-body VM fixture had sub-millisecond
+   unchanged-config windows and still read every body; later workflow-only corpus
+   observations are not whole-index or scanner-read measurements. Use existing
+   observers and preserve the distinct read/sample counters.
+3. Only if residual cost justifies another bounded path, prove process-order and
+   startup-context independence, input validity, fresh-full graph/report equality,
+   diagnostic/version/audit ownership and rollback behavior before changing carry
+   or body reads. Retain legacy adapters' conservative behavior and atomic SQL
+   publication. Update the existing portfolio owner after verified delivery.
 
-Repair text-reference evidence after Unicode lowercase expansion and Docker CRLF
-lines without changing matching, ordering or parser contracts. Project matches
-back to original line bounds, preserve whole-string contextual casing, and bump
-config/infra and shared regex adapter versions so unchanged legacy cohorts rebuild.
-Git/non-Git persisted oracles must compare the repaired graph with fresh indexing
-and preserve saved reports. This bounded accuracy fix leaves the S1 queue active.
-
-## S1 Output Ownership and Selective Reads — 2026-10-24
-
-The next bounded runtime slice reuses completed config/infra computations inside
-one process, then sends fresh event copies through the unchanged full publisher.
-It serves repeated public `indexProject()` API calls; separate CLI invocations
-cannot share it. Actual body/language/path and ordered indexed paths invalidate
-the memo. Raw evidence is never persisted outside the existing redaction path.
-Cold fresh-root graph/audit/redaction/report oracles and publication-failure
-retries are required remotely. General adapter selection, partial SQL carry and
-scanner read skipping remain deferred; this does not complete the whole S1 goal.
-
-The real workflow-body observation now finds material config matching cost on
-one pinned local Codex corpus. First remove its repeated per-path body searches
-with a per-run token lookup while preserving full event arrays, stable ordering,
-case collisions, fallback and evidence. This is a bounded computation change;
-scan/read skipping and general selective carry remain disabled. Reassess their
-value using the remaining measured cost rather than the former matcher cost.
-See the paired adapter-only scope in `docs/verification.md`.
-
-Continue the existing S1 queue after the completed portfolio/help slices:
-
-1. Enforce opt-in `processed-file` output ownership before graph publication.
-   Keep legacy adapters unrestricted; config/infra is the first file-based
-   participant. Snapshot inputs/events and include ownership in cache identity.
-   Preserve no-op versions, diagnostics, contracts and external relation/audit
-   ownership before selective execution; publication remains one SQL transaction.
-   Revalidate the planned completed cohort and main head under its writer lock
-   so overlapping runs cannot publish an obsolete carry/full result.
-2. Prove a bounded selective path against fresh full-index output, including
-   edits, path-set changes, startup context and saved reports. Record actual
-   body/byte read counts before claiming a read reduction. Target-only reads and
-   processed-file output ownership still need a process-order independence proof;
-   a run-local counter is a valid counterexample to treating those flags as enough.
-3. Land independently verified units and update the existing portfolio owner.
-
-The read-count slice uses the existing scan observer and performance benchmark.
-It counts full-body reads and bounded samples separately, without changing CLI
-results or skipping any reads. This supplies the baseline for step 2.
-
-The first implementation leaves changed-body extraction conservative. Its
-ownership declaration alone is not a changed-only execution gate; diagnostic
-coverage and entity-version carry-forward also require equivalence checks.
-
-Config/infra has pure event-level selection checks for full/reversed/single
-processing, edited targets and path-set invalidation with unreadable context
-bodies/hashes. Persisted oracles compare reversed full processing
-with fresh full graphs and saved reports after target edits and path removal.
-A stateful adapter with both scope flags must still process every file after an
-edit: its run-local ordinal changes an owned relation. These persisted gates
-passed in PR #54; they do not enable selective runtime execution or prove a
-general adapter independence contract.
-
-The bounded config extraction observation on the approved VM is complete; see
-`docs/verification.md` for the source, environment and measurements. Unchanged
-config processing occupied less than 1 ms in either edit case, while each run
-still read all 23 bodies. This small non-Git case does not justify a general
-flag or selective carry SQL. Keep changed-body full extraction and defer that
-implementation until a representative workload shows material config cost.
-This is a measured scope decision, not a selective-execution proof or a
-large-repository performance conclusion. Local checks remain pure/type/docs;
-remote CI owns the required full verification.
+General selective execution, read reduction and cross-process computation reuse
+remain unproven; the whole S1 goal is not complete. Verification and measurements
+in `docs/verification.md` retain their original source/environment boundaries.
 
 The input-validity slice in PR #51 uses the existing scanner and publication path. Its versioned pre-classification
 scanner/history receipt is stored with completed graph publication. Reuse now
@@ -360,7 +314,7 @@ evidence and cleanup receipts remain in the owner location in `CONTEXT.md`.
 
 The following items are deferred beyond this completed loop:
 
-1. Define emitted-row ownership before revisiting selective reads, then add
-   deterministic file/byte read counts before making a performance claim.
+1. Revisit general selective reads only after the remaining S1 evidence above;
+   output ownership and deterministic read counters are already implemented.
 2. Keep deeper JSON Schema / Avro compatibility semantics behind S1 unless new
    evidence displaces the sequence.

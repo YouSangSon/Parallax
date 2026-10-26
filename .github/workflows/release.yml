@@ -45,7 +45,7 @@ jobs:
           subject-path: '*.tgz'
 
       - name: Attest SBOM
-        uses: actions/attest-sbom@v1
+        uses: actions/attest-sbom@v4
         with:
           subject-path: '*.tgz'
           sbom-path: sbom.spdx.json

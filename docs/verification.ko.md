@@ -350,6 +350,24 @@ Docker COPY·증거 계산도 유지한다. 두 corpus의 정방향·역방향·
 CRLF 좌표 한계는 이번에 고치지 않았다. 선택 실행 flag·scanner 읽기 생략·carry SQL은
 활성화하지 않으며 다른 언어 adapter의 별도 matcher는 이 관측 범위 밖이다.
 
+### 원문 근거 좌표 보정
+
+후속 정확성 수정은 검색 결과가 몇 번째 LF 뒤에 있는지 원문에 대응시킨 뒤, 해당
+줄의 원시 범위를 한 번만 근거로 만든다. `İ`는 소문자화할 때 UTF-16 한 단위에서
+두 단위로 늘어나므로 검색 문자열의 위치를 원문 위치로 사용할 수 없다. 그리스어
+마지막 sigma는 문맥에 따라 달라지므로 본문 전체의 소문자 검색은 유지한다.
+Docker 줄 순회는 실제 CRLF 너비를 보존하고, 제외할 stage source 범위는 검색
+좌표로 계산한다. 근거: [ECMAScript 소문자 변환](https://tc39.es/ecma262/multipage/text-processing.html#sec-string.prototype.tolowercase).
+
+`tests/text-reference-evidence.test.ts`가 길이 증가·마지막 sigma·CRLF·UTF-16 열·
+제외 source·빈 줄·fallback 경로와 stem을 검사한다. config/infra 버전 2와 공유
+regex 버전 39는 파일이 같아도 기존 receipt를 full 추출로 갱신한다.
+`tests/incremental-index-oracle.test.ts`의 Git/비Git oracle 네 개는 실제 이전
+이벤트 fixture를 넣고 fresh graph와 재구축 결과가 같은지, 저장 보고서 snapshot이
+유지되는지 확인한다. 기존 SCIP/trace 재적용 계약은 유지한다. 로컬에서는 DB·앱을
+실행하지 않으며 저장 결과 oracle은 필수 원격 CI가 검증한다. 같은 Docker 줄에
+source 문자열이 반복되면 기존 parser의 첫 위치 선택 한계는 남는다.
+
 ### Config 추출 비용 관측
 
 선택 config/infra carry를 추가하기 전에 `bench/config-extraction-profile.ts`로

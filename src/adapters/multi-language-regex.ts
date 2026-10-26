@@ -14,6 +14,7 @@ import { extractJsonSchemaCompatibility } from '../json_schema_compat.js';
 import { extractOpenApiJsonCompatibility, extractOpenApiYamlCompatibility } from '../openapi_compat.js';
 import { extractProtobufCompatibility, stripProtobufComments } from '../protobuf_compat.js';
 import type { Confidence, RelationKind, ScannedFile } from '../types.js';
+import { originalLineRange } from './text-evidence.js';
 import type {
   AdapterCapability,
   AdapterRun,
@@ -26,7 +27,7 @@ import type {
 } from './types.js';
 
 export const MULTI_LANG_REGEX_ADAPTER_ID = 'multi-language-regex-mvp';
-export const MULTI_LANG_REGEX_ADAPTER_VERSION = '38';
+export const MULTI_LANG_REGEX_ADAPTER_VERSION = '39';
 export const TS_JS_SEMANTIC_ADAPTER_ID = 'typescript-javascript-semantic-v0';
 export const JVM_SPRING_SEMANTIC_ADAPTER_ID = 'jvm-spring-semantic-v0';
 export const PYTHON_SEMANTIC_ADAPTER_ID = 'python-semantic-v0';
@@ -5796,13 +5797,14 @@ function inferExplicitTextTargetsWithEvidence(
 
 function textTargetEvidence(content: string, targetPath: string): EvidenceSpan {
   const normalizedContent = content.toLowerCase();
-  const pathIndex = normalizedContent.indexOf(targetPath.toLowerCase());
-  if (pathIndex >= 0) {
-    return evidenceLineAt(content, pathIndex);
+  let matchIndex = normalizedContent.indexOf(targetPath.toLowerCase());
+  if (matchIndex < 0) {
+    const stem = path.posix.basename(targetPath).replace(/\.[^.]+$/, '').toLowerCase();
+    matchIndex = findTokenIndex(normalizedContent, stem);
   }
-  const stem = path.posix.basename(targetPath).replace(/\.[^.]+$/, '').toLowerCase();
-  const tokenIndex = findTokenIndex(normalizedContent, stem);
-  return evidenceLineAt(content, tokenIndex >= 0 ? tokenIndex : 0);
+  if (matchIndex < 0) return evidenceLineAt(content, 0);
+  const { start, end } = originalLineRange(content, normalizedContent, matchIndex);
+  return exactEvidenceSpanFromRange(content, Math.min(firstNonWhitespaceIndex(content, start), end), end);
 }
 
 function evidenceLineAt(content: string, index: number): EvidenceSpan {

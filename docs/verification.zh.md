@@ -217,6 +217,22 @@ checkout 保持不变，没有启动本地 DB、app、模型或完整 suite。Co
 Unicode 小写展开和 CRLF 的既有坐标限制。未启用选择执行 flag、scanner 跳读或
 carry SQL；其他语言 adapter 的独立 matcher 不在本次观测范围内。
 
+### 原文 evidence 坐标修复
+
+后续准确性修复按 LF 的顺序将搜索命中映射回原文，只构造一次原始行范围。
+`İ` 转为小写时会从一个 UTF-16 单元展开为两个，因此搜索偏移不能直接索引原文。
+希腊语末尾 sigma 依赖上下文，故保留整个正文的小写搜索。Docker 行遍历保留
+实际 CRLF 宽度，延迟 stage source 的排除范围采用搜索坐标。
+依据：[ECMAScript 小写转换](https://tc39.es/ecma262/multipage/text-processing.html#sec-string.prototype.tolowercase)。
+
+`tests/text-reference-evidence.test.ts` 覆盖展开、末尾 sigma、CRLF、UTF-16 列、
+排除 source、空行及 fallback 路径与 stem。config/infra 版本 2 和共享 regex
+版本 39 使未修改文件的旧 receipt 也执行 full 提取。
+`tests/incremental-index-oracle.test.ts` 的四个 Git/非 Git oracle 注入实际旧事件
+fixture，检查重建与 fresh graph 相同、已保存报告 snapshot 不变。仍需遵守既有
+SCIP/trace 重新应用规则。本地不运行 DB/app，持久化 oracle 由必需的远程 CI 验证。
+同一 Docker 行重复出现 source 字符串时，仍保留原 parser 选择首次出现位置的限制。
+
 ### Config 提取成本观测
 
 在添加选择性 config/infra carry 之前，`bench/config-extraction-profile.ts`

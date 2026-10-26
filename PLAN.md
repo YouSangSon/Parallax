@@ -25,6 +25,15 @@ stubs, check the actual VM failure path, then require the normal remote gates.
 The replay's desktop and failed viewport attempt remain distinct evidence;
 requesting 375 pixels is not proof that a 375-pixel viewport was applied.
 
+## Source Evidence Coordinates — 2026-10-26
+
+Repair text-reference evidence after Unicode lowercase expansion and Docker CRLF
+lines without changing matching, ordering or parser contracts. Project matches
+back to original line bounds, preserve whole-string contextual casing, and bump
+config/infra and shared regex adapter versions so unchanged legacy cohorts rebuild.
+Git/non-Git persisted oracles must compare the repaired graph with fresh indexing
+and preserve saved reports. This bounded accuracy fix leaves the S1 queue active.
+
 ## S1 Output Ownership and Selective Reads — 2026-10-24
 
 The next bounded runtime slice reuses completed config/infra computations inside

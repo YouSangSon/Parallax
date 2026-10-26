@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 
 import type { Confidence, RelationKind, ScannedFile } from '../types.js';
+import { originalLineRange } from './text-evidence.js';
 import type {
   AdapterCapability,
   AdapterRun,
@@ -14,7 +15,7 @@ import type {
 } from './types.js';
 
 export const CONFIG_INFRA_SEMANTIC_ADAPTER_ID = 'config-infra-semantic-v0';
-export const CONFIG_INFRA_SEMANTIC_ADAPTER_VERSION = '1';
+export const CONFIG_INFRA_SEMANTIC_ADAPTER_VERSION = '2';
 
 type EvidenceSpan = {
   snippet: string;
@@ -107,7 +108,7 @@ function* extractConfigInfraEvents(
   tokenPaths: ReadonlySet<string>
 ): Iterable<IndexEvent> {
   const fileDescriptor = configInfraFileDescriptor(file);
-  const ignoredTextRanges = file.language === 'dockerfile' ? dockerfileDeferredSourceRanges(file) : [];
+  const ignoredTextRanges = file.language === 'dockerfile' ? dockerfileDeferredSearchRanges(file) : [];
   const configuredTargets = inferExplicitTextTargetsWithEvidence(
     file.relativePath,
     file.content,
@@ -174,23 +175,19 @@ function dockerfileCopyTargets(
   filePathSet: ReadonlySet<string>
 ): TextTarget[] {
   const targets = new Map<string, TextTarget>();
-  let offset = 0;
-  for (const line of file.content.split(/\r?\n/)) {
+  for (const match of file.content.matchAll(/(.*?)(?:\r?\n|$)/gs)) {
+    const line = match[1]!;
     const copyMatch = /^\s*(?:COPY|ADD)\s+(.+)$/i.exec(line);
-    if (!copyMatch) {
-      offset += line.length + 1;
-      continue;
-    }
+    if (!copyMatch) continue;
     for (const source of dockerfileCopySources(copyMatch[1]!)) {
       const targetPath = resolveConfigPath(file.relativePath, source, filePathSet);
       if (targetPath && !targets.has(targetPath)) {
         targets.set(targetPath, {
           path: targetPath,
-          evidence: evidenceLineAt(file.content, offset + line.indexOf(source))
+          evidence: evidenceLineAt(file.content, match.index + line.indexOf(source))
         });
       }
     }
-    offset += line.length + 1;
   }
   return [...targets.values()];
 }
@@ -200,25 +197,25 @@ function dockerfileCopySources(copyArgs: string): string[] {
   return dockerfileSources(copyArgs);
 }
 
-function dockerfileDeferredSourceRanges(file: ConfigInput): IgnoredRange[] {
+function dockerfileDeferredSearchRanges(file: ConfigInput): IgnoredRange[] {
   const ranges: IgnoredRange[] = [];
-  let offset = 0;
-  for (const line of file.content.split(/\r?\n/)) {
+  let searchOffset = 0;
+  for (const match of file.content.matchAll(/(.*?)(?:\r?\n|$)/gs)) {
+    const line = match[1]!;
+    const ascii = !/[^\x00-\x7f]/.test(line);
     const copyMatch = /^\s*(?:COPY|ADD)\s+(.+)$/i.exec(line);
-    if (!copyMatch) {
-      offset += line.length + 1;
-      continue;
-    }
-    for (const source of dockerfileMultistageCopySources(copyMatch[1]!)) {
+    for (const source of copyMatch ? dockerfileMultistageCopySources(copyMatch[1]!) : []) {
       const sourceIndex = line.indexOf(source);
       if (sourceIndex >= 0) {
         ranges.push({
-          start: offset + sourceIndex,
-          end: offset + sourceIndex + source.length
+          start: searchOffset + (ascii ? sourceIndex : line.slice(0, sourceIndex).toLowerCase().length),
+          end: searchOffset + (ascii ? sourceIndex + source.length
+            : line.slice(0, sourceIndex + source.length).toLowerCase().length)
         });
       }
     }
-    offset += line.length + 1;
+    // Compose lengths only; matching retains whole-string contextual casing.
+    searchOffset += (ascii ? line.length : line.toLowerCase().length) + match[0].length - line.length;
   }
   return ranges;
 }
@@ -326,9 +323,10 @@ function inferExplicitTextTargetsWithEvidence(
       ? tokenIndices.get(normalizedPath) ?? -1
       : findExplicitPathIndex(normalizedContent, normalizedPath, 0, ignoredRanges);
     if (pathIndex < 0) continue;
+    const { start, end } = originalLineRange(content, normalizedContent, pathIndex);
     targets.push({
       path: candidatePath,
-      evidence: evidenceLineAt(content, pathIndex)
+      evidence: evidenceSpanFromRange(content, firstNonWhitespaceIndex(content, start), end)
     });
   }
   return targets.sort((left, right) => left.path.localeCompare(right.path));

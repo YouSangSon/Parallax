@@ -368,6 +368,22 @@ regex 버전 39는 파일이 같아도 기존 receipt를 full 추출로 갱신�
 실행하지 않으며 저장 결과 oracle은 필수 원격 CI가 검증한다. 같은 Docker 줄에
 source 문자열이 반복되면 기존 parser의 첫 위치 선택 한계는 남는다.
 
+### Docker source operand 범위
+
+후속 수정은 위의 첫 출현 위치 한계를 COPY/ADD operand의 원문 범위로 대체한다.
+앞부분의 `--from` token/value와 모든 stage source operand를 로컬 참조 검색에서
+제외하고 마지막 destination은 남긴다. 반복 source·flag 값과의 충돌·glob/URL 안의
+부분 문자열이 잘못된 로컬 관계가 되는 것을 막는다. 로컬 의존성은 허용된 source
+값만 해석한다. 근거: [Docker COPY source·destination 규칙](https://docs.docker.com/reference/dockerfile/#copy).
+
+JSON 배열은 원래 payload를 검증한 뒤 문자열 lexeme에 원문 범위를 대응시킨다.
+유의미한 공백·escape를 해석한 값·실제 따옴표는 경로의 일부로 보존한다. 잘못된
+JSON·문자열이 아닌 배열·값이 두 개 미만인 배열은 두 번째 lexer에 들어가지 않는다.
+Shell 따옴표와 줄 연결은 기존 공백 token 문법에 머무르며 전체 Dockerfile parser는
+아니다. config/infra 버전 3의 Git/비Git v2 cohort oracle은 잘못된 source 제거,
+destination 유지, fresh graph 일치와 저장 보고서 불변을 확인한다. 이전 좌표·버전
+oracle은 유지하며 로컬에서는 DB·앱을 실행하지 않는다.
+
 ### Config 추출 비용 관측
 
 선택 config/infra carry를 추가하기 전에 `bench/config-extraction-profile.ts`로

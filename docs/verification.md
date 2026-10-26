@@ -263,6 +263,24 @@ SCIP/trace reapply requirements remain. Local checks exclude DB/app execution;
 required remote CI owns these persisted oracles. Repeated identical source text
 on one Docker line still uses the parser's existing first occurrence.
 
+### Docker source operand spans
+
+The follow-up replaces the first-occurrence limitation above with raw COPY/ADD
+operand spans. Leading `--from` token/value and every stage source operand are
+excluded from generic local references; the last destination remains visible.
+This prevents repeated sources, flag-value collisions and glob/URL substrings
+from becoming false local relations. Local dependencies still resolve only
+accepted source values. See [Docker COPY source and destination rules](https://docs.docker.com/reference/dockerfile/#copy).
+
+JSON arrays are validated from the original payload before mapping string lexemes
+to raw spans. Significant whitespace, decoded escapes and literal quotes remain
+part of the path. Invalid/non-string arrays and arrays with fewer than two values
+return before secondary lexing. Shell quoting and continuations retain the
+existing whitespace-token grammar; this is not a full Dockerfile parser.
+Config/infra version 3 adds v2 legacy Git/non-Git oracles for false-source removal,
+destination preservation, fresh-graph equality and saved-report immutability.
+The prior coordinate/version oracles remain; local checks stay DB/app-free.
+
 ### Config extraction observations
 
 Before adding selective config/infra carry, `bench/config-extraction-profile.ts`

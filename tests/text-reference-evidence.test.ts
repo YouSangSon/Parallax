@@ -123,3 +123,71 @@ for (const fixture of [
       endCol: fixture.snippet.length + fixture.startCol, confidence: 'heuristic' }]);
   });
 }
+
+
+test('Docker stage sources use distinct raw token spans while destination references survive', async () => {
+  for (const content of [
+    'COPY --from=builder src/a.ts src/a.ts /out/\n',
+    'COPY --from=src/a.ts src/a.ts /out/\n',
+    'COPY --from=builder ["src/a.ts","src/a.ts","/out/"]\n'
+  ]) {
+    assert.deepEqual(await relations(new ConfigInfraSemanticAdapter(), file('Dockerfile', 'dockerfile', content)), [], content);
+  }
+  for (const content of [
+    'COPY --from=builder src/a.ts src/a.ts\n',
+    'COPY --from=builder ["src/a.ts","src/a.ts"]\n'
+  ]) {
+    const actual = await relations(new ConfigInfraSemanticAdapter(), file('Dockerfile', 'dockerfile', content));
+    assert.deepEqual(actual.map((relation) => relation.kind), ['CONFIGURES'], content);
+    assert.equal(actual[0]!.evidence?.[0]?.snippet, content.trimEnd());
+  }
+});
+
+test('Docker stage spans exclude raw glob and URL operands without hiding a later local copy', async () => {
+  const prefix = '# İİİ\r\nCOPY --from builder *src/a.ts https://host/src/a.ts /out/\r\n';
+  assert.deepEqual(await relations(new ConfigInfraSemanticAdapter(), file('Dockerfile', 'dockerfile', prefix)), []);
+  const actual = await relations(new ConfigInfraSemanticAdapter(), file('Dockerfile', 'dockerfile', `${prefix}COPY src/a.ts /app/a.ts\r\n`));
+  assert.deepEqual(actual.map((relation) => relation.kind), ['DEPENDS_ON', 'CONFIGURES']);
+  assert.ok(actual.every((relation) => relation.evidence?.[0]?.startLine === 3));
+});
+
+test('Docker JSON paths retain significant whitespace and flag-like operands stay operands', async () => {
+  const target = file('src/has  space.ts', 'typescript');
+  const content = 'COPY ["src/has  space.ts", "/out/file.ts"]\n';
+  const actual = await relations(new ConfigInfraSemanticAdapter(), file('Dockerfile', 'dockerfile', content), [target]);
+  assert.deepEqual(actual.map((relation) => relation.kind), ['DEPENDS_ON', 'CONFIGURES']);
+  const flagPath = file('--from', 'typescript');
+  const flags = await relations(new ConfigInfraSemanticAdapter(), file('Dockerfile', 'dockerfile', 'COPY a.ts --from /out/\n'), [file('a.ts', 'typescript'), flagPath]);
+  assert.ok(flags.some((relation) => relation.kind === 'DEPENDS_ON' && relation.target.path === '--from'));
+});
+
+test('Docker JSON source spans use decoded values with raw coordinates and validate the complete array', async () => {
+  const content = '# header\r\nCOPY ["src\\/a.ts", "/out/a.ts"]\r\n';
+  const actual = await relations(new ConfigInfraSemanticAdapter(), file('Dockerfile', 'dockerfile', content));
+  assert.deepEqual(actual.map((relation) => relation.kind), ['DEPENDS_ON']);
+  assert.equal(actual[0]!.evidence?.[0]?.startLine, 2);
+  assert.equal(actual[0]!.evidence?.[0]?.snippet, content.split('\n')[1]);
+  const quotedPath = '"a.ts"';
+  const quoted = await relations(new ConfigInfraSemanticAdapter(),
+    file('Dockerfile', 'dockerfile', `COPY ${JSON.stringify([quotedPath, '/out/'])}\n`),
+    [file(quotedPath, 'typescript'), file('a.ts', 'typescript')]);
+  assert.deepEqual(quoted.filter((relation) => relation.kind === 'DEPENDS_ON').map((relation) => relation.target.path), [quotedPath]);
+  for (const payload of ['["src/a.ts", 0, "/out/"]', '["src/a.ts", "/out/"']) {
+    const events = await relations(new ConfigInfraSemanticAdapter(), file('Dockerfile', 'dockerfile', `COPY ${payload}\n`));
+    assert.ok(events.every((relation) => relation.kind !== 'DEPENDS_ON'), payload);
+  }
+});
+
+test('rejected Docker JSON never enters the secondary string lexer', async (t) => {
+  const payload = '["src/a.ts","' + String.raw`\"`.repeat(64);
+  const matchAll = String.prototype.matchAll;
+  t.mock.method(String.prototype, 'matchAll', function (this: string, pattern: RegExp) {
+    if (String(this) === payload && pattern.source !== '\\S+') {
+      throw new Error('rejected JSON reached the string lexer');
+    }
+    return matchAll.call(this, pattern);
+  });
+  const actual = await relations(new ConfigInfraSemanticAdapter(),
+    file('Dockerfile', 'dockerfile', `COPY ${payload}\n`));
+  assert.ok(actual.every((relation) => relation.kind !== 'DEPENDS_ON'));
+});

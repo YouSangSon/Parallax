@@ -403,14 +403,14 @@ test('config memo replays through full publication and matches cold fresh graphs
 });
 
 const legacyTextFixture = JSON.parse(readFileSync(new URL('./fixtures/legacy-text-events.json', import.meta.url), 'utf8')) as {
-  lanes: Array<{ adapterId: string; version: string;
+  lanes: Array<{ adapterId: string; version: string; staleSnippetPrefix?: string; preservedRelationSource?: string;
     files: Array<{ relativePath: string; language: string; content: string }>;
     events: Record<string, IndexEvent[]> }>;
 };
 
 for (const lane of legacyTextFixture.lanes) {
   for (const git of [false, true]) {
-    test(`${lane.adapterId} legacy evidence upgrades unchanged ${git ? 'clean Git' : 'non-Git'} inputs without rewriting saved reports`, async () => {
+    test(`${lane.adapterId} v${lane.version} legacy evidence upgrades unchanged ${git ? 'clean Git' : 'non-Git'} inputs without rewriting saved reports`, async () => {
       const root = mkdtempSync(path.join(tmpdir(), 'parallax-offset-upgrade-'));
       const fresh = mkdtempSync(path.join(tmpdir(), 'parallax-offset-fresh-'));
       const write = (dir: string) => {
@@ -442,7 +442,8 @@ for (const lane of legacyTextFixture.lanes) {
         }
         const old = await indexProjectWithRegistryForTest({ repoRoot: root }, legacy);
         const prior = snapshotGraph(root);
-        assert.ok(prior.relationEvidence.some((row) => String(row.snippet).startsWith('sentinel')));
+        const staleSnippetPrefix = lane.staleSnippetPrefix ?? 'sentinel';
+        assert.ok(prior.relationEvidence.some((row) => String(row.snippet).startsWith(staleSnippetPrefix)));
         if (lane.adapterId === CONFIG_INFRA_SEMANTIC_ADAPTER_ID) {
           assert.ok(prior.relations.some((row) => row.source_entity_id === 'file:Dockerfile'));
         }
@@ -453,19 +454,23 @@ for (const lane of legacyTextFixture.lanes) {
           finally { db.close(); }
         };
         const beforeJson = reportJson();
-        assert.ok(beforeJson.includes('"snippet":"sentinel'));
+        assert.ok(beforeJson.includes('"snippet":' + JSON.stringify(staleSnippetPrefix).slice(0, -1)));
         if (git) assert.equal(execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' }), '');
         const upgraded = await indexProject({ repoRoot: root });
         assert.equal(upgraded.mode, 'full', 'the adapter version must invalidate both clean reuse and no-op carry');
         assert.ok(upgraded.indexRunId > old.indexRunId);
         const graph = snapshotGraph(root);
         assert.ok(graph.relationEvidence.length > 0);
-        assert.ok(graph.relationEvidence.every((row) => !String(row.snippet).startsWith('sentinel')));
+        assert.ok(graph.relationEvidence.every((row) => !String(row.snippet).startsWith(staleSnippetPrefix)));
         const corrected = lane.adapterId === CONFIG_INFRA_SEMANTIC_ADAPTER_ID ? 'run: node src/a.ts' : 'path: src/a.ts';
         assert.ok(graph.relationEvidence.some((row) => row.snippet === corrected && row.start_line === 2 && row.end_line === 2));
         if (lane.adapterId === CONFIG_INFRA_SEMANTIC_ADAPTER_ID) {
           assert.ok(graph.relations.every((row) => row.source_entity_id !== 'file:Dockerfile'),
             'the old false stage-source relation must disappear');
+        }
+        if (lane.preservedRelationSource) {
+          assert.ok(graph.relations.some((row) => row.source_entity_id === lane.preservedRelationSource && row.kind === 'CONFIGURES'),
+            'the destination reference must survive source suppression');
         }
         write(fresh);
         await initProject({ repoRoot: fresh });

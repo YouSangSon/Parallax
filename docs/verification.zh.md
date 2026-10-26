@@ -233,6 +233,21 @@ fixture，检查重建与 fresh graph 相同、已保存报告 snapshot 不变�
 SCIP/trace 重新应用规则。本地不运行 DB/app，持久化 oracle 由必需的远程 CI 验证。
 同一 Docker 行重复出现 source 字符串时，仍保留原 parser 选择首次出现位置的限制。
 
+### Docker source operand 范围
+
+后续修复用 COPY/ADD operand 的原文范围替代上述首次出现位置的限制。前置
+`--from` token/value 和所有 stage source operand 不参与通用本地引用匹配，
+最后的 destination 仍然可见，避免重复 source、flag 值及 glob/URL 子串产生错误
+本地关系。本地依赖只解析允许的 source 值。
+依据：[Docker COPY source/destination 规则](https://docs.docker.com/reference/dockerfile/#copy)。
+
+JSON 数组从原 payload 验证后，将字符串 lexeme 映射到原文范围，保留有效空白、
+解码后的 escape 和实际引号。非法 JSON、非字符串数组或少于两个值的数组不会
+进入第二个 lexer。Shell 引号和续行仍使用既有空白 token 文法，并非完整的
+Dockerfile parser。config/infra 版本 3 增加 v2 cohort 的 Git/非 Git oracle，
+检查错误 source 删除、destination 保留、fresh graph 相同和旧报告不变。
+保留既有坐标/版本 oracle，本地不运行 DB/app。
+
 ### Config 提取成本观测
 
 在添加选择性 config/infra carry 之前，`bench/config-extraction-profile.ts`

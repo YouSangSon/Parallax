@@ -25,6 +25,15 @@ stubs, check the actual VM failure path, then require the normal remote gates.
 The replay's desktop and failed viewport attempt remain distinct evidence;
 requesting 375 pixels is not proof that a 375-pixel viewport was applied.
 
+## Docker Source Operands — 2026-10-26
+
+Follow the coordinate repair with raw COPY/ADD operand spans. Repeated sources,
+flag-value collisions and filtered glob/URL text must not become local stage
+relations; destination references remain visible. Preserve validated JSON values
+and their raw spans without rejoining whitespace or stripping decoded quotes.
+Version 3 must rebuild v2 cohorts and preserve saved reports through the existing
+Git/non-Git oracle. Keep malformed JSON out of the secondary string lexer.
+
 ## Source Evidence Coordinates — 2026-10-26
 
 Repair text-reference evidence after Unicode lowercase expansion and Docker CRLF

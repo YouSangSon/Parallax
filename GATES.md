@@ -46,6 +46,25 @@ Evidence is current only when the command and result are recorded in this file. 
   Normal VM shutdown and cleanup passed after this narrow recheck. Exact final
   PR/main gates remain separately owned by the PR and portfolio receipts.
 
+## Source Evidence Coordinates — 2026-10-26
+
+- Reproduced wrong-line evidence after `İ` lowercase expansion, CRLF COPY offsets
+  and a false local relation from a deferred Docker stage source. Review exposed
+  LF-leading paths and empty-line evidence; both adapter families now retain the
+  original line range without interpreting its LF twice.
+- [x] `node_modules/.bin/tsx --test tests/text-reference-evidence.test.ts tests/config-infra-selection.test.ts`
+  passes 22/22, including whole-string final sigma, UTF-16 columns, CRLF,
+  deferred-source exclusion, fallback path/stem lookup and empty lines.
+- Config/infra version 2 and shared regex version 39 invalidate legacy extraction
+  receipts. Four remote Git/non-Git oracles seed actual legacy event fixtures,
+  require unchanged-input rebuilding and fresh-graph equality, and preserve saved
+  report snapshots. These DB oracles are not executed locally; exact PR/main
+  checks own their results. Existing SCIP/trace reapply rules still apply.
+- [x] `npm run lint`, `npm run build` and `git diff --check` pass.
+- No new dependency, scanner read skipping, selective carry or public API change.
+  Repeated source text on one Docker line retains the existing first-occurrence
+  parser limit. See [coordinate repair](docs/verification.md#source-evidence-coordinates).
+
 ## Config/Infra Selection Contract — 2026-10-25
 
 - [x] Bounded process-local memo tests pass 11/11, including actual computation

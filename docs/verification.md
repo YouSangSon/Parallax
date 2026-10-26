@@ -243,6 +243,26 @@ Unicode lowercase-expansion/CRLF offset limitations are not corrected here.
 No selective runtime flag, scanner read skipping or carry SQL is enabled; the
 other language adapter's separate matcher is outside this observation.
 
+### Source evidence coordinates
+
+A later accuracy repair maps a normalized match to the same LF ordinal in the
+original text and materializes that raw line range once. `İ` can expand from one
+UTF-16 code unit to two during lowercase conversion; offsets in the search string
+therefore cannot index the original body. Whole-string lowercase matching remains
+intact because Greek final sigma is context-sensitive. Docker line iteration now
+retains physical CRLF widths, and deferred-source ranges use search coordinates.
+See [ECMAScript lowercase conversion](https://tc39.es/ecma262/multipage/text-processing.html#sec-string.prototype.tolowercase).
+
+`tests/text-reference-evidence.test.ts` covers expansion, final sigma, CRLF,
+UTF-16 columns, deferred sources, empty lines and both fallback lookup forms.
+Config/infra version 2 and shared regex version 39 force legacy receipts through
+full extraction even when files are unchanged. Four Git/non-Git persisted oracles
+in `tests/incremental-index-oracle.test.ts` seed captured legacy events, compare
+rebuilding with a fresh graph and preserve saved report snapshots. Existing
+SCIP/trace reapply requirements remain. Local checks exclude DB/app execution;
+required remote CI owns these persisted oracles. Repeated identical source text
+on one Docker line still uses the parser's existing first occurrence.
+
 ### Config extraction observations
 
 Before adding selective config/infra carry, `bench/config-extraction-profile.ts`

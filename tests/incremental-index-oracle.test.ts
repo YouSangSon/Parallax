@@ -15,6 +15,7 @@ import type { IndexScanReads, ScannedFile } from '../src/types.js';
 import { AdapterRegistry } from '../src/adapters/registry.js';
 import { createDefaultRegistry, indexProjectWithRegistryForTest } from '../src/indexer.js';
 import { CONFIG_INFRA_SEMANTIC_ADAPTER_ID } from '../src/adapters/config-infra.js';
+import type { IndexEvent, SemanticAdapter } from '../src/adapters/types.js';
 import { readGitSnapshot } from '../src/git-snapshot.js';
 import { normalizeRepoRoot } from '../src/security.js';
 import { getRepoId, latestCompletedIndexRun, openDatabase } from '../src/store.js';
@@ -400,6 +401,90 @@ test('config memo replays through full publication and matches cold fresh graphs
     for (const fresh of freshRoots) rmSync(fresh, { recursive: true, force: true });
   }
 });
+
+const legacyTextFixture = JSON.parse(readFileSync(new URL('./fixtures/legacy-text-events.json', import.meta.url), 'utf8')) as {
+  lanes: Array<{ adapterId: string; version: string;
+    files: Array<{ relativePath: string; language: string; content: string }>;
+    events: Record<string, IndexEvent[]> }>;
+};
+
+for (const lane of legacyTextFixture.lanes) {
+  for (const git of [false, true]) {
+    test(`${lane.adapterId} legacy evidence upgrades unchanged ${git ? 'clean Git' : 'non-Git'} inputs without rewriting saved reports`, async () => {
+      const root = mkdtempSync(path.join(tmpdir(), 'parallax-offset-upgrade-'));
+      const fresh = mkdtempSync(path.join(tmpdir(), 'parallax-offset-fresh-'));
+      const write = (dir: string) => {
+        for (const input of [...lane.files, { relativePath: 'src/a.ts', language: 'typescript', content: 'export const a = 1;\n' }]) {
+          assert.ok(!path.posix.isAbsolute(input.relativePath) && !input.relativePath.split('/').includes('..'));
+          const target = path.join(dir, input.relativePath);
+          mkdirSync(path.dirname(target), { recursive: true });
+          writeFileSync(target, input.content);
+        }
+        if (git) {
+          writeFileSync(path.join(dir, '.gitignore'), '.parallax/\n');
+          initOracleGitRepo(dir);
+        }
+      };
+      try {
+        write(root);
+        await initProject({ repoRoot: root });
+        const legacy = new AdapterRegistry();
+        for (const adapter of createDefaultRegistry().list()) {
+          if (adapter.id !== lane.adapterId) { legacy.register(adapter); continue; }
+          const old: SemanticAdapter = Object.create(adapter);
+          Object.defineProperty(old, 'version', { value: lane.version });
+          Object.defineProperty(old, 'start', { value: () => ({
+            async *process(file: ScannedFile) {
+              for (const event of lane.events[file.relativePath] ?? []) yield structuredClone(event);
+            }
+          }) });
+          legacy.register(old);
+        }
+        const old = await indexProjectWithRegistryForTest({ repoRoot: root }, legacy);
+        const prior = snapshotGraph(root);
+        assert.ok(prior.relationEvidence.some((row) => String(row.snippet).startsWith('sentinel')));
+        if (lane.adapterId === CONFIG_INFRA_SEMANTIC_ADAPTER_ID) {
+          assert.ok(prior.relations.some((row) => row.source_entity_id === 'file:Dockerfile'));
+        }
+        const saved = await savedImpact(root);
+        const reportJson = () => {
+          const db = openDatabase(root, { readOnly: true });
+          try { return (db.prepare('SELECT json FROM reports WHERE id = ?').get(saved.id) as { json: string }).json; }
+          finally { db.close(); }
+        };
+        const beforeJson = reportJson();
+        assert.ok(beforeJson.includes('"snippet":"sentinel'));
+        if (git) assert.equal(execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' }), '');
+        const upgraded = await indexProject({ repoRoot: root });
+        assert.equal(upgraded.mode, 'full', 'the adapter version must invalidate both clean reuse and no-op carry');
+        assert.ok(upgraded.indexRunId > old.indexRunId);
+        const graph = snapshotGraph(root);
+        assert.ok(graph.relationEvidence.length > 0);
+        assert.ok(graph.relationEvidence.every((row) => !String(row.snippet).startsWith('sentinel')));
+        const corrected = lane.adapterId === CONFIG_INFRA_SEMANTIC_ADAPTER_ID ? 'run: node src/a.ts' : 'path: src/a.ts';
+        assert.ok(graph.relationEvidence.some((row) => row.snippet === corrected && row.start_line === 2 && row.end_line === 2));
+        if (lane.adapterId === CONFIG_INFRA_SEMANTIC_ADAPTER_ID) {
+          assert.ok(graph.relations.every((row) => row.source_entity_id !== 'file:Dockerfile'),
+            'the old false stage-source relation must disappear');
+        }
+        write(fresh);
+        await initProject({ repoRoot: fresh });
+        await indexProject({ repoRoot: fresh });
+        assert.deepEqual(graph, snapshotGraph(fresh));
+        const actual = await savedImpact(root);
+        const expected = await savedImpact(fresh);
+        assert.deepEqual(actual.semanticReport, expected.semanticReport);
+        assert.deepEqual(actual.graph, expected.graph);
+        assert.equal(reportJson(), beforeJson);
+        const oldGraph = await exportImpactGraph({ repoRoot: root, reportId: saved.id, format: 'json' });
+        assert.deepEqual({ nodes: oldGraph.nodes, edges: oldGraph.edges }, saved.graph);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+        rmSync(fresh, { recursive: true, force: true });
+      }
+    });
+  }
+}
 
 test('a completed config memo cannot hide publication failure and remains reusable after rollback', async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), 'parallax-config-memo-rollback-'));

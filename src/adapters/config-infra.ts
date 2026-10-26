@@ -15,7 +15,7 @@ import type {
 } from './types.js';
 
 export const CONFIG_INFRA_SEMANTIC_ADAPTER_ID = 'config-infra-semantic-v0';
-export const CONFIG_INFRA_SEMANTIC_ADAPTER_VERSION = '2';
+export const CONFIG_INFRA_SEMANTIC_ADAPTER_VERSION = '3';
 
 type EvidenceSpan = {
   snippet: string;
@@ -34,6 +34,8 @@ type IgnoredRange = {
   start: number;
   end: number;
 };
+
+type DockerfileOperand = IgnoredRange & { value: string };
 
 const capabilities: readonly AdapterCapability[] = ['references'];
 type ConfigInput = Pick<ScannedFile, 'relativePath' | 'language' | 'content'>;
@@ -179,22 +181,22 @@ function dockerfileCopyTargets(
     const line = match[1]!;
     const copyMatch = /^\s*(?:COPY|ADD)\s+(.+)$/i.exec(line);
     if (!copyMatch) continue;
-    for (const source of dockerfileCopySources(copyMatch[1]!)) {
+    const args = copyMatch[1]!;
+    const operands = dockerfileCopyOperands(args);
+    if (operands.from) continue;
+    for (const operand of operands.sources) {
+      const source = dockerfileLocalSource(operand.value);
+      if (!source) continue;
       const targetPath = resolveConfigPath(file.relativePath, source, filePathSet);
       if (targetPath && !targets.has(targetPath)) {
         targets.set(targetPath, {
           path: targetPath,
-          evidence: evidenceLineAt(file.content, match.index + line.indexOf(source))
+          evidence: evidenceLineAt(file.content, match.index + line.length - args.length + operand.start)
         });
       }
     }
   }
   return [...targets.values()];
-}
-
-function dockerfileCopySources(copyArgs: string): string[] {
-  if (hasDockerfileFromFlag(copyArgs)) return [];
-  return dockerfileSources(copyArgs);
 }
 
 function dockerfileDeferredSearchRanges(file: ConfigInput): IgnoredRange[] {
@@ -204,14 +206,18 @@ function dockerfileDeferredSearchRanges(file: ConfigInput): IgnoredRange[] {
     const line = match[1]!;
     const ascii = !/[^\x00-\x7f]/.test(line);
     const copyMatch = /^\s*(?:COPY|ADD)\s+(.+)$/i.exec(line);
-    for (const source of copyMatch ? dockerfileMultistageCopySources(copyMatch[1]!) : []) {
-      const sourceIndex = line.indexOf(source);
-      if (sourceIndex >= 0) {
-        ranges.push({
-          start: searchOffset + (ascii ? sourceIndex : line.slice(0, sourceIndex).toLowerCase().length),
-          end: searchOffset + (ascii ? sourceIndex + source.length
-            : line.slice(0, sourceIndex + source.length).toLowerCase().length)
-        });
+    if (copyMatch) {
+      const args = copyMatch[1]!;
+      const operands = dockerfileCopyOperands(args);
+      if (operands.from) {
+        for (const operand of [operands.from, ...operands.sources]) {
+          const start = line.length - args.length + operand.start;
+          const end = line.length - args.length + operand.end;
+          ranges.push({
+            start: searchOffset + (ascii ? start : line.slice(0, start).toLowerCase().length),
+            end: searchOffset + (ascii ? end : line.slice(0, end).toLowerCase().length)
+          });
+        }
       }
     }
     // Compose lengths only; matching retains whole-string contextual casing.
@@ -220,54 +226,44 @@ function dockerfileDeferredSearchRanges(file: ConfigInput): IgnoredRange[] {
   return ranges;
 }
 
-function dockerfileMultistageCopySources(copyArgs: string): string[] {
-  if (!hasDockerfileFromFlag(copyArgs)) return [];
-  return dockerfileSources(copyArgs);
-}
-
-function dockerfileSources(copyArgs: string): string[] {
-  const tokens = dockerfilePayloadTokens(copyArgs);
-  const payload = tokens.join(' ').trim();
-  if (payload.startsWith('[')) {
-    return dockerfileJsonArraySources(payload);
-  }
-  if (tokens.length < 2) return [];
-  return tokens.slice(0, -1).flatMap((token) => {
-    const source = normalizeDockerfileSource(token);
-    return source ? [source] : [];
-  });
-}
-
-function dockerfilePayloadTokens(copyArgs: string): string[] {
-  const tokens = copyArgs.trim().split(/\s+/).filter((token) => token.length > 0);
-  for (let index = 0; index < tokens.length; index += 1) {
+function dockerfileCopyOperands(copyArgs: string): { from: IgnoredRange | undefined; sources: DockerfileOperand[] } {
+  const tokens = [...copyArgs.matchAll(/\S+/g)];
+  let from: IgnoredRange | undefined;
+  let index = 0;
+  while (index < tokens.length && tokens[index]![0].startsWith('--')) {
     const token = tokens[index]!;
-    const lowerToken = token.toLowerCase();
-    if (lowerToken === '--from') {
-      index += 1;
-      continue;
+    const last = dockerfileFlagConsumesValue(token[0]) ? tokens[index + 1] ?? token : token;
+    const lowerToken = token[0].toLowerCase();
+    if (lowerToken === '--from' || lowerToken.startsWith('--from=')) {
+      from = { start: token.index, end: last.index + last[0].length };
     }
-    if (token.startsWith('--')) {
-      if (dockerfileFlagConsumesValue(token)) index += 1;
-      continue;
-    }
-    return tokens.slice(index);
+    index += last === token ? 1 : 2;
   }
-  return [];
+  const first = tokens[index];
+  if (!first) return { from, sources: [] };
+  const payload = copyArgs.slice(first.index);
+  let operands: DockerfileOperand[];
+  if (payload.startsWith('[')) {
+    const values = parseDockerfileJsonStringArray(payload);
+    if (values.length < 2) return { from, sources: [] };
+    const strings = [...payload.matchAll(/"(?:\\.|[^"\\])*"/g)];
+    operands = values.map((value, ordinal) => {
+      const token = strings[ordinal]!;
+      return { value, start: first.index + token.index, end: first.index + token.index + token[0].length };
+    });
+  } else {
+    // shortcut: shell quoting and continuations retain the existing whitespace-token grammar; extend with parser fixtures.
+    operands = tokens.slice(index).map((token) => ({
+      value: token[0].replace(/^["']|["']$/g, ''), start: token.index, end: token.index + token[0].length
+    }));
+  }
+  return { from, sources: operands.slice(0, -1) };
 }
 
 function dockerfileFlagConsumesValue(token: string): boolean {
   if (token.includes('=')) return false;
   const flagName = token.slice(2).toLowerCase();
   return ['from', 'chown', 'chmod', 'checksum', 'exclude'].includes(flagName);
-}
-
-function dockerfileJsonArraySources(payload: string): string[] {
-  const values = parseDockerfileJsonStringArray(payload);
-  return values.slice(0, -1).flatMap((value) => {
-    const source = normalizeDockerfileSource(value);
-    return source ? [source] : [];
-  });
 }
 
 function parseDockerfileJsonStringArray(payload: string): string[] {
@@ -281,22 +277,9 @@ function parseDockerfileJsonStringArray(payload: string): string[] {
   }
 }
 
-function hasDockerfileFromFlag(copyArgs: string): boolean {
-  return copyArgs
-    .trim()
-    .split(/\s+/)
-    .some((token) => {
-      const lowerToken = token.toLowerCase();
-      return lowerToken === '--from' || lowerToken.startsWith('--from=');
-    });
-}
-
-function normalizeDockerfileSource(source: string | undefined): string | undefined {
-  const normalized = source?.replace(/^["']|["']$/g, '');
-  if (!normalized || normalized.includes('*') || /^[a-z][a-z0-9+.-]*:\/\//i.test(normalized)) {
-    return undefined;
-  }
-  return normalized;
+function dockerfileLocalSource(source: string): string | undefined {
+  if (!source || source.includes('*') || /^[a-z][a-z0-9+.-]*:\/\//i.test(source)) return undefined;
+  return source;
 }
 
 function inferExplicitTextTargetsWithEvidence(
@@ -371,10 +354,9 @@ function resolveConfigPath(
   referencedPath: string,
   filePathSet: ReadonlySet<string>
 ): string | undefined {
-  const normalizedReference = referencedPath.replace(/^["']|["']$/g, '');
   const candidates = [
-    normalizedReference,
-    path.posix.normalize(path.posix.join(path.posix.dirname(sourcePath), normalizedReference))
+    referencedPath,
+    path.posix.normalize(path.posix.join(path.posix.dirname(sourcePath), referencedPath))
   ];
   return candidates.find((candidate) =>
     !candidate.startsWith('../') &&

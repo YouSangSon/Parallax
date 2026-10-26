@@ -46,6 +46,24 @@ Evidence is current only when the command and result are recorded in this file. 
   Normal VM shutdown and cleanup passed after this narrow recheck. Exact final
   PR/main gates remain separately owned by the PR and portfolio receipts.
 
+## Docker Source Operands — 2026-10-26
+
+- Reproduced a false local relation from repeated stage-source text. Raw operand
+  spans now distinguish source, leading `--from` value and destination; glob/URL
+  filters apply only to local dependency resolution. JSON uses the original
+  validated payload, preserving significant spaces, escaped paths and literal quotes.
+- [x] `node_modules/.bin/tsx --test tests/text-reference-evidence.test.ts tests/config-infra-selection.test.ts`
+  passes 27/27. Rejected JSON cannot enter the secondary string lexer; ordinary
+  shell quoting/continuations retain the existing whitespace-token grammar.
+- [x] `npm run lint`, `npm run build` and `git diff --check` pass.
+- Config/infra version 3 adds Git/non-Git v2-cohort oracles requiring unchanged-input
+  full rebuilding, false source removal, destination preservation, fresh-graph
+  equality and old saved-report immutability. Prior v1/regex38 fixtures remain.
+  No local DB/app/full-suite execution; exact required PR/main gates own results.
+- Independent review identified unsafe rescanning after JSON rejection. Parsing
+  fewer than two validated string values now returns before lexing; this also
+  covers valid empty/one-element arrays that have no source operands.
+
 ## Source Evidence Coordinates — 2026-10-26
 
 - Reproduced wrong-line evidence after `İ` lowercase expansion, CRLF COPY offsets

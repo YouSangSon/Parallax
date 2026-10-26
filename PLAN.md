@@ -30,7 +30,7 @@ traffic checks before transfer or execution; no Nebula VM is used for Parallax.
 Exact local, PR and merged-main evidence is owned by `GATES.md` and the existing
 portfolio owner in `CONTEXT.md`. These completed slices are not pending work.
 
-## S1 Remaining Queue — 2026-10-26
+## S1 Remaining Queue — 2026-10-27
 
 Output ownership admission, cohort revalidation under the writer lock, actual
 input receipts and deterministic read counters already exist. Config/infra's
@@ -39,17 +39,20 @@ adapter with both scope flags still disproves general process-order independence
 Changed-body extraction therefore remains conservative; no general selection
 flag, partial SQL carry or scanner read skipping is enabled.
 
-1. Revalidate the latest packaged runtime on my-cloud after fresh provider-billed
-   traffic, resource and shared-lock checks. Earlier VM modules predate the memo
-   and coordinate/source-span repairs; CI success does not establish VM equality.
-   Without authenticated billed usage, hold new images/large dependency transfers and
-   public demo execution; bounded local preparation may continue.
-2. Measure remaining cold/warm extraction cost on a representative workload before
-   expanding runtime complexity. The prior 23-body VM fixture had sub-millisecond
-   unchanged-config windows and still read every body; later workflow-only corpus
-   observations are not whole-index or scanner-read measurements. Use existing
-   observers and preserve the distinct read/sample counters.
-3. Only if residual cost justifies another bounded path, prove process-order and
+The latest package equivalent to `23ec770` passed the VM's 19-step CLI, real
+stdio MCP, saved-report graph, loopback HTTP and Docker/Unicode/CRLF checks.
+Its 23-body full-index profile also passed, with all bodies still read in every
+phase. These independent passes do not make the combined VM command a success:
+the following 287-file non-Git source profile timed out after 150 seconds and
+reached the 1 GiB cgroup limit. Cleanup and the final resource audit passed.
+Exact scope, observations and skipped checks are recorded in `GATES.md`.
+
+1. Diagnose the bounded whole-source profile before another VM execution. No
+   completed whole-source timing or bottleneck attribution was collected; do not
+   repeat the same workload, raise limits or treat small-fixture timings as a
+   representative speedup. Use existing observers and distinct read/sample counters
+   to choose a smaller diagnostic scope after inspecting the implicated inputs.
+2. Only if residual cost justifies another bounded path, prove process-order and
    startup-context independence, input validity, fresh-full graph/report equality,
    diagnostic/version/audit ownership and rollback behavior before changing carry
    or body reads. Retain legacy adapters' conservative behavior and atomic SQL

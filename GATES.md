@@ -2,7 +2,7 @@
 
 Evidence is current only when the command and result are recorded in this file. A focused pass proves only its named scope.
 
-## Current Delivery Boundary — 2026-10-26
+## Current Delivery Boundary — 2026-10-27
 
 - PR #62 head `516d72e` passed required checks and canonical `npm run verify`:
   804/804 tests, dogfood 2/2, benchmark and audit. Merged main `5429afc` passed
@@ -13,12 +13,65 @@ Evidence is current only when the command and result are recorded in this file. 
   Main `ae0102f` also passed CI/Security/CodeQL/Scorecard and canonical 811/811,
   dogfood 2/2, benchmark and audit; exact receipts retain their separate scope.
 - Final runtime package has 89 verified compiled bodies and eight root/docs
-  README entry points in KO/JA/EN/ZH. No latest-runtime VM replay is claimed;
-  earlier VM proof predates the memo and source-coordinate/source-span changes.
+  README entry points in KO/JA/EN/ZH. All 155 packaged files equal `23ec770`.
+  The latest packaged VM passes and failed whole-source profile are scoped below.
 - The active plan now separates completed runtime slices from remaining S1
   evidence. This documentation correction changes no source, dependency, schema,
   workflow or runtime behavior. Local checks remain docs/diff only; unchanged
   passing runtime evidence is reused and required remote gates remain enabled.
+
+## Latest Packaged VM Checks — 2026-10-27
+
+- Source `23ec770595292f27bc363a6746f935c782d3f0cb` differs from runtime head
+  `b0ffb53` only in unpackaged plan/gate documents. Reused archive SHA-256
+  `a1a9ae6f23246f7574f6a743c461a49917b17032a74cc7f1a7bf9d2c55598091`
+  is 814,813 bytes. No local app/DB/full suite or duplicate build/pack ran.
+- Existing `my-cloud` command targeted Ubuntu Linux x64. Official Node 24.14.0
+  archive/binary hashes were checked; `npm ci --ignore-scripts --omit=dev
+  --no-audit --no-fund --registry=https://registry.npmjs.org` used the existing
+  lock in an owned temporary directory. Embedding/reflection used explicit
+  `stub-sha256`/`stub`; native/default model inference is not established.
+- `python3 demo-workflow.py <packaged-cli> <owned-fixture>` passed all 19 expected
+  exits, including failing tests after the TTL edit, successful aligned tests,
+  impact/no-impact and invalid-path flows. `python3 mcp-roundtrip.py ...` passed
+  actual stdio initialization, 24-tool discovery, impact/context calls, invalid
+  path rejection and source-file immutability. A later full reindex left the
+  saved report's exported graph equal.
+- Headless loopback HTTP assertions passed health, selected report/graph,
+  missing-report error state and path-traversal rejection. This is not a new
+  native-browser, responsive, clipboard, download or PNG observation.
+- `node docker-source-smoke.mjs <package> <fixture>` passed absent stage-source
+  relations, retained destination/local-copy relations, escaped JSON paths and
+  original Unicode/CRLF evidence lines 2/11. Application source was unchanged.
+- `node profile-tool/config-extraction-profile.js <package>` passed three full
+  index phases on the existing synthetic 23-body fixture. The observer counts
+  body reads separately from samples; process windows include event collection.
+
+  | Phase | Body reads | Sample reads | Config process window total |
+  | --- | ---: | ---: | ---: |
+  | baseline | 23 | 0 | 2.498 ms |
+  | source edit | 23 | 0 | 0.374 ms |
+  | config edit | 23 | 0 | 0.599 ms |
+
+  This single ordered observation establishes neither a timing distribution,
+  CPU cost, general independence, scanner-read reduction nor a speedup claim.
+- **Failed:** the next `node real-config-profile.mjs <package> <source-copy>`
+  exceeded its 150-second subprocess deadline on an immutable 287-file public
+  source export without Git history. The combined unit exited 1. Peak memory
+  reached 1,073,741,824 bytes; cgroup `max` was 1,178, with OOM/kill counts 0.
+  No completed whole-source profile was emitted, so no phase or adapter is
+  assigned the bottleneck. The subsequent help/usage and post-run package-body
+  assertions were not reached. No identical full retry or limit increase ran.
+- Shared nonblocking process lock covered execution through cleanup. Actual
+  cgroup limits were CPU `100000 100000`, memory 1 GiB, swap 0. Final audit
+  passed: unit inactive, owned root/processes absent, shared lock available.
+  Both owned Orca terminals closed. Final host MemAvailable exceeded 3.3 GiB
+  and disk free exceeded 53 GiB; no shared service was stopped.
+- Authenticated PAH reload showed 26.9 MB / 3 TB billed outgoing and 1.35 GB
+  incoming for 2026-10-23–2026-11-22. Last aggregation was 2026-10-26 22:07:10
+  KST, so this is delayed provider evidence. Overage blocking was unconfirmed;
+  billing/credential settings were unchanged. Evidence remains in the existing
+  portfolio owner's `config-extraction-profile/latest-package-vm/` directory.
 
 ## Workbench Export Feedback — 2026-10-25
 

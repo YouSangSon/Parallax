@@ -49,6 +49,60 @@ jobs:
           mkdir -p .parallax/bench
           cp "$BASE_WORKTREE/.parallax/bench/impact-bench-report.json" .parallax/bench/impact-bench-baseline.json
 
+      - name: Temporary bounded source diagnostic
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sample_root="$(mktemp -d "${RUNNER_TEMP}/parallax-source-sample.XXXXXX")"
+          sample_unit="parallax-source-sample-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cleanup() {
+            sample_status=$?
+            trap - EXIT
+            set +e
+            sudo timeout 15s systemctl stop "${sample_unit}.service" 2>"${sample_root}/stop.log"
+            if [[ $? != 0 && "$(sudo systemctl show "${sample_unit}.service" -p LoadState --value)" != not-found ]]; then
+              printf '%s\n' 'PARALLAX_CLEANUP_FAILED unit stop failed; task files retained'
+              exit 1
+            fi
+            if [[ -f "${sample_root}/baseline/.git" ]]; then
+              git worktree remove --force "${sample_root}/baseline"
+              if [[ $? != 0 ]]; then
+                printf '%s\n' 'PARALLAX_CLEANUP_FAILED worktree removal failed; task files retained'
+                exit 1
+              fi
+            fi
+            rm -rf -- "$sample_root"
+            if [[ -e "$sample_root" ]]; then exit 1; fi
+            printf '%s\n' 'PARALLAX_CLEANED owned unit stopped or absent; owned worktree/root absent'
+            exit "$sample_status"
+          }
+          trap cleanup EXIT
+          trap 'exit 130' INT
+          trap 'exit 143' TERM
+          sample_source=23ec770595292f27bc363a6746f935c782d3f0cb
+          git diff --exit-code "$sample_source" HEAD -- package.json package-lock.json tsconfig.json
+          git archive --format=tar "$sample_source" > "${sample_root}/corpus.tar"
+          printf '%s  %s\n' 00e08aef1296dc8b21dc8aef0e8b62cf55e4a76b41cf9ce5e5048487df7cc6a4 "${sample_root}/corpus.tar" | sha256sum --check
+          mkdir "${sample_root}/corpus"
+          tar -xf "${sample_root}/corpus.tar" -C "${sample_root}/corpus"
+          git worktree add --detach "${sample_root}/baseline" "$sample_source"
+          ln -s "${GITHUB_WORKSPACE}/node_modules" "${sample_root}/baseline/node_modules"
+          "${GITHUB_WORKSPACE}/node_modules/.bin/tsc" -p "${sample_root}/baseline/tsconfig.json"
+          cp bench/source-sample-diagnostic.mjs "${sample_root}/source-sample.mjs"
+          sample_node="$(command -v node)"
+          set +e
+          sudo systemd-run --quiet --wait --pipe --collect --unit="$sample_unit" \
+            -p CPUQuota=100% -p MemoryMax=1G -p MemorySwapMax=0 \
+            -p RuntimeMaxSec=120 -p TimeoutStopSec=10 \
+            -p "User=$(id -u)" -p "Group=$(id -g)" -p "WorkingDirectory=$sample_root" \
+            /usr/bin/python3 "${GITHUB_WORKSPACE}/bench/source-sample-ci.py" --run "$sample_root" "$sample_node"
+          sample_exit=$?
+          set -e
+          printf 'PARALLAX_UNIT_EXIT %s\n' "$sample_exit"
+          python3 bench/source-sample-ci.py --profile "$sample_root" "$GITHUB_WORKSPACE"
+          exit "$sample_exit"
+
       - name: Verify
         run: npm run verify
 

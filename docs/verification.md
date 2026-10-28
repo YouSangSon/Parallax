@@ -268,10 +268,15 @@ on one Docker line still uses the parser's existing first occurrence.
 Default-to-named and named-to-default type resolution now share visited export
 keys. JSON tuple keys distinguish string export names from colon-bearing paths;
 cyclic branches stop while independent concrete re-exports remain discoverable.
-Shared regex version 40 invalidates older extraction receipts. Run the pure
+The same tuple representation also separates named/namespace lookup cache keys
+and namespace/factory traversal keys. Otherwise a successful lookup can bind a
+different export to the wrong file, or a cached miss can hide a valid target.
+Shared regex version 41 invalidates older extraction receipts. Run the pure
 `tests/typescript-export-cycle.test.ts` locally; required CI owns the Git/non-Git
 graph, saved-report and adapter-audit checks in the incremental oracle. This
-fix does not establish the cause of the earlier whole-source VM timeout.
+fix does not establish the cause of the earlier whole-source VM timeout. Captured
+version 40 events additionally exercise unchanged-input upgrades and preservation
+of the earlier saved report.
 
 ### Docker source operand spans
 

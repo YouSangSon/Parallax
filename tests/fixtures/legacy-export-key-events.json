@@ -1,0 +1,664 @@
+{
+  "source": "7b0e4be028b2de2916bd42abfd648dd790c47777",
+  "adapterId": "typescript-javascript-semantic-v0",
+  "version": "40",
+  "scope": "Actual version 40 pure extraction of synthetic path/export-name collisions; no DB, app or fabricated legacy events.",
+  "files": [
+    {
+      "relativePath": "src/key.ts",
+      "language": "typescript",
+      "content": "export { First as \"branch.ts:Thing\" } from \"./a.js\";"
+    },
+    {
+      "relativePath": "src/key.ts:branch.ts",
+      "language": "typescript",
+      "content": "export { Second as Thing } from \"./b.js\";"
+    },
+    {
+      "relativePath": "src/a.ts",
+      "language": "typescript",
+      "content": "export interface First { make(): number; }"
+    },
+    {
+      "relativePath": "src/b.ts",
+      "language": "typescript",
+      "content": "export interface Second { make(): number; }"
+    },
+    {
+      "relativePath": "src/use.ts",
+      "language": "typescript",
+      "content": "import { \"branch.ts:Thing\" as One } from \"./key.js\"; import { Thing as Two } from \"./key.ts:branch.js\"; interface ChildOne extends One {} interface ChildTwo extends Two {} export function call(one: One, two: Two) { one.make(); two.make(); }"
+    }
+  ],
+  "events": {
+    "src/key.ts": [
+      {
+        "kind": "relation",
+        "relation": {
+          "source": {
+            "kind": "file",
+            "path": "src/key.ts",
+            "languageId": "typescript",
+            "displayName": "src/key.ts"
+          },
+          "target": {
+            "kind": "file",
+            "path": "src/a.ts",
+            "languageId": "typescript"
+          },
+          "kind": "DEPENDS_ON",
+          "metadata": {
+            "provenance": "./a.js",
+            "confidence": "proven"
+          },
+          "evidence": [
+            {
+              "file": "src/key.ts",
+              "snippet": "export { First as \"branch.ts:Thing\" } from \"./a.js\";",
+              "confidence": "proven",
+              "startLine": 1,
+              "endLine": 1,
+              "startCol": 1,
+              "endCol": 53
+            }
+          ]
+        }
+      }
+    ],
+    "src/key.ts:branch.ts": [
+      {
+        "kind": "relation",
+        "relation": {
+          "source": {
+            "kind": "file",
+            "path": "src/key.ts:branch.ts",
+            "languageId": "typescript",
+            "displayName": "src/key.ts:branch.ts"
+          },
+          "target": {
+            "kind": "file",
+            "path": "src/b.ts",
+            "languageId": "typescript"
+          },
+          "kind": "DEPENDS_ON",
+          "metadata": {
+            "provenance": "./b.js",
+            "confidence": "proven"
+          },
+          "evidence": [
+            {
+              "file": "src/key.ts:branch.ts",
+              "snippet": "export { Second as Thing } from \"./b.js\";",
+              "confidence": "proven",
+              "startLine": 1,
+              "endLine": 1,
+              "startCol": 1,
+              "endCol": 42
+            }
+          ]
+        }
+      }
+    ],
+    "src/a.ts": [
+      {
+        "kind": "entity",
+        "entity": {
+          "kind": "symbol",
+          "path": "src/a.ts",
+          "symbol": "First",
+          "symbolKind": "interface",
+          "languageId": "typescript",
+          "displayName": "First (src/a.ts)",
+          "metadata": {
+            "exported": true
+          }
+        }
+      },
+      {
+        "kind": "relation",
+        "relation": {
+          "source": {
+            "kind": "file",
+            "path": "src/a.ts",
+            "languageId": "typescript",
+            "displayName": "src/a.ts"
+          },
+          "target": {
+            "kind": "symbol",
+            "path": "src/a.ts",
+            "symbol": "First",
+            "symbolKind": "interface",
+            "languageId": "typescript",
+            "displayName": "First (src/a.ts)"
+          },
+          "kind": "DECLARES",
+          "metadata": {
+            "provenance": "interface:First",
+            "confidence": "proven"
+          },
+          "evidence": [
+            {
+              "file": "src/a.ts",
+              "snippet": "export interface First { make(): number; }",
+              "confidence": "proven",
+              "startLine": 1,
+              "endLine": 1,
+              "startCol": 1,
+              "endCol": 43
+            }
+          ]
+        }
+      },
+      {
+        "kind": "entity",
+        "entity": {
+          "kind": "symbol",
+          "path": "src/a.ts",
+          "symbol": "First.make",
+          "symbolKind": "method",
+          "languageId": "typescript",
+          "displayName": "First.make (src/a.ts)",
+          "metadata": {
+            "exported": true
+          }
+        }
+      },
+      {
+        "kind": "relation",
+        "relation": {
+          "source": {
+            "kind": "file",
+            "path": "src/a.ts",
+            "languageId": "typescript",
+            "displayName": "src/a.ts"
+          },
+          "target": {
+            "kind": "symbol",
+            "path": "src/a.ts",
+            "symbol": "First.make",
+            "symbolKind": "method",
+            "languageId": "typescript",
+            "displayName": "First.make (src/a.ts)"
+          },
+          "kind": "DECLARES",
+          "metadata": {
+            "provenance": "method:First.make",
+            "confidence": "proven"
+          },
+          "evidence": [
+            {
+              "file": "src/a.ts",
+              "snippet": "export interface First { make(): number; }",
+              "confidence": "proven",
+              "startLine": 1,
+              "endLine": 1,
+              "startCol": 26,
+              "endCol": 41
+            }
+          ]
+        }
+      }
+    ],
+    "src/b.ts": [
+      {
+        "kind": "entity",
+        "entity": {
+          "kind": "symbol",
+          "path": "src/b.ts",
+          "symbol": "Second",
+          "symbolKind": "interface",
+          "languageId": "typescript",
+          "displayName": "Second (src/b.ts)",
+          "metadata": {
+            "exported": true
+          }
+        }
+      },
+      {
+        "kind": "relation",
+        "relation": {
+          "source": {
+            "kind": "file",
+            "path": "src/b.ts",
+            "languageId": "typescript",
+            "displayName": "src/b.ts"
+          },
+          "target": {
+            "kind": "symbol",
+            "path": "src/b.ts",
+            "symbol": "Second",
+            "symbolKind": "interface",
+            "languageId": "typescript",
+            "displayName": "Second (src/b.ts)"
+          },
+          "kind": "DECLARES",
+          "metadata": {
+            "provenance": "interface:Second",
+            "confidence": "proven"
+          },
+          "evidence": [
+            {
+              "file": "src/b.ts",
+              "snippet": "export interface Second { make(): number; }",
+              "confidence": "proven",
+              "startLine": 1,
+              "endLine": 1,
+              "startCol": 1,
+              "endCol": 44
+            }
+          ]
+        }
+      },
+      {
+        "kind": "entity",
+        "entity": {
+          "kind": "symbol",
+          "path": "src/b.ts",
+          "symbol": "Second.make",
+          "symbolKind": "method",
+          "languageId": "typescript",
+          "displayName": "Second.make (src/b.ts)",
+          "metadata": {
+            "exported": true
+          }
+        }
+      },
+      {
+        "kind": "relation",
+        "relation": {
+          "source": {
+            "kind": "file",
+            "path": "src/b.ts",
+            "languageId": "typescript",
+            "displayName": "src/b.ts"
+          },
+          "target": {
+            "kind": "symbol",
+            "path": "src/b.ts",
+            "symbol": "Second.make",
+            "symbolKind": "method",
+            "languageId": "typescript",
+            "displayName": "Second.make (src/b.ts)"
+          },
+          "kind": "DECLARES",
+          "metadata": {
+            "provenance": "method:Second.make",
+            "confidence": "proven"
+          },
+          "evidence": [
+            {
+              "file": "src/b.ts",
+              "snippet": "export interface Second { make(): number; }",
+              "confidence": "proven",
+              "startLine": 1,
+              "endLine": 1,
+              "startCol": 27,
+              "endCol": 42
+            }
+          ]
+        }
+      }
+    ],
+    "src/use.ts": [
+      {
+        "kind": "entity",
+        "entity": {
+          "kind": "symbol",
+          "path": "src/use.ts",
+          "symbol": "call",
+          "symbolKind": "function",
+          "languageId": "typescript",
+          "displayName": "call (src/use.ts)",
+          "metadata": {
+            "exported": true
+          }
+        }
+      },
+      {
+        "kind": "relation",
+        "relation": {
+          "source": {
+            "kind": "file",
+            "path": "src/use.ts",
+            "languageId": "typescript",
+            "displayName": "src/use.ts"
+          },
+          "target": {
+            "kind": "symbol",
+            "path": "src/use.ts",
+            "symbol": "call",
+            "symbolKind": "function",
+            "languageId": "typescript",
+            "displayName": "call (src/use.ts)"
+          },
+          "kind": "DECLARES",
+          "metadata": {
+            "provenance": "function:call",
+            "confidence": "proven"
+          },
+          "evidence": [
+            {
+              "file": "src/use.ts",
+              "snippet": "import { \"branch.ts:Thing\" as One } from \"./key.js\"; import { Thing as Two } from \"./key.ts:branch.js\"; interface ChildOne extends One {} interface ChildTwo extends Two {} export function call(one: One, two: Two) { one.make(); two.make(); }",
+              "confidence": "proven",
+              "startLine": 1,
+              "endLine": 1,
+              "startCol": 173,
+              "endCol": 241
+            }
+          ]
+        }
+      },
+      {
+        "kind": "entity",
+        "entity": {
+          "kind": "symbol",
+          "path": "src/use.ts",
+          "symbol": "ChildOne",
+          "symbolKind": "interface",
+          "languageId": "typescript",
+          "displayName": "ChildOne (src/use.ts)",
+          "metadata": {
+            "exported": false
+          }
+        }
+      },
+      {
+        "kind": "relation",
+        "relation": {
+          "source": {
+            "kind": "file",
+            "path": "src/use.ts",
+            "languageId": "typescript",
+            "displayName": "src/use.ts"
+          },
+          "target": {
+            "kind": "symbol",
+            "path": "src/use.ts",
+            "symbol": "ChildOne",
+            "symbolKind": "interface",
+            "languageId": "typescript",
+            "displayName": "ChildOne (src/use.ts)"
+          },
+          "kind": "DECLARES",
+          "metadata": {
+            "provenance": "interface:ChildOne",
+            "confidence": "proven"
+          },
+          "evidence": [
+            {
+              "file": "src/use.ts",
+              "snippet": "import { \"branch.ts:Thing\" as One } from \"./key.js\"; import { Thing as Two } from \"./key.ts:branch.js\"; interface ChildOne extends One {} interface ChildTwo extends Two {} export function call(one: One, two: Two) { one.make(); two.make(); }",
+              "confidence": "proven",
+              "startLine": 1,
+              "endLine": 1,
+              "startCol": 105,
+              "endCol": 138
+            }
+          ]
+        }
+      },
+      {
+        "kind": "entity",
+        "entity": {
+          "kind": "symbol",
+          "path": "src/use.ts",
+          "symbol": "ChildTwo",
+          "symbolKind": "interface",
+          "languageId": "typescript",
+          "displayName": "ChildTwo (src/use.ts)",
+          "metadata": {
+            "exported": false
+          }
+        }
+      },
+      {
+        "kind": "relation",
+        "relation": {
+          "source": {
+            "kind": "file",
+            "path": "src/use.ts",
+            "languageId": "typescript",
+            "displayName": "src/use.ts"
+          },
+          "target": {
+            "kind": "symbol",
+            "path": "src/use.ts",
+            "symbol": "ChildTwo",
+            "symbolKind": "interface",
+            "languageId": "typescript",
+            "displayName": "ChildTwo (src/use.ts)"
+          },
+          "kind": "DECLARES",
+          "metadata": {
+            "provenance": "interface:ChildTwo",
+            "confidence": "proven"
+          },
+          "evidence": [
+            {
+              "file": "src/use.ts",
+              "snippet": "import { \"branch.ts:Thing\" as One } from \"./key.js\"; import { Thing as Two } from \"./key.ts:branch.js\"; interface ChildOne extends One {} interface ChildTwo extends Two {} export function call(one: One, two: Two) { one.make(); two.make(); }",
+              "confidence": "proven",
+              "startLine": 1,
+              "endLine": 1,
+              "startCol": 139,
+              "endCol": 172
+            }
+          ]
+        }
+      },
+      {
+        "kind": "relation",
+        "relation": {
+          "source": {
+            "kind": "symbol",
+            "path": "src/use.ts",
+            "symbol": "ChildOne",
+            "symbolKind": "interface",
+            "languageId": "typescript",
+            "displayName": "ChildOne (src/use.ts)"
+          },
+          "target": {
+            "kind": "symbol",
+            "path": "src/a.ts",
+            "symbol": "First",
+            "symbolKind": "interface",
+            "languageId": "typescript",
+            "displayName": "First (src/a.ts)"
+          },
+          "kind": "EXTENDS",
+          "metadata": {
+            "provenance": "typescript:extends:ChildOne->First",
+            "confidence": "inferred"
+          },
+          "evidence": [
+            {
+              "file": "src/use.ts",
+              "snippet": "One",
+              "confidence": "inferred",
+              "startLine": 1,
+              "endLine": 1,
+              "startCol": 132,
+              "endCol": 135
+            }
+          ]
+        }
+      },
+      {
+        "kind": "relation",
+        "relation": {
+          "source": {
+            "kind": "symbol",
+            "path": "src/use.ts",
+            "symbol": "ChildTwo",
+            "symbolKind": "interface",
+            "languageId": "typescript",
+            "displayName": "ChildTwo (src/use.ts)"
+          },
+          "target": {
+            "kind": "symbol",
+            "path": "src/a.ts",
+            "symbol": "First",
+            "symbolKind": "interface",
+            "languageId": "typescript",
+            "displayName": "First (src/a.ts)"
+          },
+          "kind": "EXTENDS",
+          "metadata": {
+            "provenance": "typescript:extends:ChildTwo->First",
+            "confidence": "inferred"
+          },
+          "evidence": [
+            {
+              "file": "src/use.ts",
+              "snippet": "Two",
+              "confidence": "inferred",
+              "startLine": 1,
+              "endLine": 1,
+              "startCol": 166,
+              "endCol": 169
+            }
+          ]
+        }
+      },
+      {
+        "kind": "relation",
+        "relation": {
+          "source": {
+            "kind": "file",
+            "path": "src/use.ts",
+            "languageId": "typescript",
+            "displayName": "src/use.ts"
+          },
+          "target": {
+            "kind": "file",
+            "path": "src/key.ts",
+            "languageId": "typescript"
+          },
+          "kind": "DEPENDS_ON",
+          "metadata": {
+            "provenance": "./key.js",
+            "confidence": "proven"
+          },
+          "evidence": [
+            {
+              "file": "src/use.ts",
+              "snippet": "import { \"branch.ts:Thing\" as One } from \"./key.js\";",
+              "confidence": "proven",
+              "startLine": 1,
+              "endLine": 1,
+              "startCol": 1,
+              "endCol": 53
+            }
+          ]
+        }
+      },
+      {
+        "kind": "relation",
+        "relation": {
+          "source": {
+            "kind": "file",
+            "path": "src/use.ts",
+            "languageId": "typescript",
+            "displayName": "src/use.ts"
+          },
+          "target": {
+            "kind": "file",
+            "path": "src/key.ts:branch.ts",
+            "languageId": "typescript"
+          },
+          "kind": "DEPENDS_ON",
+          "metadata": {
+            "provenance": "./key.ts:branch.js",
+            "confidence": "proven"
+          },
+          "evidence": [
+            {
+              "file": "src/use.ts",
+              "snippet": "import { Thing as Two } from \"./key.ts:branch.js\";",
+              "confidence": "proven",
+              "startLine": 1,
+              "endLine": 1,
+              "startCol": 54,
+              "endCol": 104
+            }
+          ]
+        }
+      },
+      {
+        "kind": "relation",
+        "relation": {
+          "source": {
+            "kind": "symbol",
+            "path": "src/use.ts",
+            "symbol": "call",
+            "symbolKind": "function",
+            "languageId": "typescript",
+            "displayName": "call (src/use.ts)"
+          },
+          "target": {
+            "kind": "symbol",
+            "path": "src/a.ts",
+            "symbol": "First.make",
+            "symbolKind": "method",
+            "languageId": "typescript",
+            "displayName": "First.make (src/a.ts)"
+          },
+          "kind": "CALLS",
+          "metadata": {
+            "provenance": "instance-call:call->First.make:1:216",
+            "confidence": "heuristic"
+          },
+          "evidence": [
+            {
+              "file": "src/use.ts",
+              "snippet": "one.make()",
+              "confidence": "heuristic",
+              "startLine": 1,
+              "endLine": 1,
+              "startCol": 216,
+              "endCol": 226
+            }
+          ]
+        }
+      },
+      {
+        "kind": "relation",
+        "relation": {
+          "source": {
+            "kind": "symbol",
+            "path": "src/use.ts",
+            "symbol": "call",
+            "symbolKind": "function",
+            "languageId": "typescript",
+            "displayName": "call (src/use.ts)"
+          },
+          "target": {
+            "kind": "symbol",
+            "path": "src/a.ts",
+            "symbol": "First.make",
+            "symbolKind": "method",
+            "languageId": "typescript",
+            "displayName": "First.make (src/a.ts)"
+          },
+          "kind": "CALLS",
+          "metadata": {
+            "provenance": "instance-call:call->First.make:1:228",
+            "confidence": "heuristic"
+          },
+          "evidence": [
+            {
+              "file": "src/use.ts",
+              "snippet": "two.make()",
+              "confidence": "heuristic",
+              "startLine": 1,
+              "endLine": 1,
+              "startCol": 228,
+              "endCol": 238
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

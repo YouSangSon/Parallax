@@ -237,9 +237,12 @@ SCIP/trace 重新应用规则。本地不运行 DB/app，持久化 oracle 由必
 
 Default 与 named type resolver 交叉调用时共享已访问 export 的记录。
 JSON tuple 键区分字符串 export 名称与含冒号的路径。循环分支终止后，
-其他再导出仍可解析到具体声明。共享 regex 版本 40 使旧提取 receipt 失效。
+其他再导出仍可解析到具体声明。Named/namespace 查询缓存及 namespace/factory
+遍历记录也使用 tuple 键，避免不同 export 被连接到错误文件，或被缓存的查询
+失败遮蔽。共享 regex 版本 41 使旧提取 receipt 失效。
 本地运行纯回归 `tests/typescript-export-cycle.test.ts`；Git/非 Git graph、
 保存报告和 adapter audit 由现有 incremental oracle 在必需 CI 中验证。
+实际捕获的版本 40 事件还验证未修改输入的重建及旧报告快照的保留。
 此修复不证明先前 VM 整个源码 profile timeout 的原因。
 
 ### Docker source operand 范围

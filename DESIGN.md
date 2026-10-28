@@ -14,8 +14,16 @@
 건너뛴 뒤 다른 star 재수출에서 찾은 실제 선언은 계속 사용한다. 기존 factory
 resolver의 방문 기록 전달 방식을 재사용하며 새 cache나 전역 상태는 없다.
 
-구현은 `src/adapters/multi-language-regex.ts`의 default/named type resolver에
-있다. 공유 regex 버전 40으로 이전 추출 결과를 무효화한다. 순수 회귀는
+같은 구분은 조회 캐시와 namespace/factory 방문 기록에도 필요하다. 예를 들어
+`["a.ts", "b.ts:Thing"]`과 `["a.ts:b.ts", "Thing"]`을 `:`로 이어 붙이면
+같은 문자열이 된다. 이 충돌은 두 번째 타입·메서드를 첫 번째 파일에 연결하거나,
+먼저 저장한 조회 실패 때문에 정상 선언을 숨긴다. 남은 8곳도 JSON tuple로
+바꾸며, factory의 default 키는 `[path, "default"]`로 기존 export 정체성을
+유지한다. 경로 하나만 쓰는 캐시와 탐색 순서는 그대로 둔다.
+
+구현은 `src/adapters/multi-language-regex.ts`의 export 조회와 방문 기록에
+있다. 순환 수정은 버전 40, 후속 키 구분은 공유 regex 버전 41로 이전 추출
+결과를 무효화한다. 순수 회귀는
 `tests/typescript-export-cycle.test.ts`, 저장 graph와 보고서 검사는 기존
 incremental oracle이 소유한다. 이 재현은 이전 VM 전체 소스 timeout의 원인
 증명이 아니며, 매우 깊은 비순환 체인까지 반복 탐색으로 바꾸지는 않는다.

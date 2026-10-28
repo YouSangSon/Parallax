@@ -1,5 +1,18 @@
 # Design
 
+## 근거 위치 계산의 줄 배열 제거
+
+`offsetPosition()`은 근거 하나를 만들 때마다 앞부분 문자열을 줄 배열로
+나눴다. 같은 prefix에서 LF 위치만 순회하면 줄 수와 마지막 줄 시작점을
+얻으므로 배열이 필요 없다. 열은 기존처럼 UTF-16 길이로 계산한다.
+CRLF의 CR과 LF 사이에서는 CR 너비를 유지하고, 단독 CR과 U+2028/U+2029는
+기존 계약대로 LF 줄 번호를 늘리지 않는다.
+
+출력 계약이 같으므로 공유 regex 버전 41을 유지한다. 캐시나 AST 재사용,
+파일 읽기 생략은 추가하지 않는다. 순수 경계 검사와 동일 입력의 이벤트
+해시 비교가 정확성을 확인하며, 제한된 CI 비용 관측은
+[검증 문서](docs/verification.md#evidence-position-allocation)를 따른다.
+
 ## TypeScript 혼합 재수출의 순환 종료
 
 `a.ts`가 `b.ts`의 이름 있는 export를 default로 내보내고, `b.ts`가 다시

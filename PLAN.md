@@ -11,6 +11,11 @@ traffic checks before transfer or execution; no Nebula VM is used for Parallax.
 
 ## Completed Runtime Slices — 2026-10-26
 
+- Evidence position allocation: LF scanning replaces repeated prefix-to-line
+  arrays while preserving UTF-16 columns and newline behavior. Shared regex
+  version 41 stays unchanged. Pure boundary tests and a bounded CI comparison
+  preserve all sampled events; the exact observation and limits are recorded in
+  [verification](docs/verification.md#evidence-position-allocation).
 - TypeScript mixed exports: default/named resolver transitions retain one
   visited-export set. Export lookup caches and namespace/factory traversal also
   use tuple keys to distinguish export names and file paths. Pure cycle, receiver,
@@ -53,8 +58,11 @@ the following 287-file non-Git source profile timed out after 150 seconds and
 reached the 1 GiB cgroup limit. Cleanup and the final resource audit passed.
 Exact scope, observations and skipped checks are recorded in `GATES.md`.
 
-1. Diagnose the bounded whole-source profile before another VM execution. No
-   completed whole-source timing or bottleneck attribution was collected; do not
+1. Continue diagnosing the bounded whole-source profile before another VM
+   execution. An immutable 11-file CI sample identified repeated position-array
+   allocation and TypeScript parsing costs; the former is now removed. This
+   streaming sample excludes retained event collection and SQL publication. No
+   completed whole-source timing or timeout cause was collected; do not
    repeat the same workload, raise limits or treat small-fixture timings as a
    representative speedup. Use existing observers and distinct read/sample counters
    to choose a smaller diagnostic scope after inspecting the implicated inputs.

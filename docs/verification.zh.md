@@ -233,6 +233,33 @@ fixture，检查重建与 fresh graph 相同、已保存报告 snapshot 不变�
 SCIP/trace 重新应用规则。本地不运行 DB/app，持久化 oracle 由必需的远程 CI 验证。
 同一 Docker 行重复出现 source 字符串时，仍保留原 parser 选择首次出现位置的限制。
 
+### Evidence 位置计算的数组分配
+
+`offsetPosition()` 在同一 prefix 中遍历 LF 位置，不再创建行数组。
+UTF-16 列和原有换行语义不变，因此保留共享 regex 版本 41。
+修改前后的 19 项纯 evidence 检查均通过，覆盖空行、emoji、CRLF 边界、
+独立 CR、U+2028/U+2029 和 EOF。
+
+[CI 对比观测](https://github.com/YouSangSon/Parallax/actions/runs/40643803770)
+在同一份不可变的 `23ec770` 源码归档上比较 baseline `be8df1a` 和候选
+`c287c8b`。每个新 Node 24.21.0 进程限制为一个 CPU、1 GiB RAM、无 swap，
+以 5 ms 间隔采样。两者均使用完整的 284 文件 startup context，处理相同的
+11 个选定文件。5,718 个事件的逐文件 hash 和编码大小完全一致；编译后的
+共享 adapter 是唯一不同的运行时文件。
+
+| 观测 | Baseline | 候选 |
+| --- | ---: | ---: |
+| Profile 时长 | 11,820.212 ms | 10,352.266 ms |
+| 文件处理区间之和 | 11,327.438 ms | 9,864.443 ms |
+| Cgroup 内存峰值 | 225.82 MiB | 215.57 MiB |
+| `offsetPosition` 自身 sample | 215 / 2,270 | 128 / 1,953 |
+
+这是按 baseline、候选顺序各执行一次的观测，并非重复测量的性能分布。
+处理区间包含事件 hash 计算，profile 包含采样开销；事件没有保留或写入 SQL。
+两个进程都未触发内存限制或 OOM，所属资源已清理。这些结果不证明普遍加速、
+VM 性能或此前整个源码 timeout 的原因。产品树已移除临时 harness；
+CI 历史保留其源码及 profile 日志。必需的 release 验证保持不变。
+
 ### TypeScript 混合再导出循环
 
 Default 与 named type resolver 交叉调用时共享已访问 export 的记录。

@@ -2,6 +2,25 @@
 
 Evidence is current only when the command and result are recorded in this file. A focused pass proves only its named scope.
 
+## Evidence Position Allocation — 2026-10-28
+
+- `offsetPosition()` scans LF positions instead of splitting the prefix into a
+  line array. UTF-16 columns, empty lines, CRLF boundaries and non-LF separators
+  retain their existing behavior; shared regex version 41 stays unchanged.
+- `node --import tsx --test --test-concurrency=1 tests/text-reference-evidence.test.ts`
+  passed 19/19 before and after the change. `npm run lint`, `npm run build` and
+  `git diff --check` passed. Local execution contains no DB/app/full suite.
+- [Comparison CI](https://github.com/YouSangSon/Parallax/actions/runs/40643803770)
+  at `c287c8b` passed canonical verification: 832/832 tests, dogfood 2/2,
+  benchmark and dependency audit. Both bounded diagnostic processes exited 0,
+  with no cgroup limit/OOM events; their owned unit/worktree/root cleanup passed.
+  All 5,718 events across 11 files retained identical per-file hashes and sizes.
+- Temporary CI instrumentation is removed from the final product tree. The
+  single ordered observation is scoped in
+  [verification](docs/verification.md#evidence-position-allocation); it does not
+  establish whole-index speedup or the earlier VM timeout's cause. Required
+  checks on the final PR tree and merged main remain separate delivery evidence.
+
 ## TypeScript Export Lookup Keys — 2026-10-28
 
 - Version 40 pure extraction connected `ChildTwo` and `two.make()` to the wrong

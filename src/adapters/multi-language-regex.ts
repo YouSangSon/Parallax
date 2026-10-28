@@ -5252,10 +5252,15 @@ function importEvidence(content: string, specifier: string, startIndex: number, 
 
 function offsetPosition(content: string, index: number): { line: number; col: number } {
   const prefix = content.slice(0, Math.max(0, index));
-  const lines = prefix.split(/\r?\n/);
+  let line = 1;
+  let lineStart = 0;
+  for (let newline = prefix.indexOf('\n'); newline >= 0; newline = prefix.indexOf('\n', lineStart)) {
+    line += 1;
+    lineStart = newline + 1;
+  }
   return {
-    line: lines.length,
-    col: (lines.at(-1)?.length ?? 0) + 1
+    line,
+    col: prefix.length - lineStart + 1
   };
 }
 

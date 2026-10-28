@@ -12,6 +12,9 @@ jobs:
     name: Build, attest, publish
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # CPU binaries are bundled; these runners do not need extra GPU providers.
+      ONNXRUNTIME_NODE_INSTALL: skip
     permissions:
       contents: read
       id-token: write      # OIDC: SLSA build provenance + npm trusted publishing
@@ -29,6 +32,15 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Check bundled ONNX CPU backend
+        run: |
+          node <<'JS'
+          const assert = require('node:assert/strict');
+          const ort = require('onnxruntime-node');
+          assert.ok(ort.listSupportedBackends().some(backend => backend.name === 'cpu' && backend.bundled));
+          console.log('ONNX Runtime ' + ort.env.versions.node + ': bundled CPU backend available');
+          JS
 
       - name: Verify (full release gate)
         run: npm run verify

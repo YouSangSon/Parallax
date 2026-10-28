@@ -18,6 +18,9 @@ jobs:
     name: Release gate
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      # CPU binaries are bundled; these runners do not need extra GPU providers.
+      ONNXRUNTIME_NODE_INSTALL: skip
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,6 +35,15 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Check bundled ONNX CPU backend
+        run: |
+          node <<'JS'
+          const assert = require('node:assert/strict');
+          const ort = require('onnxruntime-node');
+          assert.ok(ort.listSupportedBackends().some(backend => backend.name === 'cpu' && backend.bundled));
+          console.log('ONNX Runtime ' + ort.env.versions.node + ': bundled CPU backend available');
+          JS
 
       - name: Prepare PR bench baseline
         if: github.event_name == 'pull_request'

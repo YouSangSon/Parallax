@@ -2,6 +2,43 @@
 
 Evidence is current only when the command and result are recorded in this file. A focused pass proves only its named scope.
 
+## CPU Runner Installation — 2026-10-28
+
+- [CI 40650749353](https://github.com/YouSangSon/Parallax/actions/runs/40650749353)
+  failed during the ONNX postinstall download with IPv4 `ETIMEDOUT` and IPv6
+  `ENETUNREACH`. Neither the historical index diagnostic nor Verify started;
+  the later missing `tsx` error was a consequence of the incomplete install.
+- Locked ONNX Runtime 1.30.0 bundles its CPU binding/library and requests CUDA
+  provider files separately on Linux x64. Its supported `skip` install flag was
+  checked against the installed parser and upstream source. CI and Release now
+  scope that flag to their CPU jobs, including the PR baseline install, and check
+  native binding load plus bundled CPU backend availability after installation.
+  npm lifecycle scripts, dependency versions, user defaults and required Verify
+  remain unchanged.
+- [CI 40654547854](https://github.com/YouSangSon/Parallax/actions/runs/40654547854)
+  at `a475354` passed both installs, native ONNX 1.30.0 CPU backend loading and
+  canonical Verify: 832/832 tests, dogfood 2/2, benchmark and dependency audit.
+  Final-tree PR/main checks remain separate evidence. No model inference, GPU
+  execution or tag publication was performed.
+
+## Historical Index Publication Diagnostic — 2026-10-28
+
+- The first bounded full-index CI run emitted 26,571 events and completed all
+  284 file iterators, but did not return before its 90-second timeout. It exited
+  124 without a CPU profile; cgroup memory/OOM counters stayed zero. This failed
+  diagnostic skipped Verify and does not establish the earlier VM timeout cause.
+- A smaller run at `a475354` retained all startup inputs, 284 body reads and
+  all-file redaction/metadata writes, but extracted events from only one file.
+  Its 2,070 events matched the historical count, encoded size and SHA-256 before
+  publication. The real indexer returned in 5,298.948 ms; all 287 input files
+  remained byte-identical. Both runs used historical `23ec770` source/runtime.
+- The completed partial graph used one CPU, 1 GiB RAM and no swap. Unit exit,
+  profile digest, normal iterator exhaustion and owned-resource cleanup passed.
+  This is neither a full graph benchmark nor a current-runtime/VM result. Exact
+  scopes and profile limitations are in
+  [verification](docs/verification.md#historical-index-publication-diagnostic).
+  Temporary diagnostic code is removed before product landing.
+
 ## Evidence Position Allocation — 2026-10-28
 
 - `offsetPosition()` scans LF positions instead of splitting the prefix into a

@@ -260,6 +260,30 @@ UTF-16 列和原有换行语义不变，因此保留共享 regex 版本 41。
 VM 性能或此前整个源码 timeout 的原因。产品树已移除临时 harness；
 CI 历史保留其源码及 profile 日志。必需的 release 验证保持不变。
 
+### 历史版本的索引持久化诊断
+
+两次 CI 诊断使用相同的 `23ec770` 源码和运行代码（shared adapter version 39）、
+Node 24.21.0、1 CPU、1 GiB RAM 和零 swap。
+[完整索引尝试](https://github.com/YouSangSon/Parallax/actions/runs/40652176355)
+完成了全部 284 个文件的迭代并生成 26,571 个事件，但未在 90 秒内返回。
+退出码为 124，没有生成 CPU profile，Verify 未执行。cgroup 没有触及内存限制或
+发生 OOM。此前 VM 失败的原因仍需单独确认。
+
+[缩小范围的诊断](https://github.com/YouSangSon/Parallax/actions/runs/40654547854)
+仅从 `src/adapters/multi-language-regex.ts` 提取事件。持久化前确认其 2,070 个事件、
+1,541,387 个编码字节与此前 SHA-256 一致。完整启动上下文、284 次正文读取
+（4,698,579 bytes）、全部正文的秘密脱敏、metadata 和 scan-evidence 写入均保留。
+其余 283 次提取调用返回空结果，并使用诊断专用 adapter version；这是部分图。
+
+实际 indexer 在 5,298.948 ms 后返回，其中收集完成后的区间为 2,570.745 ms。
+该区间包含 SQL 和后续记录工作，不是单独的 SQL CPU 时间。原始 287 个文件保持
+字节一致，退出码为 0，任务资源清理通过，没有内存限制或 OOM 事件。CPU profile
+包含 280 个 sample，其中 `persistEntityDescriptor` 直接执行 sample 为 25 个，
+relation-evidence callback 为 18 个。虽然配置间隔为 50 ms，实际间隔仍有变化；
+sample 数量不是耗时比例或 CPU 使用率。这些路径用于后续调查，不能证明完整索引
+或 VM 加速。临时诊断代码不保留在产品树中。同一 head 的 canonical Verify 通过
+832 项测试、dogfood 2/2、benchmark 和 dependency audit。
+
 ### TypeScript 混合再导出循环
 
 Default 与 named type resolver 交叉调用时共享已访问 export 的记录。
@@ -369,6 +393,13 @@ npm run bench:perf -- --scales 1000,2000
 - **本地 Markdown 目标存在**——非 image 的本地 `.md` 链接必须解析到 working tree 中的 Markdown 文件，包括尚未 staged 的新 untracked docs。
 
 ## 持续集成（CI）
+
+CI 和 Release 的 CPU job 设置 `ONNXRUNTIME_NODE_INSTALL=skip`，跳过可选
+GPU 文件下载，随后加载 native ONNX binding 并确认包内 CPU backend 可用。
+此官方 [ONNX 安装选项](https://raw.githubusercontent.com/microsoft/onnxruntime/v1.30.0/js/node/script/install.js)
+保留正常的 npm lifecycle script，也适用于 PR baseline 安装。不改变包版本
+或用户安装默认值。该检查不运行模型，也不验证 GPU 推理；dependency audit
+仍是独立的 metadata 检查。
 
 `.github/workflows/ci.yml` 在每次向 `main` 的 push 与 pull request 上运行。`verify` job 在 Node.js 24 上按顺序运行：
 

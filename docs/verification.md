@@ -263,6 +263,36 @@ SCIP/trace reapply requirements remain. Local checks exclude DB/app execution;
 required remote CI owns these persisted oracles. Repeated identical source text
 on one Docker line still uses the parser's existing first occurrence.
 
+### Evidence position allocation
+
+`offsetPosition()` now scans LF positions in the same prefix instead of creating
+a line array. UTF-16 columns and existing newline semantics are unchanged, so
+shared regex version 41 remains valid. The pure evidence suite passes 19/19
+before and after the change, including empty lines, emoji, CRLF boundaries,
+standalone CR, U+2028/U+2029 and EOF.
+
+[Paired CI observation](https://github.com/YouSangSon/Parallax/actions/runs/40643803770)
+compared baseline `be8df1a` with candidate `c287c8b` on the same immutable
+`23ec770` source archive. Each fresh Node 24.21.0 process had one CPU, 1 GiB RAM
+and no swap, with a 5 ms sampling profiler. Both used the full 284-file startup
+context and processed the same 11 selected files. All 5,718 events had identical
+per-file hashes and encoded sizes. Only the compiled shared adapter differed.
+
+| Observation | Baseline | Candidate |
+| --- | ---: | ---: |
+| Profile duration | 11,820.212 ms | 10,352.266 ms |
+| Sum of file processing windows | 11,327.438 ms | 9,864.443 ms |
+| Cgroup peak memory | 225.82 MiB | 215.57 MiB |
+| `offsetPosition` exclusive samples | 215 / 2,270 | 128 / 1,953 |
+
+This is one ordered baseline/candidate observation, not a repeated performance
+distribution. Windows include event hashing; sampling adds overhead. Events were
+consumed without retention or SQL publication. Neither process hit memory limits
+or OOM, and owned resources were removed. These results do not establish general
+speedup, VM performance or the cause of the earlier whole-source timeout. The
+temporary harness is absent from the product tree; CI history retains its source
+and profile logs. Required release verification remains unchanged.
+
 ### TypeScript mixed export cycles
 
 Default-to-named and named-to-default type resolution now share visited export

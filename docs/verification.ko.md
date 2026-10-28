@@ -368,6 +368,34 @@ regex 버전 39는 파일이 같아도 기존 receipt를 full 추출로 갱신�
 실행하지 않으며 저장 결과 oracle은 필수 원격 CI가 검증한다. 같은 Docker 줄에
 source 문자열이 반복되면 기존 parser의 첫 위치 선택 한계는 남는다.
 
+### 근거 위치 계산의 배열 할당
+
+`offsetPosition()`은 같은 prefix를 줄 배열로 나누는 대신 LF 위치를 순회한다.
+UTF-16 열과 기존 줄 구분 의미가 같으므로 공유 regex 버전 41을 유지한다.
+빈 줄·이모지·CRLF 경계·단독 CR·U+2028/U+2029·EOF를 포함한 순수 근거 검사
+19개가 수정 전후 모두 통과했다.
+
+[CI 비교 관측](https://github.com/YouSangSon/Parallax/actions/runs/40643803770)은
+동일한 `23ec770` 소스 아카이브에서 baseline `be8df1a`와 후보 `c287c8b`를
+비교했다. 각각 새 Node 24.21.0 프로세스에 CPU 1개·RAM 1 GiB·swap 0을
+적용하고 5 ms 간격으로 프로파일링했다. 전체 284개 파일의 startup context에서
+같은 11개 파일을 처리했으며, 5,718개 이벤트의 파일별 해시와 직렬화 크기가
+모두 같았다. 컴파일된 공유 adapter만 달랐다.
+
+| 관측 | Baseline | 후보 |
+| --- | ---: | ---: |
+| Profile 시간 | 11,820.212 ms | 10,352.266 ms |
+| 파일 처리 구간 합계 | 11,327.438 ms | 9,864.443 ms |
+| Cgroup 최대 메모리 | 225.82 MiB | 215.57 MiB |
+| `offsetPosition` 자체 sample | 215 / 2,270 | 128 / 1,953 |
+
+Baseline 다음 후보를 한 번씩 실행한 관측이며 반복 성능 분포가 아니다.
+처리 구간에는 이벤트 해시 계산이, profile에는 sampling 비용이 포함된다.
+이벤트를 보관하거나 SQL에 발행하지 않았다. 두 프로세스 모두 메모리 제한·OOM
+발생 없이 끝났고 소유 자원을 정리했다. 일반적인 개선율·VM 성능·이전 전체 소스
+timeout의 원인을 입증하지 않는다. 임시 harness는 제품 트리에서 제거했으며
+CI 이력에 소스와 profile 로그를 남겼다. 필수 release 검증은 그대로 유지한다.
+
 ### TypeScript 혼합 재수출 순환
 
 Default와 named type resolver가 서로 호출할 때도 방문 기록을 이어받는다.

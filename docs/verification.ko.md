@@ -368,6 +368,16 @@ regex 버전 39는 파일이 같아도 기존 receipt를 full 추출로 갱신�
 실행하지 않으며 저장 결과 oracle은 필수 원격 CI가 검증한다. 같은 Docker 줄에
 source 문자열이 반복되면 기존 parser의 첫 위치 선택 한계는 남는다.
 
+### TypeScript 혼합 재수출 순환
+
+Default와 named type resolver가 서로 호출할 때도 방문 기록을 이어받는다.
+JSON tuple 키로 문자열 export 이름과 콜론이 든 경로를 구분하며, 순환 분기를
+건너뛴 뒤 실제 선언을 제공하는 다른 재수출은 계속 탐색한다. 공유 regex 버전
+40은 이전 추출 receipt를 무효화한다. 로컬에서는 순수 회귀
+`tests/typescript-export-cycle.test.ts`를 실행한다. Git/비Git graph·저장 보고서·
+adapter audit는 기존 incremental oracle을 통해 필수 CI에서 확인한다.
+이 수정만으로 이전 VM 전체 소스 timeout의 원인이 입증되지는 않는다.
+
 ### Docker source operand 범위
 
 후속 수정은 위의 첫 출현 위치 한계를 COPY/ADD operand의 원문 범위로 대체한다.

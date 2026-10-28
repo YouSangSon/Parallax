@@ -1,5 +1,25 @@
 # Design
 
+## TypeScript 혼합 재수출의 순환 종료
+
+`a.ts`가 `b.ts`의 이름 있는 export를 default로 내보내고, `b.ts`가 다시
+`a.ts`의 default를 가져오면 두 resolver가 서로 호출된다. 기존 구현은 같은
+종류의 호출에서만 방문 기록을 전달해 이 혼합 순환에서 스택을 소진했다.
+두 교차 호출에도 같은 기록을 전달한다. 별도 깊이 제한은 정상 체인을 길이에
+따라 잘라 버리므로 추가하지 않았다.
+
+방문 대상은 파일만이 아니라 해당 export다. Default는 `[path]`, named는
+`[path, name]`을 JSON으로 직렬화해 구분한다. 문자열 export 이름과 콜론이 든
+파일 경로가 같아 보이는 구분자 키를 만들 수 있기 때문이다. 순환 분기를
+건너뛴 뒤 다른 star 재수출에서 찾은 실제 선언은 계속 사용한다. 기존 factory
+resolver의 방문 기록 전달 방식을 재사용하며 새 cache나 전역 상태는 없다.
+
+구현은 `src/adapters/multi-language-regex.ts`의 default/named type resolver에
+있다. 공유 regex 버전 40으로 이전 추출 결과를 무효화한다. 순수 회귀는
+`tests/typescript-export-cycle.test.ts`, 저장 graph와 보고서 검사는 기존
+incremental oracle이 소유한다. 이 재현은 이전 VM 전체 소스 timeout의 원인
+증명이 아니며, 매우 깊은 비순환 체인까지 반복 탐색으로 바꾸지는 않는다.
+
 ## Active Slice: S1 Changed-Content Invalidation Safety
 
 ### Problem

@@ -2,6 +2,25 @@
 
 Evidence is current only when the command and result are recorded in this file. A focused pass proves only its named scope.
 
+## TypeScript Mixed Export Cycle — 2026-10-28
+
+- A three-file pure adapter reproduction on version 39 raised `RangeError` when
+  default and named re-exports formed a cycle. The corrected seven-case suite
+  reproduced five failures while two normal paths passed. A first static-call
+  expectation was corrected to the existing typed-receiver contract before the
+  implementation changed; no new static-call support is claimed.
+- Both cross-kind resolver calls now pass the same visited set. JSON tuple keys
+  prevent string export names and colon-bearing paths from colliding. Concrete
+  chains and alternate star branches remain resolvable. Shared regex version 40
+  invalidates older extraction receipts; no persistence/schema contract changes.
+- `node --import tsx --test --test-concurrency=1 tests/typescript-export-cycle.test.ts`
+  passed 7/7. `npm run lint`, `npm run build`, `node scripts/docs-lint.js` and
+  `git diff --check` passed. Local execution contains no DB/app/full suite.
+  Required CI owns the two new clean-Git/non-Git fresh-graph, report, no-op and
+  adapter-audit oracles, along with existing version/publication/rollback gates.
+- The separate whole-source VM profile remains incomplete. This small cycle
+  reproduction is not evidence that the same input caused that timeout.
+
 ## Current Delivery Boundary — 2026-10-27
 
 - PR #62 head `516d72e` passed required checks and canonical `npm run verify`:

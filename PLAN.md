@@ -11,6 +11,11 @@ traffic checks before transfer or execution; no Nebula VM is used for Parallax.
 
 ## Completed Runtime Slices — 2026-10-26
 
+- TypeScript mixed exports: default/named resolver transitions now retain one
+  visited-export set. Tuple keys distinguish export names and file paths. Pure
+  cycle, receiver, concrete-chain, alternate-branch and key-collision checks pass;
+  shared regex version 40 invalidates older extraction receipts. This separate
+  correctness repair does not identify the earlier VM timeout's cause.
 - Workbench feedback (PR #57/#58): export failures use action-specific localized
   text; the legacy clipboard fallback rejects false copy results and cleans up.
   The actual 375×812 viewport recheck is separate from the earlier deadline and

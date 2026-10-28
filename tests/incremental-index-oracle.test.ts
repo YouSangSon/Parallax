@@ -402,6 +402,51 @@ test('config memo replays through full publication and matches cold fresh graphs
   }
 });
 
+for (const git of [false, true]) {
+  test(`mixed TypeScript export cycle indexes and matches a fresh graph in ${git ? 'clean Git' : 'non-Git'} repositories`, async () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'parallax-type-cycle-'));
+    const fresh = mkdtempSync(path.join(tmpdir(), 'parallax-type-cycle-fresh-'));
+    const write = (dir: string) => {
+      mkdirSync(path.join(dir, 'src'));
+      writeFileSync(path.join(dir, 'src/a.ts'), 'export { Thing as default } from "./b.js";');
+      writeFileSync(path.join(dir, 'src/b.ts'), 'export { default as Thing } from "./a.js";');
+      writeFileSync(path.join(dir, 'src/use.ts'), 'import Thing from "./a.js"; export class Child extends Thing {}');
+      if (git) {
+        writeFileSync(path.join(dir, '.gitignore'), '.parallax/\n');
+        initOracleGitRepo(dir);
+      }
+    };
+    try {
+      write(root);
+      await initProject({ repoRoot: root });
+      const indexed = await indexProject({ repoRoot: root });
+      assert.equal(indexed.mode, 'full');
+      const graph = snapshotGraph(root);
+      assert.ok(graph.relations.some(row => row.kind === 'DEPENDS_ON' && row.source_entity_id === 'file:src/use.ts'));
+      assert.ok(!graph.relations.some(row => row.kind === 'EXTENDS'));
+      const db = openDatabase(root, { readOnly: true });
+      try {
+        assert.equal(db.prepare("SELECT COUNT(*) AS count FROM adapter_runs WHERE status = 'failed'").get()?.count, 0);
+      } finally { db.close(); }
+      const saved = await savedImpact(root);
+      assert.equal((await indexProject({ repoRoot: root })).mode, 'incremental');
+      write(fresh);
+      await initProject({ repoRoot: fresh });
+      await indexProject({ repoRoot: fresh });
+      assert.deepEqual(snapshotGraph(root), snapshotGraph(fresh));
+      const expected = await savedImpact(fresh);
+      const actual = await savedImpact(root);
+      assert.deepEqual(actual.semanticReport, expected.semanticReport);
+      assert.deepEqual(actual.graph, expected.graph);
+      const old = await exportImpactGraph({ repoRoot: root, reportId: saved.id, format: 'json' });
+      assert.deepEqual({ nodes: old.nodes, edges: old.edges }, saved.graph);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(fresh, { recursive: true, force: true });
+    }
+  });
+}
+
 const legacyTextFixture = JSON.parse(readFileSync(new URL('./fixtures/legacy-text-events.json', import.meta.url), 'utf8')) as {
   lanes: Array<{ adapterId: string; version: string; staleSnippetPrefix?: string; preservedRelationSource?: string;
     files: Array<{ relativePath: string; language: string; content: string }>;

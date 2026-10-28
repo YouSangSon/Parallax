@@ -233,6 +233,15 @@ fixture，检查重建与 fresh graph 相同、已保存报告 snapshot 不变�
 SCIP/trace 重新应用规则。本地不运行 DB/app，持久化 oracle 由必需的远程 CI 验证。
 同一 Docker 行重复出现 source 字符串时，仍保留原 parser 选择首次出现位置的限制。
 
+### TypeScript 混合再导出循环
+
+Default 与 named type resolver 交叉调用时共享已访问 export 的记录。
+JSON tuple 键区分字符串 export 名称与含冒号的路径。循环分支终止后，
+其他再导出仍可解析到具体声明。共享 regex 版本 40 使旧提取 receipt 失效。
+本地运行纯回归 `tests/typescript-export-cycle.test.ts`；Git/非 Git graph、
+保存报告和 adapter audit 由现有 incremental oracle 在必需 CI 中验证。
+此修复不证明先前 VM 整个源码 profile timeout 的原因。
+
 ### Docker source operand 范围
 
 后续修复用 COPY/ADD operand 的原文范围替代上述首次出现位置的限制。前置

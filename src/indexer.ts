@@ -1342,7 +1342,7 @@ function prepareStatements(db: Db): PreparedStatements {
     updateEntityFreshness: db.prepare(`
       UPDATE entities
       SET updated_index_run_id = ?
-      WHERE id = ?
+      WHERE id = ? AND updated_index_run_id <> ?
     `),
     insertEntityVersion: db.prepare(`
       INSERT OR REPLACE INTO entity_versions (entity_id, index_run_id, content_hash, location_json, state)
@@ -1535,7 +1535,7 @@ function persistEntityDescriptor(
 
   if (mode === 'placeholder') {
     ctx.stmts.insertEntityIfMissing.run(...entityValues);
-    ctx.stmts.updateEntityFreshness.run(ctx.indexRunId, entityId);
+    ctx.stmts.updateEntityFreshness.run(ctx.indexRunId, entityId, ctx.indexRunId);
     ctx.stmts.insertEntityVersionIfMissing.run(...versionValues);
   } else {
     ctx.stmts.upsertEntity.run(...entityValues);

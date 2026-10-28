@@ -52,9 +52,11 @@ limits = {name: (cgroup / name).read_text().strip() for name in ['cpu.max', 'mem
 quota, period = map(int, limits['cpu.max'].split())
 assert quota == period and limits['memory.max'] == '1073741824' and limits['memory.swap.max'] == '0', limits
 module = root / 'baseline/dist/src/adapters/multi-language-regex.js'
-assert hashlib.sha256(module.read_bytes()).hexdigest() == '1a44af8bb2508f2d01f28054ae0e735e75688fec4f2fc4dc9ca566fc0656dd5d'
+module_sha = hashlib.sha256(module.read_bytes()).hexdigest()
+assert module_sha == sys.argv[4], 'runtime module hash'
 emit('RUNTIME', {'node': str(node), 'version': subprocess.check_output([str(node), '--version'], text=True).strip(),
-                 'limits': limits, 'scope': 'historical v39 CI sample, not my-cloud or whole-index performance'})
+                 'moduleSha256': module_sha, 'limits': limits,
+                 'scope': 'paired v41 CI sample on historical source, not my-cloud or whole-index performance'})
 try:
     result = subprocess.run([str(node), '--max-old-space-size=384', '--cpu-prof', '--cpu-prof-interval=5000',
                              '--cpu-prof-dir=' + str(root), '--cpu-prof-name=' + profile.name,

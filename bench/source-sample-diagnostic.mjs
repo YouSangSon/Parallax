@@ -43,7 +43,7 @@ const registry = new AdapterRegistry();
 for (const Adapter of [BuildSystemPackageAdapter, ConfigInfraSemanticAdapter,
   TypeScriptJavaScriptSemanticAdapter, JvmSpringSemanticAdapter, PythonSemanticAdapter,
   GoSemanticAdapter, RustSemanticAdapter, MultiLanguageRegexAdapter]) registry.register(new Adapter());
-assert.equal(new TypeScriptJavaScriptSemanticAdapter().version, '39');
+assert.equal(new TypeScriptJavaScriptSemanticAdapter().version, '41');
 emit('inputs', { files: files.length, bytes: files.reduce((n, f) => n + Buffer.byteLength(f.content), 0),
   manifest: registry.manifest(), boundary: 'Independent immutable-source loader, not production scanner read/timing evidence. No DB, publication, models or application servers.' });
 const groups = registry.classify(files);
@@ -88,4 +88,4 @@ if (selfCheck) {
   assert.equal(bounded, false);
 }
 emit('diagnostic-end', { selected, completed, bounded,
-  boundary: 'Largest-file sample with full startup context, one historical v39 extraction observation. Event hash consumption excludes retained collection and SQL publication. Sampling profiler and observer add overhead. No whole-index cost, capacity or speedup claim.' });
+  boundary: 'Largest-file sample with full startup context, one v41 extraction observation on historical source. Event hash consumption excludes retained collection and SQL publication. Sampling profiler and observer add overhead. No whole-index cost, capacity or speedup claim.' });

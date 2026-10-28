@@ -80,28 +80,51 @@ jobs:
           trap cleanup EXIT
           trap 'exit 130' INT
           trap 'exit 143' TERM
-          sample_source=23ec770595292f27bc363a6746f935c782d3f0cb
+          sample_source=be8df1a67fd5dcd118a36d5df9bb8af6a90083a4
           git diff --exit-code "$sample_source" HEAD -- package.json package-lock.json tsconfig.json
-          git archive --format=tar "$sample_source" > "${sample_root}/corpus.tar"
+          git archive --format=tar 23ec770595292f27bc363a6746f935c782d3f0cb > "${sample_root}/corpus.tar"
           printf '%s  %s\n' 00e08aef1296dc8b21dc8aef0e8b62cf55e4a76b41cf9ce5e5048487df7cc6a4 "${sample_root}/corpus.tar" | sha256sum --check
           mkdir "${sample_root}/corpus"
           tar -xf "${sample_root}/corpus.tar" -C "${sample_root}/corpus"
           git worktree add --detach "${sample_root}/baseline" "$sample_source"
           ln -s "${GITHUB_WORKSPACE}/node_modules" "${sample_root}/baseline/node_modules"
           "${GITHUB_WORKSPACE}/node_modules/.bin/tsc" -p "${sample_root}/baseline/tsconfig.json"
+          npm run build
+          python3 - "${sample_root}/baseline/dist/src" "${GITHUB_WORKSPACE}/dist/src" <<'PY'
+          from pathlib import Path
+          import json,sys
+          baseline,candidate=map(Path,sys.argv[1:])
+          files=sorted(p.relative_to(baseline) for p in baseline.rglob('*.js'))
+          assert files==sorted(p.relative_to(candidate) for p in candidate.rglob('*.js'))
+          changed=[str(p) for p in files if (baseline/p).read_bytes()!=(candidate/p).read_bytes()]
+          assert changed==['adapters/multi-language-regex.js'],changed
+          print('PARALLAX_RUNTIME_DIFF '+json.dumps({'files':len(files),'changed':changed}),flush=True)
+          PY
+          cp dist/src/adapters/multi-language-regex.js "${sample_root}/candidate-module.js"
           cp bench/source-sample-diagnostic.mjs "${sample_root}/source-sample.mjs"
           sample_node="$(command -v node)"
-          set +e
-          sudo systemd-run --quiet --wait --pipe --collect --unit="$sample_unit" \
-            -p CPUQuota=100% -p MemoryMax=1G -p MemorySwapMax=0 \
-            -p RuntimeMaxSec=120 -p TimeoutStopSec=10 \
-            -p "User=$(id -u)" -p "Group=$(id -g)" -p "WorkingDirectory=$sample_root" \
-            /usr/bin/python3 "${GITHUB_WORKSPACE}/bench/source-sample-ci.py" --run "$sample_root" "$sample_node"
-          sample_exit=$?
-          set -e
-          printf 'PARALLAX_UNIT_EXIT %s\n' "$sample_exit"
-          python3 bench/source-sample-ci.py --profile "$sample_root" "$GITHUB_WORKSPACE"
-          exit "$sample_exit"
+          for sample_phase in baseline candidate; do
+            printf 'PARALLAX_PHASE %s\n' "$sample_phase"
+            sample_unit="parallax-source-sample-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${sample_phase}"
+            sample_expected=edc7be7f4a29b65e34841945eeedc2618de1fd0b7fc5d5d940581433a516e5d0
+            if [[ "$sample_phase" == candidate ]]; then
+              cp "${sample_root}/candidate-module.js" "${sample_root}/baseline/dist/src/adapters/multi-language-regex.js"
+              sample_expected="$(sha256sum "${sample_root}/candidate-module.js")"
+              sample_expected="${sample_expected%% *}"
+            fi
+            rm -f -- "${sample_root}/source-sample.cpuprofile"
+            set +e
+            sudo systemd-run --quiet --wait --pipe --collect --unit="$sample_unit" \
+              -p CPUQuota=100% -p MemoryMax=1G -p MemorySwapMax=0 \
+              -p RuntimeMaxSec=120 -p TimeoutStopSec=10 \
+              -p "User=$(id -u)" -p "Group=$(id -g)" -p "WorkingDirectory=$sample_root" \
+              /usr/bin/python3 "${GITHUB_WORKSPACE}/bench/source-sample-ci.py" --run "$sample_root" "$sample_node" "$sample_expected"
+            sample_exit=$?
+            set -e
+            printf 'PARALLAX_UNIT_EXIT %s\n' "$sample_exit"
+            python3 bench/source-sample-ci.py --profile "$sample_root" "$GITHUB_WORKSPACE"
+            if [[ "$sample_exit" != 0 ]]; then exit "$sample_exit"; fi
+          done
 
       - name: Verify
         run: npm run verify

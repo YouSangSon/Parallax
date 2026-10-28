@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { ConfigInfraSemanticAdapter } from '../src/adapters/config-infra.js';
-import { MultiLanguageRegexAdapter } from '../src/adapters/multi-language-regex.js';
+import { MultiLanguageRegexAdapter, TypeScriptJavaScriptSemanticAdapter } from '../src/adapters/multi-language-regex.js';
 import type { PendingRelation, SemanticAdapter } from '../src/adapters/types.js';
 import type { ScannedFile } from '../src/types.js';
 
@@ -20,6 +20,46 @@ async function relations(adapter: SemanticAdapter, input: ScannedFile, targets =
     return result;
   } finally { await run.dispose?.(); }
 }
+
+test('parser import and call positions preserve UTF-16 columns across empty CRLF lines', async () => {
+  const statement = 'import { go } from "./a";';
+  for (const prefix of ['', '/*😀*/ ']) {
+    const input = file('src/use.ts', 'typescript',
+      `${prefix}${statement}\r\n\r\nexport function run() {\r\n  return go();\r\n}`);
+    const actual = await relations(new TypeScriptJavaScriptSemanticAdapter(), input);
+    const imported = actual.find(row => row.kind === 'DEPENDS_ON')?.evidence?.[0];
+    assert.deepEqual(imported && [imported.snippet, imported.startLine, imported.endLine, imported.startCol, imported.endCol],
+      [statement, 1, 1, prefix.length + 1, prefix.length + statement.length + 1]);
+    const called = actual.find(row => row.kind === 'CALLS' && row.evidence?.[0]?.snippet === 'go()')?.evidence?.[0];
+    assert.deepEqual(called && [called.startLine, called.endLine, called.startCol, called.endCol], [4, 4, 10, 14]);
+  }
+});
+
+test('parser positions remain LF-based for bare CR and Unicode separators', async () => {
+  const statement = 'import { go } from "./a";';
+  for (const separator of ['\r', '\u2028', '\u2029']) {
+    const prefix = `/*😀*/${separator}`;
+    const beforeCall = `${prefix}${statement}${separator}export function run() { return `;
+    const actual = await relations(new TypeScriptJavaScriptSemanticAdapter(),
+      file('src/use.ts', 'typescript', `${beforeCall}go(); }`));
+    const imported = actual.find(row => row.kind === 'DEPENDS_ON')?.evidence?.[0];
+    assert.deepEqual(imported && [imported.startLine, imported.endLine, imported.startCol, imported.endCol],
+      [1, 1, prefix.length + 1, prefix.length + statement.length + 1]);
+    const called = actual.find(row => row.kind === 'CALLS' && row.evidence?.[0]?.snippet === 'go()')?.evidence?.[0];
+    assert.deepEqual(called && [called.startLine, called.endLine, called.startCol, called.endCol],
+      [1, 1, beforeCall.length + 1, beforeCall.length + 5]);
+  }
+});
+
+test('fallback positions preserve the CR immediately before a line feed', async () => {
+  const line = '  path: src/a.ts';
+  const actual = await relations(new MultiLanguageRegexAdapter(),
+    file('config.yml', 'yaml', `#😀\r\n\r\n${line}\r\n`));
+  assert.equal(actual.length, 1);
+  const evidence = actual[0]!.evidence?.[0];
+  assert.deepEqual(evidence && [evidence.snippet, evidence.startLine, evidence.endLine, evidence.startCol, evidence.endCol],
+    [line.trim(), 3, 3, 3, line.length + 2]);
+});
 
 test('config evidence uses the original line after Unicode lowercase expansion', async () => {
   const line = '  run: node src/a.ts';

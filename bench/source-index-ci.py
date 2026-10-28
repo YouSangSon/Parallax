@@ -56,7 +56,7 @@ module_sha = hashlib.sha256(module.read_bytes()).hexdigest()
 assert module_sha == sys.argv[4], 'runtime module hash'
 emit('RUNTIME', {'node': str(node), 'version': subprocess.check_output([str(node), '--version'], text=True).strip(),
                  'moduleSha256': module_sha, 'limits': limits,
-                 'scope': 'One historical v39 baseline full index on public CI; not the earlier three-phase VM execution'})
+                 'scope': 'Historical v39 one-file event publication plus all-file body redaction and metadata on public CI; not a full corpus graph or the earlier three-phase VM execution'})
 try:
     result = subprocess.run([str(node), '--max-old-space-size=512', '--cpu-prof', '--cpu-prof-interval=50000',
                              '--cpu-prof-dir=' + str(root), '--cpu-prof-name=' + profile.name,

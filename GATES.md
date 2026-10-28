@@ -2,6 +2,46 @@
 
 Evidence is current only when the command and result are recorded in this file. A focused pass proves only its named scope.
 
+## Current Packaged VM Checks — 2026-10-28
+
+- The archive built from `c48026697cab2e68761e3691dddd5c4571b10ea1` is
+  823,724 bytes, SHA-256
+  `fc8f6886c4d8af86ff573ca0f1e3810a4896935ce7e57b34ccf8d9b15a8d5a61`.
+  It contains 89 compiled bodies and eight KO/JA/EN/ZH root/docs README entries.
+  Ubuntu Linux x64 used official Node 24.14.0 and locked production dependencies
+  with lifecycle scripts disabled. Embedding/reflection were explicit stubs.
+- All 19 public CLI steps passed their expected exits. Actual stdio MCP passed
+  initialization, 24-tool discovery, impact/context and invalid-path checks.
+  Saved report graphs remained equal after a later full reindex. Six loopback
+  HTTP assertions covered health, selected/missing reports and path traversal;
+  Docker source, escaped JSON and Unicode/CRLF evidence checks also passed.
+- The 23-body synthetic profile completed baseline/source-edit/config-edit full
+  indexing. Every phase still read all 23 bodies and zero samples; this does not
+  establish read reduction, a representative speedup or the old timeout's cause.
+  No whole-source profile or real-model inference ran.
+- **Combined command exited 1:** its final harness assertion incorrectly required
+  the shared installation temporary directory to be empty. CLI help (exit 0)
+  and invalid observer usage (exit 2) had passed, but the subsequent package-body
+  check was not reached. Earlier passes remain scoped successes.
+- A separate narrow follow-up exited 0 without repeating those integration
+  scenarios. It observed `node-compile-cache` immediately after npm installation,
+  before either command. Help/invalid usage left that directory unchanged and
+  also left separate empty working/temporary directories empty. All 155 package
+  bodies were unchanged after this follow-up. This does not retroactively prove
+  the skipped post-run hash check in the first execution.
+- Both units used the shared nonblocking lock, one CPU, 1 GiB memory and no swap.
+  Each peak reached 1 GiB with zero OOM/kill events; this includes installation,
+  so it is not an application-only memory measurement. Normal and fallback
+  cleanup both acquire the shared lock and require the exact owned directory.
+  Both final audits passed: inactive unit, absent root/processes, available lock.
+  The two owned Orca terminals closed; no shared service was changed.
+- Fresh PAH views showed 36.8 MB / 3 TB billed outgoing and 1.63 GB incoming;
+  the last aggregation was 2026-10-28 17:07:30 KST. These delayed values do not
+  establish a real-time traffic total or an overage block. Raw logs, harnesses,
+  follow-up and hashes remain in the existing portfolio owner's
+  `config-extraction-profile/current-package-vm/` directory. No native browser,
+  clipboard/download/PNG or default-model validation is implied.
+
 ## Relation Endpoint Freshness — 2026-10-28
 
 - [Test-only CI](https://github.com/YouSangSon/Parallax/actions/runs/40658378651)
@@ -131,7 +171,9 @@ Evidence is current only when the command and result are recorded in this file. 
   workflow or runtime behavior. Local checks remain docs/diff only; unchanged
   passing runtime evidence is reused and required remote gates remain enabled.
 
-## Latest Packaged VM Checks — 2026-10-27
+<a id="latest-packaged-vm-checks--2026-10-27"></a>
+
+## Historical Packaged VM Checks — 2026-10-27
 
 - Source `23ec770595292f27bc363a6746f935c782d3f0cb` differs from runtime head
   `b0ffb53` only in unpackaged plan/gate documents. Reused archive SHA-256

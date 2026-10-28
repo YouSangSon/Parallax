@@ -50,13 +50,13 @@ adapter with both scope flags still disproves general process-order independence
 Changed-body extraction therefore remains conservative; no general selection
 flag, partial SQL carry or scanner read skipping is enabled.
 
-The latest package equivalent to `23ec770` passed the VM's 19-step CLI, real
-stdio MCP, saved-report graph, loopback HTTP and Docker/Unicode/CRLF checks.
-Its 23-body full-index profile also passed, with all bodies still read in every
-phase. These independent passes do not make the combined VM command a success:
-the following 287-file non-Git source profile timed out after 150 seconds and
-reached the 1 GiB cgroup limit. Cleanup and the final resource audit passed.
-Exact scope, observations and skipped checks are recorded in `GATES.md`.
+The `c480266` package passed the VM's 19-step CLI, real stdio MCP, saved-report
+graph, loopback HTTP, Docker/Unicode/CRLF and 23-body full-index checks. Its
+combined command failed a harness assumption about an empty installation temp
+directory; a narrow follow-up identified npm's compile cache and passed isolated
+help/usage and package-byte checks. Both executions cleaned up and passed final
+audits. The earlier 287-file source timeout remains a separate unresolved case;
+no whole-source profile was repeated. Exact boundaries are owned by `GATES.md`.
 
 1. Continue diagnosing the bounded whole-source profile before another VM
    execution. An immutable 11-file CI sample identified repeated position-array

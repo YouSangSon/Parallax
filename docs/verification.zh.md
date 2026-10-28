@@ -284,6 +284,18 @@ sample 数量不是耗时比例或 CPU 使用率。这些路径用于后续调�
 或 VM 加速。临时诊断代码不保留在产品树中。同一 head 的 canonical Verify 通过
 832 项测试、dogfood 2/2、benchmark 和 dependency audit。
 
+### 关系端点的索引执行编号更新
+
+当关系端点重复出现且实体的索引执行编号已是当前值时，跳过 UPDATE。现有 INSERT
+仍初始化新端点，后续执行中的首次引用仍推进编号。省去的 UPDATE 也避免了对应的
+FTS 删除与插入；显式实体修改、version 行、搜索内容和发布事务保持原有路径。
+
+`tests/index-publication.test.ts` 使用真实 indexer 和测试 DB 专用 trigger 观测写入。
+修复前，两次完整执行产生了 11 次同值 freshness UPDATE。回归要求次数为零，同时
+检查新增端点、重复引用、自引用、旧端点编号推进以及 version、关系和 evidence。
+FTS 通过不会修复投影的只读连接检查，避免修复掩盖错误。这是可重复验证的写入次数
+减少，不代表已经测得完整索引或 VM 加速。DB 检查在 CI 中运行。
+
 ### TypeScript 混合再导出循环
 
 Default 与 named type resolver 交叉调用时共享已访问 export 的记录。

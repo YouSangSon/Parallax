@@ -321,6 +321,21 @@ Use these paths for further inspection, not a full-index or VM speedup claim.
 Temporary instrumentation is absent from the product tree. Canonical Verify
 also passed 832 tests, dogfood 2/2, benchmark and dependency audit on this head.
 
+### Relation endpoint freshness
+
+Repeated relation endpoints no longer UPDATE an entity whose index run ID is
+already current. The existing insert initializes new endpoints, and the first
+reference in a later run still advances freshness. Skipping the redundant UPDATE
+also avoids its FTS delete/insert trigger; explicit entity changes, version rows,
+search payloads and publication transactions retain their existing paths.
+
+`tests/index-publication.test.ts` uses the real indexer and a fixture-owned trigger
+to count writes. Before the fix, two full runs produced 11 no-op freshness writes.
+The regression requires zero while checking new/repeated/self endpoints, older
+endpoint advancement, versions, relations and evidence. Read-only FTS checks run
+before any projection repair can mask an error. This is a deterministic write
+count improvement, not a measured whole-index or VM speedup. DB checks run in CI.
+
 ### TypeScript mixed export cycles
 
 Default-to-named and named-to-default type resolution now share visited export

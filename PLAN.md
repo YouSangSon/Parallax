@@ -64,10 +64,11 @@ Exact scope, observations and skipped checks are recorded in `GATES.md`.
    streaming sample excludes retained event collection and SQL publication.
    A later full-index CI attempt completed all 284 file iterators but timed out
    before returning. A one-file event subset then completed the real publisher
-   while retaining all body/redaction/metadata work. Its profile points to entity
-   and relation persistence as well as extraction; inspect those statement paths
-   before selecting another bounded experiment. No completed full-graph timing or
-   VM timeout cause is established. Do not repeat the same workload, raise limits,
+   while retaining all body/redaction/metadata work. Inspection of entity
+   persistence exposed repeated same-run freshness UPDATEs; those now skip the
+   redundant FTS projection write. Relation-evidence writes and extraction remain
+   separate costs. No completed full-graph timing or VM timeout cause is
+   established. Do not repeat the same workload, raise limits,
    weaken redaction or infer a representative speedup from the partial graph.
 2. Only if residual cost justifies another bounded path, prove process-order and
    startup-context independence, input validity, fresh-full graph/report equality,

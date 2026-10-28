@@ -2,6 +2,23 @@
 
 Evidence is current only when the command and result are recorded in this file. A focused pass proves only its named scope.
 
+## Relation Endpoint Freshness — 2026-10-28
+
+- [Test-only CI](https://github.com/YouSangSon/Parallax/actions/runs/40658378651)
+  at `309908a` passed 832 existing tests and failed the new regression: two full
+  runs generated 11 UPDATEs that left the entity's run ID unchanged. Entity
+  versions, relations, evidence and FTS payload assertions passed before that
+  failure. Dogfood and later canonical stages did not run.
+- The shared placeholder freshness statement now updates only when the run ID
+  differs. Initial inserts and the first advance of an older endpoint remain;
+  explicit entity/version writes, FTS triggers and publication rollback are
+  unchanged. No schema or adapter version change is needed.
+- `tests/index-publication.test.ts` observes the actual indexer through a trigger
+  in its owned fixture. It reads FTS with a read-only connection before any repair
+  and checks repeated/self references plus cross-run advancement. Required CI
+  owns DB execution; local checks do not run this test. This removes redundant
+  writes but does not establish whole-index speedup or a VM timeout cause.
+
 ## CPU Runner Installation — 2026-10-28
 
 - [CI 40650749353](https://github.com/YouSangSon/Parallax/actions/runs/40650749353)

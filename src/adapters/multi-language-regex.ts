@@ -27,7 +27,7 @@ import type {
 } from './types.js';
 
 export const MULTI_LANG_REGEX_ADAPTER_ID = 'multi-language-regex-mvp';
-export const MULTI_LANG_REGEX_ADAPTER_VERSION = '39';
+export const MULTI_LANG_REGEX_ADAPTER_VERSION = '40';
 export const TS_JS_SEMANTIC_ADAPTER_ID = 'typescript-javascript-semantic-v0';
 export const JVM_SPRING_SEMANTIC_ADAPTER_ID = 'jvm-spring-semantic-v0';
 export const PYTHON_SEMANTIC_ADAPTER_ID = 'python-semantic-v0';
@@ -2007,8 +2007,9 @@ function resolveTypeScriptJavaScriptDefaultTypeExport(
   importResolver: ImportResolver,
   seen = new Set<string>()
 ): TsResolvedDefaultTypeExport | undefined {
-  if (seen.has(targetPath)) return undefined;
-  seen.add(targetPath);
+  const seenKey = JSON.stringify([targetPath]);
+  if (seen.has(seenKey)) return undefined;
+  seen.add(seenKey);
   const targetFile = indexedFileByPath.get(targetPath);
   if (!targetFile || !isTypeScriptJavaScriptLanguage(targetFile.language)) return undefined;
   const sourceFile = ts.createSourceFile(
@@ -2044,7 +2045,8 @@ function resolveTypeScriptJavaScriptDefaultTypeExport(
       resolvedPath,
       defaultReExport.sourceName,
       indexedFileByPath,
-      importResolver
+      importResolver,
+      seen
     );
     if (namedExport) return namedExport;
   }
@@ -2059,7 +2061,7 @@ function resolveTypeScriptJavaScriptNamedTypeExport(
   importResolver: ImportResolver,
   seen = new Set<string>()
 ): TsResolvedDefaultTypeExport | undefined {
-  const seenKey = `${targetPath}:${exportedName}`;
+  const seenKey = JSON.stringify([targetPath, exportedName]);
   if (seen.has(seenKey)) return undefined;
   seen.add(seenKey);
   const targetFile = indexedFileByPath.get(targetPath);
@@ -2088,7 +2090,8 @@ function resolveTypeScriptJavaScriptNamedTypeExport(
       const defaultExport = resolveTypeScriptJavaScriptDefaultTypeExport(
         resolvedPath,
         indexedFileByPath,
-        importResolver
+        importResolver,
+        seen
       );
       if (defaultExport) return defaultExport;
       continue;

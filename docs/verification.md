@@ -263,6 +263,16 @@ SCIP/trace reapply requirements remain. Local checks exclude DB/app execution;
 required remote CI owns these persisted oracles. Repeated identical source text
 on one Docker line still uses the parser's existing first occurrence.
 
+### TypeScript mixed export cycles
+
+Default-to-named and named-to-default type resolution now share visited export
+keys. JSON tuple keys distinguish string export names from colon-bearing paths;
+cyclic branches stop while independent concrete re-exports remain discoverable.
+Shared regex version 40 invalidates older extraction receipts. Run the pure
+`tests/typescript-export-cycle.test.ts` locally; required CI owns the Git/non-Git
+graph, saved-report and adapter-audit checks in the incremental oracle. This
+fix does not establish the cause of the earlier whole-source VM timeout.
+
 ### Docker source operand spans
 
 The follow-up replaces the first-occurrence limitation above with raw COPY/ADD

@@ -61,6 +61,89 @@ jobs:
           mkdir -p .parallax/bench
           cp "$BASE_WORKTREE/.parallax/bench/impact-bench-report.json" .parallax/bench/impact-bench-baseline.json
 
+      - name: Temporary bounded current-source index diagnostic
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sample_root="$(mktemp -d "${RUNNER_TEMP}/parallax-current-index.XXXXXX")"
+          sample_unit="parallax-current-index-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cleanup() {
+            sample_status=$?
+            trap - EXIT
+            set +e
+            sudo timeout 15s systemctl stop "${sample_unit}.service" 2>"${sample_root}/stop.log"
+            if [[ $? != 0 && "$(sudo systemctl show "${sample_unit}.service" -p LoadState --value)" != not-found ]]; then
+              printf '%s\n' 'PARALLAX_CLEANUP_FAILED unit stop failed; task files retained'
+              exit 1
+            fi
+            if [[ -f "${sample_root}/runtime/.git" ]]; then
+              git worktree remove --force "${sample_root}/runtime"
+              if [[ $? != 0 ]]; then
+                printf '%s\n' 'PARALLAX_CLEANUP_FAILED worktree removal failed; task files retained'
+                exit 1
+              fi
+            fi
+            rm -rf -- "$sample_root"
+            if [[ -e "$sample_root" ]]; then exit 1; fi
+            printf '%s\n' 'PARALLAX_CLEANED owned unit stopped or absent; owned worktree/root absent'
+            exit "$sample_status"
+          }
+          trap cleanup EXIT
+          trap 'exit 130' INT
+          trap 'exit 143' TERM
+          sample_source=23ec770595292f27bc363a6746f935c782d3f0cb
+          sample_runtime=582d400b4a65b28a3512e643d2c99d314fb24e5a
+          git diff --exit-code "$sample_runtime" HEAD -- package.json package-lock.json tsconfig.json
+          git archive --format=tar "$sample_source" > "${sample_root}/corpus.tar"
+          printf '%s  %s\n' 00e08aef1296dc8b21dc8aef0e8b62cf55e4a76b41cf9ce5e5048487df7cc6a4 "${sample_root}/corpus.tar" | sha256sum --check
+          python3 - "${sample_root}/corpus.tar" "${sample_root}/input-manifest.json" <<'PY'
+          from pathlib import Path,PurePosixPath
+          import hashlib,json,sys,tarfile
+          rows=[]
+          with tarfile.open(sys.argv[1]) as archive:
+              for entry in archive.getmembers():
+                  if entry.isdir():continue
+                  assert entry.isfile()
+                  p=PurePosixPath(entry.name)
+                  assert not p.is_absolute() and '..' not in p.parts
+                  data=archive.extractfile(entry).read()
+                  rows.append({'path':str(p),'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()})
+          assert len(rows)==len({r['path'] for r in rows})==287
+          assert sum(r['bytes'] for r in rows)==5013975
+          Path(sys.argv[2]).write_text(json.dumps(rows))
+          print('PARALLAX_INPUT '+json.dumps({'source':'23ec770595292f27bc363a6746f935c782d3f0cb','files':len(rows),'bytes':sum(r['bytes'] for r in rows)}),flush=True)
+          PY
+          mkdir "${sample_root}/corpus"
+          tar -xf "${sample_root}/corpus.tar" -C "${sample_root}/corpus"
+          git worktree add --detach "${sample_root}/runtime" "$sample_runtime"
+          ln -s "${GITHUB_WORKSPACE}/node_modules" "${sample_root}/runtime/node_modules"
+          "${GITHUB_WORKSPACE}/node_modules/.bin/tsc" -p "${sample_root}/runtime/tsconfig.json"
+          cp bench/source-index-diagnostic.mjs "${sample_root}/source-index.mjs"
+          sample_node="$(command -v node)"
+          sample_expected=71727ca3f93af6f68dcae7a9d6fcd3ff9ba129aa03b95aa122b9a5056544b6f6
+          sample_indexer=d7a219e4bb70062c3db108e35fbb45e4d14b2af725a4e0da4b6b543967ddba85
+          set +e
+          sudo systemd-run --quiet --wait --pipe --collect --unit="$sample_unit" \
+            -p CPUQuota=100% -p MemoryMax=1G -p MemorySwapMax=0 \
+            -p RuntimeMaxSec=120 -p TimeoutStopSec=10 \
+            -p "User=$(id -u)" -p "Group=$(id -g)" -p "WorkingDirectory=$sample_root" \
+            /usr/bin/env PARALLAX_EMBEDDING_MODEL=stub-sha256 PARALLAX_REFLECTION_MODEL=stub \
+            GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
+            /usr/bin/python3 "${GITHUB_WORKSPACE}/bench/source-index-ci.py" --run "$sample_root" "$sample_node" "$sample_expected" "$sample_indexer" "$sample_runtime" "$sample_source"
+          sample_exit=$?
+          printf 'PARALLAX_UNIT_EXIT %s\n' "$sample_exit"
+          profile_exit=1
+          if [[ -f "${sample_root}/source-index.cpuprofile" ]]; then
+            python3 bench/source-index-ci.py --profile "$sample_root" "$GITHUB_WORKSPACE"
+            profile_exit=$?
+          else
+            printf '%s\n' 'PARALLAX_PROFILE_MISSING earlier phase and unit-exit observations retained'
+          fi
+          set -e
+          if [[ "$sample_exit" != 0 ]]; then exit "$sample_exit"; fi
+          if [[ "$profile_exit" != 0 ]]; then exit "$profile_exit"; fi
+
       - name: Verify
         run: npm run verify
 

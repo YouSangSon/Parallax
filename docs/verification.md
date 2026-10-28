@@ -293,6 +293,34 @@ speedup, VM performance or the cause of the earlier whole-source timeout. The
 temporary harness is absent from the product tree; CI history retains its source
 and profile logs. Required release verification remains unchanged.
 
+### Historical index publication diagnostic
+
+Two bounded CI observations used the immutable `23ec770` source and runtime
+(shared adapter version 39), Node 24.21.0, one CPU, 1 GiB RAM and no swap.
+[The full-index attempt](https://github.com/YouSangSon/Parallax/actions/runs/40652176355)
+completed all 284 file iterators and emitted 26,571 events, but did not return
+before the 90-second timeout. It exited 124, produced no CPU profile and skipped
+Verify. No cgroup memory-limit or OOM event occurred; the earlier VM failure
+remains a separate unresolved observation.
+
+[The smaller diagnostic](https://github.com/YouSangSon/Parallax/actions/runs/40654547854)
+extracted only `src/adapters/multi-language-regex.ts`. Its 2,070 events and
+1,541,387 encoded bytes matched the previous SHA-256 before publication.
+All startup context, 284 body reads (4,698,579 bytes), all-body secret redaction,
+metadata and scan-evidence writes remained. Other 283 extraction calls returned
+empty results with diagnostic-only adapter versions: this is a partial graph.
+
+The actual indexer returned in 5,298.948 ms, including 2,570.745 ms after collection
+completed. That latter window includes SQL and bookkeeping, not isolated SQL
+CPU time. All 287 source files remained byte-identical; unit exit and resource
+cleanup passed with no memory-limit/OOM events. The completed CPU profile has
+280 samples, including 25 exclusive samples in `persistEntityDescriptor` and 18
+in the relation-evidence callback. Actual sample intervals vary despite the
+configured 50 ms interval; counts are not elapsed-time shares or CPU utilization.
+Use these paths for further inspection, not a full-index or VM speedup claim.
+Temporary instrumentation is absent from the product tree. Canonical Verify
+also passed 832 tests, dogfood 2/2, benchmark and dependency audit on this head.
+
 ### TypeScript mixed export cycles
 
 Default-to-named and named-to-default type resolution now share visited export

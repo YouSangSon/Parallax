@@ -41,7 +41,7 @@ traffic checks before transfer or execution; no Nebula VM is used for Parallax.
 Exact local, PR and merged-main evidence is owned by `GATES.md` and the existing
 portfolio owner in `CONTEXT.md`. These completed slices are not pending work.
 
-## S1 Remaining Queue — 2026-10-27
+## S1 Remaining Queue — 2026-10-28
 
 Output ownership admission, cohort revalidation under the writer lock, actual
 input receipts and deterministic read counters already exist. Config/infra's
@@ -61,11 +61,14 @@ Exact scope, observations and skipped checks are recorded in `GATES.md`.
 1. Continue diagnosing the bounded whole-source profile before another VM
    execution. An immutable 11-file CI sample identified repeated position-array
    allocation and TypeScript parsing costs; the former is now removed. This
-   streaming sample excludes retained event collection and SQL publication. No
-   completed whole-source timing or timeout cause was collected; do not
-   repeat the same workload, raise limits or treat small-fixture timings as a
-   representative speedup. Use existing observers and distinct read/sample counters
-   to choose a smaller diagnostic scope after inspecting the implicated inputs.
+   streaming sample excludes retained event collection and SQL publication.
+   A later full-index CI attempt completed all 284 file iterators but timed out
+   before returning. A one-file event subset then completed the real publisher
+   while retaining all body/redaction/metadata work. Its profile points to entity
+   and relation persistence as well as extraction; inspect those statement paths
+   before selecting another bounded experiment. No completed full-graph timing or
+   VM timeout cause is established. Do not repeat the same workload, raise limits,
+   weaken redaction or infer a representative speedup from the partial graph.
 2. Only if residual cost justifies another bounded path, prove process-order and
    startup-context independence, input validity, fresh-full graph/report equality,
    diagnostic/version/audit ownership and rollback behavior before changing carry

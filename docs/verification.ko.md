@@ -396,6 +396,33 @@ Baseline 다음 후보를 한 번씩 실행한 관측이며 반복 성능 분포
 timeout의 원인을 입증하지 않는다. 임시 harness는 제품 트리에서 제거했으며
 CI 이력에 소스와 profile 로그를 남겼다. 필수 release 검증은 그대로 유지한다.
 
+### 과거 버전의 인덱스 저장 단계 진단
+
+두 CI 진단은 동일한 `23ec770` 소스와 실행 코드(shared adapter version 39),
+Node 24.21.0, CPU 1개, RAM 1 GiB, swap 0 조건을 사용했다.
+[전체 인덱싱 시도](https://github.com/YouSangSon/Parallax/actions/runs/40652176355)는
+284개 파일의 반복 처리를 모두 마치고 이벤트 26,571개를 생성했지만, 90초 안에
+반환하지 못했다. 종료 코드는 124였고 CPU profile은 생성되지 않았으며 Verify는
+실행되지 않았다. cgroup 메모리 한도 도달과 OOM은 없었다. 앞선 VM 실패의
+원인은 여전히 별도로 확인해야 한다.
+
+[범위를 줄인 진단](https://github.com/YouSangSon/Parallax/actions/runs/40654547854)은
+`src/adapters/multi-language-regex.ts` 하나에서만 이벤트를 추출했다. 저장 전에
+이벤트 2,070개와 인코딩 크기 1,541,387 bytes가 기존 SHA-256과 일치함을 확인했다.
+전체 시작 컨텍스트, 본문 284개(4,698,579 bytes) 읽기, 모든 본문의 비밀 가림 처리,
+metadata와 scan-evidence 저장은 유지했다. 나머지 283개 추출 호출은 빈 결과를
+반환하고 진단 전용 adapter version을 사용했다. 따라서 결과는 부분 그래프다.
+
+실제 indexer는 5,298.948 ms에 반환했으며, 수집 완료 이후 구간은 2,570.745 ms였다.
+이 구간에는 SQL과 후속 정리가 함께 포함되어 SQL CPU 시간만을 뜻하지 않는다.
+원본 287개 파일의 바이트 일치, 종료 코드 0, 작업 자원 정리를 확인했고 메모리
+한도 도달과 OOM은 없었다. CPU profile의 280개 sample 중 직접 실행 sample은
+`persistEntityDescriptor` 25개, relation-evidence callback 18개였다. 설정 간격은
+50 ms지만 실제 sample 간격은 달랐다. 개수를 실행 시간 비율이나 CPU 사용률로
+해석하지 않는다. 후속 조사 위치를 찾은 결과이며 전체 인덱싱·VM 성능 향상은
+입증하지 않았다. 임시 진단 코드는 제품 트리에서 제거한다. 같은 head의 canonical
+Verify는 테스트 832개, dogfood 2/2, benchmark와 dependency audit를 통과했다.
+
 ### TypeScript 혼합 재수출 순환
 
 Default와 named type resolver가 서로 호출할 때도 방문 기록을 이어받는다.

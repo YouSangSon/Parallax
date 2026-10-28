@@ -55,7 +55,8 @@ test('mixed default/named export chain preserves heritage and method targets', a
 
 test('a cyclic re-export branch does not hide an independent concrete export', async () => {
   const relations = await extract({ ...cycle,
-    'b.ts': cycle['b.ts'] + '\nexport * from "./base.js";',
+    'b.ts': 'export * from "./loop.js";\nexport * from "./base.js";',
+    'loop.ts': 'export { default as Thing } from "./a.js";',
     'base.ts': 'export class Thing {}',
     'use.ts': 'import Thing from "./a.js"; export class Child extends Thing {}'
   });

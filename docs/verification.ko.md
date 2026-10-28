@@ -489,6 +489,18 @@ yield 사이 소비자의 이벤트 수집·대기·계측 비용도 포함하�
 accuracy report나 통과 기한에 넣지 않는다. 원격 정확성 검사는 phase/count를 확인하고
 성능을 판정하지 않는다. 관측 도구와 합성 generator는 npm payload 밖의 bench 파일이다.
 
+2026-10-28 패키지 검증: `c480266`의 CLI/MCP/저장 보고서, loopback HTTP,
+Docker 근거와 합성 프로파일 검사는 통과했다. 결합 명령은 마지막 빈 디렉터리
+가정에서 실패했고, 범위를 좁힌 재검사는 통과했다. 정확한 범위는
+[GATES](https://github.com/YouSangSon/Parallax/blob/main/GATES.md#current-packaged-vm-checks--2026-10-28)가 소유한다.
+도움말·잘못된 인자의 정리를 검사할 때는 별도의 빈 작업·임시 디렉터리를 쓰거나
+실행 전후 상태를 비교한다. Node 24.14에 포함된
+[npm은 컴파일 캐시를 활성화](https://raw.githubusercontent.com/nodejs/node/v24.14.0/deps/npm/lib/cli.js)하며,
+[Node의 기본 캐시 위치](https://nodejs.org/download/release/v24.14.0/docs/api/module.html#module-compile-cache)는
+임시 디렉터리 아래다. 설치 산출물만으로 도움말이 프로젝트 상태를 만들었다고
+판단하지 않는다. 최초 실패와 재검사의 근거를 구분하며, 전체 소스 성능이나
+실제 모델 동작을 검증했다고 해석하지 않는다.
+
 2026-10-25 승인된 VM 관측: PR #55의 병합 커밋 `5fc6cba`, Node
 `v24.14.0 --max-old-space-size=512`, Ubuntu 24.04 / Linux 6.8.0-147-generic
 `linux/x64`, Xeon Gold 6148, 논리 CPU 2개와 RAM 4 GB. 실행 전체에 공유 프로세스

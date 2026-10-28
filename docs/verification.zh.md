@@ -344,6 +344,17 @@ Process 区间包含 yield 之间消费者收集事件、等待与计测开销�
 正确性测试只验证 phase/count，不评价性能。观测器和合成 generator 都属于 npm
 payload 之外的 bench 文件。
 
+2026-10-28 的包验证：`c480266` 通过 CLI/MCP/已保存报告、loopback HTTP、
+Docker 证据和合成 profile 检查。组合命令在最后的空目录假设处失败，随后缩小
+范围的复查通过。准确范围由
+[GATES](https://github.com/YouSangSon/Parallax/blob/main/GATES.md#current-packaged-vm-checks--2026-10-28) 记录。
+检查帮助或无效参数是否留下文件时，应使用独立的空工作目录和临时目录，或比较
+执行前后状态。Node 24.14 附带的
+[npm 会启用编译缓存](https://raw.githubusercontent.com/nodejs/node/v24.14.0/deps/npm/lib/cli.js)，
+[Node 的默认缓存位置](https://nodejs.org/download/release/v24.14.0/docs/api/module.html#module-compile-cache)
+在临时目录下。安装产物不能证明帮助命令创建了项目状态。保留首次失败与复查各自
+的证据边界；这些检查不证明完整源码性能或真实模型行为。
+
 2026-10-25 在获准 VM 上观测：PR #55 的合并提交 `5fc6cba`，Node
 `v24.14.0 --max-old-space-size=512`，Ubuntu 24.04 / Linux 6.8.0-147-generic
 `linux/x64`，Xeon Gold 6148，2 个逻辑 CPU、4 GB RAM。整个执行使用共享进程锁，

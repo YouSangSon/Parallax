@@ -392,6 +392,18 @@ Keep timing observations outside deterministic accuracy reports and thresholds;
 remote correctness coverage checks phases/counts, not performance. The observer
 and synthetic generator are bench files outside the npm package payload.
 
+Approved package check, 2026-10-28: source `c480266` passed the CLI/MCP/report,
+loopback HTTP, Docker evidence and synthetic-profile checks described in
+[GATES](https://github.com/YouSangSon/Parallax/blob/main/GATES.md#current-packaged-vm-checks--2026-10-28). The combined command
+failed its final empty-directory assumption; the narrow follow-up passed.
+When checking help/invalid-usage cleanup, use a fresh working and temporary
+directory or compare a captured before/after state. Node 24.14's bundled
+[npm enables compile caching](https://raw.githubusercontent.com/nodejs/node/v24.14.0/deps/npm/lib/cli.js);
+[Node's default cache location](https://nodejs.org/download/release/v24.14.0/docs/api/module.html#module-compile-cache)
+is under the temporary directory. Installation artifacts are not evidence that
+help created project state. Keep the original failure and follow-up scopes
+separate; neither establishes whole-source performance or real-model behavior.
+
 Approved VM observation, 2026-10-25: merge commit `5fc6cba` (PR #55), Node
 `v24.14.0 --max-old-space-size=512`, Ubuntu 24.04 / Linux 6.8.0-147-generic
 `linux/x64`, Xeon Gold 6148, 2 logical CPUs and 4 GB RAM. The entire execution

@@ -370,6 +370,13 @@ npm run bench:perf -- --scales 1000,2000
 
 ## 持续集成（CI）
 
+CI 和 Release 的 CPU job 设置 `ONNXRUNTIME_NODE_INSTALL=skip`，跳过可选
+GPU 文件下载，随后加载 native ONNX binding 并确认包内 CPU backend 可用。
+此官方 [ONNX 安装选项](https://raw.githubusercontent.com/microsoft/onnxruntime/v1.30.0/js/node/script/install.js)
+保留正常的 npm lifecycle script，也适用于 PR baseline 安装。不改变包版本
+或用户安装默认值。该检查不运行模型，也不验证 GPU 推理；dependency audit
+仍是独立的 metadata 检查。
+
 `.github/workflows/ci.yml` 在每次向 `main` 的 push 与 pull request 上运行。`verify` job 在 Node.js 24 上按顺序运行：
 
 ```bash

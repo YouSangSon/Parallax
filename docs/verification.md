@@ -417,6 +417,15 @@ The standard large-repo command was also attempted as `npm run bench:perf -- --s
 
 ## Continuous integration
 
+CI and Release use CPU runners. Their jobs set `ONNXRUNTIME_NODE_INSTALL=skip`
+to avoid optional GPU downloads, then load the native ONNX binding and assert
+that its bundled CPU backend is available. This supported
+[ONNX installation option](https://raw.githubusercontent.com/microsoft/onnxruntime/v1.30.0/js/node/script/install.js)
+keeps normal npm lifecycle scripts enabled and also applies to the PR baseline
+install. Package versions and user installation defaults are unchanged. The
+check does not run a model or verify GPU inference; dependency audit remains a
+separate metadata check.
+
 `.github/workflows/ci.yml` runs on every push and pull request to `main`. The `verify` job, on Node.js 24, runs in order:
 
 ```bash

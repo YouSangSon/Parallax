@@ -513,6 +513,14 @@ npm run bench:perf -- --scales 1000,2000
 
 ## 지속적 통합(CI)
 
+CI와 Release의 CPU 작업에는 `ONNXRUNTIME_NODE_INSTALL=skip`을 적용해
+선택적 GPU 파일 다운로드를 생략한다. 이어서 native ONNX binding을 로드하고
+패키지에 포함된 CPU backend가 있는지 검사한다. 이 공식
+[ONNX 설치 옵션](https://raw.githubusercontent.com/microsoft/onnxruntime/v1.30.0/js/node/script/install.js)은
+일반 npm lifecycle script를 유지하며 PR baseline 설치에도 적용된다.
+패키지 버전과 사용자 설치 기본값은 바꾸지 않는다. 이 검사는 모델 실행이나
+GPU 추론 검증이 아니며, dependency audit은 별도의 metadata 검사로 유지한다.
+
 `.github/workflows/ci.yml`은 `main`으로의 모든 push와 pull request에서 실행된다. `verify` job은 Node.js 24에서 다음 순서로 실행된다:
 
 ```bash

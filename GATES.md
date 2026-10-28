@@ -2,6 +2,21 @@
 
 Evidence is current only when the command and result are recorded in this file. A focused pass proves only its named scope.
 
+## CPU Runner Installation — 2026-10-28
+
+- [CI 40650749353](https://github.com/YouSangSon/Parallax/actions/runs/40650749353)
+  failed during the ONNX postinstall download with IPv4 `ETIMEDOUT` and IPv6
+  `ENETUNREACH`. Neither the historical index diagnostic nor Verify started;
+  the later missing `tsx` error was a consequence of the incomplete install.
+- Locked ONNX Runtime 1.30.0 bundles its CPU binding/library and requests CUDA
+  provider files separately on Linux x64. Its supported `skip` install flag was
+  checked against the installed parser and upstream source. CI and Release now
+  scope that flag to their CPU jobs, including the PR baseline install, and check
+  native binding load plus bundled CPU backend availability after installation.
+  npm lifecycle scripts, dependency versions, user defaults and required Verify
+  remain unchanged. Actual Linux CPU load and final-tree CI results are separate
+  evidence; this does not validate model inference, GPUs or a tag publication.
+
 ## Evidence Position Allocation — 2026-10-28
 
 - `offsetPosition()` scans LF positions instead of splitting the prefix into a

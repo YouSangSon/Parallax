@@ -447,6 +447,88 @@ for (const git of [false, true]) {
   });
 }
 
+const legacyExportKeys = JSON.parse(readFileSync(new URL('./fixtures/legacy-export-key-events.json', import.meta.url), 'utf8')) as {
+  adapterId: string; version: string;
+  files: Array<{ relativePath: string; language: string; content: string }>;
+  events: Record<string, IndexEvent[]>;
+};
+
+for (const git of [false, true]) {
+  test(`v40 export-key collisions rebuild unchanged ${git ? 'clean Git' : 'non-Git'} inputs and preserve saved reports`, async () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'parallax-export-key-upgrade-'));
+    const fresh = mkdtempSync(path.join(tmpdir(), 'parallax-export-key-fresh-'));
+    const write = (dir: string) => {
+      for (const file of legacyExportKeys.files) {
+        assert.ok(!path.posix.isAbsolute(file.relativePath) && !file.relativePath.split('/').includes('..'));
+        const target = path.join(dir, file.relativePath);
+        mkdirSync(path.dirname(target), { recursive: true });
+        writeFileSync(target, file.content);
+      }
+      if (git) {
+        writeFileSync(path.join(dir, '.gitignore'), '.parallax/\n');
+        initOracleGitRepo(dir);
+      }
+    };
+    try {
+      write(root);
+      await initProject({ repoRoot: root });
+      const legacy = new AdapterRegistry();
+      for (const adapter of createDefaultRegistry().list()) {
+        if (adapter.id !== legacyExportKeys.adapterId) { legacy.register(adapter); continue; }
+        const old: SemanticAdapter = Object.create(adapter);
+        Object.defineProperty(old, 'version', { value: legacyExportKeys.version });
+        Object.defineProperty(old, 'start', { value: () => ({
+          async *process(file: ScannedFile) {
+            for (const event of legacyExportKeys.events[file.relativePath] ?? []) yield structuredClone(event);
+          }
+        }) });
+        legacy.register(old);
+      }
+      const indexed = await indexProjectWithRegistryForTest({ repoRoot: root }, legacy);
+      const prior = snapshotGraph(root);
+      const child = prior.entities.find(row => row.symbol === 'ChildTwo')?.id;
+      const first = prior.entities.find(row => row.symbol === 'First' && row.path === 'src/a.ts')?.id;
+      assert.ok(child && first);
+      assert.ok(prior.relations.some(row => row.kind === 'EXTENDS' && row.source_entity_id === child && row.target_entity_id === first));
+      const saved = await savedImpact(root);
+      const reportJson = () => {
+        const db = openDatabase(root, { readOnly: true });
+        try { return (db.prepare('SELECT json FROM reports WHERE id = ?').get(saved.id) as { json: string }).json; }
+        finally { db.close(); }
+      };
+      const beforeJson = reportJson();
+      if (git) assert.equal(execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' }), '');
+      const upgraded = await indexProject({ repoRoot: root });
+      assert.equal(upgraded.mode, 'full', 'the new version must reject clean reuse and no-op carry');
+      assert.ok(upgraded.indexRunId > indexed.indexRunId);
+      const graph = snapshotGraph(root);
+      const second = graph.entities.find(row => row.symbol === 'Second' && row.path === 'src/b.ts')?.id;
+      assert.ok(second);
+      assert.ok(graph.relations.some(row => row.kind === 'EXTENDS' && row.source_entity_id === child && row.target_entity_id === second));
+      assert.ok(!graph.relations.some(row => row.kind === 'EXTENDS' && row.source_entity_id === child && row.target_entity_id === first));
+      const method = graph.entities.find(row => row.symbol === 'Second.make' && row.path === 'src/b.ts')?.id;
+      assert.ok(method);
+      assert.ok(graph.relationEvidence.some(evidence => evidence.snippet === 'two.make()'
+        && graph.relations.some(row => row.id === evidence.relation_id && row.kind === 'CALLS' && row.target_entity_id === method)));
+      assert.equal((await indexProject({ repoRoot: root })).mode, 'incremental');
+      write(fresh);
+      await initProject({ repoRoot: fresh });
+      await indexProject({ repoRoot: fresh });
+      assert.deepEqual(snapshotGraph(root), snapshotGraph(fresh));
+      const actual = await savedImpact(root);
+      const expected = await savedImpact(fresh);
+      assert.deepEqual(actual.semanticReport, expected.semanticReport);
+      assert.deepEqual(actual.graph, expected.graph);
+      assert.equal(reportJson(), beforeJson);
+      const oldGraph = await exportImpactGraph({ repoRoot: root, reportId: saved.id, format: 'json' });
+      assert.deepEqual({ nodes: oldGraph.nodes, edges: oldGraph.edges }, saved.graph);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(fresh, { recursive: true, force: true });
+    }
+  });
+}
+
 const legacyTextFixture = JSON.parse(readFileSync(new URL('./fixtures/legacy-text-events.json', import.meta.url), 'utf8')) as {
   lanes: Array<{ adapterId: string; version: string; staleSnippetPrefix?: string; preservedRelationSource?: string;
     files: Array<{ relativePath: string; language: string; content: string }>;

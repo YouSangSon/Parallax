@@ -372,11 +372,16 @@ source 문자열이 반복되면 기존 parser의 첫 위치 선택 한계는 �
 
 Default와 named type resolver가 서로 호출할 때도 방문 기록을 이어받는다.
 JSON tuple 키로 문자열 export 이름과 콜론이 든 경로를 구분하며, 순환 분기를
-건너뛴 뒤 실제 선언을 제공하는 다른 재수출은 계속 탐색한다. 공유 regex 버전
-40은 이전 추출 receipt를 무효화한다. 로컬에서는 순수 회귀
+건너뛴 뒤 실제 선언을 제공하는 다른 재수출은 계속 탐색한다. Named/namespace
+조회 캐시와 namespace/factory 방문 기록에도 같은 구분을 적용한다. 서로 다른
+export를 같은 키로 취급해 잘못된 파일에 연결하거나, 저장된 조회 실패로 정상
+선언을 숨기지 않게 한다. 공유 regex 버전 41은 이전 추출 receipt를 무효화한다.
+로컬에서는 순수 회귀
 `tests/typescript-export-cycle.test.ts`를 실행한다. Git/비Git graph·저장 보고서·
 adapter audit는 기존 incremental oracle을 통해 필수 CI에서 확인한다.
-이 수정만으로 이전 VM 전체 소스 timeout의 원인이 입증되지는 않는다.
+실제로 캡처한 버전 40 이벤트로 입력이 같아도 다시 계산하는지와 이전 저장
+보고서가 보존되는지도 확인한다. 이 수정만으로 이전 VM 전체 소스 timeout의
+원인이 입증되지는 않는다.
 
 ### Docker source operand 범위
 

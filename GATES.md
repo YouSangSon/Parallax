@@ -2,6 +2,25 @@
 
 Evidence is current only when the command and result are recorded in this file. A focused pass proves only its named scope.
 
+## TypeScript Export Lookup Keys — 2026-10-28
+
+- Version 40 pure extraction connected `ChildTwo` and `two.make()` to the wrong
+  file when different path/export-name pairs produced the same colon-delimited
+  cache key. Seven new cases failed while the existing seven cycle cases passed.
+- Five lookup caches and three namespace/factory visited keys now use JSON
+  tuples. Success/failure cache entries, reverse lookup order, namespace type and
+  factory receivers, and valid re-export chains retain their distinct targets.
+  Shared regex version 41 invalidates earlier receipts; SQL/schema and public
+  interfaces are unchanged.
+- `node --import tsx --test --test-concurrency=1 tests/typescript-export-cycle.test.ts`
+  passed 14/14. `npm run lint`, `npm run build` and `git diff --check` passed.
+  The CI-only incremental oracles seed actual captured version 40
+  events and check clean-Git/non-Git rebuilds, corrected relation targets, fresh
+  graph/report equality, no-op reuse and old saved-report preservation.
+- Whole-source VM diagnosis remains pending. A separate largest-file sample
+  harness passed a three-file pure self-check; this is preparation, not a new VM
+  result or a cause established for the earlier timeout.
+
 ## TypeScript Mixed Export Cycle — 2026-10-28
 
 - A three-file pure adapter reproduction on version 39 raised `RangeError` when
@@ -21,7 +40,7 @@ Evidence is current only when the command and result are recorded in this file. 
 - The separate whole-source VM profile remains incomplete. This small cycle
   reproduction is not evidence that the same input caused that timeout.
 
-## Current Delivery Boundary — 2026-10-27
+## Prior Delivery Boundary — 2026-10-27
 
 - PR #62 head `516d72e` passed required checks and canonical `npm run verify`:
   804/804 tests, dogfood 2/2, benchmark and audit. Merged main `5429afc` passed

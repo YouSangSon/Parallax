@@ -45,6 +45,9 @@ jobs:
           console.log('ONNX Runtime ' + ort.env.versions.node + ': bundled CPU backend available');
           JS
 
+      - name: Temporary keyed-projection regression
+        run: node --import tsx --test --test-name-pattern='^migrate v11/v14 maintains persistent search FTS projections$' tests/store.test.ts
+
       - name: Prepare PR bench baseline
         if: github.event_name == 'pull_request'
         shell: bash

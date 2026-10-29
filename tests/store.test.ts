@@ -125,6 +125,7 @@ test('migrate v11/v14 adds persistent search FTS projection triggers', () => {
 
 test('migrate v11/v14 maintains persistent search FTS projections', () => {
   withTempDb((db) => {
+    db.exec('PRAGMA recursive_triggers = OFF');
     db.prepare("INSERT INTO repos (id, root, config_hash) VALUES (1, '/repo', 'v1')").run();
     db.prepare(`
       INSERT INTO index_runs (id, repo_id, status, started_at, finished_at, extractor_version)
@@ -206,7 +207,13 @@ test('migrate v11/v14 maintains persistent search FTS projections', () => {
         .map((row) => (row as { evidence_id: string }).evidence_id),
       ['ev:source']
     );
+    const evidenceRowid = db.prepare("SELECT rowid FROM search_relation_evidence_fts WHERE evidence_id = 'ev:source'").get()?.rowid;
+    db.prepare(`INSERT INTO relation_evidence
+      (id, relation_id, repo_id, file_path, kind, snippet, confidence, index_run_id)
+      VALUES ('ev:sentinel', 'rel:source', 1, 'other.md', 'DOCUMENTS', 'unrelated sentinel', 'medium', 1)`).run();
     db.prepare("UPDATE relation_evidence SET snippet = 'retention signal' WHERE id = 'ev:source'").run();
+    assert.equal(db.prepare("SELECT rowid FROM search_relation_evidence_fts WHERE evidence_id = 'ev:source'").get()?.rowid,
+      evidenceRowid, 'an evidence update must reuse its keyed search row');
     assert.deepEqual(
       db
         .prepare("SELECT evidence_id FROM search_relation_evidence_fts WHERE search_relation_evidence_fts MATCH 'rotation'")
@@ -221,6 +228,7 @@ test('migrate v11/v14 maintains persistent search FTS projections', () => {
         .map((row) => (row as { evidence_id: string }).evidence_id),
       ['ev:source']
     );
+
     db.prepare(`
       INSERT OR REPLACE INTO relation_evidence (
         id, relation_id, repo_id, file_path, kind, snippet, confidence, index_run_id
@@ -241,6 +249,12 @@ test('migrate v11/v14 maintains persistent search FTS projections', () => {
         .map((row) => (row as { evidence_id: string }).evidence_id),
       ['ev:source']
     );
+    assert.equal(db.prepare("SELECT rowid FROM search_relation_evidence_fts WHERE evidence_id = 'ev:source'").get()?.rowid,
+      evidenceRowid, 'REPLACE without recursive deletes must reuse its keyed search row');
+    db.prepare(`INSERT OR IGNORE INTO relation_evidence
+      (id, relation_id, repo_id, file_path, kind, snippet, confidence, index_run_id)
+      VALUES ('ev:source', 'rel:source', 1, 'policy.md', 'DOCUMENTS', 'ignored token', 'medium', 1)`).run();
+    assert.equal(db.prepare("SELECT count(*) AS count FROM search_relation_evidence_fts WHERE search_relation_evidence_fts MATCH 'ignored'").get()?.count, 0);
 
     db.prepare(`
       INSERT INTO transactions (id, parent_tx_id, branch_id, ts, agent, index_run_id)
@@ -250,6 +264,9 @@ test('migrate v11/v14 maintains persistent search FTS projections', () => {
       INSERT INTO facts (id, entity_id, attribute, value_blob, op, tx_id, redacted)
       VALUES ('fact:source', 'file:source.ts', 'imports', '"operator memory signal"', 'assert', 'tx:fts', 0)
     `).run();
+    const factRowid = db.prepare("SELECT rowid FROM search_facts_fts WHERE fact_id = 'fact:source'").get()?.rowid;
+    db.prepare(`INSERT INTO facts (id, entity_id, attribute, value_blob, op, tx_id, redacted)
+      VALUES ('fact:sentinel', 'file:source.ts', 'imports', '"unrelated sentinel"', 'assert', 'tx:fts', 0)`).run();
     db.prepare(`
       INSERT INTO facts (id, entity_id, attribute, value_blob, op, tx_id, redacted)
       VALUES ('fact:redacted', 'file:source.ts', 'imports', '"secret projection marker"', 'assert', 'tx:fts', 1)
@@ -289,6 +306,8 @@ test('migrate v11/v14 maintains persistent search FTS projections', () => {
     );
     db.prepare("UPDATE facts SET redacted = 0 WHERE id = 'fact:source'").run();
     db.prepare("UPDATE facts SET value_blob = '\"session retention marker\"' WHERE id = 'fact:source'").run();
+    assert.equal(db.prepare("SELECT rowid FROM search_facts_fts WHERE fact_id = 'fact:source'").get()?.rowid,
+      factRowid, 'hiding and restoring a fact must reuse its keyed search row');
     assert.deepEqual(
       db
         .prepare("SELECT fact_id FROM search_facts_fts WHERE search_facts_fts MATCH 'operator'")

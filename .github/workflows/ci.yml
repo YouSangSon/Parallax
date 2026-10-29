@@ -61,7 +61,7 @@ jobs:
           mkdir -p .parallax/bench
           cp "$BASE_WORKTREE/.parallax/bench/impact-bench-report.json" .parallax/bench/impact-bench-baseline.json
 
-      - name: Temporary bounded current-source index diagnostic
+      - name: Temporary bounded publication SQL diagnostic
         if: github.event_name == 'pull_request'
         shell: bash
         run: |

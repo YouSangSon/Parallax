@@ -3,6 +3,7 @@ import base64
 import gzip
 import hashlib
 import json
+import os
 import pathlib
 import subprocess
 import sys
@@ -61,7 +62,8 @@ assert subprocess.check_output(['git', '-C', str(root / 'runtime'), 'rev-parse',
 emit('RUNTIME', {'node': str(node), 'version': subprocess.check_output([str(node), '--version'], text=True).strip(),
                  'runtimeSource': sys.argv[6], 'corpusSource': sys.argv[7],
                  'moduleSha256': module_sha, 'indexerSha256': indexer_sha, 'limits': limits,
-                 'scope': 'One current-runtime full index on the fixed historical public corpus; no historical output-equivalence or speedup claim; not the earlier three-phase VM execution'})
+                 'hostLoadAverage': os.getloadavg(), 'hostLogicalCpus': os.cpu_count(),
+                 'scope': 'Current-runtime one-file event publication with all-body metadata/redaction; SQL windows and lookup plans, not full-index performance or a speedup'})
 try:
     result = subprocess.run([str(node), '--max-old-space-size=512', '--cpu-prof', '--cpu-prof-interval=50000',
                              '--cpu-prof-dir=' + str(root), '--cpu-prof-name=' + profile.name,
